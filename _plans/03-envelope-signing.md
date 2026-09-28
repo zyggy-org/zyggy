@@ -140,7 +140,7 @@ Expected `job-noncanonical.canonical` front matter (hand-derived; this is the dr
 
 ## Step 2 — Any §4 envelope file is parsed from bytes into a typed model or refused with the reason and the field at fault, in the §4 order (tenant first, never touching a secret store); the five golden `.md` cases parse and every unknown field survives in the tree
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope** *(all projects touched by this slice)*:
 - `Directory.Packages.props` *(modify)* — add `<PackageVersion Include="YamlDotNet" Version="18.1.0" />` (MIT).
