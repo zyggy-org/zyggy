@@ -480,3 +480,7 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# evolve plugin: per-session state and local labels are never committed
+evolution/.state/
+evolution/labelled/
