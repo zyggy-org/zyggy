@@ -151,21 +151,34 @@ allowed_tools: [Read, Grep, Glob, "Bash(dotnet *)", "Bash(kubectl get *)"]
 report_back: [summary, diff, files_changed]
 timeout_minutes: 30
 key_id: geoffrey/1            # <tenant>/<n>; keys are per tenant (§14)
-sig: hmac-sha256:BASE64...
+sig: hmac-sha256:9f2c…            # hmac-sha256:<64 lowercase hex chars> over the canonical form
 ---
 Investigate why staging returns HTTP 502 on /api/bookings since Friday.
 Do not change code; report root cause and a proposed fix.
 ```
 
-Report-specific fields: `status` (`done | failed | timeout | rejected`), `reason` (closed enum, §9; present when `status` is not `done`), `started`, `finished`, `duration_seconds`, `cost_usd`, `input_tokens`, `output_tokens`, `model` (all four from the `IModelRunner` result; Central aggregates them per tenant per month, §14), `files_changed` (list), `diff_ref` (path in the report or a commit SHA in the project repo).
+Report-specific fields: `status` (`done | failed | timeout | rejected`), `reason` (closed enum, §9; present when `status` is not `done`), `started`, `finished`, `duration_seconds`, `cost_usd`, `input_tokens`, `output_tokens`, `num_turns`, `model` (all four from the `IModelRunner` result; Central aggregates them per tenant per month, §14), `files_changed` (list), `diff_ref` (path in the report or a commit SHA in the project repo).
 
 Context-specific fields: `scope` (`project:<name> | machine | general`), body = one `[stated]`-style fact per line.
 
+**Mandatory fields per type.** A receiver rejects an envelope that lacks a mandatory field or carries a field of the wrong shape (`missing_field` / `invalid_field`); every field not listed here is unknown: preserved, signed, never interpreted.
+
+| Type | Mandatory | Optional (default) |
+| --- | --- | --- |
+| all | `schema` (positive integer; a node supports exactly `1`), `id` (ULID), `tenant`, `type`, `from`, `to`, `created`, `key_id`, `sig` | `in_reply_to` (`null`; mandatory on `report`), `priority` (`normal`) |
+| `job` | `project` | `agent` (none), `worktree` (`false`), `allowed_tools` (empty = policy default), `report_back` (empty), `timeout_minutes` (`node.json` `claude.defaultTimeoutMinutes`), `deadline` (none), `attempt` (`1`) |
+| `report` | `in_reply_to` (the job id), `status`; `reason` when `status` is not `done` (must be absent when `done`) | `started`, `finished`, `duration_seconds`, `cost_usd`, `input_tokens`, `output_tokens`, `num_turns`, `model`, `files_changed` (empty), `diff_ref` |
+| `context` | `scope` | — |
+
+Timestamps are RFC 3339 date-times written as `YYYY-MM-DDTHH:MM:SSZ` (UTC, whole seconds); machine and tenant names are lowercase labels (`[a-z0-9-]`, 1–63 characters, no leading or trailing hyphen); integers and `cost_usd` use the invariant format.
+
 **Signature**
 
-- `sig` = HMAC-SHA256 over the canonical form: front matter with `sig` removed, keys sorted, YAML re-serialised with `\n` line endings, then `\n---\n`, then the body byte-for-byte.
+- `sig` = `hmac-sha256:` followed by the HMAC-SHA256 digest, as 64 lowercase hexadecimal characters, over the canonical form: front matter with `sig` removed, keys sorted, YAML re-serialised with `\n` line endings, then `\n---\n`, then the body byte-for-byte (normative details below). A receiver accepts the digest in either case and treats any other algorithm prefix as an invalid signature.
 - Shared secret per `key_id`, where `key_id` = `<tenant>/<n>` (§14); keys never cross tenants. Stored in each machine's secret store (§8). Rotation: add `<tenant>/2`, accept both for 7 days, drop `<tenant>/1`.
 - A receiver rejects (moves to `jobs/rejected/` with a `reports/` entry `status: rejected`) any envelope with a missing, unknown or invalid signature, with `tenant` different from its own tenant or from the `<org>` of the path the file sits in, with a `key_id` whose tenant part differs from `tenant`, or with `to` not equal to its own machine name. The tenant check runs before the signature check, so a key from another tenant is never even looked up.
+
+**Canonical form, normative details.** The file is read as bytes: an optional UTF-8 BOM is skipped; the file starts with `---` and a line break; the front matter ends at the first following line that is exactly `---`; the body is every byte after that line's break, unchanged (line endings, a missing final newline and further `---` lines included; may be empty; must be valid UTF-8). The front matter is one YAML 1.2 document whose root is a mapping with unique string keys and whose values are scalars, sequences or mappings, recursively; anchors, aliases, merge keys, explicit tags, directives and a second document are rejected as malformed; comments are not data and are dropped. The canonical form re-emits that mapping without the top-level `sig` key: keys in ordinal order at every level; mappings in block style with two-space indentation; sequences in flow style (`[a, b]`) when every item is a scalar, block style otherwise, `[]` when empty; every scalar as its parsed text, plain when YAML allows it in that position, otherwise single-quoted, otherwise double-quoted (the empty string is `''`); lines terminated by `\n`, no line folding, UTF-8 without BOM; then `---\n`; then the body bytes. For a file written by `agentbus` the canonical form is therefore the file minus its first line and its `sig:` line. A writer signs the bytes it emits and never edits them afterwards; any later field change (for example the sweep's `attempt`) is followed by re-signing.
 
 **State machine**
 
@@ -620,7 +633,7 @@ The platform is built for one user but must stay reproducible and sellable witho
 **Model runtime**
 
 - `IModelRunner` abstracts how a job is executed. `ClaudeCodeCliRunner` (v1, the user's own subscription) and `AgentSdkRunner` (API key, metered) share the same prompt template, tool allowlist and stream-json result contract. Customers of a future product use the SDK runner only; subscription-backed execution is never offered to third parties.
-- Every report carries `cost_usd`, `input_tokens`, `output_tokens`, `model`; Central aggregates per tenant per month and enforces `policy.budget_usd_month` by refusing new jobs when exceeded (`reason: budget_exceeded`).
+- Every report carries `cost_usd`, `input_tokens`, `output_tokens`, `num_turns`, `model`; Central aggregates per tenant per month and enforces `policy.budget_usd_month` by refusing new jobs when exceeded (`reason: budget_exceeded`).
 
 **Policy as data**
 
