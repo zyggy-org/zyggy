@@ -42,7 +42,7 @@ Not scheduled: `AgentSdkRunner` (§14) stays deferred unless the spec says other
 
 | # | Deliverable | File name | Phase | Projects | Depends on | Status | Spec | Plan |
 |---|-------------|-----------|-------|----------|------------|--------|------|------|
-| 01 | Solution builds, tests, formats and publishes from a clean clone (thin harness) | `01-solution-scaffolding` | P0 | slnx, all csproj, `tools/fake-claude`, `tests/`, CI | — | **Next** | — | — |
+| 01 | Solution builds, tests, formats and publishes from a clean clone (thin harness) | `01-solution-scaffolding` | P0 | slnx, all csproj, `tools/fake-claude`, `tests/`, CI | — | **Done** 2026-09-28 | `_specs/01-solution-scaffolding.md` | `_plans/01-solution-scaffolding.md` |
 | 02 | Central VM runs Claude Code unattended; 7-day soak starts | `02-central-vm-soak` | P0 | infra (Azure VM, systemd), `_plans/decisions/0001` | — | Not started | — | — |
 | 03 | Envelope parse, canonicalise, sign and verify (the probe payload) | `03-envelope-signing` | P0 | Zyggy.Core, Core.Tests, `tests/golden` | 01 | Not started | — | — |
 | 04 | Prove transport A through the corporate proxy: reachability matrix, HTTPS push with PAT on the work laptop, signed probe round trip from all three machines | `04-transport-a-proxy-proof` | P0 | Zyggy.Core, Zyggy.Cli, Core.Tests, Integration, `zyggy-bus` repo | 01, 02, 03 | Not started | — | — |
@@ -81,7 +81,7 @@ Not scheduled: `AgentSdkRunner` (§14) stays deferred unless the spec says other
 - **Gate served**: prerequisite for P0.
 - **Definition of done**: the three commands green locally and in CI; publish artefacts downloadable from CI for both RIDs; fake-claude `done` scenario runs on Windows and Linux and records its arguments; `BusRepoFixture` smoke test green; template placeholders gone; CLAUDE.md "Build and test" section matches the populated `Zyggy.slnx` (O13 decided; CLAUDE.md corrected 2026-09-29).
 - **Risks**: new NuGet dependencies (FluentAssertions licence change in v8 — pin a compatible version or record the choice; NSubstitute); CI must need and hold no secrets.
-- **Status**: Next
+- **Status**: **Done** 2026-09-28 — CI run green on windows-latest and ubuntu-latest (3 unit + 18 integration tests each), `zyggy-win-x64` and `zyggy-linux-x64` artefacts uploaded, no repository secret. Recorded deviations: tests opt out of Microsoft.Testing.Platform (`IsTestingPlatformApplication=false`) to keep VSTest on the .NET 10 SDK; `NoWarn=EnableGenerateDocumentationFile`; `CA1707` off for tests. Findings forwarded: §6 `--cwd` does not exist (06); `claude.path` is a directly launchable executable (06); xunit.v3 `TestContext.Current.CancellationToken` (03); O24 raised for 14.
 
 ### 02. Central VM runs Claude Code unattended; 7-day soak starts
 - **Goal**: the Azure VM from §13 Q3 exists, an unprivileged user has run `claude login` once, `claude-remote.service` runs the §13 Q4 resume wrapper, a systemd timer runs a headless `claude -p` job on the Max subscription and logs the result, restarting the service brings remote control back, an Azure cost alert is configured — and the 7-day soak clock has started with a dated day-0 entry in `_plans/decisions/0001-transport-and-vm.md`.
@@ -391,13 +391,13 @@ Raised here so the technical-analyst does not have to rediscover them. Only the 
 
 ## What to build next
 
-**Deliverable 01 — Solution builds, tests, formats and publishes from a clean clone (thin harness)** (`_specs/01-solution-scaffolding.md`, then `_plans/01-solution-scaffolding.md`). The roadmap is approved (2026-09-29); the technical-analyst may start.
+**Deliverable 01 is Done (2026-09-28).** Next in P0 order: **02** Central VM soak (no code; start the 7-day clock now) and, in parallel, **03** envelope + signer (the first code on top of 01; hand-off by the project-manager). The paragraphs below are kept as the record of the 01 hand-off.
 
 Why first: it is the only code deliverable with no dependencies, and the spike deliverables 03–04 need a solution that builds, test projects with FluentAssertions/NSubstitute, the bare-repo fixture, a format check and published `zyggy` binaries for three machines — none of which exist today (verified 2026-09-28: no project references, no `tools/`, no `tests/golden/`, no `.editorconfig`, no CI; `Class1.cs`/`UnitTest1.cs` placeholders still present). It is deliberately thin: everything the spike does not need is listed under *Defers*.
 
 What follows it (P0 spike, in order): **02** Central VM soak (no code; starts the 7-day clock as early as possible) → **03** envelope + signer (the probe payload, full tenant shape) → **04** transport A proven through the corporate proxy: reachability matrix from Central, home and work laptop, HTTPS push with PAT on the work laptop, signed probe round trip → **05** soak result + transport confirmation + latency in `_plans/decisions/0001-transport-and-vm.md`, §1/§5 amendments, `Gates/P0_ProbeRoundTrip.cs`.
 
-Hand-off brief for the technical-analyst (deliverable 01):
+Hand-off brief for the technical-analyst (deliverable 01 — delivered, kept for the record):
 
 - **Founding-spec sections to read**: §9 solution structure, Packages table and Publish line; §9 design rules (no real `claude`, `IProcessRunner`, no LibGit2Sharp); §12 Definition of done; §6 Invocation (the command line the fake must accept); plus CLAUDE.md "Build and test" and the `integration-testing` skill (harness names: `BusRepoFixture`, `tools/fake-claude/{fake-claude.ps1,fake-claude.sh,scenarios/*.jsonl}`, `ZYGGY_FAKE_CLAUDE_SCENARIO`).
 - **Design rules and decisions the spec must respect**: `Directory.Build.props` remains the single place for TFM/LangVersion/nullable/warnings-as-errors (per-`.csproj` duplicates and `Zyggy.Node`'s `UserSecretsId` removed); packages restricted to the §9 table plus xUnit/FluentAssertions/NSubstitute/`Microsoft.Extensions.TimeProvider.Testing`/coverlet, pinned, with licence in the spec's Dependencies table; `git` on PATH is the only external prerequisite; §13 decisions on .NET 10 and single-file self-contained binaries (`AssemblyName` → `zyggy`, `zyggy-node`, `zyggy-hub`); `Node`/`Cli`/`Hub` never reference each other; nothing in 01 may pre-empt 03/04 (no GitHub-specific code, no `IBusProvider` yet, no envelope types, no `BusPaths` — the fixture seeds the tenant layout only from 04).
@@ -406,12 +406,13 @@ Hand-off brief for the technical-analyst (deliverable 01):
 - **Explicit deferrals the spec must list as out of scope**: fake-claude `no-report`/`hang`/`error` scenarios and the real `stream-json` capture (06); §9 source folders; per-project READMEs beyond template removal; coverage; publish of Node/Hub (07/11); any production type from §4–§7.
 - **Risk areas the spec must flag**: new NuGet dependencies (FluentAssertions version/licence choice, NSubstitute); CI holds no secrets and needs none.
 
-Next action: invoke the `technical-analyst` subagent with the hand-off brief to produce `_specs/01-solution-scaffolding.md`; once that spec is approved with zero Open Questions, the `planner` turns it into `_plans/01-solution-scaffolding.md`.
+Next action: `/new-feature 03` (project-manager hand-off → technical-analyst spec → planner plan → build-feature), while 02 runs on the VM; the user decides O24 in the founding spec before 14 is specified.
 
 ## Change log
 
 | Date | Change | Why |
 |------|--------|-----|
+| 2026-09-28 | **Deliverable 01 delivered and approved at all three HUMAN GATEs.** Solution builds, tests and format-checks green from a clean clone on Windows and Linux (CI run green on both runners), single-file `zyggy` published per RID, `BusRepoFixture` and compiled `tools/fake-claude` in place; item 01 set to Done with spec/plan links. O24 raised: the §4 registry carries agent/skill names only, too thin for `delegate` to route by speciality (user requirement); proposed schema extension for 14. | Definition of done met with evidence recorded in `_plans/01-solution-scaffolding.md`; the routing gap surfaced while reviewing the architecture against the user's delegation requirement. |
 | 2026-09-28 | Roadmap created: 25 deliverables across P0–P5 (+ one post-P5 §14 item); phase map proposed in place of the lost §12 diagram; 13 founding-spec conflicts logged as O1–O13; deliverable 01 marked Next. | First roadmap; repo is a `dotnet new` scaffold with no references, harness or CI. Awaiting user approval (HUMAN GATE). |
 | 2026-09-28 | User-directed multi-tenancy review of the founding spec (§1–§14): tenant on every envelope, path, secret, log line; Hub principal model; `TenantId`/`Principal`/`MemoryPaths` in §9; closed 9-member reason enum. O1 (partly), O2, O7, O11, O12 marked resolved. | Make the spec consistent with §14 from day one. |
 | 2026-09-29 | Decision: one bus repository per tenant; the repository is the isolation boundary, the `tenants/<org>/` prefix is uniformity plus defence in depth. Spec §4, §5, §11, §12, §13, §14 amended; infrastructure deliverable scope updated (repo per tenant, branch protection, repo-scoped credentials). | Git hosts authorise per repository, not per path; a shared repository would expose every tenant's ledger to every other tenant's machines. |
