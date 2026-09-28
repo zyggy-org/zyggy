@@ -1,0 +1,14 @@
+created: 2026-09-27T15:10:00Z
+from: home-laptop
+id: 01J8Y3S0CCCCCCCCCCCCCCCCCC
+key_id: acme/1
+priority: normal
+schema: 1
+scope: machine
+tenant: acme
+to: central
+type: context
+---
+[observed] line one
+---
+[observed] line three

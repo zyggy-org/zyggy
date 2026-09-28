@@ -1,0 +1,24 @@
+allowed_tools: [Read, Bash(dotnet *)]
+created: 2026-09-27T14:05:00Z
+deadline: 2026-09-29T18:00:00.500+02:00
+from: central
+id: 01J8Y3N7Q2X9Z4A5B6C7D8E9F1
+key_id: acme/1
+project: calizr
+schema: 1
+tenant: acme
+to: home-laptop
+type: job
+worktree: true
+x_empty: ''
+x_experimental: 'a: b'
+x_meta:
+  owner: qa
+  steps:
+    - name: one
+    - name: two
+  tags: [b, a]
+x_null: null
+x_quote: "it's: here"
+---
+Body with LF.

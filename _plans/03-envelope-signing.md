@@ -85,7 +85,7 @@ Expected `job-noncanonical.canonical` front matter (hand-derived; this is the dr
 
 ## Step 1 — Tenant, user and machine labels, key ids, envelope ids and secret names are accepted only when well-formed; every closed enum maps to exactly its §4 wire string and back
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope** *(all projects touched by this slice)*:
 - `Directory.Packages.props` *(modify)* — add `<PackageVersion Include="Ulid" Version="1.4.1" />` (MIT; spec Dependencies table).
