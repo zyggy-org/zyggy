@@ -192,12 +192,18 @@ projects:
   - name: calizr
     path: C:/src/calizr
     default_branch: main
-    agents: [env-debugger, db-migrator]
-    skills: [deploy-staging]
+    agents:
+      - name: env-debugger
+        description: "Diagnoses failing environments: config, secrets, connectivity, startup errors"
+      - name: db-migrator
+        description: "Writes and verifies EF Core migrations against staging"
+    skills:
+      - name: deploy-staging
+        description: "Builds, tags and deploys the current branch to staging"
     summary: "Multi-tenant booking SaaS, .NET/Blazor"
 ```
 
-`discover` regenerates this on every service start and hourly; it commits only when the content differs (excluding `last_seen`, which is updated at most every 6 hours). Central's `delegate` skill reads all `registry/*.yaml` of its own tenant to route jobs; registry files of other tenants are never read.
+`discover` regenerates this on every service start and hourly; it commits only when the content differs (excluding `last_seen`, which is updated at most every 6 hours). Central's `delegate` skill reads all `registry/*.yaml` of its own tenant to route jobs; registry files of other tenants are never read. Each agent and skill entry carries the `description` front matter of its `.claude/agents/<name>.md` or `.claude/skills/<name>/SKILL.md`, copied verbatim and truncated to 150 characters (empty when absent), so that `delegate` routes by speciality — "the agent that debugs deployment pipelines" — rather than by name (O24, decided 2026-09-28).
 
 ## 5. Transport
 
