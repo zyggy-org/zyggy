@@ -28,7 +28,7 @@ Build a personal AI agent platform on Claude Code: one always-on **Central** age
 
 **Constraints**
 
-- Work laptop: only GitHub and Anthropic endpoints are reachable; corporate proxy; Microsoft 365 reachable only from that device (Conditional Access). Work mail content never leaves the device; only metadata and summaries cross the bus.
+- Work laptop: only GitHub and Anthropic endpoints are believed reachable, through a corporate proxy; this is **verified in P0** (which GitHub endpoints and ports pass the proxy, in particular HTTPS 443 versus SSH 22, is measured, not assumed). Microsoft 365 reachable only from that device (Conditional Access). Work mail content never leaves the device; only metadata and summaries cross the bus.
 - Home laptop and Central: unrestricted egress.
 - Model billing: Claude Code on the user's Max subscription; no direct Anthropic API keys in v1.
 
@@ -68,7 +68,7 @@ Six deliverables. Four are .NET binaries, two are Claude Code configuration (Mar
 
 - Working directory `/srv/agent/central` containing the memory repo (`memory/`, laid out `memory/<tenant>/<user>/…` per §7; v1 = `memory/geoffrey/geoffrey/`), `CLAUDE.md` (identity and rules), `.claude/` from `agent-core`, `.mcp.json` (Hub MCP local stdio, Gmail/Outlook.com MCP, Telegram MCP).
 - Two long-running processes: `claude remote-control --name central --spawn=same-dir --permission-mode auto` (interactive access) and `AgentBus.Node` (bus loop, also used for cron-style jobs Central submits to itself).
-- Nightly systemd timer: `claude -p "/dream"` in that directory.
+- Nightly systemd timer: submits a `dream` job to `tenants/<org>/nodes/central/jobs/` (§6, every scheduled action is a ledger entry); the `dream` skill running inside that job calls the CLI verbs `agentbus dream ingest | rollup | agents` for the mechanical git steps (§7) so they are testable without a model.
 
 **Node instance (laptops)**
 
@@ -80,7 +80,7 @@ Six deliverables. Four are .NET binaries, two are Claude Code configuration (Mar
 | Skill | Used by | What it does |
 | --- | --- | --- |
 | `bus` | Central, Nodes | Wraps `agentbus submit/status/report`. Documents envelope fields and the DLP rule. |
-| `dream` | Central | Consolidate the tenant/user's `inbox/` and daily notes (`memory/<tenant>/<user>/…`) into durable files, condense, commit. |
+| `dream` | Central | Consolidate the tenant/user's `inbox/` and daily notes (`memory/<tenant>/<user>/…`) into durable files, condense, commit. Mechanical steps (bus ingestion, `agents.md` refresh, daily roll-up) are CLI verbs `agentbus dream ingest | agents | rollup`; the skill does the judgement steps. |
 | `remember` | Central, Nodes | Append a `[stated]` fact to `memory/<tenant>/<user>/inbox/` (Central) or emit a `context` envelope (Nodes). |
 | `delegate` | Central | Pick machine/project/agent from the tenant's registry, build a job envelope, submit. |
 | `discover` | Nodes | Scan dev roots, write `tenants/<org>/registry/<machine>.yaml`, commit if changed. |
@@ -142,8 +142,9 @@ to: home-laptop
 created: 2026-09-27T14:05:00Z
 in_reply_to: null             # report/context: the job id, or null
 priority: normal              # low | normal | high
+attempt: 1                    # incremented by Central's sweep when a stale claim is re-queued
 deadline: 2026-09-29T18:00:00Z
-project: calizr               # from registry
+project: calizr               # registry name; an absolute path is accepted only as described in §6 pre-flight
 agent: env-debugger           # optional subagent name
 worktree: true
 allowed_tools: [Read, Grep, Glob, "Bash(dotnet *)", "Bash(kubectl get *)"]
@@ -171,8 +172,8 @@ Context-specific fields: `scope` (`project:<name> | machine | general`), body = 
 | From | To | Actor | Git operation |
 | --- | --- | --- | --- |
 | (none) | `jobs/<id>.md` | sender | add + commit + push |
-| `jobs/` | `jobs/claimed/` | target node | `git mv` + commit + push; push rejected → pull, retry once, else skip |
-| `jobs/claimed/` | `reports/<id>.md` + job deleted | target node | add report, `git rm` job, commit, push |
+| `jobs/` | `jobs/claimed/` | target node | `git mv` + commit + push; push rejected → the §5 retry rule (pull --rebase, up to 3 attempts with jitter); still rejected → leave the job unclaimed and skip until the next poll |
+| `jobs/claimed/` | `reports/<ulid>.md` + job deleted | target node | add report (fresh ULID file name, `in_reply_to` = job id), `git rm` job, commit, push |
 | `jobs/claimed/` older than `timeout_minutes` + 15 min | `jobs/` | Central (hourly sweep) | `git mv` back, `attempt: n+1`; after 3 attempts → report `status: failed` |
 | `reports/`, `context/` older than 14 days | `archive/YYYY-MM/` (same tenant prefix) | Central | `git mv` |
 
@@ -214,7 +215,7 @@ One transport everywhere: GitHub as ledger (git) and as doorbell (conditional RE
 
 **Git operations (`AgentBus.Core.GitClient`)**
 
-- Shell out to the system `git` (`Process`), never LibGit2Sharp. Authentication via the machine's configured deploy key (SSH) or the PAT via credential helper (HTTPS); the code never handles credentials itself.
+- Shell out to the system `git` (`Process`), never LibGit2Sharp. Authentication via the machine's configured deploy key (SSH, port 22) or the PAT via credential helper (HTTPS, port 443); the code never handles credentials itself. Which of the two a machine uses is measured in P0 (`agentbus probe reach`) and recorded per machine in the decision record; the work laptop is expected to need HTTPS because corporate proxies typically pass only 443.
 - Commit identity per machine: `agentbus (<machine>) <machine>@agentbus.local`.
 - Every write sequence is: `pull --rebase` → local change → `commit -m "<tenant> <type> <id> <from>→<to>"` → `push`. On push rejection: `pull --rebase`, retry at most 3 times with 1–3 s jitter, then leave the change uncommitted and log an error; the next poll retries.
 - The working copy is never left dirty across iterations: on start-up, `git status --porcelain` non-empty → `git stash` to a named stash, log a warning.
@@ -229,9 +230,9 @@ Every credential is scoped to exactly one tenant's bus repository (§4, one repo
 
 | Machine | Read (poll) | Write (push) |
 | --- | --- | --- |
-| Central | fine-grained PAT, `contents:read`, the tenant's bus repository only | deploy key, write, that repository only |
-| Home laptop | own PAT, same scope | own deploy key, same scope |
-| Work laptop | own PAT, same scope | own deploy key, same scope |
+| Central | fine-grained PAT, `contents:read`, the tenant's bus repository only | deploy key over SSH, write, that repository only |
+| Home laptop | own PAT, same scope | own deploy key over SSH, same scope |
+| Work laptop | own PAT, same scope | own PAT with `contents:write` over HTTPS via credential helper if port 22 is blocked (P0 measurement), else own deploy key |
 
 Revoking one machine never affects the others. The bus repository's `main` branch has force-pushes and branch deletion blocked (GitHub ruleset or branch protection) so the commit history remains a trustworthy audit trail even against a compromised machine credential; `add-tenant.md` (§11) creates the repository with these rules in place.
 
@@ -241,9 +242,9 @@ A node executes a job by running `claude -p` in the target project with a prompt
 
 **Pre-flight (`AgentBus.Core.JobRunner`)**
 
-1. Resolve `project` against `tenants/<my tenant>/registry/<me>.yaml`; unknown → report `status: rejected`, reason `unknown_project`.
+1. Resolve `project`. A registry name is resolved against `tenants/<my tenant>/registry/<me>.yaml`. An absolute path is accepted only when it lies under a `dev_roots` entry of the tenant policy (§14) and exists, is a git repository and contains `.claude/`; before the registry and policy exist (P1 walking skeleton) the three existence checks alone apply. Anything else → report `status: rejected`, reason `unknown_project`.
 2. Resolve `agent` against the project's `.claude/agents/*.md`; unknown → same rejection.
-3. Acquire the project lock: create `<project>/.claude/agentbus.lock` (contains job id, pid, timestamp) with `FileMode.CreateNew`; exists and younger than 2 h → leave the job in `jobs/` (not claimed) and try next poll; older → treat as stale, overwrite.
+3. Acquire the project lock: create `<project>/.claude/agentbus.lock` (`zyggy.lock` under the §9 naming map; contains job id, pid, timestamp) with `FileMode.CreateNew`; exists and younger than 2 h → leave the job in `jobs/` (not claimed) and try next poll; older → treat as stale, overwrite.
 4. If `worktree: true`: `git worktree add ../<project>-agentbus-<id> -b agentbus/<id> <default_branch>`; run there; on completion push the branch if there are commits, record the SHA in `diff_ref`, remove the worktree. If `false`: run in the project directory, never commit.
 
 **Invocation**
@@ -320,12 +321,12 @@ Inject `profile.md`, `preferences.md`, `agents.md`, the last 7 `daily/` files, a
 
 **Dream pass (`dream` skill, nightly 03:00 Europe/Brussels, one run per tenant/user)**
 
-1. `git pull` the bus; copy new `tenants/<org>/nodes/central/reports/` and `context/` files into that tenant/user's `inbox/` as one file each; move processed bus files to `tenants/<org>/archive/`. A file whose `tenant` field differs from the subtree it sits in is never ingested.
+1. `agentbus dream ingest`: fetch the bus; copy new `tenants/<org>/nodes/central/reports/` and `context/` files into that tenant/user's `inbox/` as one file each; move processed bus files to `tenants/<org>/archive/`. A file whose `tenant` field differs from the subtree it sits in is never ingested.
 2. Read `inbox/*` and today's and yesterday's `daily/` notes.
 3. For each fact: decide destination file by subject; merge into an existing line if it restates or supersedes one; otherwise append. Keep provenance tags. Never upgrade a single mention into a generalisation.
 4. Rewrite any file over 300 lines: merge duplicates, drop moving state that has expired (a finished job, a past deadline), keep decisions and constraints. Update `description` when it no longer matches.
-5. Refresh `agents.md` from the tenant's `registry/*.yaml`.
-6. Delete consumed `inbox/` files; roll `daily/` older than 30 days into `daily/YYYY-MM.md` summaries.
+5. `agentbus dream agents`: refresh `agents.md` from the tenant's `registry/*.yaml`.
+6. `agentbus dream rollup`: delete consumed `inbox/` files; roll `daily/` older than 30 days into `daily/YYYY-MM.md` summaries.
 7. `git commit -m "dream YYYY-MM-DD"`; if the diff touches `profile.md` or `preferences.md`, also send a Telegram message with the diff for review.
 
 **Rules that constrain the dream pass**
@@ -359,7 +360,7 @@ The work laptop is a separate trust boundary. Everything below is a hard require
 - The work node's outbound envelopes contain only: sender display name, subject, received date, one-line summary, requested action, deadline. No bodies, no attachments, no quoted text, no recipient lists beyond the sender.
 - Work-related memory lives in `memory/<tenant>/<user>/work/` on the work laptop, in its own git repo that is not the bus and is never pushed to GitHub.
 - Drafts are created in the M365 mailbox as Drafts; sending happens only by the user in Outlook. The node has no `mail.send` scope.
-- Before go-live the user confirms with RIZIV-INAMI security that (a) Claude Code with the Max subscription is allowed on work data, and (b) summaries may be pushed to a personal GitHub repo. If (b) is refused, the work node runs with `bus: disabled` and only local scheduled jobs.
+- Before go-live the user confirms with RIZIV-INAMI security that (a) Claude Code with the Max subscription is allowed on work data, and (b) summaries may be pushed to a personal GitHub repo (both answered yes, §13 Q1). If GitHub cannot be reached through the corporate proxy in the P0 test (§5), the work node runs with `bus: disabled` and only local scheduled jobs; this fallback stays in the design.
 
 **Secrets**
 
@@ -367,7 +368,9 @@ The work laptop is a separate trust boundary. Everything below is a hard require
 | --- | --- | --- |
 | Bus HMAC keys (`<tenant>/1`, `<tenant>/2`) | Windows Credential Manager / `secret-tool` (libsecret) on Linux; systemd `LoadCredential` for Central; stored under `agentbus/<tenant>/hmac/<n>` | `AgentBus.Core.Secrets` abstraction (`ISecretStore`), keyed by tenant; never in `appsettings.json` |
 | GitHub PAT (read) | same store, under `agentbus/<tenant>/github-pat` | HttpClient only |
-| Git deploy key | `~/.ssh/agentbus_<tenant>_ed25519`, 0600, used via ssh-agent | git only |
+| Git deploy key | `~/.ssh/agentbus_<tenant>_ed25519`, 0600, used via ssh-agent; on machines where port 22 is blocked, a write PAT via git credential helper instead (§5) | git only |
+
+During P0 the laptops may use a file-based `ISecretStore` (0600 on Linux, user-profile ACL on Windows) holding spike-only keys, because the OS stores are built later; those keys are rotated and the file store retired on Windows when the OS stores land.
 | Gmail / Outlook.com OAuth refresh tokens | Central: systemd credential; MCP server reads at start | mail MCP only |
 | Telegram bot token | Central: systemd credential | notification MCP only |
 | Graph token cache (work) | MSAL cache encrypted with DPAPI | work node only |
@@ -394,7 +397,7 @@ The work laptop is a separate trust boundary. Everything below is a hard require
 
 One solution, four projects, .NET 10 LTS. All code C# 14, nullable enabled, warnings as errors.
 
-**Naming.** The product is **Zyggy** (domain zyggy.org, owned by Geoffrey). Working names in this spec map as follows and project agents use the product names in code: `AgentBus.*` → `Zyggy.*` (`Zyggy.Core`, `Zyggy.Node`, `Zyggy.Cli`, `Zyggy.Hub`); CLI `agentbus` → `zyggy`; repos `agent-bus` → `zyggy-bus` and `agent-core` → `zyggy-core` under the GitHub org `zyggy-org` (created 28 September 2026); service names `agentbus-node` → `zyggy-node`; commit identity `zyggy (<machine>) <machine>@zyggy.org`. Public endpoints use subdomains of zyggy.org (e.g. `central.zyggy.org` for the VM, `docs.zyggy.org` later).
+**Naming.** The product is **Zyggy** (domain zyggy.org, owned by Geoffrey). Working names in this spec map as follows and project agents use the product names in code: `AgentBus.*` → `Zyggy.*` (`Zyggy.Core`, `Zyggy.Node`, `Zyggy.Cli`, `Zyggy.Hub`); CLI `agentbus` → `zyggy`; repos `agent-bus` → `zyggy-bus` and `agent-core` → `zyggy-core` under the GitHub org `zyggy-org` (created 28 September 2026); service names `agentbus-node` → `zyggy-node`; lock file `.claude/agentbus.lock` → `.claude/zyggy.lock`; secret-store prefix `agentbus/` → `zyggy/`; commit identity `zyggy (<machine>) <machine>@zyggy.org`. Public endpoints use subdomains of zyggy.org (e.g. `central.zyggy.org` for the VM, `docs.zyggy.org` later).
 
 ```markdown
 AgentBus.sln
@@ -415,7 +418,7 @@ AgentBus.sln
     AgentBus.Integration/   end-to-end against a local bare git repo and a fake claude script
   tools/
     fake-claude/            script that emits canned stream-json for tests
-  agent-core/               git submodule: CLAUDE.md templates, skills, agents, hooks, PROTOCOL.md
+  agent-core/               separate repository, never a git submodule: checked out at a pinned SHA per machine (P2), later pulled as a versioned package (§14)
 ```
 
 **Packages**
@@ -447,7 +450,7 @@ AgentBus.sln
 **Versioning and compatibility**
 
 - Envelope `schema: 1` field added from the first release; a node rejects a higher major schema and reports `reason: schema_unsupported`.
-- `agent-core` is pinned by commit in each machine's `node.json`; Central bumps it via a job of type `job`, project `agent-core`, body `update to <sha>`.
+- `agent-core` is pinned by commit in each machine's `node.json` (`agentCore.pinnedSha`); Central bumps it via a job of type `job`, project `agent-core`, body `update to <sha>`. When the versioned package (§14) replaces the checkout, the key becomes `agentCore.version`.
 
 ## 10. Configuration and deployment
 
@@ -476,7 +479,7 @@ The node refuses to start when `tenant` is missing or when the bus checkout has 
 **Central (Linux VM or container)**
 
 - Host: Azure VM Standard B2as v2, Ubuntu 24.04 (container variant on `mcr.microsoft.com/dotnet/runtime-deps:10.0` remains possible); Node 22 and the Claude Code CLI installed; Tailscale joined. Persistent volumes: `/srv/agent` (memory repo, bus checkout, node state, `~/.claude`).
-- systemd units: `agentbus-node.service` (Restart=always), `claude-remote.service` (runs `claude remote-control --name central --spawn=same-dir --permission-mode auto` under `tmux` or as a plain service, Restart=always), `agent-dream.timer` (03:00 daily), `agent-sweep.timer` (hourly: stale claims, archive).
+- systemd units: `agentbus-node.service` (Restart=always), `claude-remote.service` (runs `claude remote-control --name central --spawn=same-dir --permission-mode auto` under `tmux` or as a plain service, Restart=always), `agent-dream.timer` (03:00 daily, submits the dream job), `agent-sweep.timer` (hourly, submits a sweep job whose body runs `agentbus sweep`: stale claims, retries, archive, alert conditions).
 - Secrets via `LoadCredential=` in the units; container variant reads the same names from mounted files.
 - Claude Code auth: one interactive `claude login` at first boot; the OAuth token lives in `~/.claude` on the persistent volume.
 
@@ -546,7 +549,7 @@ Eight weeks in six phases; each phase ends with a gate that is a working round t
 
 &#91;embedded content: roadmap · 6 phases, 6 gates\]
 
-P0 has no dependency on any machine; P1–P3 can run on Central plus the home laptop alone; P4 waits on the security answer and can slip without blocking P5.
+Phases are ordered risk-first (decision of 29 September 2026, see `_plans/ROADMAP.md`): P0 needs all three machines because it proves the Central VM (unattended Claude Code, remote-control resume, headless `claude -p`, cost) and the transport through the work laptop's corporate proxy before any product code depends on either. The walking skeleton (P1) runs on Central plus the home laptop alone; the work laptop joins as a product node once policy and DLP exist.
 
 **Definition of done, every phase**
 
@@ -588,13 +591,13 @@ All five open questions are answered as of 27 September 2026; the decisions tabl
 | Claude Code is the agent runtime on every machine; no Cowork, no OpenClaw | Programmability: `-p`, hooks, subagents, skills; runs on the Max subscription | Decided |
 | One Central agent owns memory; nodes are stateless | Single writer for durable memory; laptops disposable | Decided |
 | Two trust boundaries (personal, work); work data never leaves the work laptop except as summaries | Conditional Access and data policy | Decided |
-| Git repository on GitHub as the only transport; ETag polling as doorbell | Reachable from both laptops; auditable; no sockets or infrastructure | Decided |
+| Git repository on GitHub as the only transport; ETag polling as doorbell | Reachable from both laptops; auditable; no sockets or infrastructure. Re-examined 29 September 2026 against an HTTPS API served by Central: everything that alternative would need (TLS, auth, revocation, DDoS protection, availability, backups, immutable audit log) GitHub already provides, and it would make Central an internet-facing single point of failure. Enterprise friendliness comes from §14 pluggable edges (customer-hosted GitHub Enterprise, Azure Repos, GitLab behind `IBusProvider`), not from a second transport. | Decided; **confirmed against the corporate proxy in P0** (HTTPS 443 for API poll, fetch and push from the work laptop, recorded in `_plans/decisions/`). Fallback if that test fails: `bus: disabled` on the work node (§8); an HTTPS API on Central is the recorded last resort, not built preemptively. |
 | All code in .NET 10 LTS, single-file self-contained binaries | User's stack; one codebase for Windows and Linux services | Decided |
 | HMAC-signed envelopes, per-machine credentials | Spoofing defence; independent revocation | Decided |
 | Tenancy shape from P0: `tenant` on every envelope, `tenants/<org>/` prefix on every bus path, `memory/<tenant>/<user>/` on every memory path, tenant-namespaced secrets and `key_id`; v1 = one tenant `geoffrey`, one user `geoffrey`; no default-tenant constant in code | §14 productisation without a rewrite; the cost of the prefix is near zero on day one and prohibitive later | Decided (28 September 2026) |
 | One bus repository per tenant; the repository is the tenant isolation boundary, the `tenants/<org>/` prefix is uniformity plus defence in depth; a repository with several tenant directories is a protocol violation | Git hosts authorise per repository, not per path; HMAC gives authenticity only, so a shared repository would expose every tenant's envelopes and ledger to every other tenant's machines | Decided (29 September 2026, supersedes the shared-repository option of 28 September) |
 | Hub principal `(tenant, user)` is resolved from the transport (stdio → machine configuration, HTTP → bearer token), never from a request field | A caller must not be able to name another tenant; v1 stdio has no token | Decided (28 September 2026) |
-| WebSocket / MQTT signalling for sub-second latency | Only if 10 s polling proves insufficient after P3 | Deferred |
+| WebSocket / MQTT signalling for sub-second latency | Only if 10 s polling proves insufficient after P3; P0 records the measured round-trip latency of git polling and proposes a target for ratification | Deferred |
 | Inbound chat channels (WhatsApp, Slack) | After P5, via a thin bridge that submits jobs | Deferred |
 
 ## 14. Productisation constraints
@@ -622,7 +625,7 @@ The platform is built for one user but must stay reproducible and sellable witho
 
 - One command per role: `agentbus init --role node --tenant <org> --join <token>` and `agentbus init --role central --tenant <org>`. The join token is a short-lived, Central-issued secret that provisions the HMAC key, bus credentials and pinned `agent-core` version.
 - Central ships as a Docker image plus a Bicep module (Azure VM, disk, backup, Tailscale bootstrap) and an equivalent `docker compose` for on-prem. First boot is unattended except for `claude login` on the CLI runner.
-- `agent-core` is published as a versioned package (zip + checksum on GitHub Releases); nodes pull by version, no submodules.
+- `agent-core` is published as a versioned package (zip + checksum on GitHub Releases); nodes pull by version, no submodules. Until the package exists (P5), machines use a plain checkout pinned by SHA (§9); a submodule is never used at any stage.
 
 **Pluggable edges**
 
@@ -632,7 +635,7 @@ The platform is built for one user but must stay reproducible and sellable witho
 
 **Telemetry and support**
 
-- OpenTelemetry traces and metrics are on by default with `tenant`, `machine`, `job_id` attributes, exported to a local file exporter when no collector is configured. The work laptop policy may disable export but not collection.
+- OpenTelemetry traces and metrics are **off by default in v1** (§9, §10, §11; decision of 29 September 2026) and enabled per machine through the tenant policy. When enabled they carry `tenant`, `machine`, `job_id` attributes and export to a local file exporter when no collector is configured. The work laptop policy may keep export disabled while allowing collection.
 - `agentbus diagnose` produces a redacted support bundle (config, last 200 log lines, health, policy version) with secrets and envelope bodies stripped.
 
 **Deferred to a commercial phase (not in P0–P5)**

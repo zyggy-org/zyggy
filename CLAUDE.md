@@ -12,7 +12,7 @@ The repo is currently a scaffold: every project is a `dotnet new` template with 
 
 ## Build and test
 
-`Zyggy.slnx` is **empty** — `dotnet build` at the root succeeds but compiles nothing. Build and test per project (or add projects to the slnx first):
+`Zyggy.slnx` lists all six projects, but they have **no project references, no shared test packages (FluentAssertions/NSubstitute), no `tools/fake-claude` and no CI yet** — deliverable 01 adds these. Until then build and test per project:
 
 ```powershell
 dotnet build src/Zyggy.Core
