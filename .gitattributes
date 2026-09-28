@@ -1,0 +1,3 @@
+* text=auto eol=lf
+tests/golden/** -text
+tools/fake-claude/scenarios/** -text

@@ -1,9 +1,24 @@
 <Project>
+
+  <!-- Single source of shared build settings for every project in Zyggy.slnx (founding spec §9). -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <LangVersion>14</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <MinVerTagPrefix>v</MinVerTagPrefix>
+    <!-- IDE0005 is a warning in .editorconfig; the compiler then demands GenerateDocumentationFile, which only
+         Zyggy.Core has. Silencing the demand keeps in-build IDE0005 for Core; dotnet format enforces it elsewhere. -->
+    <NoWarn>$(NoWarn);EnableGenerateDocumentationFile</NoWarn>
   </PropertyGroup>
+
+  <!-- Only the library's public API carries XML documentation (public-api.md). -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Zyggy.Core'">
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
 </Project>

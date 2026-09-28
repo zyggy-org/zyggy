@@ -1,0 +1,62 @@
+# Deliverable 01 — the RGR-Proof PROVE loop on both runners, plus a single-file publish of `zyggy` per RID.
+# Needs no repository secret: the implicit GITHUB_TOKEN is used only by the artefact upload.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        include:
+          - os: windows-latest
+            rid: win-x64
+            exe: zyggy.exe
+          - os: ubuntu-latest
+            rid: linux-x64
+            exe: zyggy
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # MinVer needs tags and height
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore Zyggy.slnx
+
+      - name: Build
+        run: dotnet build Zyggy.slnx -c Release --no-restore
+
+      - name: Format check
+        run: dotnet format Zyggy.slnx --verify-no-changes --no-restore
+
+      - name: Test
+        run: dotnet test Zyggy.slnx -c Release --no-build
+
+      - name: Publish zyggy (${{ matrix.rid }})
+        run: dotnet publish src/Zyggy.Cli -c Release -r ${{ matrix.rid }} --self-contained -p:PublishSingleFile=true -o artifacts/${{ matrix.rid }}
+
+      - name: Smoke-run the published binary
+        run: artifacts/${{ matrix.rid }}/${{ matrix.exe }}
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: zyggy-${{ matrix.rid }}
+          path: artifacts/${{ matrix.rid }}
+          if-no-files-found: error

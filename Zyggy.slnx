@@ -9,4 +9,7 @@
     <Project Path="tests/Zyggy.Core.Tests/Zyggy.Core.Tests.csproj" />
     <Project Path="tests/Zyggy.Integration/Zyggy.Integration.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/fake-claude/FakeClaude.csproj" />
+  </Folder>
 </Solution>

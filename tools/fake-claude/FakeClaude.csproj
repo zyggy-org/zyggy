@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>fake-claude</AssemblyName>
+    <RootNamespace>FakeClaude</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <IsPublishable>false</IsPublishable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="scenarios/**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

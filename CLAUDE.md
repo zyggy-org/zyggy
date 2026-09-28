@@ -8,23 +8,32 @@ Zyggy is a personal AI agent platform built on Claude Code: one always-on **Cent
 
 The authoritative design is `_specs/00 - Personal Agent Platform — Technical Specification.md`. Read the relevant section before building anything; §4 (bus protocol), §5 (poller), §6 (job runner), §7 (memory/Hub) and §9 (solution structure and design rules) are the contracts. §13 lists decisions that must not be reopened. The spec uses the working name `AgentBus.*`; code uses the product name `Zyggy.*` (CLI `zyggy`, repos `zyggy-bus` / `zyggy-core`).
 
-The repo is currently a scaffold: every project is a `dotnet new` template with no real code and no project references yet.
+The solution, its project references, shared props and central packages, `tools/fake-claude`, the integration harness (`BusRepoFixture`) and CI exist; `src/Zyggy.Core` itself stays empty until deliverable 03.
 
 ## Build and test
 
-`Zyggy.slnx` lists all six projects, but they have **no project references, no shared test packages (FluentAssertions/NSubstitute), no `tools/fake-claude` and no CI yet** — deliverable 01 adds these. Until then build and test per project:
+`Zyggy.slnx` lists the six product/test projects plus `tools/fake-claude/FakeClaude.csproj` (the compiled stand-in for the `claude` CLI). Shared settings live in `Directory.Build.props` (root) and `tests/Directory.Build.props` (test-only), package versions in `Directory.Packages.props` (central package management, exact versions), the SDK in `global.json`. Every step of the RGR-Proof loop uses these commands:
 
 ```powershell
-dotnet build src/Zyggy.Core
-dotnet build tests/Zyggy.Core.Tests
-dotnet test tests/Zyggy.Core.Tests
-dotnet test tests/Zyggy.Integration
+dotnet build Zyggy.slnx
+dotnet test Zyggy.slnx
+dotnet test Zyggy.slnx --filter "Category!=Integration"                                # unit tests only
+dotnet format Zyggy.slnx --verify-no-changes                                           # fix with: dotnet format Zyggy.slnx
 dotnet test tests/Zyggy.Core.Tests --filter "FullyQualifiedName~EnvelopeSignerTests"   # one class
 dotnet test tests/Zyggy.Core.Tests --filter "FullyQualifiedName~ClassName.MethodName"  # one test
 dotnet run --project src/Zyggy.Node
+dotnet publish src/Zyggy.Cli -c Release -r win-x64   --self-contained -p:PublishSingleFile=true -o artifacts/win-x64
+dotnet publish src/Zyggy.Cli -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -o artifacts/linux-x64
 ```
 
-`Directory.Build.props` sets `net10.0`, C# 14, nullable, implicit usings and **TreatWarningsAsErrors** for every project — any warning breaks the build. Tests are **xUnit** (`[Fact]`/`[Theory]`); the spec also calls for FluentAssertions and NSubstitute.
+`Directory.Build.props` sets `net10.0`, C# 14, nullable, implicit usings, `AnalysisLevel=latest-recommended`, code style enforced in build and **TreatWarningsAsErrors** for every project — any warning or style violation breaks the build. Tests are **xunit.v3** (`[Fact]`/`[Theory]`) with **FluentAssertions 7**, **NSubstitute** and `FakeTimeProvider`; `Zyggy.Integration` carries the assembly-level trait `Category=Integration`. CI (`.github/workflows/ci.yml`) runs the same build/format/test commands on `windows-latest` and `ubuntu-latest`, then publishes and smoke-runs `zyggy` per RID.
+
+Runbook notes:
+
+- `dotnet format --verify-no-changes` reports differences → run `dotnet format Zyggy.slnx` and commit.
+- CRLF committed by an editor that ignores `.gitattributes` → `git ls-files --eol` shows `i/crlf`; run `git add --renormalize .`.
+- MinVer without git history (shallow clone, source zip) → version `0.0.0-alpha.0` and an MSBuild warning that does not fail the build.
+- CI red at the smoke step → the single-file, self-contained, invariant-globalization publish itself is broken, not the code under test.
 
 ## Projects and their spec roles
 
