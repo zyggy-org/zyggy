@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Zyggy.Cli/Zyggy.Cli.csproj" />
+    <Project Path="src/Zyggy.Core/Zyggy.Core.csproj" />
+    <Project Path="src/Zyggy.Hub/Zyggy.Hub.csproj" />
+    <Project Path="src/Zyggy.Node/Zyggy.Node.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Zyggy.Core.Tests/Zyggy.Core.Tests.csproj" />
+    <Project Path="tests/Zyggy.Integration/Zyggy.Integration.csproj" />
+  </Folder>
+</Solution>

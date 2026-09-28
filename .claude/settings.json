@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "Edit(.claude/**)",
+      "Edit(CLAUDE.md)",
+      "Edit(_plans/**)",
+      "Edit(_specs/**)",
+      "Edit(*/**)",
+      "Glob",
+      "Grep",
+      "TodoWrite",
+      "Task",
+      "WebFetch",
+      "WebSearch",
+      "Skill(*)",
+      "Bash(dotnet build *)",
+      "Bash(dotnet format *)",
+      "Bash(dotnet restore *)",
+      "Bash(dotnet pack *)",
+      "Bash(dotnet tool *)",
+      "Bash(git status*)",
+      "Bash(git log*)",
+      "Bash(git diff*)",
+      "Bash(git branch*)",
+      "Bash(git fetch*)",
+      "PowerShell(Get-Content *)",
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(Get-Command *)",
+      "PowerShell(Copy-Item *)",
+      "PowerShell(dotnet build *)",
+      "PowerShell(dotnet format *)",
+      "PowerShell(dotnet restore *)"
+    ],
+    "defaultMode": "acceptEdits"
+  }
+}
+
