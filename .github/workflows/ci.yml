@@ -57,7 +57,7 @@ jobs:
         shell: pwsh
         run: |
           $results = Get-ChildItem TestResults -Filter *.trx -Recurse | ForEach-Object {
-            ([xml](Get-Content $_.FullName -Raw)).TestRun.Results.UnitTestResult }
+            ([xml](Get-Content -LiteralPath $_.FullName -Raw)).TestRun.Results.UnitTestResult }
           $facts = @($results | Where-Object testName -like '*${{ matrix.os-facts }}*')
           "### OS-specific facts (${{ matrix.os }})" >> $env:GITHUB_STEP_SUMMARY
           $facts | ForEach-Object { "- $($_.outcome): $($_.testName)" } >> $env:GITHUB_STEP_SUMMARY
