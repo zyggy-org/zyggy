@@ -8,6 +8,8 @@
 > Status values: `Not started` · `Next` · `Planning` · `In progress` · `Blocked` · `Done`
 >
 > **Roadmap status: approved by the user at the HUMAN GATE on 2026-09-29.** Deliverable 01 is Done (2026-09-28). Deliverable 03 is **Done** (2026-09-29): every gate of `_plans/03-envelope-signing.md` approved, CI green on both runners. Deliverable 02 (user-executed VM work, no code) is still Not started and is now the only dependency holding 04 back.
+>
+> **Spec revision 2026-09-29 (owner decision, MVP scope):** the founding spec's §14 is now "kept open for productisation, not built". The multi-tenant shape stays wherever it is already built or is only a rule. Removed from scope, pending the project-manager's reconciliation of the phase map and the table: non-default-tenant gate runs and repository-per-tenant enforcement (P0 gate, 05); signed `policy.yaml` (18; 19 and 20 read DLP settings from `node.json` through `IPolicySource`); the Hub HTTP transport (21); budget enforcement (25; `status --costs` stays informational); `zyggy init`, join token, Docker image, Bicep, versioned `zyggy-core`, `zyggy diagnose` (26); OpenTelemetry everywhere.
 
 ## How to read this file
 

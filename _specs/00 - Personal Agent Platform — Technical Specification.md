@@ -22,7 +22,10 @@ Build a personal AI agent platform on Claude Code: one always-on **Central** age
 
 - No inbound chat channels other than Claude Code remote control and Telegram notifications (no WhatsApp/Slack bots).
 - No WebSocket/MQTT signalling; GitHub polling is the only transport.
-- No multi-user *operation* in v1: exactly one tenant (`geoffrey`) with one user (`geoffrey`) and one GitHub account. The tenancy *shape* (§14) is nevertheless present from the first commit: every bus path, memory path, secret name and envelope carries the tenant, and no code path assumes a single or default tenant.
+- No multi-tenant or multi-user *operation* and no productisation work (decision of 29 September 2026, §13): one tenant, one user, one GitHub account, one bus repository. The tenancy *shape* stays wherever it is already built or is only a rule (`tenant` on every envelope, `tenants/<org>/` on every bus path, `memory/<tenant>/<user>/`, tenant-namespaced secret names and `key_id`, no default-tenant constant in code), because keeping it costs nothing and removing it later would be a rewrite. What is not built is anything that needs new code, tests or infrastructure only to serve a second tenant or a paying customer; §14 lists those items so the door stays open.
+- No Hub over HTTP, no bearer tokens; the Hub is stdio only.
+- No signed policy on the bus; every per-machine setting lives in that machine's `node.json`.
+- No telemetry, no installer beyond scripts, no container image, no packaged `agent-core`, no budget enforcement.
 - No UI beyond CLI and Claude Code; no web dashboard.
 - No automatic sending of e-mail or messages without explicit user confirmation.
 
@@ -47,9 +50,9 @@ The user talks only to Central; Central talks to Nodes only through the bus; Nod
 | Central | Linux VM / container, 24/7 | memory store, dream pass, dispatch, personal mail, notifications, Hub MCP | execute jobs on laptops directly |
 | Node | each laptop, as a service | job execution, project registry for its machine | edit durable memory, dispatch to other machines |
 | Work node (extra role) | work laptop | M365 mail access, `memory/<tenant>/<user>/work/` | send mail content or attachments across the bus |
-| Bus | GitHub private repo | envelopes, registry, policy, archive, audit history, one `tenants/<org>/` subtree per tenant | hold secrets or memory |
+| Bus | GitHub private repo | envelopes, registry, archive, audit history, all under `tenants/<org>/` | hold secrets or memory |
 
-**Tenancy** (§14). A *tenant* is an organisation (`<org>`); a *user* is a person inside it. Every machine belongs to exactly one tenant, recorded in its `node.json`. Every envelope, bus path, registry file, policy, memory path, secret name, log line and telemetry span carries the tenant. v1 runs one tenant with one user, but the code never hard-codes either: the tenant comes from configuration or from the caller's principal, and every gate scenario (§12) runs with a non-default tenant id to prove it.
+**Tenancy** (§14). A *tenant* is an organisation (`<org>`); a *user* is a person inside it. Every machine belongs to exactly one tenant, recorded in its `node.json`, and reads or writes nothing outside that tenant's subtree. Every envelope, bus path, registry file, memory path, secret name and log line carries the tenant; the code never hard-codes it (it comes from configuration or from the Hub's principal). v1 runs one tenant with one user. A receiver rejects an envelope whose `tenant` differs from its own (built in deliverable 03). No gate is required to run with a second tenant, and no code exists only to serve one; those items are listed in §14.
 
 ## 3. Components
 
@@ -59,10 +62,10 @@ Six deliverables. Four are .NET binaries, two are Claude Code configuration (Mar
 | --- | --- | --- | --- |
 | `AgentBus.Node` | .NET Worker Service | every machine incl. Central | Poll GitHub, pull, claim, execute, report, push. Publish registry. |
 | `AgentBus.Cli` (`agentbus`) | .NET console, single-file | every machine | `submit`, `status`, `report`, `context`, `discover`, `verify`. Called from Claude Code skills. |
-| `AgentBus.Hub` | .NET MCP server (stdio + HTTP) | Central | `get_context`, `remember`, `list_nodes`, `submit_job`, `job_status`. |
+| `AgentBus.Hub` | .NET MCP server (stdio) | Central | `get_context`, `remember`, `list_nodes`, `submit_job`, `job_status`. |
 | `AgentBus.Core` | .NET class library | shared | Envelope model, signing, git wrapper, GitHub poller, job runner, registry model. |
 | `agent-core` | git repo of Claude Code config | every machine | `CLAUDE.md` templates, `.claude/skills/*`, `.claude/agents/*`, `.claude/hooks/*`, `PROTOCOL.md`. |
-| `agent-bus` | private GitHub repo | GitHub | The bus itself: one `tenants/<org>/` subtree per tenant holding envelopes, registry, policy, archive. Content only, no code. |
+| `agent-bus` | private GitHub repo | GitHub | The bus itself: `tenants/<org>/` holding envelopes, registry, archive. Content only, no code. |
 
 **Central agent instance**
 
@@ -98,13 +101,12 @@ The bus is a private GitHub repository `agent-bus`. One file per message, state 
 
 **Repository layout**
 
-Everything that belongs to a tenant lives under `tenants/<org>/`; nothing tenant-specific exists outside that prefix. v1 has exactly one tenant, `geoffrey`, but the prefix is mandatory from the first commit (§14).
+Everything lives under `tenants/<org>/`, where `<org>` is the tenant label from `node.json` (`geoffrey` in v1). The prefix is already built into `BusPaths` and costs nothing; it is kept so that a later product (§14) does not have to move files.
 
 ```markdown
 agent-bus/
-  PROTOCOL.md                       # copy of this section; the only file outside a tenant prefix
+  PROTOCOL.md                       # copy of this section; the only file outside the prefix
   tenants/<org>/
-    policy.yaml                     # signed by Central: DLP rules, tool allowlists, work hours per machine (§14)
     registry/<machine>.yaml         # published by each node's discover
     nodes/<machine>/
       jobs/                         # new jobs addressed to <machine>
@@ -115,15 +117,15 @@ agent-bus/
     archive/YYYY-MM/                # moved by Central's sweep after 14 days
 ```
 
-All paths in the rest of this section are relative to `tenants/<org>/`. In code every path is produced by `BusPaths` from an explicit tenant id (§9).
+All paths in the rest of this section are relative to `tenants/<org>/`. In code every path is produced by `BusPaths` from the configured tenant id (§9).
 
-**One repository per tenant.** The tenant isolation boundary is the git repository, never the path: GitHub (and every other `IBusProvider` backend) grants read and push rights per repository, so a machine that can push to a repository can read, move or delete every file in it, and HMAC signatures protect authenticity only, not confidentiality or availability. Each tenant therefore has its own bus repository, and every machine's credentials (§5) grant access to exactly one tenant repository. The repository still contains the `tenants/<org>/` prefix, with exactly one `<org>` directory: the prefix is a uniformity rule and a defence-in-depth check (a file whose `tenant` field or path does not match the repository's tenant is rejected), not the boundary. A bus repository with more than one `tenants/<org>/` directory is a protocol violation; `agentbus verify` reports it and nodes refuse to start against it. A Central that serves several tenants (§14 commercial phase) runs one `IBusProvider` instance and one checkout per tenant repository; that is configuration, not a protocol change.
+**One repository per tenant (rule).** The tenant isolation boundary is the git repository, never the path: git hosts grant read and push rights per repository, and HMAC signatures protect authenticity only, not confidentiality or availability. A tenant therefore has its own bus repository, every machine's credentials (§5) grant access to exactly one, and a repository contains exactly one `tenants/<org>/` directory. v1 has one repository and one directory, so nothing enforces this beyond `BusPaths` reading only its own prefix; the enforcement (`agentbus verify` reporting a second directory, nodes refusing to start against it) is a §14 item.
 
 **Write rules**
 
 - A sender writes only into `nodes/<target>/jobs/` (and `nodes/<target>/context/` when the target is Central), and only inside its own tenant's prefix.
 - A machine writes its own `reports/`, `context/`, `registry/<machine>.yaml`, and moves files between its own `jobs/`, `jobs/claimed/`, `jobs/rejected/`.
-- Only Central writes `policy.yaml` and `archive/`.
+- Only Central writes `archive/`.
 - No machine reads or writes outside the `tenants/<org>/` prefix of the tenant recorded in its `node.json`; a file found under another tenant's prefix is ignored, never processed.
 - File name = ULID + `.md`. Two writers never touch the same file, so `git pull --rebase` never conflicts on content.
 
@@ -135,7 +137,7 @@ YAML front matter + Markdown body. The body is data (the job prompt or report te
 ---
 schema: 1                     # envelope schema major version (§9)
 id: 01J8Y3N7Q2X9Z4A5B6C7D8E9F0
-tenant: geoffrey              # must equal the <org> of the path the file sits in and the receiver's own tenant
+tenant: geoffrey              # must equal the receiver's own tenant (and therefore the <org> of the path it sits in)
 type: job                     # job | report | context
 from: central
 to: home-laptop
@@ -150,14 +152,14 @@ worktree: true
 allowed_tools: [Read, Grep, Glob, "Bash(dotnet *)", "Bash(kubectl get *)"]
 report_back: [summary, diff, files_changed]
 timeout_minutes: 30
-key_id: geoffrey/1            # <tenant>/<n>; keys are per tenant (§14)
+key_id: geoffrey/1            # <tenant>/<n>; keys are per tenant
 sig: hmac-sha256:9f2c…            # hmac-sha256:<64 lowercase hex chars> over the canonical form
 ---
 Investigate why staging returns HTTP 502 on /api/bookings since Friday.
 Do not change code; report root cause and a proposed fix.
 ```
 
-Report-specific fields: `status` (`done | failed | timeout | rejected`), `reason` (closed enum, §9; present when `status` is not `done`), `started`, `finished`, `duration_seconds`, `cost_usd`, `input_tokens`, `output_tokens`, `num_turns`, `model` (all four from the `IModelRunner` result; Central aggregates them per tenant per month, §14), `files_changed` (list), `diff_ref` (path in the report or a commit SHA in the project repo).
+Report-specific fields: `status` (`done | failed | timeout | rejected`), `reason` (closed enum, §9; present when `status` is not `done`), `started`, `finished`, `duration_seconds`, `cost_usd`, `input_tokens`, `output_tokens`, `num_turns`, `model` (from the `IModelRunner` result; informational, summed by `agentbus status --costs`, §11), `files_changed` (list), `diff_ref` (path in the report or a commit SHA in the project repo).
 
 Context-specific fields: `scope` (`project:<name> | machine | general`), body = one `[stated]`-style fact per line.
 
@@ -166,7 +168,7 @@ Context-specific fields: `scope` (`project:<name> | machine | general`), body = 
 | Type | Mandatory | Optional (default) |
 | --- | --- | --- |
 | all | `schema` (positive integer; a node supports exactly `1`), `id` (ULID), `tenant`, `type`, `from`, `to`, `created`, `key_id`, `sig` | `in_reply_to` (`null`; mandatory on `report`), `priority` (`normal`) |
-| `job` | `project` | `agent` (none), `worktree` (`false`), `allowed_tools` (empty = policy default), `report_back` (empty), `timeout_minutes` (`node.json` `claude.defaultTimeoutMinutes`), `deadline` (none), `attempt` (`1`) |
+| `job` | `project` | `agent` (none), `worktree` (`false`), `allowed_tools` (empty = `node.json` `claude.defaultAllowedTools`), `report_back` (empty), `timeout_minutes` (`node.json` `claude.defaultTimeoutMinutes`), `deadline` (none), `attempt` (`1`) |
 | `report` | `in_reply_to` (the job id), `status`; `reason` when `status` is not `done` (must be absent when `done`) | `started`, `finished`, `duration_seconds`, `cost_usd`, `input_tokens`, `output_tokens`, `num_turns`, `model`, `files_changed` (empty), `diff_ref` |
 | `context` | `scope` | — |
 
@@ -175,8 +177,8 @@ Timestamps are RFC 3339 date-times written as `YYYY-MM-DDTHH:MM:SSZ` (UTC, whole
 **Signature**
 
 - `sig` = `hmac-sha256:` followed by the HMAC-SHA256 digest, as 64 lowercase hexadecimal characters, over the canonical form: front matter with `sig` removed, keys sorted, YAML re-serialised with `\n` line endings, then `\n---\n`, then the body byte-for-byte (normative details below). A receiver accepts the digest in either case and treats any other algorithm prefix as an invalid signature.
-- Shared secret per `key_id`, where `key_id` = `<tenant>/<n>` (§14); keys never cross tenants. Stored in each machine's secret store (§8). Rotation: add `<tenant>/2`, accept both for 7 days, drop `<tenant>/1`.
-- A receiver rejects (moves to `jobs/rejected/` with a `reports/` entry `status: rejected`) any envelope with a missing, unknown or invalid signature, with `tenant` different from its own tenant or from the `<org>` of the path the file sits in, with a `key_id` whose tenant part differs from `tenant`, or with `to` not equal to its own machine name. The tenant check runs before the signature check, so a key from another tenant is never even looked up.
+- Shared secret per `key_id`, where `key_id` = `<tenant>/<n>`; keys never cross tenants. Stored in each machine's secret store (§8). Rotation: add `<tenant>/2`, accept both for 7 days, drop `<tenant>/1`.
+- A receiver rejects (moves to `jobs/rejected/` with a `reports/` entry `status: rejected`) any envelope with a missing, unknown or invalid signature, with `tenant` different from its own tenant (which, because `BusPaths` only ever reads the receiver's own prefix, is also the `<org>` of the path the file sits in), with a `key_id` whose tenant part differs from `tenant`, or with `to` not equal to its own machine name. The tenant check runs before the signature check, so a key from another tenant is never even looked up (built in deliverable 03).
 
 **Canonical form, normative details.** The file is read as bytes: an optional UTF-8 BOM is skipped; the file starts with `---` and a line break; the front matter ends at the first following line that is exactly `---`; the body is every byte after that line's break, unchanged (line endings, a missing final newline and further `---` lines included; may be empty; must be valid UTF-8). The front matter is one YAML 1.2 document whose root is a mapping with unique string keys and whose values are scalars, sequences or mappings, recursively; anchors, aliases, merge keys, explicit tags, directives and a second document are rejected as malformed; comments are not data and are dropped. The canonical form re-emits that mapping without the top-level `sig` key: keys in ordinal order at every level; mappings in block style with two-space indentation; sequences in flow style (`[a, b]`) when every item is a scalar, block style otherwise, `[]` when empty; every scalar as its parsed text, plain when YAML allows it in that position, otherwise single-quoted, otherwise double-quoted (the empty string is `''`); lines terminated by `\n`, no line folding, UTF-8 without BOM; then `---\n`; then the body bytes. For a file written by `agentbus` the canonical form is therefore the file minus its first line and its `sig:` line. A writer signs the bytes it emits and never edits them afterwards; any later field change (for example the sweep's `attempt`) is followed by re-signing.
 
@@ -225,7 +227,7 @@ One transport everywhere: GitHub as ledger (git) and as doorbell (conditional RE
 **Poll loop (`AgentBus.Node`)**
 
 1. `GET https://api.github.com/repos/{owner}/agent-bus/commits?sha=main&per_page=1` with headers `Authorization: Bearer <PAT>`, `If-None-Match: <etag>`, `User-Agent: agentbus/<version>`.
-2. `304` → sleep and repeat. `200` → store the new ETag, run `git pull --rebase`, process `tenants/<my tenant>/nodes/<me>/jobs/`, then continue. Commits touching other tenants' subtrees wake the poller like any other commit but produce no work.
+2. `304` → sleep and repeat. `200` → store the new ETag, run `git pull --rebase`, process `tenants/<my tenant>/nodes/<me>/jobs/`, then continue. Commits touching other machines' folders or other tenants' subtrees wake the poller like any other commit but produce no work.
 3. Interval: 10 s inside `work_hours`, 60 s outside; jitter ±2 s; one in-flight request at a time.
 4. On HTTP 403/429 or `x-ratelimit-remaining < 100`: back off to 120 s until the reset time in `x-ratelimit-reset`.
 5. On network error: exponential back-off 10 s → 5 min, then keep polling; log once per state change, not per attempt.
@@ -245,7 +247,7 @@ Central may bypass the bus for the home laptop when both are on the same Tailsca
 
 **Credentials per machine**
 
-Every credential is scoped to exactly one tenant's bus repository (§4, one repository per tenant). A machine belonging to one tenant holds no credential for any other tenant's repository.
+Every credential is scoped to exactly one tenant's bus repository (§4); a machine holds no credential for any other repository.
 
 | Machine | Read (poll) | Write (push) |
 | --- | --- | --- |
@@ -253,7 +255,7 @@ Every credential is scoped to exactly one tenant's bus repository (§4, one repo
 | Home laptop | own PAT, same scope | own deploy key over SSH, same scope |
 | Work laptop | own PAT, same scope | own PAT with `contents:write` over HTTPS via credential helper if port 22 is blocked (P0 measurement), else own deploy key |
 
-Revoking one machine never affects the others. The bus repository's `main` branch has force-pushes and branch deletion blocked (GitHub ruleset or branch protection) so the commit history remains a trustworthy audit trail even against a compromised machine credential; `add-tenant.md` (§11) creates the repository with these rules in place.
+Revoking one machine never affects the others. The bus repository's `main` branch has force-pushes and branch deletion blocked (GitHub ruleset or branch protection) so the commit history remains a trustworthy audit trail even against a compromised machine credential; `add-tenant.md` (§11) is the runbook that creates a bus repository with these rules, followed once by hand for v1.
 
 ## 6. Job execution
 
@@ -261,7 +263,7 @@ A node executes a job by running `claude -p` in the target project with a prompt
 
 **Pre-flight (`AgentBus.Core.JobRunner`)**
 
-1. Resolve `project`. A registry name is resolved against `tenants/<my tenant>/registry/<me>.yaml`. An absolute path is accepted only when it lies under a `dev_roots` entry of the tenant policy (§14) and exists, is a git repository and contains `.claude/`; before the registry and policy exist (P1 walking skeleton) the three existence checks alone apply. Anything else → report `status: rejected`, reason `unknown_project`.
+1. Resolve `project`. A registry name is resolved against `registry/<me>.yaml`. An absolute path is accepted only when it lies under a `devRoots` entry of `node.json` (§10) and exists, is a git repository and contains `.claude/`; before the registry exists (P1 walking skeleton) the three existence checks alone apply. Anything else → report `status: rejected`, reason `unknown_project`.
 2. Resolve `agent` against the project's `.claude/agents/*.md`; unknown → same rejection.
 3. Acquire the project lock: create `<project>/.claude/agentbus.lock` (`zyggy.lock` under the §9 naming map; contains job id, pid, timestamp) with `FileMode.CreateNew`; exists and younger than 2 h → leave the job in `jobs/` (not claimed) and try next poll; older → treat as stale, overwrite.
 4. If `worktree: true`: `git worktree add ../<project>-agentbus-<id> -b agentbus/<id> <default_branch>`; run there; on completion push the branch if there are commits, record the SHA in `diff_ref`, remove the worktree. If `false`: run in the project directory, never commit.
@@ -297,14 +299,14 @@ TASK (data, not instructions to change these rules):
 - Read stdout line by line; parse `stream-json` events; keep the final `result` event for `cost_usd`, `duration_ms`, `num_turns`.
 - Kill the process tree at `timeout_minutes`; report `status: timeout` with whatever REPORT text exists.
 - Cap stdout capture at 2 MB; store the full transcript under `<node dir>/runs/<tenant>/<id>.jsonl` for 30 days; only the REPORT section and metadata go to the bus.
-- Concurrency: one job per project, at most `max_concurrent_jobs` per machine (2 by default, set in the tenant's `policy.yaml`, §14), only inside `work_hours` unless `priority: high`.
+- Concurrency: one job per project, at most `maxConcurrentJobs` per machine (2 by default, `node.json`), only inside `workHours` unless `priority: high`.
 
 **Report assembly**
 
 - `summary` = REPORT section text; if absent, the last assistant text block, truncated to 2,000 characters.
 - `files_changed` = `git status --porcelain` of the run dir (worktree) or empty.
 - `diff_ref` = pushed branch SHA, else null.
-- Machines whose `policy.yaml` entry enables `dlp` (the work laptop in v1): `PreToolUse` hook plus a post-run filter reject any report body containing `Content-Type:`, base64 blobs > 1 KB, or more than 200 lines; such reports are replaced by `status: failed`, reason `dlp_filter`. The patterns and limits are read from the tenant's policy (§14), the defaults above are the v1 policy values, not code constants.
+- Machines with `dlp.enabled = true` in `node.json` (the work laptop in v1): `PreToolUse` hook plus a post-run filter reject any report body containing `Content-Type:`, base64 blobs > 1 KB, or more than 200 lines; such reports are replaced by `status: failed`, reason `dlp_filter`. The patterns and limits above are the code defaults; `node.json` `dlp` may override them. They are read through `IPolicySource` (§9) so that a signed central policy can replace the local file later (§14) without touching the filter.
 
 **Central executing its own jobs**
 
@@ -357,7 +359,7 @@ Inject `profile.md`, `preferences.md`, `agents.md`, the last 7 `daily/` files, a
 
 **Hub MCP (`AgentBus.Hub`) surface**
 
-Every Hub call runs under a *principal* `(tenant, user)`. The principal is resolved from the transport, never from the request: over stdio it is the principal configured for the host machine (`node.json` `tenant` and `user`, §10); over HTTP it is taken from the bearer token. No tool accepts `tenant` or `user` as an input field, and a request carrying one is rejected. All paths a tool touches are derived from the principal.
+Every Hub call runs under a *principal* `(tenant, user)`. The principal is resolved from the transport, never from the request: the Hub runs over stdio only in v1, and the principal is the one configured for the host machine (`node.json` `tenant` and `user`, §10). No tool accepts `tenant` or `user` as an input field, and a request carrying one is rejected. All paths a tool touches are derived from the principal. An HTTP transport whose principal comes from a bearer token is a §14 item.
 
 | Tool | Input | Output | Notes |
 | --- | --- | --- | --- |
@@ -431,7 +433,7 @@ AgentBus.sln
       Secrets/              ISecretStore (keys namespaced by tenant) + Windows (CredentialManager), Linux (libsecret / file 0600), Systemd (LoadCredential)
     AgentBus.Node/          Worker Service: PollLoop (BackgroundService), JobDispatcher, DiscoveryTimer, Health endpoint (localhost:4711)
     AgentBus.Cli/           System.CommandLine: submit | status | report | context | discover | verify | run | hub --proxy
-    AgentBus.Hub/           MCP server (ModelContextProtocol SDK): stdio + HTTP transports
+    AgentBus.Hub/           MCP server (ModelContextProtocol SDK): stdio transport (HTTP is a §14 item)
   tests/
     AgentBus.Core.Tests/    xUnit: parser, signer, state machine, poller (mocked HttpMessageHandler), runner (fake claude)
     AgentBus.Integration/   end-to-end against a local bare git repo and a fake claude script
@@ -451,7 +453,6 @@ AgentBus.sln
 | MCP | `ModelContextProtocol` (official C# SDK) | tools via attributes |
 | ULID | `Ulid` |  |
 | Logging | `Serilog`, `Serilog.Sinks.File`, `Serilog.Sinks.Console` | rolling files, 14 days |
-| Telemetry | `OpenTelemetry` + OTLP exporter | optional; off by default |
 | Windows secrets | `Meziantou.Framework.Win32.CredentialManager` |  |
 | Tests | `xunit`, `FluentAssertions`, `NSubstitute` |  |
 
@@ -463,7 +464,7 @@ AgentBus.sln
 - `EnvelopeSigner.Canonicalize` is the single source of truth for the signing input; it has golden-file tests (`tests/golden/*.md` + expected signature).
 - The poller is a pure state machine (`PollState` record: etag, interval, backoffUntil) with the HTTP call injected; tests drive it with a fake clock.
 - `JobRunner` never throws to the loop: every failure becomes a report with a `reason` code from a closed enum (`unknown_project`, `unknown_agent`, `locked`, `timeout`, `dlp_filter`, `claude_error`, `git_error`, `schema_unsupported`, `budget_exceeded`). Tenant mismatches and signature failures are rejections at parse time (§4) and never reach the runner.
-- No static mutable state; everything through DI. Five seams are interfaces from the first commit, each with one implementation in v1: \`IBusProvider\` (GitHub), \`IModelRunner\` (Claude Code CLI), \`ISecretStore\` (per OS), \`INotifier\` (Telegram), \`IPolicySource\` (signed \`policy.yaml\`). No code outside the implementation may reference GitHub, \`claude\`, Telegram or a secret store directly.
+- No static mutable state; everything through DI. Five seams are interfaces from the first commit, each with one implementation in v1: \`IBusProvider\` (GitHub), \`IModelRunner\` (Claude Code CLI), \`ISecretStore\` (per OS), \`INotifier\` (Telegram), \`IPolicySource\` (the machine's \`node.json\`; a signed \`policy.yaml\` on the bus is a §14 item). No code outside the implementation may reference GitHub, \`claude\`, Telegram or a secret store directly.
 - Publish: `dotnet publish -c Release -r win-x64 --self-contained -p:PublishSingleFile=true` and `linux-x64`; artifacts named `agentbus-node`, `agentbus`, `agentbus-hub`.
 
 **Versioning and compatibility**
@@ -486,10 +487,9 @@ Each machine has one `node.json`; secrets are never in it.
   "workHours": { "timezone": "Europe/Brussels", "days": ["Mon","Tue","Wed","Thu","Fri"], "from": "08:00", "to": "19:00" },
   "devRoots": ["C:/src", "C:/work"],
   "maxConcurrentJobs": 2,
-  "claude": { "path": "claude", "maxTurns": 60, "defaultTimeoutMinutes": 30 },
+  "claude": { "path": "claude", "maxTurns": 60, "defaultTimeoutMinutes": 30, "defaultAllowedTools": ["Read", "Grep", "Glob"] },
   "agentCore": { "path": "C:/agents/agent-core", "pinnedSha": "abc123" },
-  "dlp": { "enabled": false },             // true on the work laptop; may only tighten what tenants/<org>/policy.yaml allows (§14)
-  "telemetry": { "enabled": false }
+  "dlp": { "enabled": false }              // true on the work laptop; may also override the §6 patterns and limits
 }
 ```
 
@@ -530,11 +530,11 @@ The git history is the primary audit trail; logs and a health endpoint cover wha
 
 **Health endpoint** (`http://localhost:4711/health`, JSON)
 
-`version`, `tenant`, `machine`, `lastPollUtc`, `lastEtag`, `lastPullUtc`, `busHeadSha`, `jobsRunning`, `jobsClaimedByMe`, `lastReportUtc`, `rateLimitRemaining`, `backoffUntilUtc`, `claudeAuthOk`, `agentCoreSha`, `policyVersion`. Used by `agentbus status` and by Central's `list_nodes` (nodes also write a subset into `tenants/<org>/registry/<machine>.yaml` every 6 h as `last_seen` and `health`).
+`version`, `tenant`, `machine`, `lastPollUtc`, `lastEtag`, `lastPullUtc`, `busHeadSha`, `jobsRunning`, `jobsClaimedByMe`, `lastReportUtc`, `rateLimitRemaining`, `backoffUntilUtc`, `claudeAuthOk`, `agentCoreSha`. Used by `agentbus status` and by Central's `list_nodes` (nodes also write a subset into `tenants/<org>/registry/<machine>.yaml` every 6 h as `last_seen` and `health`).
 
 **Alerts (Central → `INotifier`, Telegram in v1)**
 
-Alerts are evaluated per tenant and routed to that tenant's notifier configuration; every message names the tenant. Two additional conditions come from §14: `policy.yaml` signature failure or age > 30 days on any node, and the monthly budget reached (`budget_exceeded`).
+Alerts are evaluated per tenant and every message names the tenant. Per-tenant notifier routing, policy-signature alerts and the budget alert are §14 items.
 
 | Condition | Check | Message |
 | --- | --- | --- |
@@ -547,8 +547,8 @@ Alerts are evaluated per tenant and routed to that tenant's notifier configurati
 
 **Cost tracking**
 
-- Each report carries `cost_usd`, `input_tokens`, `output_tokens`, `model` and `num_turns` from the `IModelRunner` result (informational under the subscription, billable under the SDK runner, §14).
-- `agentbus status --costs 30d` sums reports per tenant, machine and project from the bus history; Central's sweep compares the tenant's month-to-date total against `policy.budget_usd_month`.
+- Each report carries `cost_usd`, `input_tokens`, `output_tokens`, `model` and `num_turns` from the `IModelRunner` result; informational under the subscription.
+- `agentbus status --costs 30d` sums reports per machine and project from the bus history. Budget enforcement (`budget_exceeded`) is a §14 item; the reason code stays reserved in the enum and is never emitted in v1.
 
 **Runbooks (`agent-core/runbooks/`)**
 
@@ -558,22 +558,18 @@ Alerts are evaluated per tenant and routed to that tenant's notifier configurati
 - `revoke-machine.md`: delete its PAT and deploy key, remove its HMAC key, move its `tenants/<org>/nodes/<machine>/` to `tenants/<org>/archive/`.
 - `add-tenant.md`: create the tenant's bus repository with force-push and deletion blocked on `main`, add `PROTOCOL.md` and `tenants/<org>/` with a signed `policy.yaml`, mint `<org>/1`, issue per-machine PATs and deploy keys scoped to that repository, create `memory/<org>/<user>/`, configure the notifier; no code change and no restart of other tenants' machines.
 
-**Optional telemetry**
-
-OpenTelemetry traces per job (`poll → claim → run → report`) with OTLP export to a collector of the user's choice; disabled by default and never enabled on the work laptop.
-
 ## 12. Delivery phases
 
 Eight weeks in six phases; each phase ends with a gate that is a working round trip, not a code review.
 
 &#91;embedded content: roadmap · 6 phases, 6 gates\]
 
-Phases are ordered risk-first (decision of 29 September 2026, see `_plans/ROADMAP.md`): P0 needs all three machines because it proves the Central VM (unattended Claude Code, remote-control resume, headless `claude -p`, cost) and the transport through the work laptop's corporate proxy before any product code depends on either. The walking skeleton (P1) runs on Central plus the home laptop alone; the work laptop joins as a product node once policy and DLP exist.
+Phases are ordered risk-first (decision of 29 September 2026, see `_plans/ROADMAP.md`): P0 needs all three machines because it proves the Central VM (unattended Claude Code, remote-control resume, headless `claude -p`, cost) and the transport through the work laptop's corporate proxy before any product code depends on either. The walking skeleton (P1) runs on Central plus the home laptop alone; the work laptop joins as a product node once DLP exists.
 
 **Definition of done, every phase**
 
 - Unit tests green in CI (`dotnet test`), integration suite green against the fake `claude` and a local bare repo.
-- The gate scenario is scripted under `tests/AgentBus.Integration/Gates/P<n>_*.cs` and passes. Every gate runs with a non-default tenant id (for example `acme`); a gate that only passes for `geoffrey` fails the phase. From P0 onwards the suite also proves the repository-per-tenant rule: a bare repo containing a second `tenants/<org>/` directory is refused by `verify` and by node start-up, and a machine configured for tenant `acme` never opens a checkout of another tenant's repository.
+- The gate scenario is scripted under `tests/AgentBus.Integration/Gates/P<n>_*.cs` and passes, with the tenant id taken from the test configuration. No gate is required to run with a second tenant or to prove the repository-per-tenant rule; both are §14 items.
 - `PROTOCOL.md`, `node.json` schema and this spec updated where behaviour changed.
 - A runbook entry exists for any new failure mode introduced.
 
@@ -613,54 +609,37 @@ All five open questions are answered as of 27 September 2026; the decisions tabl
 | Git repository on GitHub as the only transport; ETag polling as doorbell | Reachable from both laptops; auditable; no sockets or infrastructure. Re-examined 29 September 2026 against an HTTPS API served by Central: everything that alternative would need (TLS, auth, revocation, DDoS protection, availability, backups, immutable audit log) GitHub already provides, and it would make Central an internet-facing single point of failure. Enterprise friendliness comes from §14 pluggable edges (customer-hosted GitHub Enterprise, Azure Repos, GitLab behind `IBusProvider`), not from a second transport. | Decided; **confirmed against the corporate proxy in P0** (HTTPS 443 for API poll, fetch and push from the work laptop, recorded in `_plans/decisions/`). Fallback if that test fails: `bus: disabled` on the work node (§8); an HTTPS API on Central is the recorded last resort, not built preemptively. |
 | All code in .NET 10 LTS, single-file self-contained binaries | User's stack; one codebase for Windows and Linux services | Decided |
 | HMAC-signed envelopes, per-machine credentials | Spoofing defence; independent revocation | Decided |
-| Tenancy shape from P0: `tenant` on every envelope, `tenants/<org>/` prefix on every bus path, `memory/<tenant>/<user>/` on every memory path, tenant-namespaced secrets and `key_id`; v1 = one tenant `geoffrey`, one user `geoffrey`; no default-tenant constant in code | §14 productisation without a rewrite; the cost of the prefix is near zero on day one and prohibitive later | Decided (28 September 2026) |
-| One bus repository per tenant; the repository is the tenant isolation boundary, the `tenants/<org>/` prefix is uniformity plus defence in depth; a repository with several tenant directories is a protocol violation | Git hosts authorise per repository, not per path; HMAC gives authenticity only, so a shared repository would expose every tenant's envelopes and ledger to every other tenant's machines | Decided (29 September 2026, supersedes the shared-repository option of 28 September) |
-| Hub principal `(tenant, user)` is resolved from the transport (stdio → machine configuration, HTTP → bearer token), never from a request field | A caller must not be able to name another tenant; v1 stdio has no token | Decided (28 September 2026) |
+| MVP scope: a personal assistant for one user; productisation is kept open (§14) but not built | Market review of 29 September 2026: no identified paying customer, the vendor is absorbing the always-on agent layer, and subscription-backed execution cannot be sold. Every item that needs code, tests or infrastructure only for a second tenant or a customer moves to §14; everything already built or free of cost stays | Decided (29 September 2026) |
+| Tenancy shape from P0: `tenant` on every envelope, `tenants/<org>/` prefix on every bus path, `memory/<tenant>/<user>/` on every memory path, tenant-namespaced secrets and `key_id`; v1 = one tenant `geoffrey`, one user `geoffrey`; no default-tenant constant in code | §14 productisation without a rewrite; the cost of the prefix is near zero on day one and prohibitive later | Decided (28 September 2026); narrowed 29 September 2026: the shape stays, but no gate runs with a second tenant and no code exists only for one |
+| One bus repository per tenant; the repository is the tenant isolation boundary, the `tenants/<org>/` prefix is uniformity plus defence in depth; a repository with several tenant directories is a protocol violation | Git hosts authorise per repository, not per path; HMAC gives authenticity only, so a shared repository would expose every tenant's envelopes and ledger to every other tenant's machines | Decided as a rule (29 September 2026, supersedes the shared-repository option of 28 September); enforcement in `verify` and node start-up deferred to §14 |
+| Hub principal `(tenant, user)` is resolved from the transport, never from a request field | A caller must not be able to name another tenant | Decided (28 September 2026); v1 is stdio only with the principal from `node.json`; the HTTP transport with a bearer-token principal is deferred to §14 (29 September 2026) |
 | WebSocket / MQTT signalling for sub-second latency | Only if 10 s polling proves insufficient after P3; P0 records the measured round-trip latency of git polling and proposes a target for ratification | Deferred |
 | Inbound chat channels (WhatsApp, Slack) | After P5, via a thin bridge that submits jobs | Deferred |
 
-## 14. Productisation constraints
+## 14. Kept open for productisation (not built in v1)
 
-The platform is built for one user but must stay reproducible and sellable without a rewrite. These constraints apply from P0; nothing here adds a feature, only shape.
+The platform is built for one user. It must not need a rewrite to serve a second tenant or a customer later, but nothing in this section is built, tested or gated in v1 (decision of 29 September 2026, §13). A deliverable that implements any item below needs the owner's explicit decision first; the project agents treat this section as out of scope.
 
-**Tenancy**
+**Already in place, kept because it costs nothing**
 
-- Every tenant has its own bus repository (§4); the repository is the isolation boundary and every machine credential is scoped to one tenant repository (§5). Every envelope carries `tenant: <org>` and every bus path is prefixed `tenants/<org>/` (§4). v1 has exactly one tenant. HMAC keys are per tenant, `key_id` = `<tenant>/<n>`; secret-store entries are namespaced `agentbus/<tenant>/…` (§8).
-- Each machine belongs to one tenant, set in `node.json` (§10); it ignores every other tenant's subtree.
-- Memory paths on Central are `memory/<tenant>/<user>/…`; v1 = `memory/geoffrey/geoffrey/`. The Hub MCP resolves its principal from the transport (stdio: machine configuration; HTTP: bearer token), never from the request body (§7).
-- Logs, health, telemetry spans and alerts all carry `tenant` (§11). Adding a tenant is an operational runbook (`add-tenant.md`), not a code change.
+- Identifiers: `tenant` on every envelope, `key_id` = `<tenant>/<n>`, `tenants/<org>/` on every bus path (`BusPaths`), `memory/<tenant>/<user>/` on every memory path (`MemoryPaths`), secret names `agentbus/<tenant>/…`, no default-tenant constant in `src/`, `tenant` on log lines and in health (§11).
+- Checks already built in deliverable 03: a receiver rejects an envelope whose `tenant` is not its own or whose `key_id` belongs to another tenant (§4).
+- The Hub principal read once from `node.json` and passed down; no tool accepts `tenant` or `user` as input (§7).
+- The five seams (§9): `IBusProvider`, `IModelRunner`, `ISecretStore`, `INotifier`, `IPolicySource`, one implementation each.
+- Rules that need no code: one bus repository per tenant (§4), credentials scoped to one repository (§5), `add-tenant.md` (§11).
 
-**Model runtime**
+**Would have to be added for a second tenant**
 
-- `IModelRunner` abstracts how a job is executed. `ClaudeCodeCliRunner` (v1, the user's own subscription) and `AgentSdkRunner` (API key, metered) share the same prompt template, tool allowlist and stream-json result contract. Customers of a future product use the SDK runner only; subscription-backed execution is never offered to third parties.
-- Every report carries `cost_usd`, `input_tokens`, `output_tokens`, `num_turns`, `model`; Central aggregates per tenant per month and enforces `policy.budget_usd_month` by refusing new jobs when exceeded (`reason: budget_exceeded`).
+- Enforcement of the repository-per-tenant rule: `agentbus verify` reporting a second `tenants/<org>/` directory, nodes refusing to start against it, and gate scenarios run with a non-default tenant id.
+- Hub over HTTP with the principal taken from a bearer token; a Central serving several tenants with one `IBusProvider` instance and one checkout per repository.
+- Alerts routed per tenant to separate notifier configurations.
 
-**Policy as data**
+**Would have to be added for a customer**
 
-- `tenants/<org>/policy.yaml`, signed by Central, defines per machine: `dlp` rules (patterns, size limits, allowed report fields), default `allowed_tools`, `work_hours`, `max_concurrent_jobs`, `dev_roots`. The work-laptop behaviour in §8 is expressed here, not in code; `node.json` may only tighten, never loosen, what the policy allows.
-- Nodes refuse to run when the policy signature fails or the policy is older than 30 days.
-
-**Reproducible install**
-
-- One command per role: `agentbus init --role node --tenant <org> --join <token>` and `agentbus init --role central --tenant <org>`. The join token is a short-lived, Central-issued secret that provisions the HMAC key, bus credentials and pinned `agent-core` version.
-- Central ships as a Docker image plus a Bicep module (Azure VM, disk, backup, Tailscale bootstrap) and an equivalent `docker compose` for on-prem. First boot is unattended except for `claude login` on the CLI runner.
-- `agent-core` is published as a versioned package (zip + checksum on GitHub Releases); nodes pull by version, no submodules. Until the package exists (P5), machines use a plain checkout pinned by SHA (§9); a submodule is never used at any stage.
-
-**Pluggable edges**
-
-- `IBusProvider`: GitHub in v1; Azure Repos, GitLab and Gitea later. The poller contract in §5 (ETag or equivalent cheap head check, then fetch) is the interface.
-- `INotifier`: Telegram in v1; Teams, Slack and e-mail later. Alerts in §11 are defined against the interface.
-- `ISecretStore`: Windows Credential Manager, libsecret, systemd credentials in v1; Azure Key Vault later.
-
-**Telemetry and support**
-
-- OpenTelemetry traces and metrics are **off by default in v1** (§9, §10, §11; decision of 29 September 2026) and enabled per machine through the tenant policy. When enabled they carry `tenant`, `machine`, `job_id` attributes and export to a local file exporter when no collector is configured. The work laptop policy may keep export disabled while allowing collection.
-- `agentbus diagnose` produces a redacted support bundle (config, last 200 log lines, health, policy version) with secrets and envelope bodies stripped.
-
-**Deferred to a commercial phase (not in P0–P5)**
-
-- GitHub App installation instead of PATs and deploy keys.
-- Multi-user memory within a tenant, shared team memory, approval workflow on durable writes.
-- Admin UI in Blazor: fleet status, job history, policy editor, cost dashboard.
-- Compliance kit: EU-hosted Central, DPA template, audit export.
-- Licensing: open-source node and protocol, licensed Central; pricing per node per month plus metered model usage.
+- Model runtime: `AgentSdkRunner` (API key, metered) behind `IModelRunner`, sharing the prompt template, tool allowlist and stream-json result contract with `ClaudeCodeCliRunner`. Subscription-backed execution is never offered to third parties.
+- Budget: per-tenant monthly aggregation of `cost_usd` and refusal of new jobs with `reason: budget_exceeded` (the enum value is reserved, §9); the matching alert.
+- Policy as data: `tenants/<org>/policy.yaml`, signed by Central, behind the existing `IPolicySource`: DLP rules, default `allowed_tools`, `work_hours`, `max_concurrent_jobs`, `dev_roots` per machine; `node.json` may only tighten it; nodes refuse a failed signature or a policy older than 30 days; `policyVersion` in health and the matching alert.
+- Reproducible install: `agentbus init --role node|central --tenant <org> --join <token>` with a short-lived, Central-issued join token; Central as a Docker image plus a Bicep module (VM, disk, backup, Tailscale bootstrap) and a `docker compose` equivalent; `agent-core` as a versioned package (zip + checksum on GitHub Releases, `agentCore.version` replaces `pinnedSha`; a submodule is never used at any stage).
+- Telemetry and support: OpenTelemetry traces and metrics, off by default, enabled per machine by policy, never exported from the work laptop; `agentbus diagnose` producing a redacted support bundle.
+- Pluggable edges: `IBusProvider` for Azure Repos, GitLab and Gitea (the §5 poller contract is the interface); `INotifier` for Teams, Slack and e-mail; `ISecretStore` for Azure Key Vault.
+- Commercial phase: GitHub App installation instead of PATs and deploy keys; multi-user memory within a tenant, shared team memory, approval workflow on durable writes; admin UI in Blazor (fleet status, job history, policy editor, cost dashboard); compliance kit (EU-hosted Central, DPA template, audit export); licensing (open-source node and protocol, licensed Central; pricing per node per month plus metered model usage).
