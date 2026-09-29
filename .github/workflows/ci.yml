@@ -25,9 +25,11 @@ jobs:
           - os: windows-latest
             rid: win-x64
             exe: zyggy.exe
+            os-facts: _OnWindows
           - os: ubuntu-latest
             rid: linux-x64
             exe: zyggy
+            os-facts: _OnLinux
     steps:
       - uses: actions/checkout@v7
         with:
@@ -47,7 +49,28 @@ jobs:
         run: dotnet format Zyggy.slnx --verify-no-changes --no-restore
 
       - name: Test
-        run: dotnet test Zyggy.slnx -c Release --no-build
+        run: dotnet test Zyggy.slnx -c Release --no-build --logger trx --results-directory TestResults
+
+      # OS-specific facts skip themselves elsewhere, so a skip here would pass silently: fail unless every
+      # test named *<os-facts>* ran and passed on its own runner. Writes the per-test outcome to the job summary.
+      - name: Check OS-specific facts ran
+        shell: pwsh
+        run: |
+          $results = Get-ChildItem TestResults -Filter *.trx -Recurse | ForEach-Object {
+            ([xml](Get-Content $_.FullName -Raw)).TestRun.Results.UnitTestResult }
+          $facts = @($results | Where-Object testName -like '*${{ matrix.os-facts }}*')
+          "### OS-specific facts (${{ matrix.os }})" >> $env:GITHUB_STEP_SUMMARY
+          $facts | ForEach-Object { "- $($_.outcome): $($_.testName)" } >> $env:GITHUB_STEP_SUMMARY
+          if ($facts.Count -eq 0) { Write-Error 'no test matches ${{ matrix.os-facts }}'; exit 1 }
+          $notPassed = @($facts | Where-Object outcome -ne 'Passed')
+          if ($notPassed.Count -gt 0) { Write-Error "not passed: $($notPassed.testName -join ', ')"; exit 1 }
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: test-results-${{ matrix.rid }}
+          path: TestResults/**/*.trx
+          if-no-files-found: error
 
       - name: Publish zyggy (${{ matrix.rid }})
         run: dotnet publish src/Zyggy.Cli -c Release -r ${{ matrix.rid }} --self-contained -p:PublishSingleFile=true -o artifacts/${{ matrix.rid }}
