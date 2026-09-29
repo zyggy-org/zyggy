@@ -34,9 +34,10 @@ public static class EnvelopeParser
             : Interpret(map, body, expectedTenant);
     }
 
-    internal static EnvelopeResult Interpret(FrontMatterMapping map, ReadOnlyMemory<byte> body, TenantId expectedTenant)
+    /// <summary>Interprets a front-matter tree; <paramref name="signed"/> false skips <c>key_id</c> and <c>sig</c> (factories).</summary>
+    internal static EnvelopeResult Interpret(FrontMatterMapping map, ReadOnlyMemory<byte> body, TenantId expectedTenant, bool signed = true)
     {
-        var reader = new Reader(map);
+        var reader = new Reader(map, signed);
         Envelope? envelope = reader.Read(body, expectedTenant);
         return envelope is not null ? EnvelopeResult.Accepted(envelope) : EnvelopeResult.Rejected(reader.Rejection!);
     }
@@ -59,7 +60,7 @@ public static class EnvelopeParser
         return true;
     }
 
-    private sealed class Reader(FrontMatterMapping map)
+    private sealed class Reader(FrontMatterMapping map, bool signed)
     {
         public EnvelopeRejection? Rejection { get; private set; }
 
@@ -109,19 +110,23 @@ public static class EnvelopeParser
             }
 
             // 5. key_id
-            if (!Text("key_id", true, out string? keyIdText))
+            KeyId? keyId = null;
+            if (signed)
             {
-                return null;
-            }
+                if (!Text("key_id", true, out string? keyIdText))
+                {
+                    return null;
+                }
 
-            if (!KeyId.TryParse(keyIdText, out KeyId? keyId))
-            {
-                return Fail<Envelope>(FieldReader.Invalid("key_id", "must be <tenant>/<n>"));
-            }
+                if (!KeyId.TryParse(keyIdText, out keyId))
+                {
+                    return Fail<Envelope>(FieldReader.Invalid("key_id", "must be <tenant>/<n>"));
+                }
 
-            if (keyId.Tenant != tenant)
-            {
-                return Fail<Envelope>(new EnvelopeRejection(EnvelopeRejectionReason.KeyIdTenantMismatch, "key_id", "key_id belongs to another tenant"));
+                if (keyId.Tenant != tenant)
+                {
+                    return Fail<Envelope>(new EnvelopeRejection(EnvelopeRejectionReason.KeyIdTenantMismatch, "key_id", "key_id belongs to another tenant"));
+                }
             }
 
             // 6. common fields, then per-type fields
@@ -146,8 +151,8 @@ public static class EnvelopeParser
             }
 
             // 7. sig shape
-            string? signature = ReadSignature();
-            return signature is null
+            string? signature = signed ? ReadSignature() : null;
+            return signed && signature is null
                 ? null
                 : new Envelope(schema, type, header, job, report, context, keyId, signature, map, body);
         }

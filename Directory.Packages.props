@@ -16,6 +16,10 @@
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
     <PackageVersion Include="Ulid" Version="1.4.1" />
     <PackageVersion Include="YamlDotNet" Version="18.1.0" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.12" />
+    <!-- Test-only: the container implementation the DI resolution tests build. -->
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
   </ItemGroup>
 
   <!-- Build-only: versions every assembly from git tags (v*); never a runtime dependency. -->

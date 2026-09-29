@@ -211,16 +211,16 @@ Expected `job-noncanonical.canonical` front matter (hand-derived; this is the dr
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: the three PROVE commands green; the Step 1 six test classes and both `EnvelopeParser*` classes green; `Parse_EveryGoldenCase_IsAccepted` runs 5 rows; the executor demonstrates on the golden job that changing `tenant` to `globex` yields `TenantMismatch` while a simultaneously broken `sig` is not even inspected (the ladder order), and that `job-noncanonical.md` parses with `x_meta.steps` as a sequence of mappings in `FrontMatter`.
-- [ ] Contract review: the public surface equals the spec's Contracts tables (`Tenancy` records with private constructors, `EnvelopeId`/`KeyId`/`SecretName`/`ContextScope`, the five enums + `EnvelopeWire` strings, `FrontMatterNode` hierarchy, `Envelope` members, `EnvelopeHeader`/`JobFields`/`ReportFields`/`ContextFields` signatures and defaults, `EnvelopeRejection`/`EnvelopeResult`, `EnvelopeParser.Parse(ReadOnlyMemory<byte>, TenantId)` with no other overload); the check order in `Parse` matches the spec's numbered list 1–7 and founding-spec §4 "Mandatory fields per type"; every `Detail` is a constant sentence without the offending value; the five golden `.md` files match the fixture table (tenant `acme`, keys `acme/1`/`acme/2`, CRLF only where stated, no final newline on `context-crlf-body.md`); `tests/golden/README.md` states everything AC-34 lists.
-- [ ] ⚠️ Risk review: new packages are exactly `Ulid` 1.4.1 (MIT) and `YamlDotNet` 18.1.0 (MIT) with no transitive runtime dependency (`dotnet list src/Zyggy.Core package --include-transitive` shows only those two plus framework references); `YamlDotNet` types appear only in `FrontMatterReader.cs`; `Ulid` appears only in `EnvelopeId.cs`; the `.sig` files were produced by the recorded `openssl` command over hand-derived `.canonical` files — the executor shows the command transcript and confirms no `.canonical`/`.sig` byte came from `Zyggy.Core`; `geoffrey` absent from `src/` and `tests/`.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: the three PROVE commands green; the Step 1 six test classes and both `EnvelopeParser*` classes green; `Parse_EveryGoldenCase_IsAccepted` runs 5 rows; the executor demonstrates on the golden job that changing `tenant` to `globex` yields `TenantMismatch` while a simultaneously broken `sig` is not even inspected (the ladder order), and that `job-noncanonical.md` parses with `x_meta.steps` as a sequence of mappings in `FrontMatter`.
+- [x] Contract review: the public surface equals the spec's Contracts tables (`Tenancy` records with private constructors, `EnvelopeId`/`KeyId`/`SecretName`/`ContextScope`, the five enums + `EnvelopeWire` strings, `FrontMatterNode` hierarchy, `Envelope` members, `EnvelopeHeader`/`JobFields`/`ReportFields`/`ContextFields` signatures and defaults, `EnvelopeRejection`/`EnvelopeResult`, `EnvelopeParser.Parse(ReadOnlyMemory<byte>, TenantId)` with no other overload); the check order in `Parse` matches the spec's numbered list 1–7 and founding-spec §4 "Mandatory fields per type"; every `Detail` is a constant sentence without the offending value; the five golden `.md` files match the fixture table (tenant `acme`, keys `acme/1`/`acme/2`, CRLF only where stated, no final newline on `context-crlf-body.md`); `tests/golden/README.md` states everything AC-34 lists.
+- [x] ⚠️ Risk review: new packages are exactly `Ulid` 1.4.1 (MIT) and `YamlDotNet` 18.1.0 (MIT) with no transitive runtime dependency (`dotnet list src/Zyggy.Core package --include-transitive` shows only those two plus framework references); `YamlDotNet` types appear only in `FrontMatterReader.cs`; `Ulid` appears only in `EnvelopeId.cs`; the `.sig` files were produced by the recorded `openssl` command over hand-derived `.canonical` files — the executor shows the command transcript and confirms no `.canonical`/`.sig` byte came from `Zyggy.Core`; `geoffrey` absent from `src/` and `tests/`.
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 3 — `Canonicalize` reproduces every golden `.canonical` byte-for-byte: `sig` excluded, keys ordinal at every level, block mappings, flow-or-block sequences, the plain → single → double quoting ladder, LF endings, `---\n`, body untouched
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope** *(all projects touched by this slice)*:
 - `src/Zyggy.Core/Envelope/FrontMatterEmitter.cs` *(create, internal static)* — `byte[] Emit(FrontMatterMapping mapping, bool includeSig)` through `YamlDotNet.Core.Emitter`; the **only** YAML emitter in the solution.
@@ -266,7 +266,7 @@ Expected `job-noncanonical.canonical` front matter (hand-derived; this is the dr
 
 ## Step 4 — A Zyggy-built envelope serialises in canonical style (`---\n` + front matter with `sig` + `---\n` + body), a parsed file round-trips byte-identically with every unknown field, and an unsigned envelope is never written
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope** *(all projects touched by this slice)*:
 - `src/Zyggy.Core/Envelope/Envelope.cs` *(modify)* — add `CreateJob`, `CreateReport`, `CreateContext` factories and the internal front-matter builder they share.
@@ -312,16 +312,16 @@ Expected `job-noncanonical.canonical` front matter (hand-derived; this is the dr
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: `EnvelopeSignerCanonicalizeTests` (golden theory 5 rows + rule tests), `EnvelopeWriterTests` (round trip 4 rows + AC-6), `EnvelopeFactoryTests` green; the three PROVE commands green; the executor shows, for `job-noncanonical`, the `.md` bytes, the `.canonical` bytes and `Serialize(Parse(md))` side by side (sorted keys, LF, `worktree: true`, quoted `'a: b'`, `''`, `"it's: here"`, nested `x_meta` with the block `steps` sequence and flow `tags`).
-- [ ] Contract review: `Canonicalize` output matches founding-spec §4 "Canonical form, normative details" rule by rule (sig excluded, ordinal keys at every level, block mappings 2-space, flow/block/`[]` sequences, plain → single → double, `\n`, `---\n`, body untouched, no BOM, no opening `---`); `Serialize` = `---\n` + the same emission with `sig` + `---\n` + body; one emitter function only; the factories' canonical scalar text rules (UTC whole seconds, invariant numbers, `true`/`false`, `schema: 1`, `priority`, job `attempt`/`worktree` always present, null optionals omitted, `[]` for empty); `Serialize` refuses unsigned envelopes.
-- [ ] ⚠️ Risk review: no `.canonical` or `.sig` byte was changed during Steps 3–4 (`git log --stat -- tests/golden` shows only the Step 2 commit) — or every change is listed with its hand re-derivation and the §4 rule that had been misapplied; the `EmitterSettings` used (`WithNewLine("\n")`, indented sequences, indentation 2, unlimited width) are recorded; the executor confirms the YamlDotNet emitter's quoting decisions were verified against §4 (c), not the other way round; `.claude/instructions/tests.md` line 104 no longer names `geoffrey/test`.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `EnvelopeSignerCanonicalizeTests` (golden theory 5 rows + rule tests), `EnvelopeWriterTests` (round trip 4 rows + AC-6), `EnvelopeFactoryTests` green; the three PROVE commands green; the executor shows, for `job-noncanonical`, the `.md` bytes, the `.canonical` bytes and `Serialize(Parse(md))` side by side (sorted keys, LF, `worktree: true`, quoted `'a: b'`, `''`, `"it's: here"`, nested `x_meta` with the block `steps` sequence and flow `tags`).
+- [x] Contract review: `Canonicalize` output matches founding-spec §4 "Canonical form, normative details" rule by rule (sig excluded, ordinal keys at every level, block mappings 2-space, flow/block/`[]` sequences, plain → single → double, `\n`, `---\n`, body untouched, no BOM, no opening `---`); `Serialize` = `---\n` + the same emission with `sig` + `---\n` + body; one emitter function only; the factories' canonical scalar text rules (UTC whole seconds, invariant numbers, `true`/`false`, `schema: 1`, `priority`, job `attempt`/`worktree` always present, null optionals omitted, `[]` for empty); `Serialize` refuses unsigned envelopes.
+- [x] ⚠️ Risk review: no `.canonical` or `.sig` byte was changed during Steps 3–4 (`git log --stat -- tests/golden` shows only the Step 2 commit) — or every change is listed with its hand re-derivation and the §4 rule that had been misapplied; the `EmitterSettings` used (`WithNewLine("\n")`, indented sequences, indentation 2, unlimited width) are recorded; the executor confirms the YamlDotNet emitter's quoting decisions were verified against §4 (c), not the other way round; `.claude/instructions/tests.md` line 104 no longer names `geoffrey/test`.
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 5 — An envelope is signed with its tenant's key obtained through `ISecretStore`: the digest equals the `openssl`-produced golden `.sig` for every case, re-signing replaces `key_id` and `sig`, a missing or short key is `UnknownKey` without leaking bytes, and a foreign key id is a caller bug
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope** *(all projects touched by this slice)*:
 - `src/Zyggy.Core/Secrets/ISecretStore.cs` *(create)* — the seam.
@@ -369,7 +369,7 @@ Expected `job-noncanonical.canonical` front matter (hand-derived; this is the dr
 
 ## Step 6 — A signed envelope verifies only when tenant, key and every canonical byte match: every golden case is accepted, tampering with any front-matter key, any body byte, an added or removed field or the body length is `InvalidSignature`, a foreign tenant or foreign `key_id` or future schema never triggers a key lookup, and rotation is whatever the store holds
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope** *(all projects touched by this slice)*:
 - `src/Zyggy.Core/Envelope/EnvelopeSigner.cs` *(modify)* — `VerifyAsync`, `ParseAndVerifyAsync`.
@@ -418,16 +418,16 @@ Expected `job-noncanonical.canonical` front matter (hand-derived; this is the dr
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: `InMemorySecretStoreTests`, `EnvelopeSignerSignTests` (golden theory 5 rows: every code-produced `sig` equals the `openssl` oracle) and `EnvelopeSignerVerifyTests` (17-key mutation theory, per-byte body theory, structural tampers, never-called assertions, rotation) green; the three PROVE commands green; the executor demonstrates by hand on the golden job: `openssl dgst -sha256 -hmac 'zyggy-golden-test-key-acme-00001' tests/golden/job.canonical` prints the hex that `job.md` carries.
-- [ ] Contract review: `ISecretStore` signature equals the spec's Contracts (`(TenantId, SecretName, CancellationToken)`, null for absence, empty value rejected, `RemoveAsync` bool); `EnvelopeSigner` public members are exactly `Canonicalize` (static), `SignAsync(Envelope, KeyId, CancellationToken)`, `VerifyAsync(Envelope, TenantId, CancellationToken)`, `ParseAndVerifyAsync(ReadOnlyMemory<byte>, TenantId, CancellationToken)`; the `VerifyAsync` order (a)–(d) and the `SignAsync` rules match the spec; `sig` written lowercase, read either case; `MinimumKeyLength` 32 is a constant, not configurable.
-- [ ] ⚠️ Risk review (signing, secrets, tenant isolation): digest comparison uses `CryptographicOperations.FixedTimeEquals`; no `Detail`, exception message or test output contains key bytes, key hex or a digest (`Rejections_NeverContainKeyOrDigest` plus a read of every `Rejected(...)` call site); the two test secrets appear only in `TestKeys.cs` and `tests/golden/README.md`; the tenant check precedes any store call in both `Parse` (structurally — no store reference) and `VerifyAsync` (asserted with substitutes); `ISecretStore` is referenced only by its implementations and `EnvelopeSigner`; no static state in `InMemorySecretStore`.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `InMemorySecretStoreTests`, `EnvelopeSignerSignTests` (golden theory 5 rows: every code-produced `sig` equals the `openssl` oracle) and `EnvelopeSignerVerifyTests` (17-key mutation theory, per-byte body theory, structural tampers, never-called assertions, rotation) green; the three PROVE commands green; the executor demonstrates by hand on the golden job: `openssl dgst -sha256 -hmac 'zyggy-golden-test-key-acme-00001' tests/golden/job.canonical` prints the hex that `job.md` carries.
+- [x] Contract review: `ISecretStore` signature equals the spec's Contracts (`(TenantId, SecretName, CancellationToken)`, null for absence, empty value rejected, `RemoveAsync` bool); `EnvelopeSigner` public members are exactly `Canonicalize` (static), `SignAsync(Envelope, KeyId, CancellationToken)`, `VerifyAsync(Envelope, TenantId, CancellationToken)`, `ParseAndVerifyAsync(ReadOnlyMemory<byte>, TenantId, CancellationToken)`; the `VerifyAsync` order (a)–(d) and the `SignAsync` rules match the spec; `sig` written lowercase, read either case; `MinimumKeyLength` 32 is a constant, not configurable.
+- [x] ⚠️ Risk review (signing, secrets, tenant isolation): digest comparison uses `CryptographicOperations.FixedTimeEquals`; no `Detail`, exception message or test output contains key bytes, key hex or a digest (`Rejections_NeverContainKeyOrDigest` plus a read of every `Rejected(...)` call site); the two test secrets appear only in `TestKeys.cs` and `tests/golden/README.md`; the tenant check precedes any store call in both `Parse` (structurally — no store reference) and `VerifyAsync` (asserted with substitutes); `ISecretStore` is referenced only by its implementations and `EnvelopeSigner`; no static state in `InMemorySecretStore`.
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 7 — A key set through `AddFileSecretStore` lands in `<root>/<tenant>/hmac/<n>` as one hex line with owner-only permissions on Linux (0600, directories 0700) and Windows (protected DACL, current user only), reads back, is removed, is never resolvable outside `<root>/<tenant>/`, and a corrupt file is an infrastructure fault
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope** *(all projects touched by this slice)*:
 - `Directory.Packages.props` *(modify)* — add `Microsoft.Extensions.DependencyInjection.Abstractions` 10.0.12, `Microsoft.Extensions.Options` 10.0.12 (both MIT; spec Dependencies table) and, test-only, `Microsoft.Extensions.DependencyInjection` 10.0.12 (MIT; the container implementation the resolution tests need — see Assumptions).
@@ -489,7 +489,7 @@ Expected `job-noncanonical.canonical` front matter (hand-derived; this is the dr
 
 ## Step 8 — A host composes `AddFileSecretStore().AddEnvelopeSigning()` and signs and verifies the golden job with a key seeded on disk the way an operator would (`openssl rand -hex 32 > <root>/acme/hmac/1`); `AddEnvelopeSigning()` without any store registration cannot resolve a signer
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope** *(all projects touched by this slice)*:
 - `src/Zyggy.Core/Envelope/ServiceCollectionExtensions.cs` *(create)* — `AddEnvelopeSigning(this IServiceCollection)` (namespace `Zyggy.Core.Envelope`; a second static class with the same simple name in a different namespace is what the spec prescribes).

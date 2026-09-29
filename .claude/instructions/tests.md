@@ -101,7 +101,7 @@ The canonical form and signature are the protocol. Each golden case is:
 ```
 tests/golden/<case>.md          # the envelope as it would sit on the bus
 tests/golden/<case>.canonical   # exact bytes Canonicalize must produce
-tests/golden/<case>.sig         # expected HMAC for key id "geoffrey/test" and the fixed test secret
+tests/golden/<case>.sig         # expected HMAC (64 lowercase hex, no newline) for key ids acme/1 and acme/2 and the two test secrets fixed by _specs/03-envelope-signing.md
 ```
 
 A `[Theory]` with `[MemberData]` enumerates the folder; a new case is added in RED for any canonicalisation or field change. Golden files are copied to output (`<None Include="../golden/**" CopyToOutputDirectory="PreserveNewest" />`).
