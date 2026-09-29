@@ -1,0 +1,56 @@
+{
+    // Every configuration builds Zyggy.slnx first (the "build" task in tasks.json).
+    // Requires the C# extension (ms-dotnettools.csharp) for the "coreclr" debugger.
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Zyggy.Node",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/src/Zyggy.Node/bin/Debug/net10.0/zyggy-node.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/src/Zyggy.Node",
+            "env": {
+                "DOTNET_ENVIRONMENT": "Development"
+            },
+            "console": "internalConsole",
+            "stopAtEntry": false
+        },
+        {
+            "name": "Zyggy.Cli (zyggy)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/src/Zyggy.Cli/bin/Debug/net10.0/zyggy.dll",
+            "args": "${input:cliArgs}",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false
+        },
+        {
+            "name": "Zyggy.Hub",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/src/Zyggy.Hub/bin/Debug/net10.0/zyggy-hub.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/src/Zyggy.Hub",
+            "console": "integratedTerminal",
+            "stopAtEntry": false
+        },
+        {
+            "name": "Attach to process",
+            "type": "coreclr",
+            "request": "attach"
+        }
+    ],
+    "inputs": [
+        {
+            "id": "cliArgs",
+            "type": "promptString",
+            "description": "Arguments for zyggy (e.g. --help, status, verify <file>)",
+            "default": "--help"
+        }
+    ]
+}

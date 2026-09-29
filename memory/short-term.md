@@ -4,3 +4,4 @@
      remembering: a project fact, a convention, a gotcha, a correction of a long-term memory (name its file), an
      open question. One bullet each, dated, short. At the next /evolve:propose, consolidation keeps what matters in
      long-term memory and clears this file. Limit: 200 lines / 25 KB; the Stop hook asks you to compress it when over. -->
+- 2026-09-29: On the work laptop the user-level NuGet config disables nuget.org (only riziv-inami enabled), so `dotnet build Zyggy.slnx` fails with NU1101 (MinVer, Ulid). Fixed by the repo nuget.config (2026-09-29).

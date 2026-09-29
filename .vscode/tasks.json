@@ -1,0 +1,45 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "build",
+                "${workspaceFolder}/Zyggy.slnx",
+                "/property:GenerateFullPaths=true",
+                "/consoleloggerparameters:NoSummary;ForceNoAlign"
+            ],
+            "problemMatcher": "$msCompile",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "test",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "test",
+                "${workspaceFolder}/Zyggy.slnx"
+            ],
+            "problemMatcher": "$msCompile",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "format",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "format",
+                "${workspaceFolder}/Zyggy.slnx"
+            ],
+            "problemMatcher": []
+        }
+    ]
+}
