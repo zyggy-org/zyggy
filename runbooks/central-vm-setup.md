@@ -34,7 +34,7 @@ Last update 2026-09-29, work laptop (Azure Cloud Shell, PowerShell, personal Mic
 3. Steps 9–10: copy the script over and run it as root —
    `scp runbooks/central-vm-steps9-10.sh azureadmin@central:/tmp/ && ssh azureadmin@central 'sudo sh /tmp/central-vm-steps9-10.sh'`
    (or follow sections 9–10 below by hand). Expect `claude-remote` active, the log showing `resuming <id>`, the soak
-   line with `"exit":0`. If Claude rejects `--name` together with `--remote-control`, drop `--name central` from the
+   line with `"exit":0`. If Claude rejects `--name` together with `--remote-control`, drop `--name Zyggy` from the
    wrapper (`/srv/agent/bin/claude-remote.sh`) and record it.
 4. Then steps 11–13 below. Update this table as you go.
 
@@ -198,7 +198,7 @@ cd /srv/agent/central
 git init -q .                                     # the memory repo arrives later; a repo keeps Claude's git tools happy
 ~/.local/bin/claude --help | grep -iE -A2 'remote-control|--name|--resume|permission-mode'
 tmux new -s first
-~/.local/bin/claude --remote-control --name central --permission-mode auto
+~/.local/bin/claude --remote-control --name Zyggy --permission-mode auto
 ```
 
 - Check the `--help` output first: if `--name` is not accepted together with `--remote-control` in the installed
@@ -231,13 +231,13 @@ newest=$(ls -t "$sessions"/*.jsonl 2>/dev/null | head -n 1)
 if [ -n "$newest" ]; then
   id=$(basename "$newest" .jsonl)
   note "resuming $id"
-  "$claude" --resume "$id" --remote-control --name central --permission-mode auto
+  "$claude" --resume "$id" --remote-control --name Zyggy --permission-mode auto
   rc=$?
   [ "$rc" -eq 0 ] && exit 0
   note "resume of $id failed (exit $rc); starting a fresh session"
 fi
 note "starting a fresh session"
-exec "$claude" --remote-control --name central --permission-mode auto
+exec "$claude" --remote-control --name Zyggy --permission-mode auto
 EOF
 sudo chmod 755 /srv/agent/bin/claude-remote.sh
 ```
@@ -409,3 +409,5 @@ silently.
 3. `sudo -iu zyggy ~/.local/bin/claude` → `/status`: still logged in? If not, log in again (step 7).
 4. `systemctl status claude-remote claude-soak.timer`; run check 2 from step 12.
 5. From deliverable 10 on: `zyggy verify` for every tenant present, then start `zyggy-node.service`.
+6. Central Claude Code configuration (instance `zyggy-geoffrey`, memory `zyggy-geoffrey-memory`, deploy keys, settings,
+   plugins): follow `runbooks/central-claude-config.md` → Restore the instance and memory repositories.

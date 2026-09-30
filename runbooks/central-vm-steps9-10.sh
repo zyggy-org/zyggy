@@ -20,13 +20,13 @@ newest=$(ls -t "$sessions"/*.jsonl 2>/dev/null | head -n 1)
 if [ -n "$newest" ]; then
   id=$(basename "$newest" .jsonl)
   note "resuming $id"
-  "$claude" --resume "$id" --remote-control --name central --permission-mode auto
+  "$claude" --resume "$id" --remote-control --name Zyggy --permission-mode auto
   rc=$?
   [ "$rc" -eq 0 ] && exit 0
   note "resume of $id failed (exit $rc); starting a fresh session"
 fi
 note "starting a fresh session"
-exec "$claude" --remote-control --name central --permission-mode auto
+exec "$claude" --remote-control --name Zyggy --permission-mode auto
 EOF
 cat > /etc/systemd/system/claude-remote.service <<'EOF'
 [Unit]
