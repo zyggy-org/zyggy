@@ -49,11 +49,11 @@ Always start Claude in `/srv/agent/central`, never in `memory/` (hooks are per w
 | 3 Memory clone at `memory/` | done 2026-09-30 13:16 UTC | `5c579bb`, layout dirs present (agent verified read-only) |
 | 4 Install `settings.local.json` | done 2026-09-30 | mode 600, ignored, AC-4 diff empty (agent verified read-only) |
 | 5 No `CLAUDE.md` on the path, `claude doctor` | done 2026-09-30 | AC-1 loop all absent; `claude doctor` clean, 2.1.285 (owner pasted) |
-| 6 `playwright` plugin + Chromium | in progress | plugin installed 2026-09-30 13:38 UTC (project, `2a8ad9f74633`); install rewrote settings.json → template `0f5b349` ships canonical layout + headless env; Chromium install pending |
-| 7 Wrapper `--name Zyggy`, the one restart, AC-5/AC-7/AC-36 | in progress | AC-7 pass 14:01 UTC; wrapper `--name Zyggy` 14:04:59, restart 14:05:00 UTC resumed `6ba6d03b`; phone checks (AC-5/AC-36) pending |
-| 8 Seeding session, seed commit, remember/Stop checks | not started | first use of the read/write key |
-| 9 Headless browser check (AC-33), 0002 rows, final sweeps | not started | |
-| 10 First template update through the instance (AC-35) | in progress | laptop half done 2026-09-30: template `0f5b349` → instance `e6c5f1c`; VM ff-pull pending |
+| 6 `playwright` plugin + Chromium | done 2026-09-30 | plugin `2a8ad9f74633` project scope; headless via template env; Chromium 1247 / CfT 155.0.8059.12 for playwright-core 1.64.0-alpha; AC-33 pass |
+| 7 Wrapper `--name Zyggy`, the one restart, AC-5/AC-7/AC-36 | done 2026-09-30 | AC-7 pass; wrapper `--name Zyggy`; restart 14:05 UTC resumed `6ba6d03b`; AC-5 pass; AC-36: resumed session keeps `central`, `Zyggy` expected at the next fresh session |
+| 8 Seeding session, seed commit, remember/Stop checks | done 2026-09-30 | seed `9032236` pushed; AC-6/8/9/10/11/13/14 pass; audit clean after `3e8034d`; synced-skills conflicts are a claude.ai setting |
+| 9 Headless browser check (AC-33), 0002 rows, final sweeps | done 2026-09-30 | AC-33 pass; secret sweeps 0 hits (VM + three repos); AC-18 units identical; 0002 complete |
+| 10 First template update through the instance (AC-35) | done 2026-09-30 | four template updates reached Central via the instance (0f5b349, caea383, 3e8034d, cc5447b), each `pull --ff-only`, clean tree |
 
 ## 1. Repositories, instance, deploy keys, SSH config [browser] [laptop] [vm/zyggy]
 
@@ -201,6 +201,8 @@ then "Update Central from the template". Never `chmod` on the VM (dirty tree).
 cd /srv/agent/central
 git clone git@github.com-zyggy-geoffrey-memory:zyggy-org/zyggy-geoffrey-memory.git memory
 git -C memory log --oneline                    # the layout commit
+git config --global user.name "zyggy (central)"      # Central commits memory/ on the owner's request (2026-09-30);
+git config --global user.email "central@zyggy.org"   # without an identity the first commit fails ("tell me who you are")
 cd memory && find . -path ./.git -prune -o -type d -print   # ./geoffrey/geoffrey/{areas,people,topics,daily,inbox,auto}
 cd /srv/agent/central && git status --porcelain            # empty (memory/ ignored)
 ```
@@ -331,6 +333,10 @@ Record "2 of 2 — 27's deliberate restart <UTC>, resumed `<id>`, pineapple" in 
 `jq -e '.enabledPlugins // empty' ~/.claude/settings.json` (empty — no user-scope plugin).
 
 ## 8. Seeding session, seed commit, remember and Stop checks [browser] [vm/zyggy]
+
+Decided 2026-09-30 (memory commits on request): after the interview Central asks whether to commit; on the owner's
+yes it stages the seeded durable files, commits `seed <date>` and pushes — the owner reviews `git -C memory diff`
+first. Central never commits memory unasked or unattended; the instance checkout is never committed from the VM.
 
 **8a [browser]** In the remote-control session: `/seed-memory`; answer the six blocks (any language; files are
 written in English). The skill creates `profile.md`, `preferences.md`, `agents.md` with front matter (`name`,
