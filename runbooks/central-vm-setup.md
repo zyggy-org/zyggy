@@ -16,13 +16,15 @@ Last update 2026-09-29, work laptop (Azure Cloud Shell, PowerShell, personal Mic
 |------|-------|-------|
 | 1 Tailscale key | done | tailnet of account **`geobarteam@`**; the one-off key is consumed |
 | 2 VM | done | rg `zyggy-central`, `westeurope`, `Standard_B2als_v2`, TrustedLaunch, 2 × 32 GB Premium_LRS, NSG `central-nsg` with **no** rules (the auto-added `default-allow-ssh` was deleted), public IP 52.137.8.215 (outbound only) |
-| 3 Tailscale | done | `central` = **100.80.12.47**, `--ssh` on. The home laptop is **not yet** in the tailnet |
+| 3 Tailscale | done | `central` = **100.80.12.47**, `--ssh` on. The home laptop (`laptop-3n3mtcpb`, 100.102.25.30) joined 2026-09-29 |
 | 4–6 disk, packages, user | done | run from Cloud Shell via `az vm run-command` (a script runs under `sh`: `set -eux`, no `pipefail`) |
-| 7–8 Claude install, login, first run | done (owner-reported) | done in the Azure **Serial Console**; `azureadmin` now has a console-only password (portal → Reset password), kept in the owner's password manager |
-| 9–10 services + soak timer | **next** | `runbooks/central-vm-steps9-10.sh` bundles both; not run yet |
-| 11 backup + budget | todo | vault LRS before the first backup; budget €60 |
-| 12 day-0 checks | todo | |
-| 13 decision record, day 0 | todo | starts the 7-day clock |
+| 7 Claude install | done | `zyggy` has Claude Code 2.1.284 at `/srv/agent/home/.local/bin/claude`; `azureadmin` has a console-only password (portal → Reset password), kept in the owner's password manager |
+| 7 login | done | 2026-09-29 over Tailscale SSH from the home laptop; `claude -p` as `zyggy` answers `OK` |
+| 8 first run | done | session `6ba6d03b-203e-4a60-9df5-f31ce469f875` in `/srv/agent/central`, remote control active, Max, auto mode |
+| 9–10 services + soak timer | done | 2026-09-29: soak timer active, first run 19:01 UTC `exit 0` / `OK`, next 00:04 UTC. `claude-remote` active since 19:07:14 UTC, 0 restarts, resumed `6ba6d03b…` (pineapple conversation intact), `/rc active`; 735 MB RAM used of 3.8 GB. Needed two unit fixes (own tmux socket; no pipe on Claude's stdout), both in the runbook |
+| 11 backup + budget | done (owner) | vault `zyggy-backup` LRS, `central` protected, first backup `IRPending` 2026-09-30; budget not visible via `az consumption budget list` — confirm |
+| 12 day-0 checks | partial | #1 pass (reboot 2026-09-30 05:44 UTC), #2 1 of 2 (pineapple after reboot), #5 pass, #6 pass so far; #3 2 of 3 (third run by timer 06:00 UTC), #4 forecast pending |
+| 13 decision record, day 0 | done | `_plans/decisions/0001-transport-and-vm.md`, day 0 = 2026-09-29 19:07 UTC, day 7 = 2026-10-06 |
 
 **Resume on the home laptop:**
 
@@ -204,7 +206,7 @@ tmux new -s first
 - Accept the trust prompt for `/srv/agent/central` and any auto-mode confirmation.
 - On your phone or at claude.ai/code the session `central` appears. Send it one message, e.g. "Remember the word
   *pineapple*." — this is the conversation the resume test uses.
-- `/exit`, then `exit` tmux. Check a session file exists:
+- `/exit`, then `exit` tmux (the `first` server must be gone before step 9). Check a session file exists:
   `ls -t ~/.claude/projects/-srv-agent-central/*.jsonl | head -1`
 
 ## 9. `claude-remote.service` with the Q4 resume wrapper [vm/root]
@@ -217,24 +219,33 @@ sudo mkdir -p /srv/agent/bin
 sudo tee /srv/agent/bin/claude-remote.sh >/dev/null <<'EOF'
 #!/usr/bin/env bash
 # §13 Q4: resume the newest Central session with remote control; fall back to a fresh session.
+# Claude must own the tmux terminal: piping its output (e.g. to tee) makes it switch to --print mode and exit.
+# Only the wrapper's own lines go to the log.
 set -u
 claude="$HOME/.local/bin/claude"
+log=/srv/agent/central/claude-remote.log
+note() { echo "$(date -u +%FT%TZ) $*" | tee -a "$log"; }
 cd /srv/agent/central
 sessions="$HOME/.claude/projects/$(pwd | sed 's/[^a-zA-Z0-9]/-/g')"
 newest=$(ls -t "$sessions"/*.jsonl 2>/dev/null | head -n 1)
 if [ -n "$newest" ]; then
   id=$(basename "$newest" .jsonl)
-  echo "$(date -u +%FT%TZ) resuming $id"
-  "$claude" --resume "$id" --remote-control --name central --permission-mode auto && exit 0
-  echo "$(date -u +%FT%TZ) resume of $id failed (exit $?); starting a fresh session"
+  note "resuming $id"
+  "$claude" --resume "$id" --remote-control --name central --permission-mode auto
+  rc=$?
+  [ "$rc" -eq 0 ] && exit 0
+  note "resume of $id failed (exit $rc); starting a fresh session"
 fi
+note "starting a fresh session"
 exec "$claude" --remote-control --name central --permission-mode auto
 EOF
 sudo chmod 755 /srv/agent/bin/claude-remote.sh
 ```
 
 The resumed session is interactive, so the unit runs it inside a detached `tmux` session (§10 allows either). When
-Claude exits, the tmux session and server end, and `Restart=always` starts it again.
+Claude exits, the tmux session and server end, and `Restart=always` starts it again. The unit uses its own tmux
+socket (`-L claude-remote`): without it, a tmux server `zyggy` already runs (such as step 8's `first`) takes the new
+session, systemd sees no process of its own, and the service restart-loops every 15 s.
 
 ```bash
 sudo tee /etc/systemd/system/claude-remote.service >/dev/null <<'EOF'
@@ -247,8 +258,8 @@ Wants=network-online.target
 Type=forking
 User=zyggy
 WorkingDirectory=/srv/agent/central
-ExecStart=/usr/bin/tmux new-session -d -s claude-remote '/srv/agent/bin/claude-remote.sh 2>&1 | tee -a /srv/agent/central/claude-remote.log'
-ExecStop=/usr/bin/tmux kill-session -t claude-remote
+ExecStart=/usr/bin/tmux -L claude-remote new-session -d -s claude-remote /srv/agent/bin/claude-remote.sh
+ExecStop=/usr/bin/tmux -L claude-remote kill-session -t claude-remote
 Restart=always
 RestartSec=15
 
@@ -260,7 +271,7 @@ sudo systemctl enable --now claude-remote
 systemctl status claude-remote --no-pager
 ```
 
-Watch it live: `sudo -iu zyggy tmux attach -t claude-remote` (detach with `Ctrl-b d`, never `/exit` — that ends the
+Watch it live: `sudo -iu zyggy tmux -L claude-remote attach -t claude-remote` (detach with `Ctrl-b d`, never `/exit` — that ends the
 session and the service restarts it).
 
 ## 10. `claude-soak.timer` — headless `claude -p` every 6 hours [vm/root]

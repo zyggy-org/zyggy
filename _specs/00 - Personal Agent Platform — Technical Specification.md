@@ -20,7 +20,7 @@ Build a personal AI agent platform on Claude Code: one always-on **Central** age
 
 **Non-goals (v1)**
 
-- No inbound chat channels other than Claude Code remote control and Telegram notifications (no WhatsApp/Slack bots).
+- No inbound chat channels other than Claude Code remote control and Telegram (Telegram is a two-way channel of Central's interactive session through the official Claude Code channel plugin, owner-only allowlist — decision of 30 September 2026; no WhatsApp/Slack bots).
 - No WebSocket/MQTT signalling; GitHub polling is the only transport.
 - No multi-tenant or multi-user *operation* and no productisation work (decision of 29 September 2026, §13): one tenant, one user, one GitHub account, one bus repository. The tenancy *shape* stays wherever it is already built or is only a rule (`tenant` on every envelope, `tenants/<org>/` on every bus path, `memory/<tenant>/<user>/`, tenant-namespaced secret names and `key_id`, no default-tenant constant in code), because keeping it costs nothing and removing it later would be a rewrite. What is not built is anything that needs new code, tests or infrastructure only to serve a second tenant or a paying customer; §14 lists those items so the door stays open.
 - No Hub over HTTP, no bearer tokens; the Hub is stdio only.
@@ -69,7 +69,7 @@ Six deliverables. Four are .NET binaries, two are Claude Code configuration (Mar
 
 **Central agent instance**
 
-- Working directory `/srv/agent/central` containing the memory repo (`memory/`, laid out `memory/<tenant>/<user>/…` per §7; v1 = `memory/geoffrey/geoffrey/`), `CLAUDE.md` (identity and rules), `.claude/` from `agent-core`, `.mcp.json` (Hub MCP local stdio, Gmail/Outlook.com MCP, Telegram MCP).
+- Working directory `/srv/agent/central` **is** the `agent-core` checkout (amended 30 September 2026, deliverable 27): `AGENTS.md` (identity and rules; Claude Code reads it natively — no `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` may exist in or above the working directory), `.claude/` (rules, hooks, skills, committed settings), the nested memory repo `memory/` (laid out `memory/<tenant>/<user>/…` per §7; v1 = `memory/geoffrey/geoffrey/`), and `.mcp.json` (Hub MCP local stdio, Gmail/Outlook.com MCP over Microsoft Graph, Meta Graph MCP for the Facebook Page / Instagram professional account, read-only). Telegram is the official Claude Code channel plugin on the interactive session (owner-only allowlist), not an MCP entry.
 - Two long-running processes: `claude remote-control --name central --spawn=same-dir --permission-mode auto` (interactive access) and `AgentBus.Node` (bus loop, also used for cron-style jobs Central submits to itself).
 - Nightly systemd timer: submits a `dream` job to `tenants/<org>/nodes/central/jobs/` (§6, every scheduled action is a ledger entry); the `dream` skill running inside that job calls the CLI verbs `agentbus dream ingest | rollup | agents` for the mechanical git steps (§7) so they are testable without a model.
 
@@ -91,8 +91,8 @@ Six deliverables. Four are .NET binaries, two are Claude Code configuration (Mar
 
 **Hooks (`agent-core/.claude/hooks/`)**
 
-- `SessionStart` (Central): inject a memory digest (profile + last 7 days of daily notes) for the configured tenant/user into context.
-- `Stop` (all): append a one-line session summary to `memory/<tenant>/<user>/inbox/` (Central) or emit a `context` envelope (Nodes) so hand-run sessions still feed memory.
+- `SessionStart` (Central): inject the §7 memory digest for the configured tenant/user in three sections (`identity`, `index`, `daily`), each under the runtime's 10,000-character hook-output cap (amended 30 September 2026).
+- `Stop` (all): on Central, append one `[observed]` line per turn to `memory/<tenant>/<user>/daily/<date>.md` (mechanical: first line of the assistant's last message, secret patterns refused, daily cap; amended 30 September 2026 — `Stop` fires per turn and a hook must not call the model); on Nodes, emit a `context` envelope so hand-run sessions still feed memory.
 - `PreToolUse` (Nodes): block any tool call outside the job's `allowed_tools`; block writes outside the project worktree.
 
 ## 4. Bus protocol
@@ -328,7 +328,8 @@ people/<slug>.md      # relationship context
 topics/<domain>.md    # habits, tastes, recurring subjects
 agents.md             # known machines/projects/agents (mirror of registry, curated)
 daily/YYYY-MM-DD.md   # working notes for the day, written by hooks and skills
-inbox/*.md            # facts awaiting consolidation (from remember, Stop hook, context envelopes, reports)
+inbox/*.md            # facts awaiting consolidation (from remember, context envelopes, reports)
+auto/                 # Claude Code auto memory (MEMORY.md + topic files), written by Claude Code, committed by the dream pass, never rewritten by it, never injected by the digest
 work/                 # exists only on the work node, in its own repo with the same <tenant>/<user>/ layout; never synced to Central
 ```
 
@@ -338,7 +339,7 @@ Front matter `name`, `description` (< 150 chars, names the people/projects it me
 
 **Context loading (`SessionStart` hook, Central)**
 
-Inject `profile.md`, `preferences.md`, `agents.md`, the last 7 `daily/` files, and the `description` line of every other file. Full files are read on demand by the agent. Target: < 6k tokens injected.
+The `SessionStart` hook injects, as three separately capped sections (6,000 / 4,000 / 8,000 bytes, Σ ≤ 18,000): `profile.md` and `preferences.md`; `agents.md` and the `description` line of every file under `areas/`, `people/`, `topics/`; the last 7 `daily/` files. `inbox/` and `auto/` are never injected. Full files are read on demand by the agent. Target: < 6k tokens injected (memory files are written in English so the byte caps hold; amended 30 September 2026).
 
 **Dream pass (`dream` skill, nightly 03:00 Europe/Brussels, one run per tenant/user)**
 
@@ -390,6 +391,8 @@ The work laptop is a separate trust boundary. Everything below is a hard require
 | Bus HMAC keys (`<tenant>/1`, `<tenant>/2`) | Windows Credential Manager / `secret-tool` (libsecret) on Linux; systemd `LoadCredential` for Central; stored under `agentbus/<tenant>/hmac/<n>` | `AgentBus.Core.Secrets` abstraction (`ISecretStore`), keyed by tenant; never in `appsettings.json` |
 | GitHub PAT (read) | same store, under `agentbus/<tenant>/github-pat` | HttpClient only |
 | Git deploy key | `~/.ssh/agentbus_<tenant>_ed25519`, 0600, used via ssh-agent; on machines where port 22 is blocked, a write PAT via git credential helper instead (§5) | git only |
+| `agent-core` deploy key (Central) | `~/.ssh/zyggy_zyggy-core_ed25519`, 0600, read-only | git only |
+| Memory repository deploy key (Central) | `~/.ssh/zyggy_zyggy-memory_ed25519`, 0600, read/write | git only (dream pass push) |
 
 During P0 the laptops may use a file-based `ISecretStore` (0600 on Linux, user-profile ACL on Windows) holding spike-only keys, because the OS stores are built later; those keys are rotated and the file store retired on Windows when the OS stores land.
 | Gmail / Outlook.com OAuth refresh tokens | Central: systemd credential; MCP server reads at start | mail MCP only |
@@ -497,7 +500,7 @@ The node refuses to start when `tenant` is missing or when the bus checkout has 
 
 **Central (Linux VM or container)**
 
-- Host: Azure VM Standard B2as v2, Ubuntu 24.04 (container variant on `mcr.microsoft.com/dotnet/runtime-deps:10.0` remains possible); Node 22 and the Claude Code CLI installed; Tailscale joined. Persistent volumes: `/srv/agent` (memory repo, bus checkout, node state, `~/.claude`).
+- Host: Azure VM Standard B2as v2, Ubuntu 24.04 (container variant on `mcr.microsoft.com/dotnet/runtime-deps:10.0` remains possible); Node 22 and the Claude Code CLI installed; Tailscale joined. Persistent volume `/srv/agent`: `/srv/agent/central` (the `agent-core` checkout and Central's working directory), `/srv/agent/central/memory` (memory repository), bus checkout, node state, `~/.claude`.
 - systemd units: `agentbus-node.service` (Restart=always), `claude-remote.service` (runs `claude remote-control --name central --spawn=same-dir --permission-mode auto` under `tmux` or as a plain service, Restart=always), `agent-dream.timer` (03:00 daily, submits the dream job), `agent-sweep.timer` (hourly, submits a sweep job whose body runs `agentbus sweep`: stale claims, retries, archive, alert conditions).
 - Secrets via `LoadCredential=` in the units; container variant reads the same names from mounted files.
 - Claude Code auth: one interactive `claude login` at first boot; the OAuth token lives in `~/.claude` on the persistent volume.
@@ -510,7 +513,7 @@ The node refuses to start when `tenant` is missing or when the bus checkout has 
 
 **Claude Code side**
 
-- Central and every project reference the Hub in `.mcp.json`; project `CLAUDE.md` files gain one line: `Memory and cross-machine jobs: see @.claude/skills/bus/SKILL.md`.
+- Central and every project reference the Hub in `.mcp.json`; project `CLAUDE.md` files on laptops gain one line: `Memory and cross-machine jobs: see @.claude/skills/bus/SKILL.md`. Central uses `AGENTS.md` (no `CLAUDE.md`); Claude Code's `autoMemoryDirectory` points into the memory repository (`memory/<tenant>/<user>/auto/`, set in Central's `.claude/settings.local.json`). Central enables `playwright@claude-plugins-official` at project scope (headless Chromium, one browser at a time; unattended runs never use logged-in sites until the work-boundary rules exist); every further plugin is added through the runbook rule and a dated row in `_plans/decisions/0002-central-productive.md`.
 - `agent-core` is checked out once per machine; projects symlink or copy the shared skills into `.claude/skills/` via `agentbus discover --link`.
 
 **Upgrade path**
@@ -554,7 +557,7 @@ Alerts are evaluated per tenant and every message names the tenant. Per-tenant n
 
 - `bus-conflict.md`: dirty working copy or diverged branch on a node → stash, reset to `origin/main`, re-run discover.
 - `rotate-hmac.md`: for one tenant, add `<tenant>/2` to all of that tenant's secret stores, set `signWith: <tenant>/2`, remove `<tenant>/1` after 7 days. Other tenants are unaffected.
-- `restore-central.md`: new VM from volume snapshot; verify `claude login`, run `agentbus verify` for every tenant present, start units.
+- `restore-central.md`: new VM from volume snapshot; verify `claude login`; restore the two deploy keys, clone `agent-core` into `/srv/agent/central` and the memory repository into `memory/`, rewrite `.claude/settings.local.json`, run the deliverable-27 verification; run `agentbus verify` for every tenant present, start units.
 - `revoke-machine.md`: delete its PAT and deploy key, remove its HMAC key, move its `tenants/<org>/nodes/<machine>/` to `tenants/<org>/archive/`.
 - `add-tenant.md`: create the tenant's bus repository with force-push and deletion blocked on `main`, add `PROTOCOL.md` and `tenants/<org>/` with a signed `policy.yaml`, mint `<org>/1`, issue per-machine PATs and deploy keys scoped to that repository, create `memory/<org>/<user>/`, configure the notifier; no code change and no restart of other tenants' machines.
 
@@ -614,7 +617,7 @@ All five open questions are answered as of 27 September 2026; the decisions tabl
 | One bus repository per tenant; the repository is the tenant isolation boundary, the `tenants/<org>/` prefix is uniformity plus defence in depth; a repository with several tenant directories is a protocol violation | Git hosts authorise per repository, not per path; HMAC gives authenticity only, so a shared repository would expose every tenant's envelopes and ledger to every other tenant's machines | Decided as a rule (29 September 2026, supersedes the shared-repository option of 28 September); enforcement in `verify` and node start-up deferred to §14 |
 | Hub principal `(tenant, user)` is resolved from the transport, never from a request field | A caller must not be able to name another tenant | Decided (28 September 2026); v1 is stdio only with the principal from `node.json`; the HTTP transport with a bearer-token principal is deferred to §14 (29 September 2026) |
 | WebSocket / MQTT signalling for sub-second latency | Only if 10 s polling proves insufficient after P3; P0 records the measured round-trip latency of git polling and proposes a target for ratification | Deferred |
-| Inbound chat channels (WhatsApp, Slack) | After P5, via a thin bridge that submits jobs | Deferred |
+| Inbound chat channels (WhatsApp, Slack) | After P5, via a thin bridge that submits jobs. Telegram is decided (30 September 2026): the official Claude Code channel plugin on Central's interactive session, owner-only; WhatsApp has no official route for a personal account and stays deferred | Deferred (Telegram decided) |
 
 ## 14. Kept open for productisation (not built in v1)
 

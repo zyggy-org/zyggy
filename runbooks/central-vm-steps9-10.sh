@@ -8,17 +8,24 @@ mkdir -p /srv/agent/bin
 cat > /srv/agent/bin/claude-remote.sh <<'EOF'
 #!/usr/bin/env bash
 # §13 Q4: resume the newest Central session with remote control; fall back to a fresh session.
+# Claude must own the tmux terminal: piping its output (e.g. to tee) makes it switch to --print mode and exit.
+# Only the wrapper's own lines go to the log.
 set -u
 claude="$HOME/.local/bin/claude"
+log=/srv/agent/central/claude-remote.log
+note() { echo "$(date -u +%FT%TZ) $*" | tee -a "$log"; }
 cd /srv/agent/central
 sessions="$HOME/.claude/projects/$(pwd | sed 's/[^a-zA-Z0-9]/-/g')"
 newest=$(ls -t "$sessions"/*.jsonl 2>/dev/null | head -n 1)
 if [ -n "$newest" ]; then
   id=$(basename "$newest" .jsonl)
-  echo "$(date -u +%FT%TZ) resuming $id"
-  "$claude" --resume "$id" --remote-control --name central --permission-mode auto && exit 0
-  echo "$(date -u +%FT%TZ) resume of $id failed (exit $?); starting a fresh session"
+  note "resuming $id"
+  "$claude" --resume "$id" --remote-control --name central --permission-mode auto
+  rc=$?
+  [ "$rc" -eq 0 ] && exit 0
+  note "resume of $id failed (exit $rc); starting a fresh session"
 fi
+note "starting a fresh session"
 exec "$claude" --remote-control --name central --permission-mode auto
 EOF
 cat > /etc/systemd/system/claude-remote.service <<'EOF'
@@ -31,8 +38,8 @@ Wants=network-online.target
 Type=forking
 User=zyggy
 WorkingDirectory=/srv/agent/central
-ExecStart=/usr/bin/tmux new-session -d -s claude-remote '/srv/agent/bin/claude-remote.sh 2>&1 | tee -a /srv/agent/central/claude-remote.log'
-ExecStop=/usr/bin/tmux kill-session -t claude-remote
+ExecStart=/usr/bin/tmux -L claude-remote new-session -d -s claude-remote /srv/agent/bin/claude-remote.sh
+ExecStop=/usr/bin/tmux -L claude-remote kill-session -t claude-remote
 Restart=always
 RestartSec=15
 
