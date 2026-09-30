@@ -505,7 +505,7 @@ Fixture memory tree `tests/fixtures/memory/acme/alice/` (AC-19): `profile.md`, `
 
 ## Step 8 — The `playwright` plugin is installed at project scope on Central; a headless `claude -p --no-session-persistence` in `/srv/agent/central` receives the three digest sections as `hook_response` events and leaves no session file; after the one deliberate `claude-remote` restart the remote-control session reports `no CLAUDE.md found; AGENTS.md loaded`, lists the template's three rule files and the instance's `instance.md`, and still answers *pineapple*; the wrapper now names the session `Zyggy` (AC-36)
 
-- [ ] Done *(checked by the executor when the owner reports the step and the evidence is in 0002)*
+- [x] Done *(checked by the executor when the owner reports the step and the evidence is in 0002)*
 
 **Tag**: [owner, vm/zyggy + vm/root + phone/claude.ai] with [agent, read-only VM check]. Runbook steps 6 (plugin half, not Chromium) and 7. The wrapper edit on the VM is the owner's; the agent only diffs it read-only.
 

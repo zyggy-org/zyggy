@@ -49,11 +49,11 @@ Always start Claude in `/srv/agent/central`, never in `memory/` (hooks are per w
 | 3 Memory clone at `memory/` | done 2026-09-30 13:16 UTC | `5c579bb`, layout dirs present (agent verified read-only) |
 | 4 Install `settings.local.json` | done 2026-09-30 | mode 600, ignored, AC-4 diff empty (agent verified read-only) |
 | 5 No `CLAUDE.md` on the path, `claude doctor` | done 2026-09-30 | AC-1 loop all absent; `claude doctor` clean, 2.1.285 (owner pasted) |
-| 6 `playwright` plugin + Chromium | not started | plugin half with plan Step 8; Chromium half with plan Step 12; headless finding to record |
-| 7 Wrapper `--name Zyggy`, the one restart, AC-5/AC-7/AC-36 | not started | the only restart of 27; counted in 0001 ("2 of 2") |
+| 6 `playwright` plugin + Chromium | in progress | plugin installed 2026-09-30 13:38 UTC (project, `2a8ad9f74633`); install rewrote settings.json → template `0f5b349` ships canonical layout + headless env; Chromium install pending |
+| 7 Wrapper `--name Zyggy`, the one restart, AC-5/AC-7/AC-36 | in progress | AC-7 pass 14:01 UTC; wrapper `--name Zyggy` 14:04:59, restart 14:05:00 UTC resumed `6ba6d03b`; phone checks (AC-5/AC-36) pending |
 | 8 Seeding session, seed commit, remember/Stop checks | not started | first use of the read/write key |
 | 9 Headless browser check (AC-33), 0002 rows, final sweeps | not started | |
-| 10 First template update through the instance (AC-35) | not started | |
+| 10 First template update through the instance (AC-35) | in progress | laptop half done 2026-09-30: template `0f5b349` → instance `e6c5f1c`; VM ff-pull pending |
 
 ## 1. Repositories, instance, deploy keys, SSH config [browser] [laptop] [vm/zyggy]
 
@@ -285,18 +285,20 @@ cd /srv/agent/central
 ls -t ~/.claude/projects/-srv-agent-central/ | head -1        # note it
 claude -p --no-session-persistence --output-format stream-json --verbose --include-hook-events --max-turns 1 --permission-mode auto "Reply with the word OK." > /tmp/ac7.jsonl
 ls -t ~/.claude/projects/-srv-agent-central/ | head -1        # unchanged
-jq -c 'select(.type=="hook_response" or .hook_event_name=="SessionStart") | {hook_event_name, exit: .exit_code, len: (.output|length), head: (.output|.[0:60]), tail: (.output|.[-24:])}' /tmp/ac7.jsonl
+jq -c 'select(.type=="system" and .subtype=="hook_response") | {hook_name, exit: .exit_code, len: (.output|length), head: (.output|.[0:60]), tail: (.output|.[-24:])}' /tmp/ac7.jsonl
 jq -r 'select(.type=="result") | .result' /tmp/ac7.jsonl     # OK
 ```
 
 Expect three `SessionStart` responses whose outputs start with `<zyggy-memory-digest section="` and end with
-`</zyggy-memory-digest>`, each < 10,000 characters, total ≤ 18,000, none replaced by a file path/preview. The
-`hook_response` field names are to be confirmed on the installed version — record the real ones in 0002 and fix the
-filter here. Before seeding, `identity` holds the two headings only, `index` the `## agents.md` heading and an empty
+`</zyggy-memory-digest>`, each < 10,000 characters, total ≤ 18,000, none replaced by a file path/preview. Field names
+confirmed on 2.1.285 (2026-09-30): `type` = `system`, `subtype` = `hook_started` | `hook_response`, `hook_name` =
+`SessionStart:startup` (or `Stop`), `exit_code`, and the text in `output` (plus `stdout`, `stderr`, `outcome`). Before seeding, `identity` holds the two headings only, `index` the `## agents.md` heading and an empty
 index, `daily` nothing.
 
 **7b [vm/root] Wrapper edit, then at once the restart** — the one sanctioned change to a 02 file; a typo stops the
-remote session, hence `bash -n` and the `diff` first:
+remote session, hence `bash -n` and the `diff` first. Run the whole block as root (`sudo -i`): the wrapper and the
+log belong to `zyggy` and are not world-readable, so `grep`/`bash -n`/`tail` as `azureadmin` fail with
+"Permission denied" (2026-09-30):
 
 ```bash
 sudo sed -i 's/--name central /--name Zyggy /' /srv/agent/bin/claude-remote.sh
