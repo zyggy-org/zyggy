@@ -12,7 +12,7 @@ secret-shaped sample is quoted truncated (`ghp…`).
 |---|-------------|--------|----------|
 | 27 | Central identity, memory repo and base plugin set | Done 2026-09-30 (final gate approved by the owner) | this file, section 27 — 22 AC rows |
 | 31 | Central reads the owner's GitHub account: read-only token and repository inventory | Done 2026-10-01 (final gate approved by the owner) | this file, section 31 |
-| 32 | Central clones and analyses the owner's repositories on request | In progress (Gate A approved 2026-10-01) | this file, section 32 |
+| 32 | Central clones and analyses the owner's repositories on request | Done 2026-10-01 (Gates A and B approved; owner skipped the remaining session tests; final gate pending) | this file, section 32 |
 | 28 | Nightly dream pass on Central without the bus | Not started | |
 | 29 | Telegram as Central's chat channel | Not started | |
 | 23 | Personal mail triage on Central (Gmail + Outlook.com) | Not started | |
@@ -89,8 +89,8 @@ Spec: `_specs/32-central-github-clone-analyse.md` · Plan: `_plans/32-central-gi
 `runbooks/central-claude-config.md` section 12.
 
 - Dates: template `fbf9fb0` → `1d6a77d` (Steps 1–5, each CI green; last run 36855700843) 2026-10-01 (Gate A approved
-  by the owner); instance `e55d558` pulled on the VM 2026-10-01 ~12:20 UTC; live settings merged ~12:20 UTC; first analysis `<UTC>`;
-  canary created 2026-10-01 ~12:30 UTC (owner) / deleted `<UTC>`; refusals `<UTC>`; unattended refusal `<UTC>`; sweeps `<UTC>`.
+  by the owner); instance `e55d558` pulled on the VM 2026-10-01 ~12:20 UTC; live settings merged ~12:20 UTC; first analysis 2026-10-01 ~12:28 UTC (clone `49804a563fb0`);
+  canary created 2026-10-01 ~12:30 UTC (owner), never analysed, deletion the owner's; refusals, unattended `claude -p`, GitHub-side checks, replace, clean and audit not run (owner decision 2026-10-01); sweeps 2026-10-01 12:37 UTC; AC-4 fix `3065b29` → instance `284ea8d` on the VM ~12:50 UTC.
 
 | Check (AC) | Criterion | Evidence (date, command, excerpt) | Result |
 |------------|-----------|-----------------------------------|--------|
@@ -107,8 +107,8 @@ Spec: `_specs/32-central-github-clone-analyse.md` · Plan: `_plans/32-central-gi
 | AC-11 | Memory: only owner-confirmed `[stated]` facts, no `CANARY` | 2026-10-01 (owner paste + agent read-only 12:37 UTC): Claude proposed exactly five Calizr facts and left the handover's prospect names and email addresses out ("third-party personal data"); the owner answered "yes"; `remember` stored five `[stated] … (project:calizr)` lines in `inbox/remember-2026-10-01.md` (file now 12 `[stated]` lines, 10 `project:calizr`); `CANARY` in memory 0 files; today's `daily/` holds the neutral `Analysis of geobarteam/…` note; memory status gained nothing beyond that file and `daily/` | pass |
 | AC-12 | Replace on a repeat request; "Forget the clones" empties the cache | Not run — owner decision 2026-10-01 (the salon25-api clone still has its first mtime 1790857754; the cache still holds it). Replace and `--clean` proven in CI (`clone.bats`) | not run (owner decision; CI-proven) |
 | AC-13 | `security.md`/`AGENTS.md`/`operations.md` carry the clone rules; prompt audit clean | Wording: template `1d6a77d` (`repo.bats` asserts every required phrase; on the VM since `e55d558`). `/doctor prompt-audit` on Central not run — owner decision 2026-10-01 | partial (wording proven; audit not run) |
-| AC-14 | Instance, runbook section 12 and this record complete | | |
-| AC-15 | Template and instance CI green with `clone.bats` and the word test run; instance differs only in instance-owned paths; VM clean | 2026-10-01: template `1d6a77d` CI https://github.com/zyggy-org/zyggy-core/actions/runs/36855700843 green (174 tests, word test ran, 37 clone tests); instance merge `e55d558` (template `1d6a77d` + instance `769f12b`), `git diff --name-only upstream/main HEAD` → the two instance-owned files, CI https://github.com/zyggy-org/zyggy-geoffrey/actions/runs/36860117268 green (174 tests, word test ran, 37 clone tests); VM 2026-10-01 ~12:20 UTC at `e55d558`, clean tree | pass |
+| AC-14 | Instance, runbook section 12 and this record complete | 2026-10-01 (agent): `instance.md` "## GitHub" clone bullet + five runbook entries, `instance/settings.local.json` `permissions.additionalDirectories` (instance `769f12b`); runbook section 12 (12a–12k, two standing entries, seven troubleshooting entries, restore step 7, read-only rules), status rows filled; this section's 15 rows dated, Tools/Settings/Credentials/Deviations/Costs updated | pass |
+| AC-15 | Template and instance CI green with `clone.bats` and the word test run; instance differs only in instance-owned paths; VM clean | 2026-10-01: template `1d6a77d` CI https://github.com/zyggy-org/zyggy-core/actions/runs/36855700843 green (174 tests, word test ran, 37 clone tests); instance merge `e55d558` (template `1d6a77d` + instance `769f12b`), `git diff --name-only upstream/main HEAD` → the two instance-owned files, CI https://github.com/zyggy-org/zyggy-geoffrey/actions/runs/36860117268 green (174 tests, word test ran, 37 clone tests); VM 2026-10-01 ~12:20 UTC at `e55d558`, clean tree. AC-4 fix: template `3065b29` CI https://github.com/zyggy-org/zyggy-core/actions/runs/36863773954 green → instance `284ea8d` CI https://github.com/zyggy-org/zyggy-geoffrey/actions/runs/36863783731 green → VM fast-forwarded ~12:50 UTC, clean tree | pass |
 
 ## Repositories
 
@@ -256,4 +256,4 @@ Deviations found during execution (32):
 
 27: none. (28 fills the per-run cost.)
 31: model cost not recorded (owner; Max subscription); 42 GitHub API requests per run (1 user + 1 page + 40 README reads).
-32: pending (clone time and size; model cost of the analysis turn, informational).
+32: first clone of `salon25-api` 34 MiB (API size 14998 KiB), 2 GitHub API requests + 1 https clone; model cost not recorded (owner; Max subscription).

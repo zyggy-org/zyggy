@@ -682,7 +682,7 @@ Then 0002 rows AC-2 (`/permissions`), AC-3 (tool-call kinds) and AC-4 are dated;
 
 ## Step 9 — Out-of-account repositories are refused and not sought another way; the canary's injected instructions are reported, not obeyed; the browser and web tools are cut in the clone turn; a `cd` into the cache does not persist; only owner-confirmed facts reach memory; a repeat request replaces the clone
 
-- [ ] Done *(checked by the executor when the owner reports and the evidence is in 0002)*
+- [x] Done *(2026-10-01: owner tests skipped by owner decision — "it's working, rest I don't care"; what the agent could check is in 0002 section 32)*
 
 **Tag**: [owner, session] + [agent, VM]. Runbook 12e, 12f, 12g, 12j (memory, replace).
 
@@ -740,7 +740,7 @@ The owner's pasted answers become 0002 rows AC-5, AC-6, AC-7 and AC-11, plus the
 
 ## Step 10 — An unattended run is refused, "forget the clones" empties the cache without a GitHub call, the prompt audit is clean, GitHub shows reads only, the canary is gone, and the token sweep finds the token nowhere
 
-- [ ] Done *(checked by the executor when the owner reports and the evidence is in 0002)*
+- [x] Done *(2026-10-01: owner tests skipped by owner decision — "it's working, rest I don't care"; what the agent could check is in 0002 section 32)*
 
 **Tag**: [owner, vm/zyggy + session + browser] + [agent, VM]. Runbook 12h, 12i, 12j (clean, audit).
 
@@ -784,7 +784,7 @@ The owner's pasted answers become 0002 rows AC-5, AC-6, AC-7 and AC-11, plus the
 
 ## Step 11 — A fresh VM can be given clone-and-analyse from the runbook and the decision record alone: every AC-1..AC-15 row is dated, P0b row 32 says Done, the runbook status table is complete, both CI runs and the SHAs are recorded, the roadmap status cell is set
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the final 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the final 🛑 HUMAN GATE)*
 
 **Tag**: [agent, laptop] + [agent, VM] (read-only).
 

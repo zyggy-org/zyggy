@@ -70,13 +70,13 @@ Always start Claude in `/srv/agent/central`, never in `memory/` (hooks are per w
 | 12b Template + instance on the VM, live settings merged, smoke exit 5 | done 2026-10-01 | VM `e55d558`; `additionalDirectories` merged; smoke exit 5, nothing created; `/permissions` at 12c |
 | 12c First analysis of `salon25-api` (AC-3) | done 2026-10-01 | clone `49804a563fb0`, neutral first line; two committed secrets found in the repository, owner rotated them |
 | 12d Clone on disk (AC-4) | done 2026-10-01 | shallow, no tags or remote, `[core]` only, 34 MiB; finding `~/.cache/zyggy` 755 |
-| 12e Refusals (AC-5) | pending | |
+| 12e Refusals (AC-5) | not run | owner decision 2026-10-01; CI-proven |
 | 12f Canary (AC-6) | created 2026-10-01 | `geobarteam/zyggy-canary` pushed by the owner; analysis and deletion pending |
-| 12g Exfiltration cut, Bash cwd (AC-7) | pending | |
-| 12h Unattended refusal (AC-8) | pending | |
-| 12i Sweeps, GitHub side (AC-9, AC-10) | pending | |
-| 12j Memory, replace, clean, audit (AC-11..AC-13) | pending | |
-| 12k 0002 section 32 complete | pending | |
+| 12g Exfiltration cut, Bash cwd (AC-7) | not run | owner decision 2026-10-01 |
+| 12h Unattended refusal (AC-8) | partial | script-level exit 5 on the VM (agent); `claude -p` not run (owner decision) |
+| 12i Sweeps, GitHub side (AC-9, AC-10) | done (AC-9) 2026-10-01 | real token shape 0 everywhere; GitHub-side checks not run (owner decision) |
+| 12j Memory, replace, clean, audit (AC-11..AC-13) | done (AC-11) 2026-10-01 | five confirmed Calizr facts stored; replace, clean and audit not run (owner decision) |
+| 12k 0002 section 32 complete | done 2026-10-01 | 15 AC rows dated: 8 pass, 2 partial, 5 not run (owner decision) |
 
 ## 1. Repositories, instance, deploy keys, SSH config [browser] [laptop] [vm/zyggy]
 
