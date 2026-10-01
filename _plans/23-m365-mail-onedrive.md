@@ -172,7 +172,7 @@ Fixture bodies (`tests/fixtures/graph/`): `token-ok.json`, `token-invalid-client
 
 ## Step 2 — Central's identity is minted and used by one script only, and every Graph *read* the consent flow needs exists: `graph.sh cert-init` generates the RSA key (600) and the self-signed certificate (644), prints thumbprints and expiry, refuses an unattended run and an overwrite without `--rotate`; `token` reads the key from `$CREDENTIALS_DIRECTORY/m365-app-key` or the file, builds a PS256 `x5t#S256` client assertion whose signature verifies against the certificate (RS256 as a tested fallback), POSTs `client_credentials` and prints the token to stdout only; `check [--counts] [--other-mailbox] [--drive]`, `mail-folders`, `drives`, `drafts-since`, `message-sender`, **`snapshot draft|message <id>` (canonical JSON + `hash:`), `get draft|message <id>` (text body, stdout only), `sent-since <ISO>`** read `/users/<upn>`, `/drives`, `/sites` only, with retries; `invalid_client` → "Certificate rejected", `AADSTS700024` → "clock", 403 → "Scope or grant missing"; **no write verb yet** (Step 3); 30-day expiry warning and exit 3 after expiry; misconfiguration (incl. `consent.ttl_minutes`/`allowed_actions`) exits 3 before any request
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Tag**: [agent, laptop], `d:\source\zyggy-core`. Commit + push after VERIFY.
 
