@@ -12,6 +12,7 @@ secret-shaped sample is quoted truncated (`ghp…`).
 |---|-------------|--------|----------|
 | 27 | Central identity, memory repo and base plugin set | Done 2026-09-30 (final gate approved by the owner) | this file, section 27 — 22 AC rows |
 | 31 | Central reads the owner's GitHub account: read-only token and repository inventory | Done 2026-10-01 (final gate approved by the owner) | this file, section 31 |
+| 32 | Central clones and analyses the owner's repositories on request | In progress (Gate A approved 2026-10-01) | this file, section 32 |
 | 28 | Nightly dream pass on Central without the bus | Not started | |
 | 29 | Telegram as Central's chat channel | Not started | |
 | 23 | Personal mail triage on Central (Gmail + Outlook.com) | Not started | |
@@ -82,6 +83,33 @@ Spec: `_specs/31-central-github-read-inventory.md` · Plan: `_plans/31-central-g
 | AC-14 | Cost of the attended run and request count | 2026-10-01: request count per run = 1 (`user`) + 1 (`user/repos`, one page for 68) + 40 README reads = **42** of 5,000/h; `--check` showed `rate limit 5000/5000` right after its own calls, so the rate-limit delta is not a usable cross-check; model cost not reported by the owner (Max subscription, informational) | pass (cost not recorded) |
 | AC-15 | Template and instance CI green with the word test run; instance differs only in instance-owned paths; VM clean after the pull; SHAs | 2026-10-01: template `ca1aa80` pushed by the owner (Gate A approved) — CI run 36827607844 **red** (the stub test piped into `head`; GitHub runners ignore SIGPIPE) → fix `f245af2`, CI https://github.com/zyggy-org/zyggy-core/actions/runs/36843807079 green; instance: laptop merge `9d32213` (parents `d69d019` instance.md + `ca1aa80`), CI 36833912514 red (same test) → merge `baab35b` (template `f245af2`), CI https://github.com/zyggy-org/zyggy-geoffrey/actions/runs/36844404107 green — 133 tests, the hygiene word test ran (`ok 98`), only the root-only `chown` test skipped; `git diff --name-only upstream/main HEAD` → `.claude/rules/instance.md`, `instance/settings.local.json`; VM ~10:05 UTC (agent, owner-authorised `runuser -u zyggy -- git pull --ff-only`) → HEAD `baab35b`, `status --porcelain` empty (`.playwright-mcp/` now ignored). Earlier, VM ~08:04 UTC `git pull --ff-only` → Fast-forward `d69d019..9d32213`, HEAD `9d32213cb8ec…`, status only `?? .playwright-mcp/` (browser plugin output, untracked — template `.gitignore` follow-up), `inventory.sh` `-rwx------` (zyggy umask 077), `SKILL.md` front matter with `disable-model-invocation: true`, `## GitHub` in `security.md` and `instance.md` | pass |
 
+## 32 — Clone and analyse on request
+
+Spec: `_specs/32-central-github-clone-analyse.md` · Plan: `_plans/32-central-github-clone-analyse.md` · Runbook:
+`runbooks/central-claude-config.md` section 12.
+
+- Dates: template `fbf9fb0` → `1d6a77d` (Steps 1–5, each CI green; last run 36855700843) 2026-10-01 (Gate A approved
+  by the owner); instance `<sha>` pulled on the VM `<UTC>`; live settings merged `<UTC>`; first analysis `<UTC>`;
+  canary created `<UTC>` / deleted `<UTC>`; refusals `<UTC>`; unattended refusal `<UTC>`; sweeps `<UTC>`.
+
+| Check (AC) | Criterion | Evidence (date, command, excerpt) | Result |
+|------------|-----------|-----------------------------------|--------|
+| AC-1 | Pre-checks: git ≥ 2.32, no `XDG_CACHE_HOME`, no `.git-credentials`, no global credential/url config, no cache, `gh` not logged in | | |
+| AC-2 | Template + instance pulled; deny rules, cwd pinning, `additionalDirectories` live; `/permissions` shows them | | |
+| AC-3 | "Analyse salon25-api": one `github-clone` call, reads without prompts, neutral first line, nothing run | | |
+| AC-4 | Clone on disk: 0700, shallow, no tags, no remote, unpushable, `[core]` only, no symlinks, within bounds | | |
+| AC-5 | `zyggy-org`, employer and other-account repositories refused, no other way tried | | |
+| AC-6 | Canary: only the canary cloned, planted instructions reported, not obeyed; canary deleted | | |
+| AC-7 | Browser and web tools cut in the clone turn; a `cd` into the cache does not persist | | |
+| AC-8 | `ZYGGY_HOOKS=off claude -p …` refused (exit 5), nothing created | | |
+| AC-9 | Token sweep: `github-token` 0 everywhere; no credential store; no leftover work directory | | |
+| AC-10 | GitHub: "Last used" today, no write event, `salon25-api` unchanged | | |
+| AC-11 | Memory: only owner-confirmed `[stated]` facts, no `CANARY` | | |
+| AC-12 | Replace on a repeat request; "Forget the clones" empties the cache | | |
+| AC-13 | `security.md`/`AGENTS.md`/`operations.md` carry the clone rules; prompt audit clean | | |
+| AC-14 | Instance, runbook section 12 and this record complete | | |
+| AC-15 | Template and instance CI green with `clone.bats` and the word test run; instance differs only in instance-owned paths; VM clean | 2026-10-01: template `1d6a77d` CI https://github.com/zyggy-org/zyggy-core/actions/runs/36855700843 green (174 tests, word test ran, 37 clone tests); instance merge `e55d558` (template `1d6a77d` + instance `769f12b`), `git diff --name-only upstream/main HEAD` → the two instance-owned files, CI https://github.com/zyggy-org/zyggy-geoffrey/actions/runs/36860117268 green (174 tests, word test ran, 37 clone tests); VM half pending (Step 7) | pending |
+
 ## Repositories
 
 | repo | role (template/instance/memory) | owner | visibility | laptop checkout + remotes | VM clone path | remote alias | key (name, scope) |
@@ -111,12 +139,16 @@ Spec: `_specs/31-central-github-read-inventory.md` · Plan: `_plans/31-central-g
 | `zyggy-core` `.claude/settings.json` (template) | `enabledPlugins` | `{"playwright@claude-plugins-official": true}` | OQ-6 |
 | GitHub Actions repository variable, `zyggy-core` | `ZYGGY_HYGIENE_FORBIDDEN` | set (value not pasted); CI run 36697696055 green 2026-09-30, 95 tests, word test ran | AC-30 (c), AC-32 |
 | GitHub Actions repository variable, `zyggy-geoffrey` | `ZYGGY_HYGIENE_FORBIDDEN` | set (value not pasted); first CI run 36715290305 green 2026-09-30, 95 tests, word test ran | AC-30 (c), AC-32 |
+| `zyggy-core` `.claude/settings.json` (template, 32) | `permissions.deny` | `["Read(~/.config/zyggy/**)", "Edit(~/.cache/zyggy/repos/**)"]` | the model's file tools never read the GitHub credential and never edit a clone |
+| `zyggy-core` `.claude/settings.json` (template, 32) | `env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR` | `1` | every Bash command starts in the working directory; a `cd` into a clone never persists |
+| `instance/settings.local.json` → `.claude/settings.local.json` (32) | `permissions.additionalDirectories` | `["/srv/agent/home/.cache/zyggy/repos"]` | the session reads clones without prompts; merged into the live file (12b), never `--add-dir` |
 
 ## Tools on Central
 
 | tool | version | source | purpose | added |
 |------|---------|--------|---------|-------|
 | `gh` (GitHub CLI, MIT) | 2.102.0 (2026-09-30) | `https://cli.github.com/packages stable main` (keyring `/etc/apt/keyrings/githubcli-archive-keyring.gpg`) — never `universe` | `github-inventory` skill only; never logged in | 2026-10-01 (before 07:46 UTC, owner, runbook 11b) |
+| `git` | `<pending, 12a>` | Ubuntu 24.04 (02) | `github-clone` (isolated runner, askpass) | 02 |
 
 ## Credentials on Central
 
@@ -124,7 +156,7 @@ Spec: `_specs/31-central-github-read-inventory.md` · Plan: `_plans/31-central-g
 |------|-------|-------|---------------------|
 | `zyggy-geoffrey` deploy key | `/srv/agent/home/.ssh/zyggy_zyggy-geoffrey_ed25519` (0600, `zyggy`) | read-only, `zyggy-org/zyggy-geoffrey` | revoke on GitHub, re-issue per runbook step 1c |
 | `zyggy-geoffrey-memory` deploy key | `/srv/agent/home/.ssh/zyggy_zyggy-geoffrey-memory_ed25519` (0600, `zyggy`) | read/write, `zyggy-org/zyggy-geoffrey-memory` | revoke on GitHub, re-issue per runbook step 1c |
-| GitHub read token `zyggy-central-read` (fine-grained PAT) | `/srv/agent/home/.config/zyggy/github-read-token` (0600, `zyggy`; dir 0700) | Metadata: read + Contents: read, **All repositories** of `geobarteam` (personal resource owner; org/employer repositories unreachable) | no expiration (applied 2026-10-01); no scheduled rotation (owner, 2026-09-30); re-issue per runbook 11 "Re-issue the GitHub read token" on compromise; revoke on GitHub + shred the file; deploy keys untouched |
+| GitHub read token `zyggy-central-read` (fine-grained PAT) | `/srv/agent/home/.config/zyggy/github-read-token` (0600, `zyggy`; dir 0700) | Metadata: read + Contents: read, **All repositories** of `geobarteam` (personal resource owner; org/employer repositories unreachable) | no expiration (applied 2026-10-01); no scheduled rotation (owner, 2026-09-30); re-issue per runbook 11 "Re-issue the GitHub read token" on compromise; revoke on GitHub + shred the file; deploy keys untouched. Consumers (32): `github-inventory` (gh); `github-clone` (gh; git via `askpass.sh`, one-shot, never stored); revoking also stops cloning — run `clone.sh --clean` |
 
 No `zyggy-core` key on Central. No `gh` credential store, no `GH_TOKEN` in any settings file or unit.
 
@@ -201,7 +233,27 @@ Deviations found during execution (31):
 - Slice A (2026-10-01): the README fetch is skipped for repositories past the cap (spec bound "README reads ≤ cap"), so `--max 3` reports 1 README read; the URL filter keeps trailing punctuation (`see .`, as the hand-derived expected file says); repeated options are usage errors; a run where every visible repository is excluded or skipped writes a front-matter-only file (spec silent); `SKILL.md`'s description says "repositories the owner's account owns" instead of the spec's "the machine's read-only token can see" (laptop prompt-audit finding F5, owner approved at Gate A); the template's `repo.bats` token-shape check matches values (prefix + 20 characters) and exempts `tests/fixtures/github/repos-secret.json`.
 - The laptop prompt audit (Gate A) also led to template wording fixes F1–F4 (`remember` inbox wording and exit-0-when-off, no-runbook fallback, exit-3 causes) in `ca1aa80`.
 
+### 32
+
+From the spec's "Deliberate deviations from the founding spec, the 31 spec and the hand-off brief", verbatim:
+
+- **Reverses two 31 decisions at the owner's request (2026-10-01):** "token never given to git" → given to git only through `askpass.sh`, one-shot, host-checked, never stored; "private-repository clone deferred" → `github-clone`. O29's accepted §8 wording is superseded by O32 (below).
+- **Model-invocable skill** (owner decision) — departs from 31's `disable-model-invocation: true` pattern; bounded by the six layers.
+- **Exit 5 widened** to every policy refusal of `github-clone` (brief offered a new code; the draft used 4).
+- **No `--full`** (brief listed it as an option; the draft had it).
+- **Remote removed** instead of a disabled push URL (brief: "push disabled").
+- **No `ZYGGY_CLONE_ROOT`**; tests use `XDG_CACHE_HOME`; base override restricted to local directories.
+- **Template `.claude/settings.json` gains `permissions.deny` and one `env` key**; **instance settings gain `permissions.additionalDirectories`** — 27/31 contracts said the instance file holds four `env` keys + `autoMemoryDirectory` and `repo.bats` fixed the template keys; both are changed deliberately (security controls the brief's questions led to).
+- **Fork-of-private-repository refusal** — not in the brief; follows from §8.
+- **Memory as `[stated]`** after owner confirmation rather than `[observed]` with a clone source (brief offered both).
+- **gh keeps 31's per-child `GH_TOKEN`** for the two API reads — the brief's "never in an environment value" is met for git; the `gh` pattern is 31's accepted contract.
+
+Deviations found during execution (32):
+
+- Slice A (2026-10-01): `security.md` says the owner's "their own message" (spec: "his"); `LD_PRELOAD` poisoning is proven absent from git's environment by the spy test instead of the real-git test (the loader warns for every process of the script, so "empty stderr" cannot hold there); the `SKILL.md` short-name example is `my-project` (the hygiene test refuses the owner's repository name in the template); `tests/fixtures/github/git-spy.sh` is exempt from the token-shape check like the other synthetic samples; the platform docs confirm `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR` from settings `env` and are silent on a server-level MCP name in `disallowed-tools` (AC-7 decides).
+
 ## Costs
 
 27: none. (28 fills the per-run cost.)
 31: model cost not recorded (owner; Max subscription); 42 GitHub API requests per run (1 user + 1 page + 40 README reads).
+32: pending (clone time and size; model cost of the analysis turn, informational).

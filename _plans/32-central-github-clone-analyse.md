@@ -446,7 +446,7 @@ When the docs are silent, ship as specified; AC-7 on Central decides (Step 9), w
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification. The executor pastes the bats summary of PROVE variants 1/2/3 (tests, 0 failures, 0 skipped with the word list) and the green `zyggy-core` CI run URL with its SHA. It demonstrates in the container:
+- [x] Behavioral verification. The executor pastes the bats summary of PROVE variants 1/2/3 (tests, 0 failures, 0 skipped with the word list) and the green `zyggy-core` CI run URL with its SHA. It demonstrates in the container:
   1. `ZYGGY_HOOKS=off clone.sh alice/repo` → exit 5, nothing created;
   2. `clone.sh bob/x` → exit 5 after one stub call;
   3. `clone.sh alice/..` → exit 4;
@@ -455,7 +455,7 @@ When the docs are silent, ship as specified; AC-7 on Central decides (Step 9), w
   6. the real-git clone of the bare fixture with `ls -la`, `.git/config` and the three stdout lines;
   7. `--clean`;
   8. `grep -c STUBSTUB` = 0 over stdout, stderr, the cache, `HOME` and the stub/spy logs (outside the allowed fields).
-- [ ] Contract review:
+- [x] Contract review:
   - `clone.sh` matches the spec's interface table (invocation, grammar, check order, cache root, API calls, git runner, clone, housekeeping, stdout, stderr, exit codes, "Never");
   - `askpass.sh` matches its interface;
   - `settings.json` matches the exact block;
@@ -466,7 +466,7 @@ When the docs are silent, ship as specified; AC-7 on Central decides (Step 9), w
   - 31 assertions are unchanged.
 
   The executor lists every assumption below that Slice A froze, or where it read differently, and the doc finding on platform facts 3 and 4.
-- [ ] ⚠️ Risk review:
+- [x] ⚠️ Risk review:
   - the token reaches git only via `askpass.sh` (static, host-checked, reads at prompt time);
   - git's environment is an allowlist proven against a poisoned parent environment and `HOME`;
   - no token in argv, env, config, URL or output (AC-25/26/29/31);
@@ -475,15 +475,15 @@ When the docs are silent, ship as specified; AC-7 on Central decides (Step 9), w
   - shared contracts changed deliberately (settings keys, the git exemption);
   - no new dependency (git and coreutils already present);
   - no real login or path in the template.
-- [ ] Owner reads `security.md`'s new GitHub section, the `AGENTS.md` bullets and `SKILL.md` as Central's instruction contract. *(No laptop prompt audit this time; AC-13 runs `/doctor prompt-audit` on Central in Step 10, and a finding is fixed forward.)*
+- [x] Owner reads `security.md`'s new GitHub section, the `AGENTS.md` bullets and `SKILL.md` as Central's instruction contract. *(No laptop prompt audit this time; AC-13 runs `/doctor prompt-audit` on Central in Step 10, and a finding is fixed forward.)*
 - [x] Owner names the **bait repository** (2026-10-01, before Step 1: `geobarteam/claude-evolve`) for the canary: a second private repository of `geobarteam` that holds **no secrets and no `.env`**, so even an obeyed injection leaks nothing (assumption 10).
-- [ ] User approved — implementation may continue past this gate
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 6 — The instance carries the clone facts and the session's read access, the records describe the deliverable, the instance has merged the template with CI green, and the canary content is ready
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Tag**: [agent, laptop]: `d:\source\zyggy-geoffrey` (instance-owned paths only), this repository, `d:\source\zyggy-canary` (new, local only).
 
