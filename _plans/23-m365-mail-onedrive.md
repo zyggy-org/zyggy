@@ -271,7 +271,7 @@ Fixture bodies (`tests/fixtures/graph/`): `token-ok.json`, `token-invalid-client
 
 ## Step 4 — Claude Code can start the `m365` server and only Step 1's 14 tools exist for the model: `.mcp.json` names the wrapper; `mcp-wrapper.sh` mints a token, resolves the pinned binary under `~/.local`, `exec`s it under `env -i` with exactly `PATH HOME LC_ALL NODE_OPTIONS MS365_MCP_OAUTH_TOKEN MS365_MCP_CLIENT_ID MS365_MCP_TENANT_ID MS365_MCP_ORG_MODE MS365_MCP_USE_KEYTAR MS365_MCP_TOKEN_CACHE_PATH ENABLED_TOOLS` and `--org-mode`; `--probe` lists the tools and **reports the six auth tools the server registers outside the filter**; a token failure exits 6 without starting the server; a bad regex or an empty tool list exits 6; the template settings deny the 330 excluded tools by name (the six auth tools and `graph-batch` among them), the state directory, and `Bash(.claude/skills/m365/graph.sh *)` / `Bash(.claude/skills/m365/m365-approve.sh *)`
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Tag**: [agent, laptop], `d:\source\zyggy-core`. Commit + push after VERIFY.
 
