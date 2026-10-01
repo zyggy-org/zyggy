@@ -356,7 +356,7 @@ Fixture bodies (`tests/fixtures/graph/`): `token-ok.json`, `token-invalid-client
 
 ## Step 6 — The model can only write validated facts and parsed text: `facts.sh --kind … --source … [--max n]` appends only grammar-conformant, ≤ 240-character, secret-free, address/phone/URL/IBAN/number-free, deduplicated `[observed]` lines to `inbox/m365-<kind>-<date>.md` with front matter once, counts refusals without echoing them, exits 5 at the cap; `parse.sh <file>` runs MarkItDown only on a file inside the run directory under `timeout` and `ulimit -v`, prints bounded text with secret-shaped lines withheld, refuses outside/oversize/non-parsable files (exit 5), reports failure or timeout (exit 6) and deletes the input in every case
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Tag**: [agent, laptop], `d:\source\zyggy-core`. Commit + push after VERIFY.
 
