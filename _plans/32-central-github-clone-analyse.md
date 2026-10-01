@@ -608,32 +608,32 @@ ls /srv/agent/central/.claude/skills/
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification:
+- [x] Behavioral verification:
   - instance CI green (`clone.bats` and the word-list test ran);
   - `git diff --name-only upstream/main HEAD` shows instance-owned paths only;
   - the AC-1 excerpt;
   - the VM HEAD equals the instance HEAD, with a clean tree;
   - live settings: the additional directory plus the four `ZYGGY_*` keys;
   - the `ZYGGY_HOOKS=off` smoke run exited 5 and no cache exists.
-- [ ] Contract review:
+- [x] Contract review:
   - `instance.md`'s GitHub section has the clone bullet, and the runbook list has the new entries;
   - `instance/settings.local.json` is exactly the spec's block;
   - runbook section 12 has 12a–12k, the standing entries and seven troubleshooting entries;
   - 0002 section 32 has its skeleton and Deviations `### 32`;
   - the canary files are harmless-if-obeyed and marked.
-- [ ] ⚠️ Risk review:
+- [x] ⚠️ Risk review:
   - the session can now read `~/.cache/zyggy/repos` without prompts, and only that additional directory (never `--add-dir`);
   - the template's `Read(~/.config/zyggy/**)` deny is live (the owner sees it in `/permissions` at Step 8);
   - `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR` is live (proven in Step 9);
   - nothing has been cloned yet.
-- [ ] **Owner creates the canary repository now** (`[laptop]`, one line): `gh repo create geobarteam/zyggy-canary --private --source d:\source\zyggy-canary --push`, or in the GitHub web UI: New repository → private `zyggy-canary` → upload the five files. *Expect*: the repository exists, private, one commit. Tell the executor "canary created <UTC>".
-- [ ] User approved — implementation may continue past this gate
+- [x] **Owner creates the canary repository now** (`[laptop]`, one line): `gh repo create geobarteam/zyggy-canary --private --source d:\source\zyggy-canary --push`, or in the GitHub web UI: New repository → private `zyggy-canary` → upload the five files. *Expect*: the repository exists, private, one commit. Tell the executor "canary created <UTC>".
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 8 — The owner asks Central, in plain words, to analyse `salon25-api`; the model invokes `github-clone` once, reads the clone from the cache without prompts, and answers with the neutral first line; the clone on disk is shallow, tagless, remoteless, symlink-free, unpushable and within bounds
 
-- [ ] Done *(checked by the executor when the owner reports and the evidence is in 0002)*
+- [x] Done *(checked by the executor when the owner reports and the evidence is in 0002)*
 
 **Tag**: [owner, session] + [agent, VM]. Runbook 12c, 12d.
 

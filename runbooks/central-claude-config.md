@@ -68,8 +68,8 @@ Always start Claude in `/srv/agent/central`, never in `memory/` (hooks are per w
 | 11g 0002 section 31 complete | done 2026-10-01 | 15 AC rows pass; CI 36843807079 / 36844404107 green |
 | 12a Pre-checks (AC-1) | done 2026-10-01 | git 2.43.0, no credential store, no cache, gh not logged in, HEAD `baab35b` |
 | 12b Template + instance on the VM, live settings merged, smoke exit 5 | done 2026-10-01 | VM `e55d558`; `additionalDirectories` merged; smoke exit 5, nothing created; `/permissions` at 12c |
-| 12c First analysis of `salon25-api` (AC-3) | pending | |
-| 12d Clone on disk (AC-4) | pending | |
+| 12c First analysis of `salon25-api` (AC-3) | done 2026-10-01 | clone `49804a563fb0`, neutral first line; two committed secrets found in the repository, owner rotated them |
+| 12d Clone on disk (AC-4) | done 2026-10-01 | shallow, no tags or remote, `[core]` only, 34 MiB; finding `~/.cache/zyggy` 755 |
 | 12e Refusals (AC-5) | pending | |
 | 12f Canary (AC-6) | pending | prepared in `d:\source\zyggy-canary` |
 | 12g Exfiltration cut, Bash cwd (AC-7) | pending | |
