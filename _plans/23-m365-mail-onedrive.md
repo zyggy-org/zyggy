@@ -415,7 +415,7 @@ Fixture bodies (`tests/fixtures/graph/`): `token-ok.json`, `token-invalid-client
 
 ## Step 8 — The morning brief runs end to end against the `claude` stub and can propose but never execute: `brief.sh` fails fast on the identity (exit 6 before `claude`), says `already created` on a rerun, resolves the inbox folder id and the drive ids, runs `claude -p "/morning-brief <mailbox> <inbox-folder-id> <drive-ids> <run-dir>"` once with the contracted flags, the 14-tool allow list **plus `Bash(.claude/skills/m365/propose.sh *)`** and the deny list (incl. `Bash(graph.sh *)`, `Bash(m365-approve.sh *)`), with `ZYGGY_HOOKS=off` and no tty for the child; the stub's `propose.sh` calls produce pending rows; `verify.sh` runs; the receipt and the journal line carry `proposals <p>`; `is_error`/over-cap → exit 6, no receipt; the `morning-brief` prompt renders "## Proposed actions (pending your consent)" and the `user-id` rule
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Tag**: [agent, laptop], `d:\source\zyggy-core`. Commit + push after VERIFY.
 
