@@ -11,7 +11,7 @@ secret-shaped sample is quoted truncated (`ghp…`).
 | # | deliverable | status | evidence |
 |---|-------------|--------|----------|
 | 27 | Central identity, memory repo and base plugin set | Done 2026-09-30 (final gate approved by the owner) | this file, section 27 — 22 AC rows |
-| 31 | Central reads the owner's GitHub account: read-only token and repository inventory | Done 2026-10-01 (evidence below; final gate pending) | this file, section 31 |
+| 31 | Central reads the owner's GitHub account: read-only token and repository inventory | Done 2026-10-01 (final gate approved by the owner) | this file, section 31 |
 | 28 | Nightly dream pass on Central without the bus | Not started | |
 | 29 | Telegram as Central's chat channel | Not started | |
 | 23 | Personal mail triage on Central (Gmail + Outlook.com) | Not started | |
