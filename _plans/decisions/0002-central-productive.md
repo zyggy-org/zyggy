@@ -11,6 +11,7 @@ secret-shaped sample is quoted truncated (`ghp…`).
 | # | deliverable | status | evidence |
 |---|-------------|--------|----------|
 | 27 | Central identity, memory repo and base plugin set | Done 2026-09-30 (final gate approved by the owner) | this file, section 27 — 22 AC rows |
+| 31 | Central reads the owner's GitHub account: read-only token and repository inventory | Done 2026-10-01 (evidence below; final gate pending) | this file, section 31 |
 | 28 | Nightly dream pass on Central without the bus | Not started | |
 | 29 | Telegram as Central's chat channel | Not started | |
 | 23 | Personal mail triage on Central (Gmail + Outlook.com) | Not started | |
@@ -51,6 +52,36 @@ secret-shaped sample is quoted truncated (`ghp…`).
 | AC-35 | First template update: laptop merge without conflict → push → VM `--ff-only`; clean tree; SHAs and date | 2026-09-30 (agent, laptop, owner-authorised push): template `0f5b349` (env for headless + canonical settings layout) → `git -C d:\source\zyggy-geoffrey pull --no-edit upstream main` merged without conflict → `e6c5f1c` pushed; `git diff --name-only upstream/main HEAD` still only the two instance files; template CI run 36725480485 green. VM half 2026-09-30 ~14:00 UTC (owner: `git checkout -- .claude/settings.json && git pull --ff-only`; agent read-only): HEAD `e6c5f1c`, `status --porcelain` empty, `settings.json` `env` holds the three `PLAYWRIGHT_MCP_*` keys | pass |
 | AC-36 | Central session listed as `Zyggy` after the restart (or recorded and re-checked at the next fresh session) | 2026-09-30 ~14:15 UTC (owner, claude.ai/code screenshot): after the restart the resumed session `6ba6d03b` is still listed as **central** — `--name` on `--resume` does not retitle an existing session on 2.1.285. Recorded; no extra restart. Re-check at the next fresh session the wrapper starts (when the resumed id is gone) — expected title `Zyggy` | recorded; re-check at next fresh session |
 
+## 31 — GitHub read token and repository inventory
+
+Spec: `_specs/31-central-github-read-inventory.md` · Plan: `_plans/31-central-github-read-inventory.md` · Runbook:
+`runbooks/central-claude-config.md` section 11.
+
+- Dates: template `ca1aa80` (skill, rules, tests) pushed 2026-10-01 (Gate A, owner); token created 2026-10-01 (before 07:46 UTC), "No
+  expiration" offered `yes` → expiry none; `gh 2.102.0` installed 2026-10-01 (before 07:46 UTC); token file written
+  2026-10-01 (before 07:46 UTC); template `ca1aa80` → instance `9d32213` pulled on the VM 2026-10-01 ~08:04 UTC (after `d69d019`, instance.md only, at ~07:55); first attended run 2026-10-01 08:46 UTC, 68 lines;
+  same-day rerun 2026-10-01 09:25 UTC; refusal run 2026-10-01 ~09:30 UTC; sweeps 2026-10-01 ~09:35 UTC.
+- Before: not collected — the owner ran 11a–11c before the agent's Step 6 pre-state check; the first read-only check (2026-10-01 07:46 UTC) already found `gh`
+  and the token file, with instance HEAD `bf1b25c` and skills `remember`, `seed-memory` only (the pre-31 state of the checkout).
+
+| Check (AC) | Criterion | Evidence (date, command, excerpt) | Result |
+|------------|-----------|-----------------------------------|--------|
+| AC-1 | Token `zyggy-central-read`: personal resource owner, **All repositories**, exactly Metadata + Contents read, no account permission, No expiration (or the 366-day date) | 2026-10-01 (owner, runbook 11a): token `zyggy-central-read` created on the personal account `geobarteam`, All repositories, Contents: Read-only + Metadata: Read-only, **No expiration offered and applied**; cross-check: `--check` (11e) reports `no expiration` (GitHub returned no `GitHub-Authentication-Token-Expiration` header) | pass |
+| AC-2 | Token file dir `700 zyggy`, file `600 zyggy`, 93 bytes; no `~/.config/gh`; no credential helper; no `GH_TOKEN` in settings or units; no other copy on the VM | 2026-10-01 07:46 UTC (owner pasted 11c; agent `az vm run-command` read-only): `700 zyggy /srv/agent/home/.config/zyggy`, `600 zyggy …/github-read-token`, `wc -c` → 93; `ls ~/.config/gh` → No such file or directory; `gh auth status` → not logged into any GitHub hosts, exit 1; credential helper exit 1; `grep -l GH_TOKEN` over the four settings files → exit 1; `systemctl show claude-remote.service / claude-soak.service -p Environment` → `Environment=` (empty) both; `grep -rl` for the token prefix over the instance tree, `~/.claude`, `~/.config` (excl. the token file, `.git`, `memory`) → only the template's synthetic `tests/fixtures/secret-samples.txt` and `.claude/hooks/secret-patterns.txt`; `~/.ssh` unchanged since 2026-09-30 | pass |
+| AC-3 | `gh` from `cli.github.com/packages` (not `universe`), version in Tools table, `gh auth status` not logged in | 2026-10-01 07:46 UTC (agent read-only): `gh version 2.102.0 (2026-09-30)`; `apt-cache policy gh` → `Installed: 2.102.0`, `*** 2.102.0 500 https://cli.github.com/packages stable/main amd64`; `runuser -u zyggy -- gh auth status` → not logged in, exit 1 | pass |
+| AC-4 | `--check` exit 0, login, `N` = the account's own repositories, `X` = 0, rate limit, expiry; nothing written | 2026-10-01 ~08:05 UTC (owner, runbook 11e, throw-away shell as `zyggy`): `github-inventory: login geobarteam, 68 repositories visible, 0 excluded (instance list), rate limit 5000/5000, no expiration`, `exit 0`; `git -C memory status --porcelain` identical before and after (5 pre-existing lines: `M daily/2026-09-30.md`, `M inbox/remember-2026-09-30.md`, `?? auto/MEMORY.md`, `?? auto/prompt-audit-2026-09-30.md`, `?? daily/2026-10-01.md`); no token in the output; profile repository count (owner, 2026-10-01) = 68 = `N` | pass |
+| AC-5 | Attended `/github-inventory`: file with front matter, `min(N − X, 200)` grammar lines; memory status only the file (+ `daily/`) | 2026-10-01 08:46 UTC (owner, `Zyggy` session after `/clear`: `/github-inventory`; first Bash call failed because `CLAUDE_PROJECT_DIR` is unset in the Bash tool, Claude re-ran by absolute path — the script ran once; skill fixed in the template, see Deviations). Agent read-only 09:14 UTC: `inbox/github-inventory-2026-10-01.md` 13,141 bytes, front matter `name: github inventory 2026-10-01` / `description: …` / `updated: 2026-10-01`; 68 `[observed]` lines = min(68 − 0, 200); grammar `grep -vcE` → 5 (front matter only); 0 facts over 240 characters (longest 240 — the cut applied); 0 duplicate `owner/repo`; no marker; 15 private / 53 public, all `owner`; 24 `(no description)`; `git -C memory status` = the 5 baseline lines + `?? inbox/github-inventory-2026-10-01.md` + `?? inbox/remember-2026-10-01.md` (an unrelated `remember` the owner asked for in the same session); nothing under `areas/`, `people/`, `topics/` or the identity files | pass |
+| AC-6 | Token "Last used" = run date; no write event in the security log; no repository changed | 2026-10-01 (owner, browser): "everything else is okay" — token page "Last used" = today, no write events in the security log for the run window, no repository changed (owner statement, no screenshot) | pass (owner statement) |
+| AC-7 | Secret sweeps (instance tree, memory, settings, `instance/`, transcripts; laptop repositories) → nothing | 2026-10-01 ~09:35 UTC (owner, runbook 11f block 5): instance tree 1, memory 1, settings 1, `instance/` 1 (no match); transcripts 0 — 7 files matched. Agent read-only per pattern name and file (no matched text printed): `github-token` only in `7ec4424d` (2 hits — the fake token pasted for 27 AC-9), `card-number` in all 7 (13–19-digit numbers such as millisecond timestamps in the session logs; 27's sweep never covered transcripts); the real token's shape (`github_pat_` + 82, 93 characters) **0** in every transcript → the token was never shown in a session. Documented exception: `card-number` false positives in transcripts; laptop `git grep` re-run at Step 8 | pass (documented exception) |
+| AC-8 | `security.md` GitHub section, `AGENTS.md` bullet; `/doctor prompt-audit` clean | 2026-10-01: VM 11d `grep -c "## GitHub"` → 1 in `security.md` and `instance.md`; `AGENTS.md` lists GitHub (template `ca1aa80`); laptop `/doctor prompt-audit` over `d:sourcezyggy-core` (Gate A) → 5 findings F1–F5, all fixed before the commit; on Central the owner reported "everything else is okay" | pass |
+| AC-9 | `instance.md` "## GitHub" with the stated facts, ≤ 200 lines, no secret; `instance/settings.local.json` unchanged | 2026-10-01 (agent, laptop): section written and staged in `d:\source\zyggy-geoffrey` (login `geobarteam`, no exclusions), 54 lines, token-shape grep empty, `diff --cached -- instance/settings.local.json` empty; `bats tests/repo.bats` in the container over the instance with the word list → 24/24, 0 skipped ; owner committed `d69d019`, merged in `9d32213` / `baab35b` | pass |
+| AC-10 | Runbook section 11 (11a–11g, standing entries, troubleshooting per failure mode, restore step 6) | 2026-10-01 (agent, laptop): section 11 written; 13 new troubleshooting entries; restore step 6; read-only list extended; status rows 11a–11g ; final 2026-10-01 (Step 8): status rows 11a–11g done | pass |
+| AC-11 | This record: P0b row 31, section 31 rows, Tools, Credentials, Repository scope, Deviations, Costs | 2026-10-01 (agent, Step 8): P0b row 31 Done, section 31 with 15 dated rows, Tools (`gh` 2.102.0), Credentials (no expiration), Repository scope (68, none excluded), Deviations (spec list + OQ answers + execution findings), Costs (42 requests) | pass |
+| AC-12 | Same-day rerun replaces the file: same count, no duplicate, `updated:` today, front matter once | 2026-10-01 09:25 UTC (owner, `Zyggy` session): counts line `68 repositories listed (68 visible, cap 200), 0 excluded (instance list), 0 skipped (secret pattern), 40 README reads, login geobarteam`; Claude piped the output into `head` (exit 141 after the file was written — skill wording fixed in the template). Agent read-only: mtime 08:46:35 → 09:25:41, 13,141 bytes, 68 lines, `---` × 2, `updated: 2026-10-01` × 1, 0 duplicates, 0 `.tmp` | pass |
+| AC-13 | `ZYGGY_HOOKS=off claude -p … "/github-inventory"` refused (exit 5), no file changed, no session file | 2026-10-01 ~09:30 UTC (owner, as `zyggy` in `/srv/agent/central`): `ZYGGY_HOOKS=off claude -p --no-session-persistence --permission-mode auto "/github-inventory"` → Claude quoted `github-inventory: refused: unattended run (ZYGGY_HOOKS=off)` (exit 5), "Nothing was written to memory and no request went to GitHub. I won't retry or try another way."; first Bash call again failed on the empty `CLAUDE_PROJECT_DIR` (template fix staged), the second call was the refused one; inventory file `stat -c %Y` 1790844395 before and after; `--no-session-persistence` → no session file | pass |
+| AC-14 | Cost of the attended run and request count | 2026-10-01: request count per run = 1 (`user`) + 1 (`user/repos`, one page for 68) + 40 README reads = **42** of 5,000/h; `--check` showed `rate limit 5000/5000` right after its own calls, so the rate-limit delta is not a usable cross-check; model cost not reported by the owner (Max subscription, informational) | pass (cost not recorded) |
+| AC-15 | Template and instance CI green with the word test run; instance differs only in instance-owned paths; VM clean after the pull; SHAs | 2026-10-01: template `ca1aa80` pushed by the owner (Gate A approved) — CI run 36827607844 **red** (the stub test piped into `head`; GitHub runners ignore SIGPIPE) → fix `f245af2`, CI https://github.com/zyggy-org/zyggy-core/actions/runs/36843807079 green; instance: laptop merge `9d32213` (parents `d69d019` instance.md + `ca1aa80`), CI 36833912514 red (same test) → merge `baab35b` (template `f245af2`), CI https://github.com/zyggy-org/zyggy-geoffrey/actions/runs/36844404107 green — 133 tests, the hygiene word test ran (`ok 98`), only the root-only `chown` test skipped; `git diff --name-only upstream/main HEAD` → `.claude/rules/instance.md`, `instance/settings.local.json`; VM ~10:05 UTC (agent, owner-authorised `runuser -u zyggy -- git pull --ff-only`) → HEAD `baab35b`, `status --porcelain` empty (`.playwright-mcp/` now ignored). Earlier, VM ~08:04 UTC `git pull --ff-only` → Fast-forward `d69d019..9d32213`, HEAD `9d32213cb8ec…`, status only `?? .playwright-mcp/` (browser plugin output, untracked — template `.gitignore` follow-up), `inventory.sh` `-rwx------` (zyggy umask 077), `SKILL.md` front matter with `disable-model-invocation: true`, `## GitHub` in `security.md` and `instance.md` | pass |
+
 ## Repositories
 
 | repo | role (template/instance/memory) | owner | visibility | laptop checkout + remotes | VM clone path | remote alias | key (name, scope) |
@@ -81,14 +112,26 @@ secret-shaped sample is quoted truncated (`ghp…`).
 | GitHub Actions repository variable, `zyggy-core` | `ZYGGY_HYGIENE_FORBIDDEN` | set (value not pasted); CI run 36697696055 green 2026-09-30, 95 tests, word test ran | AC-30 (c), AC-32 |
 | GitHub Actions repository variable, `zyggy-geoffrey` | `ZYGGY_HYGIENE_FORBIDDEN` | set (value not pasted); first CI run 36715290305 green 2026-09-30, 95 tests, word test ran | AC-30 (c), AC-32 |
 
+## Tools on Central
+
+| tool | version | source | purpose | added |
+|------|---------|--------|---------|-------|
+| `gh` (GitHub CLI, MIT) | 2.102.0 (2026-09-30) | `https://cli.github.com/packages stable main` (keyring `/etc/apt/keyrings/githubcli-archive-keyring.gpg`) — never `universe` | `github-inventory` skill only; never logged in | 2026-10-01 (before 07:46 UTC, owner, runbook 11b) |
+
 ## Credentials on Central
 
 | what | where | scope | rotation/revocation |
 |------|-------|-------|---------------------|
 | `zyggy-geoffrey` deploy key | `/srv/agent/home/.ssh/zyggy_zyggy-geoffrey_ed25519` (0600, `zyggy`) | read-only, `zyggy-org/zyggy-geoffrey` | revoke on GitHub, re-issue per runbook step 1c |
 | `zyggy-geoffrey-memory` deploy key | `/srv/agent/home/.ssh/zyggy_zyggy-geoffrey-memory_ed25519` (0600, `zyggy`) | read/write, `zyggy-org/zyggy-geoffrey-memory` | revoke on GitHub, re-issue per runbook step 1c |
+| GitHub read token `zyggy-central-read` (fine-grained PAT) | `/srv/agent/home/.config/zyggy/github-read-token` (0600, `zyggy`; dir 0700) | Metadata: read + Contents: read, **All repositories** of `geobarteam` (personal resource owner; org/employer repositories unreachable) | no expiration (applied 2026-10-01); no scheduled rotation (owner, 2026-09-30); re-issue per runbook 11 "Re-issue the GitHub read token" on compromise; revoke on GitHub + shred the file; deploy keys untouched |
 
-No `zyggy-core` key on Central.
+No `zyggy-core` key on Central. No `gh` credential store, no `GH_TOKEN` in any settings file or unit.
+
+## Repository scope
+
+All repositories of `geobarteam`; visible count at first run **68** (`--check`, 2026-10-01); exclusions: none —
+`instance/github-inventory-exclude.txt` absent (2026-10-01) — no other GitHub data.
 
 ## Deviations from the founding spec / brief
 
@@ -125,6 +168,40 @@ Owner answers (spec "Decisions log", 2026-09-30):
 
 Deviations found during execution: none yet.
 
+### 31
+
+From the spec's "Deliberate deviations from the founding spec and the hand-off brief", verbatim:
+
+- **Token in a 0600 file read by one script, `GH_TOKEN` per child** — instead of §8's "systemd `LoadCredential` for Central" and the brief's `gh auth login --with-token` (fed from a systemd credential or stdin). Rationale in the Decision Table (Q2): no unit exists for the interactive session that 31 may change, and the `gh` store authenticates every `gh` call of the user. The accepted §8 Secrets row ("Founding-spec amendments") says "0600 file … `LoadCredential=` from the same file when a unit needs it".
+- **`gh` CLI, not the `github` plugin** — the brief allowed either; the plugin is a remote hosted MCP server with a session-wide bearer variable (verified from the marketplace cache). Recorded as the candidate route for the write-scope deliverable.
+- **Dedicated `inbox/github-inventory-<date>.md` written by the script with the `lib.sh` primitives, replaced per day** — instead of the brief's `remember.sh` per line or an `areas/` seed. Same write primitives as `stop.sh`, same line grammar as `remember.sh`; rationale in Q3.
+- **The script composes the purpose deterministically** — the brief's "description/README head → one-line purpose" is done without the model, for testability and injection bounding.
+- **README read only when the description is empty** — the brief says "from the description and the README head"; reading the README for every repository would exercise Contents: read N times for no gain when a description exists.
+- **Contents: read kept; the Metadata-only variant was offered at the gate and not chosen** — the owner confirmed "Contents + Metadata" (b1) on 2026-09-30.
+- **"All repositories" instead of the brief's "selected vs all" question and the draft's "selected first" recommendation** — owner decision (a2) 2026-09-30; the bound moves from a list on GitHub to the resource owner + read-only permissions, and 31 ships the instance-owned exclusion list `instance/github-inventory-exclude.txt` (analyst's delegated decision) as the owner-side narrowing of what enters memory.
+- **`affiliation=owner`** instead of the endpoint default `owner,collaborator,organization_member` — analyst's delegated decision (Decision Table): the resource-owner rule already bounds the token to the account's own repositories; `owner` makes the count comparable and removes a dependency on undocumented filtering.
+- **Runbook entries instead of a `revoke-machine.md`-style file** for rotation/revocation (§11 lists `revoke-machine.md` for a machine's bus credentials, a different object).
+- **`runbooks/central-claude-config.md` section 11**, not a new runbook file (the brief names that runbook).
+- **No scheduled rotation; token issued without expiration (366-day fallback)** — the roadmap/brief asked for a "rotation period"; the owner ruled at the spec gate (2026-09-30) that a manual 90-day rotation is unacceptable ("a longer lifetime or automated refresh"). A non-expiring PAT has the same at-rest exposure as the automated alternative (a GitHub App private key, which "does not expire and instead needs to be manually revoked") with zero new code; the automated route (option c4 at the gate) is recorded for the write-scope deliverable (Findings 4). Owner decision (c3) 2026-09-30.
+- **Private-repository clone deferred** — the roadmap's non-goal sentence tolerates "a clone only when the owner names one repository"; 31 keeps the token away from git entirely; a public clone is ordinary Bash use outside the skill.
+- **`operations.md`/`AGENTS.md` gain a few lines** (exit codes, "What exists today" bullet) — the brief lists only `security.md`; `/doctor prompt-audit` and the 27 "do not claim what does not exist" rule require the other two to know the skill exists.
+- **A `gh` stub and `tests/fixtures/github/gh-stub.sh` in the template** — the brief says "fixture API responses, no network"; the stub is how the script is driven without network while proving verbs, endpoints and the token's path (argv vs env).
+
+Owner answers (spec "Decisions log", 2026-09-30):
+
+| # | Question | Decision |
+|---|----------|----------|
+| OQ-1 | O29: §8 Isolation wording, §8 Secrets row, §1/§3/§10/§11 lines | **Apply as proposed** — the owner pastes the text into the founding spec. |
+| OQ-2 (a) | Which repositories the token may see | **(a2) All repositories** of the owner's personal account; `zyggy-org` and employer repositories unreachable by construction; exclusions in `instance/github-inventory-exclude.txt`; the walk uses `affiliation=owner`. |
+| OQ-2 (b) | Token permissions | **(b1) Metadata: read + Contents: read**; README head read only when the description is empty. |
+| OQ-2 (c) | Lifetime / refresh | **(c3) PAT with No expiration**, 366-day fallback; no scheduled rotation; re-issue only on compromise; revoke on GitHub first. The GitHub App route (c4) was offered and not chosen; recorded for the write-scope deliverable. |
+
+Deviations found during execution (31):
+
+- Slice A (2026-10-01): the README fetch is skipped for repositories past the cap (spec bound "README reads ≤ cap"), so `--max 3` reports 1 README read; the URL filter keeps trailing punctuation (`see .`, as the hand-derived expected file says); repeated options are usage errors; a run where every visible repository is excluded or skipped writes a front-matter-only file (spec silent); `SKILL.md`'s description says "repositories the owner's account owns" instead of the spec's "the machine's read-only token can see" (laptop prompt-audit finding F5, owner approved at Gate A); the template's `repo.bats` token-shape check matches values (prefix + 20 characters) and exempts `tests/fixtures/github/repos-secret.json`.
+- The laptop prompt audit (Gate A) also led to template wording fixes F1–F4 (`remember` inbox wording and exit-0-when-off, no-runbook fallback, exit-3 causes) in `ca1aa80`.
+
 ## Costs
 
 27: none. (28 fills the per-run cost.)
+31: model cost not recorded (owner; Max subscription); 42 GitHub API requests per run (1 user + 1 page + 40 README reads).

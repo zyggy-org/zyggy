@@ -7,6 +7,8 @@ three `SessionStart` hooks inject the memory digest, the `Stop` hook writes one 
 `remember` skill keeps stated facts, and the `playwright` plugin gives Central a headless browser. Source of truth:
 `_specs/27-central-identity-memory.md` and `_plans/27-central-identity-memory.md` (Steps 7–13 carry the same
 commands; this file is the durable copy). Evidence goes into `_plans/decisions/0002-central-productive.md`.
+Deliverable 31 adds section 11: a read-only GitHub token on Central and the owner-invoked `/github-inventory` skill
+(source of truth `_specs/31-central-github-read-inventory.md` and `_plans/31-central-github-read-inventory.md`).
 
 No key, token or variable value is ever written in this file, in 0002 or in any repository — only file names.
 
@@ -54,6 +56,13 @@ Always start Claude in `/srv/agent/central`, never in `memory/` (hooks are per w
 | 8 Seeding session, seed commit, remember/Stop checks | done 2026-09-30 | seed `9032236` pushed; AC-6/8/9/10/11/13/14 pass; audit clean after `3e8034d`; synced-skills conflicts are a claude.ai setting |
 | 9 Headless browser check (AC-33), 0002 rows, final sweeps | done 2026-09-30 | AC-33 pass; secret sweeps 0 hits (VM + three repos); AC-18 units identical; 0002 complete |
 | 10 First template update through the instance (AC-35) | done 2026-09-30 | four template updates reached Central via the instance (0f5b349, caea383, 3e8034d, cc5447b), each `pull --ff-only`, clean tree |
+| 11a Create the token `zyggy-central-read` | done 2026-10-01 | "No expiration" offered and applied (owner); `--check` confirms no expiration |
+| 11b `gh` from GitHub's apt repository | done 2026-10-01 | `gh` 2.102.0 from `cli.github.com/packages stable/main` (agent verified read-only 07:46 UTC) |
+| 11c Token file, AC-2 checks | done 2026-10-01 | 700/600 `zyggy`, 93 bytes, not logged in, no helper, no `GH_TOKEN`, units clean (owner pasted; agent verified read-only 07:46 UTC) |
+| 11d Template `ca1aa80` + instance `instance.md` reach the VM | done 2026-10-01 | instance merge `9d32213` (template `ca1aa80` + `instance.md` `d69d019`), VM fast-forwarded; untracked `.playwright-mcp/` only |
+| 11e `--check` (AC-4) | done 2026-10-01 | `login geobarteam, 68 repositories visible, 0 excluded, rate limit 5000/5000, no expiration`, exit 0; memory status unchanged |
+| 11f Attended run, rerun, refusal, sweeps, GitHub-side checks, audit, cost | done 2026-10-01 | 68 lines; rerun replaced; refusal exit 5; sweeps clean (card-number false positives in transcripts, token shape 0); 42 requests | |
+| 11g 0002 section 31 complete | done 2026-10-01 | 15 AC rows pass; CI 36843807079 / 36844404107 green |
 
 ## 1. Repositories, instance, deploy keys, SSH config [browser] [laptop] [vm/zyggy]
 
@@ -418,6 +427,230 @@ the new template SHA → new instance SHA, the date; on the VM `git merge-base -
 echo $?` → `0`, `git status --porcelain` empty, `git remote -v` still only `origin`, `ls -la .claude/hooks/*.sh`
 still `-rwxr-xr-x`.
 
+## 11. GitHub read access and the repository inventory (deliverable 31) [browser] [laptop] [vm/root] [vm/zyggy]
+
+Gives Central one read-only GitHub credential and the owner-invoked `/github-inventory` skill, which writes one
+`[observed]` line per repository the owner's account owns into
+`memory/geoffrey/geoffrey/inbox/github-inventory-<date>.md`. Source of truth: `_specs/31-central-github-read-inventory.md`
+and `_plans/31-central-github-read-inventory.md` (Steps 6–7 carry the same commands; this section is the durable
+copy). Evidence goes into 0002, section 31.
+
+The credential: a **fine-grained personal access token** `zyggy-central-read`, resource owner = the owner's personal
+account `geobarteam`, repository access **All repositories**, permissions **Contents: Read-only + Metadata:
+Read-only**, **No expiration** (366-day custom date only if the page refuses), in **one** file
+`/srv/agent/home/.config/zyggy/github-read-token` (dir 0700, file 0600, `zyggy`). Only `inventory.sh` reads it and
+hands it to `gh` as `GH_TOKEN` in each child's environment. Never `gh auth login`, never a settings `env` key, never a
+git credential helper, never `LoadCredential=` in 31. Repositories of `zyggy-org` and of the employer are owned by
+organisations and are unreachable through it by construction.
+
+Every VM block starts with `ssh -t azureadmin@central`; for `[vm/zyggy]` then `sudo -iu zyggy` and **`whoami` →
+`zyggy`** (work done as `azureadmin` lands in the wrong home).
+
+### 11a. Create the token [browser]
+
+GitHub → Settings → Developer settings → Personal access tokens → **Fine-grained tokens** → Generate new token:
+
+- Token name `zyggy-central-read`; Resource owner = **your personal account** (`geobarteam`, not `zyggy-org`).
+- Expiration → **No expiration** — *expect* it to be offered (a personal-account token accesses no organisation, so
+  no organisation policy applies). If the page does not offer it or refuses, choose **Custom**, a date 366 days ahead,
+  and **note the date** (then "Re-issue the GitHub read token" is a yearly step and `instance.md` says
+  "expires on `<date>`").
+- Repository access → **All repositories**.
+- Permissions → Repository permissions → **Contents: Read-only** → *expect* **Metadata: Read-only** to appear as
+  mandatory. No other repository permission, **no Account permission**.
+- Generate token → copy the value **once** into the password manager; close the page. The value goes into no file on
+  the laptop, no chat, no runbook, no record.
+
+*Expect afterwards* on the Fine-grained tokens list: `zyggy-central-read`, "All repositories", 2 permissions, "Never
+expires" (or the date), "Last used: Never". Record in 0002 (AC-1): the date, whether "No expiration" was offered,
+the shown expiry text, name, scope "All repositories of `geobarteam`", permissions — never the value.
+
+### 11b. Install `gh` from GitHub's apt repository [vm/root]
+
+As `azureadmin` with `sudo`; the four documented steps (never the `universe` package — 2.45.x is broken):
+
+```bash
+sudo mkdir -p -m 755 /etc/apt/keyrings
+out=$(mktemp) && wget -nv -O"$out" https://cli.github.com/packages/githubcli-archive-keyring.gpg && sudo install -m 644 "$out" /etc/apt/keyrings/githubcli-archive-keyring.gpg && rm -f "$out"
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+sudo apt update && sudo apt install -y gh
+gh --version; apt-cache policy gh | head -5
+```
+
+*Expect*: `gh version 2.<xx>.<y> (20xx-xx-xx)` above 2.46; `apt-cache policy gh` shows `Installed: 2.<xx>.<y>-…` and
+`*** … https://cli.github.com/packages stable/main` as the winning source (not `noble/universe`). The version line goes
+into 0002's "Tools on Central" table (AC-3).
+
+### 11c. Write the token file [vm/zyggy]
+
+`sudo -iu zyggy`, `whoami` → `zyggy`. Paste the first line, then paste the token value at the silent prompt and
+press Enter (`read -rs` echoes nothing; the value reaches no command line and no history):
+
+```bash
+umask 077; mkdir -p ~/.config/zyggy; read -rs t; printf '%s' "$t" > ~/.config/zyggy/github-read-token; unset t
+stat -c '%a %U' ~/.config/zyggy ~/.config/zyggy/github-read-token; wc -c < ~/.config/zyggy/github-read-token
+ls ~/.config/gh 2>&1; gh auth status; echo "gh auth status exit $?"
+git config --global --get-regexp credential; echo "credential helper exit $?"
+grep -l GH_TOKEN ~/.claude/settings.json /srv/agent/central/.claude/settings.json /srv/agent/central/.claude/settings.local.json /srv/agent/central/instance/settings.local.json; echo "grep exit $?"
+systemctl show claude-remote claude-soak.service -p Environment
+```
+
+*Expect*: `700 zyggy` and `600 zyggy`; a byte count of **93** (a fine-grained token: an 11-character prefix + 22 + 1 + 59 characters;
+another count means a partial paste — redo the first line); `ls: cannot access '/srv/agent/home/.config/gh': No such
+file or directory`; `You are not logged into any GitHub hosts. To log in, run: gh auth login` and `gh auth status exit
+1`; `credential helper exit 1`; `grep exit 1` (no file lists `GH_TOKEN`); two `Environment=` lines without any token
+variable (AC-2). **Never** run `gh auth login`, `gh auth setup-git` or `cat` on the token file.
+
+### 11d. The template and the instance reach the VM [laptop] [vm/zyggy]
+
+`[laptop]` "Update Central from the template" (below) for the template commit carrying the skill, the rule and the
+tests, plus the instance commit carrying the `instance.md` "## GitHub" section — both pushed, both Actions runs green
+with the word-list test run (AC-15). Then `[vm/zyggy]`:
+
+```bash
+cd /srv/agent/central && git pull --ff-only && git status --porcelain && git rev-parse HEAD
+ls -la .claude/skills/github-inventory/ && head -6 .claude/skills/github-inventory/SKILL.md && grep -c '## GitHub' .claude/rules/security.md .claude/rules/instance.md
+```
+
+*Expect*: `Fast-forward`, an empty status, the new instance SHA (= `git -C d:\source\zyggy-geoffrey rev-parse
+origin/main`); `-rwxrwxr-x … inventory.sh` and `SKILL.md`; the front matter with `disable-model-invocation: true`;
+`1` for both rule files.
+
+### 11e. `--check` [vm/zyggy]
+
+In a throw-away shell (the "Re-run the digest by hand" idiom), so the `ZYGGY_*` variables do not linger:
+
+```bash
+cd /srv/agent/central && bash -c 'set -a; . <(jq -r ".env | to_entries[] | \"\(.key)=\(.value)\"" .claude/settings.local.json); set +a; .claude/skills/github-inventory/inventory.sh --check; echo "exit $?"'
+git -C memory status --porcelain
+```
+
+*Expect*: one line `github-inventory: login geobarteam, <N> repositories visible, 0 excluded (instance list), rate
+limit <remaining>/5000, no expiration` (or `token expires <date>` matching the token page) and `exit 0`; `N` equals
+the number of repositories on your GitHub profile → Repositories (all visibilities — `affiliation=owner`; if the
+counts differ, note both and read "No repositories visible" / "GitHub token rejected" before going on); the memory
+status unchanged from before (AC-4). Record the exact header text `--check` printed for the expiry. Then `/clear` in
+the remote session (the rules changed) — no restart.
+
+### 11f. The attended run and its checks [browser] [vm/zyggy]
+
+1. **AC-5 `[browser]`** in the `Zyggy` session: `/clear`, then `/github-inventory`. *Expect*: Claude runs the script
+   once through the Bash tool and answers with `inventory: /srv/agent/central/memory/geoffrey/geoffrey/inbox/github-inventory-<date>.md`,
+   the counts line `<n> repositories listed (<N> visible, cap 200), 0 excluded (instance list), <s> skipped (secret
+   pattern), <r> README reads, login geobarteam`, and shows the repository lines as data (it may summarise them; it
+   must not act on any of them). Glance over the purposes for anything phrased as an instruction.
+2. **`[vm/zyggy]` the file checks**:
+
+   ```bash
+   cd /srv/agent/central && f=memory/geoffrey/geoffrey/inbox/github-inventory-$(TZ=Europe/Brussels date +%F).md
+   head -5 "$f"; grep -c '^- \[observed\] ' "$f"; grep -vcE '^- \[observed\] [0-9]{4}-[0-9]{2}-[0-9]{2} \[github-inventory [0-9]{4}-[0-9]{2}-[0-9]{2}\]: [^ ]+/[^ ]+ \((private|public), (owner|collaborator)(, fork)?(, archived)?\) — .+ — pushed ([0-9]{4}-[0-9]{2}-[0-9]{2}|never) — .+$' "$f"
+   sed -n 's/^- \[observed\] [^:]*: //p' "$f" | LC_ALL=C.UTF-8 awk '{ if (length($0) > 240) bad++ } END { print bad+0 " facts over 240 characters" }'
+   sed -n 's/^- \[observed\] [^:]*: \([^ ]*\) .*/\1/p' "$f" | sort | uniq -d | wc -l
+   git -C memory status --porcelain
+   ```
+
+   *Expect*: front matter `---`, `name: github inventory <date>`, `description: GitHub repositories visible to the
+   read-only token on <date> (github-inventory skill)`, `updated: <date>`, `---`; the line count = `min(N − X, 200)`
+   from 11e (plus 1 when `N > 200`, the marker); the "not matching" count = `5` (the five front-matter lines — a
+   marker line, if any, is checked by eye); `0 facts over 240 characters`; `0` duplicates; the memory status shows
+   **only** `?? geoffrey/geoffrey/inbox/github-inventory-<date>.md` and today's `daily/<date>.md` (plus whatever was
+   listed before); nothing under `areas/`, `people/`, `topics/`, `profile.md`, `preferences.md`, `agents.md`.
+3. **AC-12 `[browser]`**: `/github-inventory` again in the same session → the same counts line. `[vm/zyggy]`: re-run
+   block 2 → same count, `0` duplicates; `grep -c '^---$' "$f"` → `2`; `grep -c "^updated: $(TZ=Europe/Brussels date +%F)$" "$f"`
+   → `1`; `find memory -name '*.tmp*'` → nothing; the memory status → the same one inventory file (+ `daily/`).
+4. **AC-13 `[vm/zyggy]` — the unattended shape is refused**:
+
+   ```bash
+   cd /srv/agent/central && ls -t ~/.claude/projects/-srv-agent-central/ | head -1
+   ZYGGY_HOOKS=off claude -p --no-session-persistence --permission-mode auto "/github-inventory"
+   ls -t ~/.claude/projects/-srv-agent-central/ | head -1; git -C memory status --porcelain; stat -c %Y memory/geoffrey/geoffrey/inbox/github-inventory-$(TZ=Europe/Brussels date +%F).md
+   ```
+
+   *Expect*: Claude reports `github-inventory: refused: unattended run (ZYGGY_HOOKS=off)`, exit 5, and says it will
+   not retry or try another way; the newest session file name unchanged; the memory status unchanged; the inventory
+   file's mtime unchanged from block 3 (no `daily/` line either: the Stop hook is off too — expected).
+5. **AC-7 `[vm/zyggy]` — the sweeps**:
+
+   ```bash
+   cut -f2 /srv/agent/central/.claude/hooks/secret-patterns.txt | grep -v '^#' > /tmp/pat
+   grep -rEn -f /tmp/pat /srv/agent/central --exclude-dir=.git --exclude-dir=memory --exclude=secret-patterns.txt --exclude-dir=tests; echo "instance tree: $?"
+   grep -rEn -f /tmp/pat /srv/agent/central/memory --exclude-dir=.git; echo "memory: $?"
+   grep -En -f /tmp/pat ~/.claude/settings.json /srv/agent/central/.claude/settings.local.json; echo "settings: $?"
+   grep -rEn -f /tmp/pat /srv/agent/central/instance; echo "instance/: $?"
+   grep -lE -f /tmp/pat ~/.claude/projects/-srv-agent-central/*.jsonl; echo "transcripts: $?"
+   rm /tmp/pat
+   ```
+
+   *Expect*: every `grep` prints nothing and each `echo` shows `1`. A `card-number`/`iban` hit on a legitimate long
+   number in memory is the owner's decision (rephrase or a documented exception; never edit a pattern silently). A hit
+   in a transcript means the token value was shown in a session — "Revoke the GitHub read token" **now** and re-issue.
+6. **AC-6 `[browser]`**: Fine-grained tokens → `zyggy-central-read` → "Last used" = today; Settings → Security log,
+   today's window → no `repo.*`, `issues.*`, `pull_request.*`, `git.push` events in the run window (reads are not
+   logged as events); the three most recently pushed repositories → no new commit, issue, comment or star.
+7. **AC-8 `[browser]`**: `/doctor prompt-audit` in the session → no contradiction across `AGENTS.md`, the rules
+   (incl. `instance.md`) and the three skills. A finding is fixed where the text lives (instance file →
+   `d:\source\zyggy-geoffrey`; template file → `d:\source\zyggy-core`, then "Update Central from the template"), never
+   on the VM. `[vm/zyggy]` `grep -n github-inventory .claude/rules/security.md AGENTS.md` → the section and the bullet.
+8. **AC-14 `[browser]`**: `/cost` after the AC-5 turn (or `total_cost_usd` of a `claude -p --no-session-persistence
+   --permission-mode auto --output-format json "/github-inventory"` run, which replaces the same-day file — acceptable);
+   then the 11e `--check` again → `remaining` dropped by about `1 + ⌈N/100⌉ + <r>` plus the `--check` calls.
+
+### 11g. Record [laptop]
+
+Fill 0002 section 31: the Dates line, one dated row per AC-1..AC-15, the Tools table `gh` row, the Credentials row
+(no expiration or the date), "Repository scope" (`N`, exclusions), Costs; set this section's status rows to done.
+
+### Run the inventory by hand [vm/zyggy]
+
+```bash
+cd /srv/agent/central && bash -c 'set -a; . <(jq -r ".env | to_entries[] | \"\(.key)=\(.value)\"" .claude/settings.local.json); set +a; .claude/skills/github-inventory/inventory.sh --check'
+cd /srv/agent/central && bash -c 'set -a; . <(jq -r ".env | to_entries[] | \"\(.key)=\(.value)\"" .claude/settings.local.json); set +a; .claude/skills/github-inventory/inventory.sh --max 500'
+```
+
+`--check` writes nothing; the run (default cap 200, `--max 1..500`) replaces today's inventory file. Never with
+`ZYGGY_HOOKS=off` (exit 5 by design), never through `gh` directly.
+
+### Re-issue the GitHub read token [browser] [vm/zyggy]
+
+Only on suspicion of compromise, on a repository-access change the token page cannot edit in place, or — with the
+366-day fallback — once a year before the date `--check` shows. **Never a scheduled rotation otherwise** (owner
+decision 2026-09-30). Regenerate the token on its page (or create a new one exactly as 11a and delete the old one),
+same repository access and permissions; copy the value once into the password manager; overwrite the file with the
+11c first line (`umask 077; … read -rs t; …`); the 11c checks; 11e `--check` → exit 0; a dated 0002 row.
+
+### Revoke the GitHub read token [browser] [vm/zyggy]
+
+When in doubt, revoke first: GitHub → Fine-grained tokens → `zyggy-central-read` → **Delete** (immediate: every call
+returns 401). Then `[vm/zyggy]` 11e `--check` → exit 6 with `gh: Bad credentials (HTTP 401)` (GitHub rejects it);
+`shred -u ~/.config/zyggy/github-read-token`; `--check` → exit 3 `token file … not found`. Check Settings → Security log for
+write events in the suspected window (none are possible with read-only permissions); a dated 0002 row. The two deploy
+keys, `~/.ssh/config` and the later bus PAT are **not** touched. Re-issue per 11a/11c only if the inventory is still
+wanted.
+
+### Exclude repositories from the inventory [laptop] [vm/zyggy]
+
+What enters memory is narrowed on Central, not on GitHub. `[laptop]` add one `owner/name` per line to
+`d:\source\zyggy-geoffrey\instance\github-inventory-exclude.txt` (`#` comments and blank lines allowed, matched
+case-insensitively; a malformed line makes the script exit 3), commit, push (instance CI green); `[vm/zyggy]`
+`git -C /srv/agent/central pull --ff-only`; 11e `--check` shows `<X> excluded (instance list)`. Never edit the file on
+the VM. Update 0002 "Repository scope" with the list and the date. This is also the answer to "Extend the repository
+selection" in `instance.md`: with **All repositories** every new repository the account owns is already visible; only
+exclusions change.
+
+### Extend the repository selection
+
+Nothing to do on GitHub: the token has **All repositories**, so a repository the account creates later is visible at
+the next run. A repository missing from the inventory is on the exclusion list (`--check` shows `<X> excluded`),
+owned by an organisation (unreachable by construction — never read another way), or past the cap ("Inventory
+truncated"). To drop one, "Exclude repositories from the inventory".
+
+### Narrow the token's repository access [browser]
+
+Only if the owner later wants the token itself back to "Only select repositories". Open `zyggy-central-read` on the
+Fine-grained tokens page: if it offers **Edit** for repository access, change it in place; otherwise regenerate or
+re-issue ("Re-issue the GitHub read token"). Record in 0002 which the page offered, and update `instance.md` ("can
+read every repository that account owns" no longer holds) in `d:\source\zyggy-geoffrey`.
+
 ## Re-run the digest by hand
 
 ```bash
@@ -522,7 +755,8 @@ Expected on a very chatty day; the dream rolls it up.
 
 `remember.sh` exits 2 on a legitimate fact (false positive, e.g. a long order number); Claude tells the owner;
 nothing written. Store the fact without the offending token, or add an exception to `secret-patterns.txt` with a test
-in `zyggy-core` (a template change) — never edit the pattern silently.
+in `zyggy-core` (a template change) — never edit the pattern silently. A GitHub token pasted into the conversation is
+refused by the `github-token` pattern; if it was a real value, "Revoke the GitHub read token" (section 11).
 
 ### Hooks silent
 
@@ -612,13 +846,110 @@ once by hand, or delete the stray `.jsonl` in `~/.claude/projects/-srv-agent-cen
 ### Disk full
 
 Atomic append fails, hook exits non-zero, session continues. `df -h /srv/agent`; roll up daily files; resize the Azure
-data disk.
+data disk. `github-inventory` behaves the same way: its `mv` fails, the `.tmp` file is removed, no torn inventory file.
 
 ### Prompt audit findings — `AGENTS.md` vs a rule or a plugin skill
 
 `/doctor prompt-audit` reports a contradiction between `AGENTS.md` and a rule or a plugin skill (AC-13 fails). Fix the
 text where it lives — a template file in `d:\source\zyggy-core` (then "Update Central from the template"), an instance
 file in `d:\source\zyggy-geoffrey` — and re-run.
+
+### GitHub inventory: configuration error
+
+`github-inventory` exits 3 with one stderr line; nothing written, `gh` never called. Branches by the line:
+
+- **Token file** (`token file … not found` / `is empty` / `must be mode 0600 (is …)` / `must be owned by zyggy` / `is
+  not a regular file`): re-create it as `zyggy` with the 11c first line (`umask 077`), or `chmod 600` /
+  `chown zyggy:zyggy` it; it lives in `/srv/agent/home/.config/zyggy/`, never in root's or `azureadmin`'s home (`whoami`
+  → `zyggy` first). `ZYGGY_GITHUB_TOKEN_FILE` is for tests and hand runs only — never in a settings file.
+- **Exclusion file** (`exclusion file … line <n> is not owner/name`): fix `instance/github-inventory-exclude.txt` on the
+  laptop (one `owner/name` per line), commit, push, `git pull --ff-only` on the VM. Never edit it on the VM.
+- **`gh not found` / `jq not found`**: 11b (or `apt install jq`); see "gh from universe".
+- **`configuration error: …`** (a `ZYGGY_*` variable, the memory directory): "Hooks report configuration error".
+
+### gh from universe
+
+`gh` is missing, or `apt-cache policy gh` shows `noble/universe` 2.45.x as installed (its API calls fail with a
+deprecation error → exit 6). `sudo apt remove gh`, then 11b; `apt-cache policy gh` must show
+`https://cli.github.com/packages stable/main` as the winning source. Record the new version in 0002's Tools table.
+
+### GitHub token rejected
+
+`github-inventory` exits 6: `GitHub request failed (<gh's first stderr line>) — see runbook "GitHub token rejected"`;
+nothing written. By the line:
+
+- **HTTP 401 `Bad credentials`**: the token was deleted, regenerated elsewhere or (366-day fallback) expired. Look at
+  the Fine-grained tokens page (present? expiry?); "Re-issue the GitHub read token". If you did not delete it, treat it
+  as a compromise: "Revoke the GitHub read token".
+- **HTTP 403** (not a rate limit): the token's repository access or permissions were changed on GitHub — compare with
+  11a; re-issue with the 11a settings.
+- **HTTP 403/429 `API rate limit exceeded`**: "GitHub rate limit".
+- **Network** (`dial tcp …`, DNS, TLS, `connection refused`): as `zyggy`, `curl -sI https://api.github.com | head -1`
+  → `HTTP/2 200`; otherwise check the VM's outbound network (NSG, DNS) before retrying. Nothing to fix on the token.
+
+### GitHub rate limit
+
+Exit 6 with `API rate limit exceeded`. A run needs about `1 + ⌈N/100⌉ + <README reads>` requests (≤ ~300) of the
+5,000/h; something else used the budget. `--check` shows `rate limit <remaining>/<limit>` (it fails too while the limit
+is exhausted); wait for the hourly reset and run again.
+
+### Inventory refused: unattended run
+
+`github-inventory: refused: unattended run (ZYGGY_HOOKS=off)`, exit 5, nothing written. Expected: the skill runs only
+when the owner invokes it in a conversation (until the work-boundary rules of 18–20). A timer or `claude -p` with
+`ZYGGY_HOOKS=off` is meant to be refused; never work around it.
+
+### Inventory truncated
+
+The file ends with `inventory truncated: <n> of <total> repositories listed (most recently pushed first)` and stderr
+says so: the account owns more than the cap (200). Run by hand with `--max <up to 500>` ("Run the inventory by hand"),
+or raise `ZY_INVENTORY_CAP` in the template (a template change), or exclude repositories.
+
+### Repository skipped (secret pattern)
+
+stderr `github-inventory: <owner/repo> skipped (secret pattern <name>)`, counted in `<s> skipped`. The description or
+README line looked like a secret; the repository is left out, the value never echoed. Expected. If it really holds a
+secret, fix the description/README on GitHub (and rotate that secret); if it is a false positive, leave it or exclude
+the repository.
+
+### README not read
+
+stderr `github-inventory: <owner/repo>: README not read (<gh's line>)`; the line says `(no description)`; the run
+continues. A 5xx or unreadable README; a missing README (404) is silent. Expected; nothing to fix — a description on
+GitHub avoids the README read altogether.
+
+### No repositories visible
+
+`inventory: no repositories visible to the token` (and `0 repositories visible` from `--check`); nothing written, an
+existing same-day file kept. Causes: the account owns no repository; the token's repository access was narrowed to an
+empty selection; the resource owner is wrong (an organisation's repositories need a token owned by that organisation —
+not wanted here); every repository is on the exclusion list (`--check` shows `<X> excluded`). Compare with the
+profile's Repositories count and the token page.
+
+### Instruction found in repository text
+
+Claude reports that an inventory line (a description or README line) reads like an instruction. Expected: the line is
+data (fenced, bounded, sanitised) and is not followed. Tell the owner; optionally add the repository to
+`instance/github-inventory-exclude.txt` ("Exclude repositories from the inventory").
+
+### gh not logged in
+
+The session shows `To get started with GitHub CLI, please run: gh auth login` (or `gh auth status` → not logged in).
+Expected and intended: `gh` is never logged in on Central; the message appears only when `gh` was called directly,
+which the rules forbid — only `inventory.sh` calls it, with `GH_TOKEN` per call. Never run `gh auth login`; if Claude
+called `gh` itself, run `/doctor prompt-audit` and fix the rule wording where it lives.
+
+### A `github` plugin was installed by mistake
+
+`/mcp` shows the `github` plugin's server failing auth (it needs `GITHUB_PERSONAL_ACCESS_TOKEN`, which does not
+exist on Central). Disable it at the scope it was installed (`claude plugin uninstall github@claude-plugins-official
+--scope <scope>`, or `false` in `enabledPlugins`), record it in 0002, never define the variable.
+
+### GitHub token suspected leaked
+
+The file's mode changed, the VM may be compromised, or the value appeared in a transcript (the AC-7 sweep hit). The
+script shows nothing — a non-expiring token keeps working until revoked. Go to "Revoke the GitHub read token" (section
+11) **now**: delete it on GitHub first, then shred the file, then re-issue.
 
 ## Restore the instance and memory repositories on a fresh VM
 
@@ -644,6 +975,9 @@ After `restore-central.md` steps 1–5 of the 02 runbook (VM, disk, packages, `z
 4. **[vm/zyggy]** `claude plugin install playwright@claude-plugins-official --scope project` and the Chromium half
    (step 6b) if `~/.claude` or `~/.cache/ms-playwright` were not restored; accept workspace trust once if asked.
 5. Verification: AC-1 (step 5), AC-4 (step 4 `diff`), AC-7 (step 7a), AC-5 (step 7c) after the units start.
+6. **[vm/root] [vm/zyggy]** GitHub read access: `gh` per 11b if the package is gone; restore
+   `~/.config/zyggy/github-read-token` from the password manager with the 11c first line (or re-issue per 11a/11c);
+   the 11c checks; 11e `--check` → exit 0.
 
 ## What the agent may verify read-only
 
@@ -664,6 +998,10 @@ on the VM. Allowed: `ls`, `cat` (not keys), `stat`, `grep`, `jq`, `free`, `swapo
 ```powershell
 az vm run-command invoke -g zyggy-central -n central --subscription "Abonnement Visual Studio Enterprise" --command-id RunShellScript --scripts "bash -c 'runuser -u zyggy -- git -C /srv/agent/central remote -v; runuser -u zyggy -- git -C /srv/agent/central rev-parse HEAD; ls -la /srv/agent/home/.ssh'" --query "value[0].message" -o tsv
 ```
+
+GitHub read access (section 11): `stat` and `wc -c` of `/srv/agent/home/.config/zyggy` and its token file are
+allowed — its content is never read, printed or grepped for; `gh --version`, `gh auth status` (as `zyggy`, via
+`runuser`) and `apt-cache policy gh` are allowed; never `gh api` or any other `gh` call that uses the token.
 
 If `az` on the laptop is not logged into the personal subscription, the owner runs the commands and pastes the
 output instead.
