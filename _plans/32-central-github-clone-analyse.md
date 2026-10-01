@@ -145,7 +145,7 @@ It then exports `ZYGGY_GITHUB_CLONE_BASE="$BATS_TEST_TMPDIR/remote"`. The **pois
 
 ## Step 1 — `clone.sh` refuses an unattended run (exit 5), a bad call (exit 4) and a misconfiguration (exit 3: env, memory dir, tools, the 31 token-file cases, a cache root inside or containing the checkout or `memory/`, a non-local base override) with one stderr line, empty stdout, nothing created and neither `gh` nor git called; `askpass.sh` answers only git's two `github.com` prompts
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Tag**: [agent, laptop], `d:\source\zyggy-core`. Commit + push after VERIFY (P1).
 
@@ -206,7 +206,7 @@ It then exports `ZYGGY_GITHUB_CLONE_BASE="$BATS_TEST_TMPDIR/remote"`. The **pois
 
 ## Step 2 — Only repositories of the token's own account get past the policy checks: one `gh api user` call (login), then `gh api repos/<login>/<name>` (canonical name, user-owned, not a fork of a private repository, under the size bound); stale clones are swept and a sixth clone within an hour is refused; GitHub failures exit 6; `--clean` empties the cache without reading the token or calling `gh` or git; git is never called by any of these paths
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Tag**: [agent, laptop], `d:\source\zyggy-core`. Commit + push after VERIFY.
 
@@ -263,7 +263,7 @@ It then exports `ZYGGY_GITHUB_CLONE_BASE="$BATS_TEST_TMPDIR/remote"`. The **pois
 
 ## Step 3 — git receives the token only through the askpass helper, in an isolated environment, and never in the working directory: under the spy, every git call carries exactly the allowlisted environment (no token value, no inherited trace/TLS/config/exec/proxy variable), the https URL without userinfo, the hardening `-c` options and `--depth 1 --single-branch --no-tags`, runs with its cwd and `-C` target under the cache root, gets `x-access-token` and the token from askpass; a failed, secret-bearing or timed-out clone exits 6 with a safe line and leaves no clone and no temp sibling; a successful run prints exactly three stdout lines
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Tag**: [agent, laptop], `d:\source\zyggy-core`. Commit + push after VERIFY.
 
@@ -331,7 +331,7 @@ It then exports `ZYGGY_GITHUB_CLONE_BASE="$BATS_TEST_TMPDIR/remote"`. The **pois
 
 ## Step 4 — With real git against a local bare repository and a poisoned environment and `HOME`, the clone is shallow, tagless, remoteless and unpushable, symlinks arrive as text, submodules and LFS stay unfetched, no hook runs, nothing is traced, no credential file appears; a second clone replaces the first atomically; an oversize checkout is removed; the cache is trimmed to its total bound without touching the new clone
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Tag**: [agent, laptop], `d:\source\zyggy-core`. Commit + push after VERIFY.
 
@@ -378,7 +378,7 @@ It then exports `ZYGGY_GITHUB_CLONE_BASE="$BATS_TEST_TMPDIR/remote"`. The **pois
 
 ## Step 5 — Claude can be asked to analyse a repository: the `github-clone` skill exists (model-invocable, narrow trigger, `disallowed-tools`), the template settings deny the token directory and cache edits and pin the Bash cwd, `security.md`/`AGENTS.md`/`operations.md`/README/`tests/README.md` carry the contract wording, and `repo.bats` asserts all of it
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Tag**: [agent, laptop], `d:\source\zyggy-core`. Commit + push after VERIFY.
 
