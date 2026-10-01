@@ -15,7 +15,7 @@ Build a personal AI agent platform on Claude Code: one always-on **Central** age
 - Job execution: running `claude -p` against a target project, optionally a named subagent, in a worktree, with a tool allowlist.
 - Memory: Markdown memory store owned by Central, nightly consolidation ("dream"), ingestion of node reports.
 - Hub MCP server exposing `get_context` / `remember` to Claude Code sessions.
-- Mail and files of the owner's own company tenant (Microsoft 365, Digiverse) on Central through a Microsoft Graph MCP server using the owner's delegated identity: a morning brief and reply Drafts (never sent), one-off backfills of the mailbox and the drives into memory as facts, and on-request questions in a conversation; work (employer) M365 mail only on the work node.
+- Mail and files of the owner's own company tenant (Microsoft 365, Digiverse) on Central through a Microsoft Graph MCP server, using an application identity of Central scoped to the owner's mailbox and the granted sites: a morning brief and reply Drafts (never sent), one-off backfills of the mailbox and the drives into memory as facts, and on-request questions in a conversation; work (employer) M365 mail only on the work node.
 - Telegram notifications from Central.
 
 **Non-goals (v1)**
@@ -31,7 +31,7 @@ Build a personal AI agent platform on Claude Code: one always-on **Central** age
 
 **Constraints**
 
-- The owner's company tenant is reachable from Central with a delegated public-client credential of the owner; no tenant security setting is weakened for it (decision of 1 October 2026, deliverable 23).
+- The owner's company tenant is reachable from Central with an application credential (a certificate whose private key is generated on Central and never leaves it) scoped in the tenant to the owner's mailbox (Exchange RBAC for Applications) and to explicitly granted sites (`Sites.Selected`); Central's operation never involves the owner's laptop; no tenant security setting is weakened for it (decision of 1 October 2026, deliverable 23).
 - Work laptop: only GitHub and Anthropic endpoints are believed reachable, through a corporate proxy; this is **verified in P0** (which GitHub endpoints and ports pass the proxy, in particular HTTPS 443 versus SSH 22, is measured, not assumed). Microsoft 365 reachable only from that device (Conditional Access). Work mail content never leaves the device; only metadata and summaries cross the bus.
 - Home laptop and Central: unrestricted egress.
 - Model billing: Claude Code on the user's Max subscription; no direct Anthropic API keys in v1.
@@ -70,7 +70,7 @@ Six deliverables. Four are .NET binaries, two are Claude Code configuration (Mar
 
 **Central agent instance**
 
-- Working directory `/srv/agent/central` **is** the `agent-core` checkout (amended 30 September 2026, deliverable 27): `AGENTS.md` (identity and rules; Claude Code reads it natively — no `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` may exist in or above the working directory), `.claude/` (rules, hooks, skills, committed settings), the nested memory repo `memory/` (laid out `memory/<tenant>/<user>/…` per §7; v1 = `memory/geoffrey/geoffrey/`), and `.mcp.json` (Hub MCP local stdio, the `m365` server (`@softeria/ms-365-mcp-server`, pinned, started by a template wrapper that hands it a short-lived access token; only read tools and the two Draft tools are loaded — decision of 1 October 2026), Meta Graph MCP for the Facebook Page / Instagram professional account, read-only). Telegram is the official Claude Code channel plugin on the interactive session (owner-only allowlist), not an MCP entry.
+- Working directory `/srv/agent/central` **is** the `agent-core` checkout (amended 30 September 2026, deliverable 27): `AGENTS.md` (identity and rules; Claude Code reads it natively — no `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` may exist in or above the working directory), `.claude/` (rules, hooks, skills, committed settings), the nested memory repo `memory/` (laid out `memory/<tenant>/<user>/…` per §7; v1 = `memory/geoffrey/geoffrey/`), and `.mcp.json` (Hub MCP local stdio, the `m365` server (`@softeria/ms-365-mcp-server`, pinned, started by a template wrapper that hands it a one-hour application access token minted on Central from its certificate; only read tools and the two Draft tools are loaded — decision of 1 October 2026), Meta Graph MCP for the Facebook Page / Instagram professional account, read-only). Telegram is the official Claude Code channel plugin on the interactive session (owner-only allowlist), not an MCP entry.
 - Two long-running processes: `claude remote-control --name central --spawn=same-dir --permission-mode auto` (interactive access) and `AgentBus.Node` (bus loop, also used for cron-style jobs Central submits to itself).
 - Nightly systemd timer: submits a `dream` job to `tenants/<org>/nodes/central/jobs/` (§6, every scheduled action is a ledger entry); the `dream` skill running inside that job calls the CLI verbs `agentbus dream ingest | rollup | agents` for the mechanical git steps (§7) so they are testable without a model.
 
@@ -399,13 +399,13 @@ The work laptop is a separate trust boundary. Everything below is a hard require
 | Memory repository deploy key (Central) | `~/.ssh/zyggy_zyggy-memory_ed25519`, 0600, read/write | git only (dream pass push) |
 
 During P0 the laptops may use a file-based `ISecretStore` (0600 on Linux, user-profile ACL on Windows) holding spike-only keys, because the OS stores are built later; those keys are rotated and the file store retired on Windows when the OS stores land.
-| Microsoft Graph refresh token (owner's company tenant, delegated, public client `zyggy-central`: `Mail.ReadWrite` for Drafts, `Files.Read.All`, `Sites.Read.All`, `offline_access`) | `~zyggy/.config/zyggy/m365-refresh-token`, 0600, rotated on every use; revoked in Entra (sessions / enterprise app) and shredded | `m365/graph.sh` only; the MCP server receives a one-hour access token in its environment when it starts and holds no cache; never `Mail.Send`, never a settings or unit variable, never `LoadCredential=` |
+| Microsoft Graph application certificate (owner's company tenant, single-tenant app `zyggy-central`: Entra `Sites.Selected` with per-site read grants; Exchange RBAC `Application Mail.ReadWrite` scoped to the owner's mailbox; no `Mail.Send`) | Private key `~zyggy/.config/zyggy/m365-app.key`, 0600, generated on Central, never leaves it; loaded read-only into the brief unit with `LoadCredential=`; rotated yearly (new pair + one certificate upload from a browser); revoked by deleting the certificate or the app registration | `m365/graph.sh` only (mints one-hour tokens with a client assertion); the MCP server receives a token in its environment when it starts and holds no cache; never a settings or unit variable |
 | Telegram bot token | Central: systemd credential | notification MCP only |
 | Graph token cache (work) | MSAL cache encrypted with DPAPI | work node only |
 
 **Isolation**
 
-- Central runs as an unprivileged user in a container or VM with only its own directory mounted; no kubeconfigs, no cloud CLIs authenticated.
+- Central runs as an unprivileged user in a container or VM with only its own directory mounted; no kubeconfigs, no cloud CLIs authenticated. Central may hold an application certificate of the owner's company tenant under the Secrets table; its reach is bounded in the tenant (Exchange RBAC scope, `Sites.Selected` grants), not by Central's configuration (1 October 2026, deliverable 23).
 - Nodes run as the interactive user's account (needed for Claude Code auth and the browser session) but with `settings.json` allowlists per project and the `PreToolUse` hook enforcing `allowed_tools`.
 - `--permission-mode auto` is used everywhere; `--dangerously-skip-permissions` is never used.
 - Envelope bodies and bus file contents are treated as data by every prompt template; a job cannot change the template, add tools, or reference files outside its project.
@@ -556,7 +556,7 @@ Alerts are evaluated per tenant and every message names the tenant. Per-tenant n
 | Dream changed identity files | dream diff touches `profile.md` / `preferences.md` | diff excerpt |
 | Signature failures | any rejection | envelope id and source |
 | Claude auth expired | `claudeAuthOk = false` on any node | machine name |
-| Graph credential expired or brief audit flagged | `brief.jsonl` last line `exit 6 auth failed` / `audit FLAGGED`, or no line by 08:00 | re-consent (runbook 13) / review the Drafts |
+| Graph credential failing, certificate expiring, or brief audit flagged | `brief.jsonl` last line `exit 6 auth failed` / `exit 3 certificate expired` / `audit FLAGGED`, a `check` warning < 30 days to expiry, or no line by 08:00 | runbook 13 "Certificate rejected" / "Rotate the certificate" / review the Drafts |
 
 **Cost tracking**
 
