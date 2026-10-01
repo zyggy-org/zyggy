@@ -15,7 +15,7 @@ Build a personal AI agent platform on Claude Code: one always-on **Central** age
 - Job execution: running `claude -p` against a target project, optionally a named subagent, in a worktree, with a tool allowlist.
 - Memory: Markdown memory store owned by Central, nightly consolidation ("dream"), ingestion of node reports.
 - Hub MCP server exposing `get_context` / `remember` to Claude Code sessions.
-- Mail and files of the owner's own company tenant (Microsoft 365, Digiverse) on Central through a Microsoft Graph MCP server, using an application identity of Central scoped to the owner's mailbox and the granted sites: a morning brief and reply Drafts (never sent), one-off backfills of the mailbox and the drives into memory as facts, and on-request questions in a conversation; work (employer) M365 mail only on the work node.
+- Mail and files of the owner's own company tenant (Microsoft 365, Digiverse) on Central through a Microsoft Graph MCP server, using an application identity of Central scoped to the owner's mailbox and the granted sites: a morning brief and reply Drafts, one-off backfills of the mailbox and the drives into memory as facts, on-request questions in a conversation, and sending, moving or deleting mail **only after the owner's per-action consent given on a terminal of the VM**; work (employer) M365 mail only on the work node.
 - Telegram notifications from Central.
 
 **Non-goals (v1)**
@@ -28,6 +28,7 @@ Build a personal AI agent platform on Claude Code: one always-on **Central** age
 - No telemetry, no installer beyond scripts, no container image, no packaged `agent-core`, no budget enforcement.
 - No UI beyond CLI and Claude Code; no web dashboard.
 - No automatic sending of e-mail or messages without explicit user confirmation.
+- The confirmation is given out of band (a terminal the owner holds on Central), never through a model-writable channel such as the chat session or a permission prompt (decision D6, 1 October 2026, deliverable 23).
 
 **Constraints**
 
@@ -88,7 +89,7 @@ Six deliverables. Four are .NET binaries, two are Claude Code configuration (Mar
 | `remember` | Central, Nodes | Append a `[stated]` fact to `memory/<tenant>/<user>/inbox/` (Central) or emit a `context` envelope (Nodes). |
 | `delegate` | Central | Pick machine/project/agent from the tenant's registry, build a job envelope, submit. |
 | `discover` | Nodes | Scan dev roots, write `tenants/<org>/registry/<machine>.yaml`, commit if changed. |
-| `morning-brief`, `mail-backfill`, `files-backfill`, `m365` | Central | The `m365` MCP server's read tools and two Draft tools, driven by owner-invoked skills: `morning-brief` (timer: new mail and changed files → one brief Draft and at most N reply Drafts, facts to `inbox/`), `mail-backfill` and `files-backfill` (owner-started, batched, resumable, cost-capped, facts only), `m365` (status and the interactive rules). Never sends; memory only through validated fact lines; a post-run audit checks every Draft. |
+| `morning-brief`, `mail-backfill`, `files-backfill`, `m365` | Central | The `m365` MCP server's read tools and two Draft tools, driven by owner-invoked skills: `morning-brief` (timer: new mail and changed files → one brief Draft, at most N reply Drafts, proposals to send/move/delete, facts to `inbox/`), `mail-backfill` and `files-backfill` (owner-started, batched, resumable, cost-capped, facts only), `m365` (status and the interactive rules). The model proposes; the owner approves each action on a terminal of the VM (`m365-approve.sh`), where the only program that can send, move or delete (`graph.sh`) executes the approved row; memory only through validated fact lines; a post-run audit reconciles every Draft and every sent item. |
 | `triage-mail` | Work node | Reads the work inbox through the access the user already has, classifies, creates Drafts, produces a metadata-only summary (deliverable 24). Never sends. |
 
 **Hooks (`agent-core/.claude/hooks/`)**
@@ -399,7 +400,7 @@ The work laptop is a separate trust boundary. Everything below is a hard require
 | Memory repository deploy key (Central) | `~/.ssh/zyggy_zyggy-memory_ed25519`, 0600, read/write | git only (dream pass push) |
 
 During P0 the laptops may use a file-based `ISecretStore` (0600 on Linux, user-profile ACL on Windows) holding spike-only keys, because the OS stores are built later; those keys are rotated and the file store retired on Windows when the OS stores land.
-| Microsoft Graph application certificate (owner's company tenant, single-tenant app `zyggy-central`: Entra `Sites.Selected` with per-site read grants; Exchange RBAC `Application Mail.ReadWrite` scoped to the owner's mailbox; no `Mail.Send`) | Private key `~zyggy/.config/zyggy/m365-app.key`, 0600, generated on Central, never leaves it; loaded read-only into the brief unit with `LoadCredential=`; rotated yearly (new pair + one certificate upload from a browser); revoked by deleting the certificate or the app registration | `m365/graph.sh` only (mints one-hour tokens with a client assertion); the MCP server receives a token in its environment when it starts and holds no cache; never a settings or unit variable |
+| Microsoft Graph application certificate (owner's company tenant, single-tenant app `zyggy-central`: Entra `Sites.Selected` with per-site read grants; Exchange RBAC `Application Mail.ReadWrite` and `Application Mail.Send`, both scoped to the owner's mailbox) | Private key `~zyggy/.config/zyggy/m365-app.key`, 0600, generated on Central, never leaves it; loaded read-only into the brief unit with `LoadCredential=`; rotated yearly (new pair + one certificate upload from a browser); revoked by deleting the certificate or the app registration | `m365/graph.sh` only (mints one-hour tokens with a client assertion; executes a send, move or soft delete only against a row the owner approved on a terminal of the VM); the MCP server receives a token in its environment when it starts and holds no cache; never a settings or unit variable |
 | Telegram bot token | Central: systemd credential | notification MCP only |
 | Graph token cache (work) | MSAL cache encrypted with DPAPI | work node only |
 
@@ -414,7 +415,7 @@ During P0 the laptops may use a file-based `ISecretStore` (0600 on Linux, user-p
 
 - Unsigned, mis-addressed or wrong-tenant envelopes are rejected before any model call.
 - Mail content and web pages read during a job are untrusted; the prompt template says so, and the `PreToolUse` hook blocks any `Bash` invocation containing `curl`/`wget`/`Invoke-WebRequest` unless the job allows it.
-- Mail and document content from the owner's company tenant reaches the model through the `m365` tools and is data; the server loads no tool that sends, deletes, moves, forwards, uploads or shares, and Claude Code denies those tool names as well; Drafts go only to the owner or to the sender of the mail answered; generated Draft text contains no link or address; a post-run audit flags any Draft that violates this before the owner sends anything.
+- Mail and document content from the owner's company tenant reaches the model through the `m365` tools and is data; the server loads no tool that sends, moves, deletes, forwards, uploads or shares, and Claude Code denies those tool names as well; the model can only propose such an action, and the owner approves it on a terminal of the VM where the content is re-fetched from Graph — never from the model's text; Drafts go only to the owner or to the sender of the mail answered; generated Draft text contains no link or address; a post-run audit flags any Draft that violates this and any sent item without a matching consent.
 - Reports are never re-fed as jobs automatically; Central's `delegate` skill constructs new jobs from its own reasoning, and a chain longer than 3 hops requires the user's confirmation via Telegram.
 
 **Data protection — the owner's company data** (added 1 October 2026, deliverable 23)
@@ -556,7 +557,7 @@ Alerts are evaluated per tenant and every message names the tenant. Per-tenant n
 | Dream changed identity files | dream diff touches `profile.md` / `preferences.md` | diff excerpt |
 | Signature failures | any rejection | envelope id and source |
 | Claude auth expired | `claudeAuthOk = false` on any node | machine name |
-| Graph credential failing, certificate expiring, or brief audit flagged | `brief.jsonl` last line `exit 6 auth failed` / `exit 3 certificate expired` / `audit FLAGGED`, a `check` warning < 30 days to expiry, or no line by 08:00 | runbook 13 "Certificate rejected" / "Rotate the certificate" / review the Drafts |
+| Graph credential failing, certificate expiring, brief audit flagged or a sent item without a consent row | `brief.jsonl` last line `exit 6 auth failed` / `exit 3 certificate expired` / `audit FLAGGED`, a `check` warning < 30 days to expiry, or no line by 08:00 | runbook 13 "Certificate rejected" / "Rotate the certificate" / review the Drafts / "Revoke the application credential" |
 
 **Cost tracking**
 
@@ -610,7 +611,7 @@ All five open questions are answered as of 27 September 2026; the decisions tabl
 | Q2 | Graph app registration with device-code flow, or Chrome against Outlook Web, for work mail? | P4 | Reuse the mail access Geoffrey already uses on the work laptop; no new app registration in v1. | Decided |
 | Q3 | Central hosting? | P1 | Azure VM, Standard B2as v2 (2 vCPU, 8 GB), Ubuntu 24.04, 64 GB Premium SSD, Tailscale; Azure Backup daily. Roughly €40–50/month against an unused €125 cloud budget. A VM beats containers here: persistent `~/.claude`, tmux, git and the CLI all live on one disk. | Decided |
 | Q4 | Session continuity for remote control after a service restart? | P1 | `claude-remote.service` runs a wrapper that finds the newest session in `~/.claude/projects/<dir>/` and starts `claude --resume <id> --remote-control`; falls back to a fresh session if none exists or resume fails. Verify in the installed version during P1. | Decided |
-| Q5 | Personal mailbox provider for v1? | P5 | Reversed 1 October 2026: the owner's company mailbox and drives (Digiverse M365) on Central through the `m365` MCP server, Drafts only; Gmail and personal Outlook.com dropped (D4). | Decided |
+| Q5 | Personal mailbox provider for v1? | P5 | Reversed 1 October 2026: the owner's company mailbox and drives (Digiverse M365) on Central through the `m365` MCP server; Drafts by the model, send/move/delete only after the owner's per-action consent on the VM; Gmail and personal Outlook.com dropped (D4). | Decided |
 
 **Decisions**
 
