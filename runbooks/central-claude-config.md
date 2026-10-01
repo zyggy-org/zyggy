@@ -71,7 +71,7 @@ Always start Claude in `/srv/agent/central`, never in `memory/` (hooks are per w
 | 12c First analysis of `salon25-api` (AC-3) | done 2026-10-01 | clone `49804a563fb0`, neutral first line; two committed secrets found in the repository, owner rotated them |
 | 12d Clone on disk (AC-4) | done 2026-10-01 | shallow, no tags or remote, `[core]` only, 34 MiB; finding `~/.cache/zyggy` 755 |
 | 12e Refusals (AC-5) | pending | |
-| 12f Canary (AC-6) | pending | prepared in `d:\source\zyggy-canary` |
+| 12f Canary (AC-6) | created 2026-10-01 | `geobarteam/zyggy-canary` pushed by the owner; analysis and deletion pending |
 | 12g Exfiltration cut, Bash cwd (AC-7) | pending | |
 | 12h Unattended refusal (AC-8) | pending | |
 | 12i Sweeps, GitHub side (AC-9, AC-10) | pending | |
