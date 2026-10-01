@@ -66,8 +66,8 @@ Always start Claude in `/srv/agent/central`, never in `memory/` (hooks are per w
 | 11e `--check` (AC-4) | done 2026-10-01 | `login geobarteam, 68 repositories visible, 0 excluded, rate limit 5000/5000, no expiration`, exit 0; memory status unchanged |
 | 11f Attended run, rerun, refusal, sweeps, GitHub-side checks, audit, cost | done 2026-10-01 | 68 lines; rerun replaced; refusal exit 5; sweeps clean (card-number false positives in transcripts, token shape 0); 42 requests | |
 | 11g 0002 section 31 complete | done 2026-10-01 | 15 AC rows pass; CI 36843807079 / 36844404107 green |
-| 12a Pre-checks (AC-1) | pending | |
-| 12b Template + instance on the VM, live settings merged, smoke exit 5 | pending | template `1d6a77d` (CI 36855700843 green) |
+| 12a Pre-checks (AC-1) | done 2026-10-01 | git 2.43.0, no credential store, no cache, gh not logged in, HEAD `baab35b` |
+| 12b Template + instance on the VM, live settings merged, smoke exit 5 | done 2026-10-01 | VM `e55d558`; `additionalDirectories` merged; smoke exit 5, nothing created; `/permissions` at 12c |
 | 12c First analysis of `salon25-api` (AC-3) | pending | |
 | 12d Clone on disk (AC-4) | pending | |
 | 12e Refusals (AC-5) | pending | |

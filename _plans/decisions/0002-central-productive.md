@@ -89,13 +89,13 @@ Spec: `_specs/32-central-github-clone-analyse.md` · Plan: `_plans/32-central-gi
 `runbooks/central-claude-config.md` section 12.
 
 - Dates: template `fbf9fb0` → `1d6a77d` (Steps 1–5, each CI green; last run 36855700843) 2026-10-01 (Gate A approved
-  by the owner); instance `<sha>` pulled on the VM `<UTC>`; live settings merged `<UTC>`; first analysis `<UTC>`;
+  by the owner); instance `e55d558` pulled on the VM 2026-10-01 ~12:20 UTC; live settings merged ~12:20 UTC; first analysis `<UTC>`;
   canary created `<UTC>` / deleted `<UTC>`; refusals `<UTC>`; unattended refusal `<UTC>`; sweeps `<UTC>`.
 
 | Check (AC) | Criterion | Evidence (date, command, excerpt) | Result |
 |------------|-----------|-----------------------------------|--------|
-| AC-1 | Pre-checks: git ≥ 2.32, no `XDG_CACHE_HOME`, no `.git-credentials`, no global credential/url config, no cache, `gh` not logged in | | |
-| AC-2 | Template + instance pulled; deny rules, cwd pinning, `additionalDirectories` live; `/permissions` shows them | | |
+| AC-1 | Pre-checks: git ≥ 2.32, no `XDG_CACHE_HOME`, no `.git-credentials`, no global credential/url config, no cache, `gh` not logged in | 2026-10-01 12:16 UTC (agent, `az vm run-command` read-only, before the pull): `git version 2.43.0`; `xdg exit 1`, unit `Environment=` empty; no `.git-credentials`; global `credential.*`/`url.*` → exit 1; no `~/.cache/zyggy`; `gh` not logged in (exit 1); HEAD `baab35b`; skills `github-inventory remember seed-memory` | pass |
+| AC-2 | Template + instance pulled; deny rules, cwd pinning, `additionalDirectories` live; `/permissions` shows them | 2026-10-01 ~12:20 UTC (agent, owner-authorised): `runuser -u zyggy -- git pull --ff-only` → `e55d558`, clean tree, `merge-base --is-ancestor 1d6a77d HEAD` → 0; live-settings `jq` merge → `additionalDirectories` = `["/srv/agent/home/.cache/zyggy/repos"]`, four `ZYGGY_*` keys and `autoMemoryDirectory` unchanged, `600 zyggy`; template `permissions.deny` = the two rules, `env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR` = `1`; `SKILL.md` front matter `name: github-clone`, `argument-hint`, `disallowed-tools`, no `disable-model-invocation`; `clone.sh`/`askpass.sh` `-rwxr-xr-x zyggy`; smoke `ZYGGY_HOOKS=off clone.sh geobarteam/salon25-api` → `github-clone: refused: unattended run (ZYGGY_HOOKS=off)`, exit 5, no `~/.cache/zyggy`. `/permissions` in the session pending (Step 8) | pending (`/permissions`) |
 | AC-3 | "Analyse salon25-api": one `github-clone` call, reads without prompts, neutral first line, nothing run | | |
 | AC-4 | Clone on disk: 0700, shallow, no tags, no remote, unpushable, `[core]` only, no symlinks, within bounds | | |
 | AC-5 | `zyggy-org`, employer and other-account repositories refused, no other way tried | | |
@@ -108,7 +108,7 @@ Spec: `_specs/32-central-github-clone-analyse.md` · Plan: `_plans/32-central-gi
 | AC-12 | Replace on a repeat request; "Forget the clones" empties the cache | | |
 | AC-13 | `security.md`/`AGENTS.md`/`operations.md` carry the clone rules; prompt audit clean | | |
 | AC-14 | Instance, runbook section 12 and this record complete | | |
-| AC-15 | Template and instance CI green with `clone.bats` and the word test run; instance differs only in instance-owned paths; VM clean | 2026-10-01: template `1d6a77d` CI https://github.com/zyggy-org/zyggy-core/actions/runs/36855700843 green (174 tests, word test ran, 37 clone tests); instance merge `e55d558` (template `1d6a77d` + instance `769f12b`), `git diff --name-only upstream/main HEAD` → the two instance-owned files, CI https://github.com/zyggy-org/zyggy-geoffrey/actions/runs/36860117268 green (174 tests, word test ran, 37 clone tests); VM half pending (Step 7) | pending |
+| AC-15 | Template and instance CI green with `clone.bats` and the word test run; instance differs only in instance-owned paths; VM clean | 2026-10-01: template `1d6a77d` CI https://github.com/zyggy-org/zyggy-core/actions/runs/36855700843 green (174 tests, word test ran, 37 clone tests); instance merge `e55d558` (template `1d6a77d` + instance `769f12b`), `git diff --name-only upstream/main HEAD` → the two instance-owned files, CI https://github.com/zyggy-org/zyggy-geoffrey/actions/runs/36860117268 green (174 tests, word test ran, 37 clone tests); VM 2026-10-01 ~12:20 UTC at `e55d558`, clean tree | pass |
 
 ## Repositories
 
@@ -148,7 +148,7 @@ Spec: `_specs/32-central-github-clone-analyse.md` · Plan: `_plans/32-central-gi
 | tool | version | source | purpose | added |
 |------|---------|--------|---------|-------|
 | `gh` (GitHub CLI, MIT) | 2.102.0 (2026-09-30) | `https://cli.github.com/packages stable main` (keyring `/etc/apt/keyrings/githubcli-archive-keyring.gpg`) — never `universe` | `github-inventory` skill only; never logged in | 2026-10-01 (before 07:46 UTC, owner, runbook 11b) |
-| `git` | `<pending, 12a>` | Ubuntu 24.04 (02) | `github-clone` (isolated runner, askpass) | 02 |
+| `git` | 2.43.0 | Ubuntu 24.04 (02) | `github-clone` (isolated runner, askpass) | 02 |
 
 ## Credentials on Central
 

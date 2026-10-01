@@ -540,7 +540,7 @@ When the docs are silent, ship as specified; AC-7 on Central decides (Step 9), w
 
 ## Step 7 — Central runs the new template: AC-1 pre-checks recorded, the VM fast-forwarded to the instance commit, the live local settings carry the additional directory, the template's deny rules and cwd pinning are live, and an unattended smoke run of `clone.sh` is refused without creating anything
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Tag**: [agent, VM] + [agent, laptop] (0002, runbook). No owner action. Runbook 12a, 12b.
 
