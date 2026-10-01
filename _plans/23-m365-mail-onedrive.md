@@ -385,7 +385,7 @@ Fixture bodies (`tests/fixtures/graph/`): `token-ok.json`, `token-invalid-client
 
 ## Step 7 — Every Draft a run leaves and every mail that left the mailbox is audited after the fact: `verify.sh <date> <window-start>` lists the Drafts created in the window (exactly one brief Draft to the owner only; reply Drafts within the recorded replied-to senders; no URL/address/secret; count ≤ `reply_cap`+1) **and the Sent Items of the window (every item must match one `executed` `send-draft` row by `internetMessageId`/subject/time ± 2 min, and every executed row must have its item)**, writes the receipt (incl. `proposals` and `executions` counts), prints `audit ok` (0) or `audit FLAGGED: …` (5), never deletes
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Tag**: [agent, laptop], `d:\source\zyggy-core`. Commit + push after VERIFY.
 
