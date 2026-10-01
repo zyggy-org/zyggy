@@ -162,6 +162,12 @@ Further probe findings (not in the spec's list):
   `client.js`, asserted by `tests/m365.bats`). `ENABLED_TOOLS` =
   `^(create-shared-mailbox-draft|create-shared-mailbox-reply-draft|download-bytes-to-file|get-drive-delta|get-drive-item|get-drive-root-item|get-shared-mailbox-message|get-sharepoint-site-drive-by-id|list-drive-item-versions|list-folder-files|list-shared-mailbox-folder-messages|list-shared-mailbox-messages|list-sharepoint-site-drives|search-onedrive-files)$`.
 
+### Accepted risks
+
+| Date | Risk | Owner decision | Revisit |
+|------|------|----------------|---------|
+| 2026-10-01 (Gate A) | **Consent gate bypassable from an interactive session.** The send/move/delete path (`graph.sh send-draft|move|delete --approved`) and `approvals.jsonl` live under the same Unix user `zyggy` as the model. In an interactive auto-mode session with Bash, an injected model could fake a terminal (`script -qc`; `zy_m365_tty` = `[ -t 0 ] && [ -t 1 ]`), get around the path-prefix deny rule `Bash(.claude/skills/m365/graph.sh *)` (e.g. `bash <path>`, absolute path), and append an approval row with Bash, then execute it. Timer runs are unaffected (`ZYGGY_HOOKS=off`, `--allowedTools`, no tty). Remaining controls: prompt rules (`security.md`, `m365` skill), the auto-mode classifier, `verify.sh` reconciliation (a sent item without an executed row is FLAGGED), the audit-log AC, Exchange RBAC scope (owner's mailbox only). | **Accepted by the owner** ("Accept the risk for now"), against the executor's recommendation to split identities by Unix user (read app on `zyggy`; a separate send-capable app, its key and `approvals.jsonl` under `zyggy-send`, reached only via a password-prompting `sudo`). | At 18–20 (work-boundary hardening), or earlier if any `audit FLAGGED` for an unmatched sent item occurs. |
+
 ### Tenant facts
 
 (pending, AC-1)
