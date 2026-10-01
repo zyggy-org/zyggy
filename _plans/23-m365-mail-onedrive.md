@@ -316,7 +316,7 @@ Fixture bodies (`tests/fixtures/graph/`): `token-ok.json`, `token-invalid-client
 
 ## Step 5 — The model proposes and the owner approves on a terminal: `propose.sh send-draft|move|delete <id> [<folder>] --reason <text>` (model-callable, no recipient/body/subject parameter, allowed unattended) snapshots the real object through `graph.sh`, flags a Draft whose recipients fall outside {owner, the replied-to sender/`replyTo`}, bounds the reason, dedups by target+action, appends a `pending` row and prints the review instruction; `m365-approve.sh` (owner-only) refuses without a tty or under `ZYGGY_HOOKS=off`, expires stale rows, re-fetches each pending row's snapshot and body on the tty, marks `CHANGED since proposal`, asks `[y]es / [n]o / [s]kip / [q]uit`, on `y` writes `approvals.jsonl` bound to the **current** hash and runs `graph.sh <verb> --approved`, on `n` marks `refused`; `--list` prints without acting; the unit shape (no tty, `ZYGGY_HOOKS=off`) can propose but never execute
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Tag**: [agent, laptop], `d:\source\zyggy-core`. Commit + push after VERIFY.
 
