@@ -15,7 +15,7 @@ secret-shaped sample is quoted truncated (`ghp…`).
 | 32 | Central clones and analyses the owner's repositories on request | Done 2026-10-01 (Gates A and B approved; owner skipped the remaining session tests; final gate pending) | this file, section 32 |
 | 28 | Nightly dream pass on Central without the bus | Not started | |
 | 29 | Telegram as Central's chat channel | Not started | |
-| 23 | Personal mail triage on Central (Gmail + Outlook.com) | Not started | |
+| 23 | Digiverse Microsoft 365 on Central: morning brief, reply Drafts, mail and files backfills through an MCP server with an app-only certificate credential | In progress (Slice A started 2026-10-01 on the owner's go, laptop/offline; Step 1 done 2026-10-01) | this file, section 23 |
 | 30 | Social connectors on Central | Not started | |
 
 ## 27 — Central identity, memory repo, plugins
@@ -110,6 +110,87 @@ Spec: `_specs/32-central-github-clone-analyse.md` · Plan: `_plans/32-central-gi
 | AC-14 | Instance, runbook section 12 and this record complete | 2026-10-01 (agent): `instance.md` "## GitHub" clone bullet + five runbook entries, `instance/settings.local.json` `permissions.additionalDirectories` (instance `769f12b`); runbook section 12 (12a–12k, two standing entries, seven troubleshooting entries, restore step 7, read-only rules), status rows filled; this section's 15 rows dated, Tools/Settings/Credentials/Deviations/Costs updated | pass |
 | AC-15 | Template and instance CI green with `clone.bats` and the word test run; instance differs only in instance-owned paths; VM clean | 2026-10-01: template `1d6a77d` CI https://github.com/zyggy-org/zyggy-core/actions/runs/36855700843 green (174 tests, word test ran, 37 clone tests); instance merge `e55d558` (template `1d6a77d` + instance `769f12b`), `git diff --name-only upstream/main HEAD` → the two instance-owned files, CI https://github.com/zyggy-org/zyggy-geoffrey/actions/runs/36860117268 green (174 tests, word test ran, 37 clone tests); VM 2026-10-01 ~12:20 UTC at `e55d558`, clean tree. AC-4 fix: template `3065b29` CI https://github.com/zyggy-org/zyggy-core/actions/runs/36863773954 green → instance `284ea8d` CI https://github.com/zyggy-org/zyggy-geoffrey/actions/runs/36863783731 green → VM fast-forwarded ~12:50 UTC, clean tree | pass |
 
+## 23 — Microsoft 365 (Digiverse)
+
+Spec: `_specs/23-m365-mail-onedrive.md` · Plan: `_plans/23-m365-mail-onedrive.md` · Runbook:
+`runbooks/central-claude-config.md` section 13 (pending, Step 11).
+
+- Dates:
+
+### Probe findings (facts 1–8)
+
+Offline probe of `@softeria/ms-365-mcp-server@0.157.2` (plan 23 Step 1, 2026-10-01, laptop scratchpad; `npm pack` — the one
+network fetch of P2; tarball `dist.integrity` `sha512-07Elnb0oIqgalywK6pK7KNxUuLDoOs+mraMCjluM3jeUYeO5DMkpS55HgdKiYoLAlpyxxytWFqhiDUVfah7ghg==`;
+the extraction deleted afterwards). Sources read: `package.json`, `dist/endpoints.json` (334 entries, 334 unique tool names,
+152 under `/me`), `dist/generated/client.js` + `client-beta.js` (the tool parameter schemas), `dist/auth.js`,
+`dist/cli.js`, `dist/server.js`, `dist/graph-tools.js`, `dist/auth-tools.js`, `dist/tool-categories.js`,
+`dist/lib/param-descriptions.js`. `node dist/index.js --list-permissions` could **not** be run: the tarball ships no
+`node_modules` and a dependency install would be a second fetch (P2) — the registry was derived from the same three
+sources the server registers from (`allEndpoints` = v1 + beta client, `UTILITY_TOOLS`, `registerAuthTools`).
+
+| # | Fact | Source | Answer | Consequence |
+|---|------|--------|--------|-------------|
+| 1 | Entra accepts a PS256 / `x5t#S256` client assertion signed with an `openssl` 2048-bit self-signed certificate | not settleable offline (the package authenticates with MSAL; no assertion code to read); the identity-platform docs name PS256 + `x5t#S256` as the current form and RS256 + `x5t` as the older documented one | **open — AC-6 decides** | Step 2 implements PS256 by default **and** `graph.sh token --alg RS256` (both under test); if PS256 is rejected the template default constant flips to RS256 (one line, already tested) and this row is updated |
+| 2 | OData parameters of `list-shared-mailbox-folder-messages` | `client.js` alias block (GET `/users/{user-id}/mailFolders/{mailFolder-id}/messages`) + the parameters `registerGraphTools` adds | `$top`, `$skip`, `$search`, `$filter`, `$count`, `$orderby`, `$select`, `$expand`; path `userId`, `mailFolderId`; server-added `fetchAllPages`, `skiptoken`, `includeHeaders`, `excludeResponse`. `$filter` and `$search` cannot be combined (server rule) | The prompts (Steps 7–8) use `$filter=receivedDateTime ge <watermark>`, `$orderby=receivedDateTime desc`, `$top`, `$select`; the "`$filter` missing" fallback is not needed |
+| 3 | `create-shared-mailbox-reply-draft` body/comment argument | `create_reply_draft_Body` in `client.js`: `{ Message?, Comment? }` (`.partial()`); `llmTip`: "Specifying both 'comment' and Message.body returns 400" | **Accepts `Comment` (text) or `Message.body` (HTML/text)**; path `userId`, `messageId` | `update-shared-mailbox-message` stays **excluded**; no recorded weakening; the prompt passes `Comment` only |
+| 4 | `get-drive-delta` served under a `Sites.Selected` read grant | not settleable offline; `endpoints.json` lists only the delegated `Files.Read` for the tool, while `list-sharepoint-site-drives` / `get-sharepoint-site-drive-by-id` carry `workScopes` `Sites.Read.All` \| `Sites.Selected` | **open — AC-6/AC-9 decide** | Step 9's prompt carries the fallback paragraph ("if `get-drive-delta` returns 403, list the top folders with `list-folder-files` and compare `lastModifiedDateTime`"); never a wider permission |
+| 5 | `get-drive-delta` token/deltaLink argument | `client.js` (query params `$top,$skip,$search,$filter,$count,$select,$orderby,$expand`, path `driveId`, `driveItemId` — **no `token`**); `graph-tools.js` `normalizeSkiptokenQueryParam`: "The drive and sites delta tools page with a token= link, which skiptoken cannot resend"; unknown parameters are not forwarded as query; `fetchAllPages=true` follows `@odata.nextLink` and returns the final `@odata.deltaLink` | **No token/deltaLink argument; a stored deltaLink cannot be replayed through the server** | Every run calls `get-drive-delta` from the root without a token (`$select=id,name,lastModifiedDateTime,parentReference,file,folder,webUrl,size`, `fetchAllPages=true`) and the model keeps only items with `lastModifiedDateTime` ≥ the state watermark (the Decision Table's timestamp fallback, applied as a filter); on 403 → fact 4's listing fallback. The watermark is the state, not a delta token |
+| 6 | `${CLAUDE_PROJECT_DIR}` expansion in `.mcp.json` | Claude Code docs (`mcp`: `${VAR:-default}` expansion in `.mcp.json`); nothing in the package bears on it | docs say supported; not testable offline | The template keeps `${CLAUDE_PROJECT_DIR:-.}`; AC-6/AC-7 decide |
+| 7 | `ReadWritePaths=` under `ProtectSystem=strict` | not settleable offline | **open — AC-9 run 1 (Step 16)** | The unit starts with the spec's four paths (`~/.local/state/zyggy`, `memory`, `~/.claude`, `~/.npm`); additions recorded per run |
+| 8 | A Draft created by the application in `/users/{upn}/messages` is sendable from the owner's Outlook | Graph docs (`user-post-messages`: saved in the user's Drafts folder); not testable offline | **open — AC-7 (Step 15)** | One test reply sent to himself or discarded by the owner; recorded there |
+
+Further probe findings (not in the spec's list):
+
+- **`graph-batch`** (POST `/$batch`, `scopes: []`, registered in every mode) is a **generic Graph tool** — the spec's "no
+  generic Graph tool" sentence is wrong; it is excluded from `ENABLED_TOOLS` and goes on the deny list (name by name).
+- **Six auth tools** (`login`, `logout`, `verify-login`, `list-accounts`, `select-account`, `remove-account`) are
+  registered in stdio mode **regardless of `MS365_MCP_OAUTH_TOKEN` and outside the `ENABLED_TOOLS` filter**
+  (`server.js`: `!http || enableAuthTools`); for them the settings deny list is the **only** line of defence (Step 3).
+- Four utility tools: `download-bytes`, `download-bytes-to-file` (`stdioOnly`), `get-download-url`, `parse-teams-url`;
+  six **beta** endpoints (`apiVersion: beta`: planner task messages, `get-my-profile`, custom emoji) — all excluded but
+  `download-bytes-to-file`.
+- `ENABLED_TOOLS` is compiled with the `i` flag; an invalid regex makes the server **exit** ("Without a valid filter, all
+  tools would be exposed"). `MS365_MCP_ORG_MODE=1` and `--org-mode` are equivalent (`cli.js`).
+- BYOT confirmed: `AuthManager` sets `isOAuthMode` when `MS365_MCP_OAUTH_TOKEN` is present and `getToken()` returns it
+  as-is — no `/me` call, no account validation; `MS365_MCP_EXPECTED_USERNAME` is MSAL-only.
+- The **site-drive read tools exist**: `list-sharepoint-site-drives` (GET `/sites/{site-id}/drives`) and
+  `get-sharepoint-site-drive-by-id` (GET `/sites/{site-id}/drives/{drive-id}`) → added to the allowlist. Every name the
+  spec assumed exists under that name; `list-drives` is `/me/drives`, `get-current-user` is `/me`, `list-users` is
+  `/users` — all excluded.
+- Counts: **344** tools registered with `--org-mode` (334 endpoints + 4 utilities + 6 auth) = **14** enabled + **330**
+  excluded (`tests/fixtures/m365/{tools-0.157.2,enabled-tools,excluded-tools}.txt`, generated from `endpoints.json` +
+  `client.js`, asserted by `tests/m365.bats`). `ENABLED_TOOLS` =
+  `^(create-shared-mailbox-draft|create-shared-mailbox-reply-draft|download-bytes-to-file|get-drive-delta|get-drive-item|get-drive-root-item|get-shared-mailbox-message|get-sharepoint-site-drive-by-id|list-drive-item-versions|list-folder-files|list-shared-mailbox-folder-messages|list-shared-mailbox-messages|list-sharepoint-site-drives|search-onedrive-files)$`.
+
+### Tenant facts
+
+(pending, AC-1)
+
+| Check (AC) | Criterion | Evidence (date, command, excerpt) | Result |
+|------------|-----------|-----------------------------------|--------|
+| AC-1 | Tenant facts recorded (user/mailbox count, security-defaults/CA state, licence tier, Exchange plan, employer tenant differs); no tenant security setting changed | | |
+| AC-2 | `graph.sh cert-init` on the VM: key `600`/dir `700`, `.cer` `644` (CN `zyggy-central`, 398 days), SHA-1/SHA-256 thumbprints + expiry printed; no overwrite without `--rotate`; the key never printed or transferred | | |
+| AC-3 | App registration `zyggy-central`: single tenant, no platform/redirect, public client flows off, the `.cer` uploaded (thumbprint = AC-2), API permissions = application `Sites.Selected` only with admin consent; no `Mail.*`, `Files.*`, `*.All`, delegated permission or secret; client id, tenant id, sp object id in `instance/m365.json` | | |
+| AC-4 | Exchange RBAC for Applications (Cloud Shell): service principal, management scope `PrimarySmtpAddress -eq '<mailbox>'`, exactly one assignment `Application Mail.ReadWrite`; `Test-ServicePrincipalAuthorization` → `InScope True` for the owner's mailbox, `False` for any other (or "no other mailbox") | | |
+| AC-5 | Graph Explorer: one `read` grant for `zyggy-central` per site (OneDrive personal site + each named site); site ids in `sites_granted`; no other site; `Files.Read.All` never consented | | |
+| AC-6 | On the VM: `graph.sh token \| wc -c` > 1000, nothing else printed; `graph.sh check --counts` status line + folder counts; service-principal sign-in in the Entra log with the VM's IP; key mtime unchanged; `--other-mailbox` → `403 (expected: scope holds)` | | |
+| AC-7 | Remote session after `/clear`: `/mcp` shows `m365` connected; reads via `list-shared-mailbox-folder-messages` with `user-id` = the mailbox; a reply Draft in the owner's Outlook Drafts, right recipient, sendable; delete and send refused (no tool); Sent/Deleted Items unchanged | | |
+| AC-8 | Same session > 1 h later: 401 reported, `/mcp` reconnect mints a new token ("Hourly reconnect") | | |
+| AC-9 | Attended runs 1–5 (`systemctl start`): journal line per run; exactly one `Zyggy — morning brief <date>` Draft to the owner only; ≤ N in-thread reply Drafts to sender/`replyTo` only; `verify.sh` audits; `systemd-analyze security`; `LoadCredential=` copy used (`key: credentials directory`); owner's notes per run | | |
+| AC-10 | Timer enabled after five `audit ok` runs and the owner's go: three consecutive timer runs; an edited OneDrive file named in "Work in progress"; same-day manual start → `already created`; D2/D5b deviation row | | |
+| AC-11 | Before/after each timer run: Sent/Deleted Items unchanged, Drafts grew by the journal count; `Search-UnifiedAuditLog` on the app id shows `Create`/`MailItemsAccessed` only | | |
+| AC-12 | Key replaced by another key → `brief.sh` exits 6 before `claude` (`auth failed (invalid_client: AADSTS700027 …)`), no Draft, no state change; key restored → next run succeeds | | |
+| AC-13 | Canary mail: listed as data, "ignore/report" proposed; no Draft to the external address; no reply Draft with a URL, address or memory content; canary deleted by the owner | | |
+| AC-14 | `mail-backfill.sh` in tmux, interrupted once: `resuming folder <name> from <checkpoint>`; final counts line; `inbox/m365-mail-backfill-<date>.md` with front matter once, grammar-conformant lines; `n` = folder totals − exclusions | | |
+| AC-15 | ≥ 30 random lines of AC-14's file: facts only (no body, quote, address, phone, URL, amount, IBAN, attachment content, third-party detail beyond name/role/organisation) | | |
+| AC-16 | `files-backfill.sh`, interrupted once: `resuming drive <name> …`; counts line; `inbox/m365-files-backfill-<date>.md`; no document persists; drives unmodified (delta + three version histories); an ungranted drive → `graph.sh check --drive <id>` 403 | | |
+| AC-17 | Spot-check of AC-16's file as AC-15 | | |
+| AC-18 | `git -C memory status --porcelain` → only `inbox/m365-*`, `inbox/remember-<date>.md`, `daily/` | | |
+| AC-19 | Secret sweep (31 AC-7 block + `long-opaque-token` + `pem-private-key`) over the instance tree, `memory/`, settings, units, state, journal, `~/.npm` logs, transcripts: no hit but documented false positives; `~/.config/zyggy/` = key `600`, `.cer` `644`, nothing else new; no server cache; no transcript of the unattended runs; `systemctl show -p LoadCredential -p InaccessiblePaths` = the Contracts | | |
+| AC-20 | Rules, `AGENTS.md`, `operations.md`, `README.md`, `instance.md` carry the m365 wording; `/doctor prompt-audit` clean; every rule file ≤ 200 lines | | |
+| AC-21 | `instance.md` "## Microsoft 365"; `instance/m365.json` (`sp_object_id`, drive ids, `sites_granted`, no secret); units with `LoadCredential=`; `enabledMcpjsonServers`; runbook 13a–13k; this section complete (Tenant facts, AC rows, Credentials, MCP servers, Tools, Settings, Deviations, Costs, P0b row) | | |
+| AC-22 | Template and instance CI green with `m365.bats` and the hygiene word test; instance differs only in instance-owned paths; VM tree clean after `git pull --ff-only` | | |
+
 ## Repositories
 
 | repo | role (template/instance/memory) | owner | visibility | laptop checkout + remotes | VM clone path | remote alias | key (name, scope) |
@@ -126,6 +207,12 @@ Spec: `_specs/32-central-github-clone-analyse.md` · Plan: `_plans/32-central-gi
 
 - Scope: project (template `enabledPlugins`, OQ-6); MCP servers/hooks it adds: `<…>`; headless mechanism: `<…>`;
   browser: Chromium = Chrome for Testing 155.0.8059.12 (Playwright chromium build 1247 + headless shell 1247, ffmpeg 1011) installed 2026-09-30 as `zyggy` into `~/.cache/ms-playwright/` for Playwright `1.64.0-alpha-1790635538000` — the `playwright-core` that `@playwright/mcp@latest` resolved that day (an alpha; re-check the pair after a plugin/server update), headless, one at a time; RAM reading: +257 MB system used with example.com open headless (2026-09-30, 11 processes); auto-update: on (marketplace default).
+
+## MCP servers
+
+| server (`.mcp.json`) | package | version | integrity (`dist.integrity`) | tarball | licence | tools loaded | always-on tokens | purpose | credential | added |
+|----------------------|---------|---------|------------------------------|---------|---------|--------------|------------------|---------|------------|-------|
+| `m365` → `.claude/skills/m365/mcp-wrapper.sh` (template-owned, 23) | `@softeria/ms-365-mcp-server` (Softeria) | `0.157.2`, pinned (probe 2026-10-01, plan 23 Step 1; upgrade = regenerate the three lists + review) | `sha512-07Elnb0oIqgalywK6pK7KNxUuLDoOs+mraMCjluM3jeUYeO5DMkpS55HgdKiYoLAlpyxxytWFqhiDUVfah7ghg==` | `https://registry.npmjs.org/@softeria/ms-365-mcp-server/-/ms-365-mcp-server-0.157.2.tgz` | MIT | 14 (`tests/fixtures/m365/enabled-tools.txt`) of 344; the other 330 denied by name in the template settings (Step 3) | pending (Step 14; none expected — BYOT mode holds no cache) | mail read + the two `/users` Draft tools + drive read + `download-bytes-to-file` for the morning brief, the backfills and the remote session | app-only access token per start from `graph.sh token` (`MS365_MCP_OAUTH_TOKEN`, one hour, no cache, never in a settings or unit file) | pending (Step 14, `npm install -g` as `zyggy` under `~/.local`) |
 
 ## Settings
 
