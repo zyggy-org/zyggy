@@ -229,7 +229,7 @@ Fixture bodies (`tests/fixtures/graph/`): `token-ok.json`, `token-invalid-client
 
 ## Step 3 — Nothing leaves the mailbox without one consent: `state.sh` holds the named keys and the three consent files (`list proposals [--status]`, `mark <id> <status>`, atomic 600 appends, body-free rows); `graph.sh send-draft|move|delete --approved <hash>` — the only write verbs anywhere — refuse, in this order, `ZYGGY_HOOKS=off` (`refused: unattended run`), no tty (`refused: no terminal`), no approval row for the hash (`no approval for row`), an expired or already-used approval, an action outside `consent.allowed_actions`, a current-snapshot hash that differs (`object changed since approval (hash mismatch) — re-run m365-approve.sh`); otherwise POST `…/messages/<id>/send` (202) or `…/move` (201; `deleteditems` for `delete`), append `executions.jsonl`, mark the row `executed` or `failed` (403/429 after retries → exit 6, re-approvable); `DELETE` is never issued
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Tag**: [agent, laptop], `d:\source\zyggy-core`. Commit + push after VERIFY.
 
