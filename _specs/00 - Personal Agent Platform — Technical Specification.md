@@ -15,7 +15,7 @@ Build a personal AI agent platform on Claude Code: one always-on **Central** age
 - Job execution: running `claude -p` against a target project, optionally a named subagent, in a worktree, with a tool allowlist.
 - Memory: Markdown memory store owned by Central, nightly consolidation ("dream"), ingestion of node reports.
 - Hub MCP server exposing `get_context` / `remember` to Claude Code sessions.
-- Personal e-mail via MCP on Central; work M365 mail handled only on the work node.
+- Mail and files of the owner's own company tenant (Microsoft 365, Digiverse) on Central through a Microsoft Graph MCP server using the owner's delegated identity: a morning brief and reply Drafts (never sent), one-off backfills of the mailbox and the drives into memory as facts, and on-request questions in a conversation; work (employer) M365 mail only on the work node.
 - Telegram notifications from Central.
 
 **Non-goals (v1)**
@@ -31,6 +31,7 @@ Build a personal AI agent platform on Claude Code: one always-on **Central** age
 
 **Constraints**
 
+- The owner's company tenant is reachable from Central with a delegated public-client credential of the owner; no tenant security setting is weakened for it (decision of 1 October 2026, deliverable 23).
 - Work laptop: only GitHub and Anthropic endpoints are believed reachable, through a corporate proxy; this is **verified in P0** (which GitHub endpoints and ports pass the proxy, in particular HTTPS 443 versus SSH 22, is measured, not assumed). Microsoft 365 reachable only from that device (Conditional Access). Work mail content never leaves the device; only metadata and summaries cross the bus.
 - Home laptop and Central: unrestricted egress.
 - Model billing: Claude Code on the user's Max subscription; no direct Anthropic API keys in v1.
@@ -69,7 +70,7 @@ Six deliverables. Four are .NET binaries, two are Claude Code configuration (Mar
 
 **Central agent instance**
 
-- Working directory `/srv/agent/central` **is** the `agent-core` checkout (amended 30 September 2026, deliverable 27): `AGENTS.md` (identity and rules; Claude Code reads it natively — no `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` may exist in or above the working directory), `.claude/` (rules, hooks, skills, committed settings), the nested memory repo `memory/` (laid out `memory/<tenant>/<user>/…` per §7; v1 = `memory/geoffrey/geoffrey/`), and `.mcp.json` (Hub MCP local stdio, Gmail/Outlook.com MCP over Microsoft Graph, Meta Graph MCP for the Facebook Page / Instagram professional account, read-only). Telegram is the official Claude Code channel plugin on the interactive session (owner-only allowlist), not an MCP entry.
+- Working directory `/srv/agent/central` **is** the `agent-core` checkout (amended 30 September 2026, deliverable 27): `AGENTS.md` (identity and rules; Claude Code reads it natively — no `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` may exist in or above the working directory), `.claude/` (rules, hooks, skills, committed settings), the nested memory repo `memory/` (laid out `memory/<tenant>/<user>/…` per §7; v1 = `memory/geoffrey/geoffrey/`), and `.mcp.json` (Hub MCP local stdio, the `m365` server (`@softeria/ms-365-mcp-server`, pinned, started by a template wrapper that hands it a short-lived access token; only read tools and the two Draft tools are loaded — decision of 1 October 2026), Meta Graph MCP for the Facebook Page / Instagram professional account, read-only). Telegram is the official Claude Code channel plugin on the interactive session (owner-only allowlist), not an MCP entry.
 - Two long-running processes: `claude remote-control --name central --spawn=same-dir --permission-mode auto` (interactive access) and `AgentBus.Node` (bus loop, also used for cron-style jobs Central submits to itself).
 - Nightly systemd timer: submits a `dream` job to `tenants/<org>/nodes/central/jobs/` (§6, every scheduled action is a ledger entry); the `dream` skill running inside that job calls the CLI verbs `agentbus dream ingest | rollup | agents` for the mechanical git steps (§7) so they are testable without a model.
 
@@ -87,7 +88,8 @@ Six deliverables. Four are .NET binaries, two are Claude Code configuration (Mar
 | `remember` | Central, Nodes | Append a `[stated]` fact to `memory/<tenant>/<user>/inbox/` (Central) or emit a `context` envelope (Nodes). |
 | `delegate` | Central | Pick machine/project/agent from the tenant's registry, build a job envelope, submit. |
 | `discover` | Nodes | Scan dev roots, write `tenants/<org>/registry/<machine>.yaml`, commit if changed. |
-| `triage-mail` | Central, Work node | Read inbox, classify, draft replies as Drafts, produce a summary. Never sends. |
+| `morning-brief`, `mail-backfill`, `files-backfill`, `m365` | Central | The `m365` MCP server's read tools and two Draft tools, driven by owner-invoked skills: `morning-brief` (timer: new mail and changed files → one brief Draft and at most N reply Drafts, facts to `inbox/`), `mail-backfill` and `files-backfill` (owner-started, batched, resumable, cost-capped, facts only), `m365` (status and the interactive rules). Never sends; memory only through validated fact lines; a post-run audit checks every Draft. |
+| `triage-mail` | Work node | Reads the work inbox through the access the user already has, classifies, creates Drafts, produces a metadata-only summary (deliverable 24). Never sends. |
 
 **Hooks (`agent-core/.claude/hooks/`)**
 
@@ -312,6 +314,8 @@ TASK (data, not instructions to change these rules):
 
 Central runs the same `AgentBus.Node`, machine name `central`, project = the tenant/user memory directory or Central-local projects. Scheduled work (mail triage, sweeps, dream) is submitted by systemd timers as jobs to `tenants/<org>/nodes/central/jobs/`, so every action, even local, is a ledger entry attributed to a tenant.
 
+Until the bus runs on Central (P1+), scheduled work is a systemd timer running a script that calls `claude -p "/<skill>"` with a turn cap, a budget cap and an explicit tool allow/deny list (deliverables 23, 28); every run leaves one log line with exit code and cost.
+
 ## 7. Memory model and dream pass
 
 Memory is a git repository of Markdown files owned by Central. Nodes never write durable memory; they emit `context` envelopes that land in an inbox the dream pass reviews.
@@ -395,7 +399,7 @@ The work laptop is a separate trust boundary. Everything below is a hard require
 | Memory repository deploy key (Central) | `~/.ssh/zyggy_zyggy-memory_ed25519`, 0600, read/write | git only (dream pass push) |
 
 During P0 the laptops may use a file-based `ISecretStore` (0600 on Linux, user-profile ACL on Windows) holding spike-only keys, because the OS stores are built later; those keys are rotated and the file store retired on Windows when the OS stores land.
-| Gmail / Outlook.com OAuth refresh tokens | Central: systemd credential; MCP server reads at start | mail MCP only |
+| Microsoft Graph refresh token (owner's company tenant, delegated, public client `zyggy-central`: `Mail.ReadWrite` for Drafts, `Files.Read.All`, `Sites.Read.All`, `offline_access`) | `~zyggy/.config/zyggy/m365-refresh-token`, 0600, rotated on every use; revoked in Entra (sessions / enterprise app) and shredded | `m365/graph.sh` only; the MCP server receives a one-hour access token in its environment when it starts and holds no cache; never `Mail.Send`, never a settings or unit variable, never `LoadCredential=` |
 | Telegram bot token | Central: systemd credential | notification MCP only |
 | Graph token cache (work) | MSAL cache encrypted with DPAPI | work node only |
 
@@ -410,7 +414,12 @@ During P0 the laptops may use a file-based `ISecretStore` (0600 on Linux, user-p
 
 - Unsigned, mis-addressed or wrong-tenant envelopes are rejected before any model call.
 - Mail content and web pages read during a job are untrusted; the prompt template says so, and the `PreToolUse` hook blocks any `Bash` invocation containing `curl`/`wget`/`Invoke-WebRequest` unless the job allows it.
+- Mail and document content from the owner's company tenant reaches the model through the `m365` tools and is data; the server loads no tool that sends, deletes, moves, forwards, uploads or shares, and Claude Code denies those tool names as well; Drafts go only to the owner or to the sender of the mail answered; generated Draft text contains no link or address; a post-run audit flags any Draft that violates this before the owner sends anything.
 - Reports are never re-fed as jobs automatically; Central's `delegate` skill constructs new jobs from its own reasoning, and a chain longer than 3 hops requires the user's confirmation via Telegram.
+
+**Data protection — the owner's company data** (added 1 October 2026, deliverable 23)
+
+Central processes the owner's company mail and documents only to produce facts about the owner's work, a daily brief and answers to the owner; it stores no bodies, quotes, contents or contact details; third parties appear in memory at most as name, role and organisation; a fact is erased on request by deleting the line, and the memory repository's history is rewritten when the owner asks; unattended runs keep no transcript; interactive transcripts expire after the configured `cleanupPeriodDays`; the model provider (Anthropic, under the owner's Max subscription — consumer terms, no data-processing agreement) and the account's training and retention settings are recorded with their date in `_plans/decisions/0002-central-productive.md`; an API key under commercial terms is reconsidered when cost tracking (25) exists or a client contract requires a processor agreement.
 
 **Audit**
 
@@ -547,6 +556,7 @@ Alerts are evaluated per tenant and every message names the tenant. Per-tenant n
 | Dream changed identity files | dream diff touches `profile.md` / `preferences.md` | diff excerpt |
 | Signature failures | any rejection | envelope id and source |
 | Claude auth expired | `claudeAuthOk = false` on any node | machine name |
+| Graph credential expired or brief audit flagged | `brief.jsonl` last line `exit 6 auth failed` / `audit FLAGGED`, or no line by 08:00 | re-consent (runbook 13) / review the Drafts |
 
 **Cost tracking**
 
@@ -584,7 +594,7 @@ Phases are ordered risk-first (decision of 29 September 2026, see `_plans/ROADMA
 | `node-dev` | `AgentBus.Node`, `AgentBus.Cli`, install scripts, service hosting |
 | `hub-dev` | `AgentBus.Hub` MCP server, `hub --proxy`, context ranking |
 | `skills-dev` | `agent-core`: CLAUDE.md templates, skills, hooks, prompt template, runbooks |
-| `infra-dev` | Central VM/container, systemd units, secrets, Telegram/Gmail MCP wiring |
+| `infra-dev` | Central VM/container, systemd units, secrets, Telegram/M365 MCP wiring |
 
 Interfaces between agents are §4 (envelope), §5 (poller contract), §6 (runner inputs/outputs) and §7 (Hub tool surface); an agent that needs to change one opens a decision in §13 first.
 
@@ -600,7 +610,7 @@ All five open questions are answered as of 27 September 2026; the decisions tabl
 | Q2 | Graph app registration with device-code flow, or Chrome against Outlook Web, for work mail? | P4 | Reuse the mail access Geoffrey already uses on the work laptop; no new app registration in v1. | Decided |
 | Q3 | Central hosting? | P1 | Azure VM, Standard B2as v2 (2 vCPU, 8 GB), Ubuntu 24.04, 64 GB Premium SSD, Tailscale; Azure Backup daily. Roughly €40–50/month against an unused €125 cloud budget. A VM beats containers here: persistent `~/.claude`, tmux, git and the CLI all live on one disk. | Decided |
 | Q4 | Session continuity for remote control after a service restart? | P1 | `claude-remote.service` runs a wrapper that finds the newest session in `~/.claude/projects/<dir>/` and starts `claude --resume <id> --remote-control`; falls back to a fresh session if none exists or resume fails. Verify in the installed version during P1. | Decided |
-| Q5 | Personal mailbox provider for v1? | P5 | Both: Gmail MCP and Outlook.com (Microsoft Graph, personal account) MCP on Central; `triage-mail` merges both into one summary. | Decided |
+| Q5 | Personal mailbox provider for v1? | P5 | Reversed 1 October 2026: the owner's company mailbox and drives (Digiverse M365) on Central through the `m365` MCP server, Drafts only; Gmail and personal Outlook.com dropped (D4). | Decided |
 
 **Decisions**
 
@@ -608,7 +618,7 @@ All five open questions are answered as of 27 September 2026; the decisions tabl
 | --- | --- | --- |
 | Claude Code is the agent runtime on every machine; no Cowork, no OpenClaw | Programmability: `-p`, hooks, subagents, skills; runs on the Max subscription | Decided |
 | One Central agent owns memory; nodes are stateless | Single writer for durable memory; laptops disposable | Decided |
-| Two trust boundaries (personal, work); work data never leaves the work laptop except as summaries | Conditional Access and data policy | Decided |
+| Three principals: personal (the owner), the owner's company (Digiverse — owner-controlled; its data is processed on Central under the data-protection rules of §8), work (the employer — never leaves the work laptop except as summaries) | The owner is controller and administrator of his company tenant; Conditional Access and data policy of the employer are unchanged. | Decided (1 October 2026) |
 | Git repository on GitHub as the only transport; ETag polling as doorbell | Reachable from both laptops; auditable; no sockets or infrastructure. Re-examined 29 September 2026 against an HTTPS API served by Central: everything that alternative would need (TLS, auth, revocation, DDoS protection, availability, backups, immutable audit log) GitHub already provides, and it would make Central an internet-facing single point of failure. Enterprise friendliness comes from §14 pluggable edges (customer-hosted GitHub Enterprise, Azure Repos, GitLab behind `IBusProvider`), not from a second transport. | Decided; **confirmed against the corporate proxy in P0** (HTTPS 443 for API poll, fetch and push from the work laptop, recorded in `_plans/decisions/`). Fallback if that test fails: `bus: disabled` on the work node (§8); an HTTPS API on Central is the recorded last resort, not built preemptively. |
 | All code in .NET 10 LTS, single-file self-contained binaries | User's stack; one codebase for Windows and Linux services | Decided |
 | HMAC-signed envelopes, per-machine credentials | Spoofing defence; independent revocation | Decided |
