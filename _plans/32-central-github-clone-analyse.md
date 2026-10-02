@@ -825,7 +825,7 @@ The owner's pasted answers become 0002 rows AC-5, AC-6, AC-7 and AC-11, plus the
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification (roadmap DoD, each a dated row in 0002):
+- [x] Behavioral verification (roadmap DoD, each a dated row in 0002):
   - an attended analysis of `geobarteam/salon25-api` was answered from the clone with the neutral first line and read-only tool calls (AC-3);
   - the clone is shallow, tagless, remoteless, unpushable, symlink-free and within bounds (AC-4);
   - `zyggy-org`, employer and other-account repositories were refused before git (AC-5);
@@ -839,20 +839,22 @@ The owner's pasted answers become 0002 rows AC-5, AC-6, AC-7 and AC-11, plus the
   - rules present and the audit clean (AC-13);
   - records complete (AC-14);
   - both CI runs green, the VM clean (AC-15).
-- [ ] Contract review:
+- [x] Contract review:
   - 0002 section 32 complete (15 rows, Dates, Tools `git` row, Credentials consumers, Settings rows, Deviations incl. the two 31 reversals, Costs);
   - runbook section 12 complete;
   - the P0b clause "clone-and-analyse on request" met by AC-3 + AC-10.
-- [ ] ⚠️ Risk review:
+- [x] ⚠️ Risk review:
   - **token handed to git**: askpass only, env allowlist, no trace or store; sweeps clean;
   - **posture change accepted by the owner**: whole-tree reads of the owner's own repositories, private source at rest ≤ 7 days and in Azure Backup snapshots;
   - **prompt injection / model-invocable**: canary passed;
   - **work boundary**: refusals before git;
   - **unattended**: refused; `InaccessiblePaths=` for `.config/zyggy` and `.cache/zyggy` forwarded to 28;
   - no secret in any repository, record, settings file or transcript.
-- [ ] Forwarded findings acknowledged (spec "Findings forwarded" 1–5: 28 units, 31 `env -i` tidy-up, 18–20 hardening, 23/30 pattern).
-- [ ] **Not the executor's edits**: the O32 founding-spec amendments are the owner's edit of `_specs/00 …`; the `ROADMAP.md` #32 done-line and change-log row are the project-manager's. The owner confirms both are done or scheduled.
-- [ ] User approved — deliverable 32 is done
+- [x] Forwarded findings acknowledged (spec "Findings forwarded" 1–5: 28 units, 31 `env -i` tidy-up, 18–20 hardening, 23/30 pattern).
+- [x] **Not the executor's edits**: the O32 founding-spec amendments are the owner's edit of `_specs/00 …`; the `ROADMAP.md` #32 done-line and change-log row are the project-manager's. The owner confirms both are done or scheduled.
+> **Owner closed this gate on 2026-10-02** ("Close it; apply O32 and roadmap") with the recorded results: 8 pass, 2 partial (AC-8 script level, AC-13 audit not run), 5 not run by owner decision (AC-5, AC-6 canary, AC-7, AC-10, AC-12). O32 founding-spec amendments applied by the orchestrator the same day; the roadmap done-line is the project-manager's.
+
+- [x] User approved — deliverable 32 is done
 
 ---
 

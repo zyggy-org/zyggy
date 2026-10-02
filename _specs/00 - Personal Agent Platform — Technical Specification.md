@@ -16,6 +16,7 @@ Build a personal AI agent platform on Claude Code: one always-on **Central** age
 - Memory: Markdown memory store owned by Central, nightly consolidation ("dream"), ingestion of node reports.
 - Hub MCP server exposing `get_context` / `remember` to Claude Code sessions.
 - Mail and files of the owner's own company tenant (Microsoft 365, Digiverse) on Central through a Microsoft Graph MCP server, using an application identity of Central scoped to the owner's mailbox and the granted sites: a morning brief and reply Drafts, one-off backfills of the mailbox and the drives into memory as facts, on-request questions in a conversation, and sending, moving or deleting mail **only after the owner's per-action consent given on a terminal of the VM**; work (employer) M365 mail only on the work node.
+- Read access from Central to the owner's GitHub repositories (read-only, the owner's personal account) to inventory them into memory and, at the owner's request in a conversation, to clone one of them read-only and analyse it; nothing on GitHub is created or changed (O32, deliverables 31/32).
 - Telegram notifications from Central.
 
 **Non-goals (v1)**
@@ -91,6 +92,7 @@ Six deliverables. Four are .NET binaries, two are Claude Code configuration (Mar
 | `discover` | Nodes | Scan dev roots, write `tenants/<org>/registry/<machine>.yaml`, commit if changed. |
 | `morning-brief`, `mail-backfill`, `files-backfill`, `m365` | Central | The `m365` MCP server's read tools and two Draft tools, driven by owner-invoked skills: `morning-brief` (timer: new mail and changed files → one brief Draft, at most N reply Drafts, proposals to send/move/delete, facts to `inbox/`), `mail-backfill` and `files-backfill` (owner-started, batched, resumable, cost-capped, facts only), `m365` (status and the interactive rules). The model proposes; the owner approves each action on a terminal of the VM (`m365-approve.sh`), where the only program that can send, move or delete (`graph.sh`) executes the approved row; memory only through validated fact lines; a post-run audit reconciles every Draft and every sent item. |
 | `triage-mail` | Work node | Reads the work inbox through the access the user already has, classifies, creates Drafts, produces a metadata-only summary (deliverable 24). Never sends. |
+| `github-clone` | Central | Model-invocable on the owner's explicit request in a conversation: clones one repository of the owner's own account (read-only, shallow, git credential only through a host-checked askpass helper) into `~/.cache/zyggy/repos/`, refuses other accounts, organisations, private forks and unattended runs; the clone is read as data; facts reach memory only when the owner confirms them. |
 
 **Hooks (`agent-core/.claude/hooks/`)**
 
@@ -395,6 +397,7 @@ The work laptop is a separate trust boundary. Everything below is a hard require
 | --- | --- | --- |
 | Bus HMAC keys (`<tenant>/1`, `<tenant>/2`) | Windows Credential Manager / `secret-tool` (libsecret) on Linux; systemd `LoadCredential` for Central; stored under `agentbus/<tenant>/hmac/<n>` | `AgentBus.Core.Secrets` abstraction (`ISecretStore`), keyed by tenant; never in `appsettings.json` |
 | GitHub PAT (read) | same store, under `agentbus/<tenant>/github-pat` | HttpClient only |
+| GitHub read token of the owner's personal account (Central; fine-grained, Metadata + Contents read) | `~zyggy/.config/zyggy/` file, 0600, outside every repository | `github-inventory` and `github-clone` skill scripts only (`gh api` with `GH_TOKEN` in the child's environment; git through the `github-clone` askpass helper, one-shot, read-only clones of the owner's own repositories); never the `gh` store, never a git credential helper or store, never an MCP server until write scopes are decided (after 18–20) |
 | Git deploy key | `~/.ssh/agentbus_<tenant>_ed25519`, 0600, used via ssh-agent; on machines where port 22 is blocked, a write PAT via git credential helper instead (§5) | git only |
 | `agent-core` deploy key (Central) | `~/.ssh/zyggy_zyggy-core_ed25519`, 0600, read-only | git only |
 | Memory repository deploy key (Central) | `~/.ssh/zyggy_zyggy-memory_ed25519`, 0600, read/write | git only (dream pass push) |
@@ -406,7 +409,7 @@ During P0 the laptops may use a file-based `ISecretStore` (0600 on Linux, user-p
 
 **Isolation**
 
-- Central runs as an unprivileged user in a container or VM with only its own directory mounted; no kubeconfigs, no cloud CLIs authenticated. Central may hold an application certificate of the owner's company tenant under the Secrets table; its reach is bounded in the tenant (Exchange RBAC scope, `Sites.Selected` grants), not by Central's configuration (1 October 2026, deliverable 23).
+- Central runs as an unprivileged user in a container or VM with only its own directory mounted; no kubeconfigs, no cloud **infrastructure** CLIs authenticated (Azure, Kubernetes, cloud-provider SDKs). Read-only, repository-scoped GitHub credentials are allowed on Central under the Secrets table: a fine-grained personal access token (Metadata + Contents read, resource owner = the owner's personal account, repository access as recorded in `_plans/decisions/0002-central-productive.md`) kept in a 0600 file outside every repository, readable by the model's file tools under no rule (a `Read` deny rule covers its directory), read only by the two skill scripts that need it (`github-inventory`, `github-clone`): exported to their `gh` children for API reads, and handed to git only for a clone the owner requests in a conversation, through a host-checked askpass helper that reads the file at prompt time — never in a URL, an argument, git's environment or configuration, a credential helper or store; never stored in the `gh` credential store, never exported into a session-wide environment, never used by an unattended run until the work-boundary rules exist. Clones are read-only, shallow, of the owner's own repositories only, kept outside every working directory and repository (`~zyggy/.cache/zyggy/repos/`) for at most 7 days, read as data and never executed or built (O32, 1 October 2026). Central may hold an application certificate of the owner's company tenant under the Secrets table; its reach is bounded in the tenant (Exchange RBAC scope, `Sites.Selected` grants), not by Central's configuration (1 October 2026, deliverable 23).
 - Nodes run as the interactive user's account (needed for Claude Code auth and the browser session) but with `settings.json` allowlists per project and the `PreToolUse` hook enforcing `allowed_tools`.
 - `--permission-mode auto` is used everywhere; `--dangerously-skip-permissions` is never used.
 - Envelope bodies and bus file contents are treated as data by every prompt template; a job cannot change the template, add tools, or reference files outside its project.
@@ -415,6 +418,7 @@ During P0 the laptops may use a file-based `ISecretStore` (0600 on Linux, user-p
 
 - Unsigned, mis-addressed or wrong-tenant envelopes are rejected before any model call.
 - Mail content and web pages read during a job are untrusted; the prompt template says so, and the `PreToolUse` hook blocks any `Bash` invocation containing `curl`/`wget`/`Invoke-WebRequest` unless the job allows it.
+- Repository content — descriptions, READMEs and every file of a clone, including its `CLAUDE.md`, `AGENTS.md` and `.claude/` — is untrusted data. A clone never lives under a working directory, is reachable by the file tools only as a settings-listed additional directory (never `--add-dir`), and nothing in it is executed, built or loaded as configuration (O32).
 - Mail and document content from the owner's company tenant reaches the model through the `m365` tools and is data; the server loads no tool that sends, moves, deletes, forwards, uploads or shares, and Claude Code denies those tool names as well; the model can only propose such an action, and the owner approves it on a terminal of the VM where the content is re-fetched from Graph — never from the model's text; Drafts go only to the owner or to the sender of the mail answered; generated Draft text contains no link or address; a post-run audit flags any Draft that violates this and any sent item without a matching consent.
 - Reports are never re-fed as jobs automatically; Central's `delegate` skill constructs new jobs from its own reasoning, and a chain longer than 3 hops requires the user's confirmation via Telegram.
 
@@ -525,6 +529,7 @@ The node refuses to start when `tenant` is missing or when the bus checkout has 
 
 - Central and every project reference the Hub in `.mcp.json`; project `CLAUDE.md` files on laptops gain one line: `Memory and cross-machine jobs: see @.claude/skills/bus/SKILL.md`. Central uses `AGENTS.md` (no `CLAUDE.md`); Claude Code's `autoMemoryDirectory` points into the memory repository (`memory/<tenant>/<user>/auto/`, set in Central's `.claude/settings.local.json`). Central enables `playwright@claude-plugins-official` at project scope (headless Chromium, one browser at a time; unattended runs never use logged-in sites until the work-boundary rules exist); every further plugin is added through the runbook rule and a dated row in `_plans/decisions/0002-central-productive.md`.
 - `agent-core` is checked out once per machine; projects symlink or copy the shared skills into `.claude/skills/` via `agentbus discover --link`.
+- Central's local settings list the clone cache as an additional directory (file access only); the template denies the model's file tools the GitHub token directory and pins the Bash working directory to the project (`CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=1`) (O32).
 
 **Upgrade path**
 
@@ -568,7 +573,7 @@ Alerts are evaluated per tenant and every message names the tenant. Per-tenant n
 
 - `bus-conflict.md`: dirty working copy or diverged branch on a node → stash, reset to `origin/main`, re-run discover.
 - `rotate-hmac.md`: for one tenant, add `<tenant>/2` to all of that tenant's secret stores, set `signWith: <tenant>/2`, remove `<tenant>/1` after 7 days. Other tenants are unaffected.
-- `restore-central.md`: new VM from volume snapshot; verify `claude login`; restore the two deploy keys, clone `agent-core` into `/srv/agent/central` and the memory repository into `memory/`, rewrite `.claude/settings.local.json`, run the deliverable-27 verification; run `agentbus verify` for every tenant present, start units.
+- `restore-central.md`: new VM from volume snapshot; verify `claude login`; restore the two deploy keys, clone `agent-core` into `/srv/agent/central` and the memory repository into `memory/`, rewrite `.claude/settings.local.json`, run the deliverable-27 verification; run `agentbus verify` for every tenant present, start units; the clone cache is not restored (empty it with `clone.sh --clean` if the snapshot holds one); re-merge `permissions.additionalDirectories` into `.claude/settings.local.json` (O32).
 - `revoke-machine.md`: delete its PAT and deploy key, remove its HMAC key, move its `tenants/<org>/nodes/<machine>/` to `tenants/<org>/archive/`.
 - `add-tenant.md`: create the tenant's bus repository with force-push and deletion blocked on `main`, add `PROTOCOL.md` and `tenants/<org>/` with a signed `policy.yaml`, mint `<org>/1`, issue per-machine PATs and deploy keys scoped to that repository, create `memory/<org>/<user>/`, configure the notifier; no code change and no restart of other tenants' machines.
 
