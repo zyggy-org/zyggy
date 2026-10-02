@@ -507,7 +507,7 @@ Fixture bodies (`tests/fixtures/graph/`): `token-ok.json`, `token-invalid-client
 
 ## Step 11 — Claude knows the connector's rules, including that it proposes and the owner approves on the VM, and the template is complete: the `m365` skill (`/m365 check`; the interactive rules incl. "send/move/delete → `propose.sh` → review with `m365-approve.sh`; never claim it was sent"; the mailbox, folder and drive ids from `instance.md`), `security.md` "## Microsoft 365" with the spec's replacement bullets verbatim, `AGENTS.md`/`operations.md` (exit 5 incl. "no terminal", "no approval for row", "object changed since approval"), README and `tests/README.md`, `ci.yml`; `repo.bats` asserts the four skills' front matter, the prompts' sentences, the `user-id` rule, the proposals section format, the allow/deny constants against the fixture lists, no send/move/delete/update name in `ENABLED_TOOLS`, `propose.sh`/`m365-approve.sh` template-conformant, the consent files never under the checkout, a GUID-free template, `long-opaque-token`; the 27/31/32 suites unchanged; template CI green
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Tag**: [agent, laptop], `d:\source\zyggy-core`. Commit + push after VERIFY.
 
