@@ -557,7 +557,7 @@ Fixture bodies (`tests/fixtures/graph/`): `token-ok.json`, `token-invalid-client
 
 ## Step 12 — The instance and the records describe the connector and its consent channel before anything touches the tenant: `instance/m365.json` (incl. `consent`) with empty slots for the registration ids, grants and expiry; `instance.md` "## Microsoft 365" incl. "how to approve"; units with `LoadCredential=`; `enabledMcpjsonServers`; runbook section 13 (13a–13l) with every paste/expect pair, "Approve proposals" and the other standing and troubleshooting entries; 0002 section 23 rows incl. the Consent-log table and the D1→D6 deviation row; the template merged into the instance with CI green; Central fast-forwarded so `graph.sh cert-init` is available on the VM
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Tag**: [agent, laptop] + [agent, VM] (the fast-forward and the live-settings merge, authorised at Gate C).
 

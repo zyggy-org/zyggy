@@ -12,7 +12,7 @@ secret-shaped sample is quoted truncated (`ghp…`).
 |---|-------------|--------|----------|
 | 27 | Central identity, memory repo and base plugin set | Done 2026-09-30 (final gate approved by the owner) | this file, section 27 — 22 AC rows |
 | 31 | Central reads the owner's GitHub account: read-only token and repository inventory | Done 2026-10-01 (final gate approved by the owner) | this file, section 31 |
-| 32 | Central clones and analyses the owner's repositories on request | Done 2026-10-01 (Gates A and B approved; owner skipped the remaining session tests; final gate pending) | this file, section 32 |
+| 32 | Central clones and analyses the owner's repositories on request | Done 2026-10-02 (final gate approved by the owner; 8 pass, 2 partial, 5 not run by owner decision; O32 applied) | this file, section 32 |
 | 28 | Nightly dream pass on Central without the bus | Not started | |
 | 29 | Telegram as Central's chat channel | Not started | |
 | 23 | Digiverse Microsoft 365 on Central: morning brief, reply Drafts, per-action-consented send/move/delete, mail and files backfills through an MCP server with an app-only certificate credential | In progress (Slices A–C done 2026-10-01/02 — template complete, CI green; Step 12 instance + records 2026-10-02; Central steps from 13 on) | this file, section 23 |
