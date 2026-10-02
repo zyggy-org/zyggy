@@ -457,7 +457,7 @@ Fixture bodies (`tests/fixtures/graph/`): `token-ok.json`, `token-invalid-client
 
 ## Step 9 — The whole mailbox becomes facts in resumable, capped batches: `mail-backfill.sh [--folder <name>] [--reset]` refuses an unattended run, takes the folders from `graph.sh mail-folders` minus the excluded ones, loops `claude -p "/mail-backfill <mailbox> <folder-id> <watermark> <batch>"` with the three `/users` read tools + `facts.sh`/`state.sh` only (**no Draft tool, no `propose.sh`**), checkpoints after each batch, resumes after `SIGINT`, stops at the totals (exit 5); the `mail-backfill` skill exists
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Tag**: [agent, laptop], `d:\source\zyggy-core`. Commit + push after VERIFY.
 
