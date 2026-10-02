@@ -482,7 +482,7 @@ Fixture bodies (`tests/fixtures/graph/`): `token-ok.json`, `token-invalid-client
 
 ## Step 10 — All files of the OneDrive and the granted sites become facts the same way: `files-backfill.sh [--drive <name>] [--reset]` takes the drives from `graph.sh drives`, pre-checks each with `graph.sh check --drive` (403 → skipped, counted `forbidden`), loops `claude -p "/files-backfill <drive-id> <run-dir> <batch> [skip paths under: …]"` with the drive read tools + `download-bytes-to-file` + `parse.sh`/`facts.sh`/`state.sh` (no mail tools, no Draft tools, no `propose.sh`), a fresh run directory per batch removed afterwards, per-drive checkpoints with a timestamp watermark (no delta token exists), resume and caps; the `files-backfill` skill exists
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Tag**: [agent, laptop], `d:\source\zyggy-core`. Commit + push after VERIFY.
 
