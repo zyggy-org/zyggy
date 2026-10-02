@@ -15,7 +15,7 @@ secret-shaped sample is quoted truncated (`ghp…`).
 | 32 | Central clones and analyses the owner's repositories on request | Done 2026-10-01 (Gates A and B approved; owner skipped the remaining session tests; final gate pending) | this file, section 32 |
 | 28 | Nightly dream pass on Central without the bus | Not started | |
 | 29 | Telegram as Central's chat channel | Not started | |
-| 23 | Digiverse Microsoft 365 on Central: morning brief, reply Drafts, mail and files backfills through an MCP server with an app-only certificate credential | In progress (Slice A started 2026-10-01 on the owner's go, laptop/offline; Step 1 done 2026-10-01) | this file, section 23 |
+| 23 | Digiverse Microsoft 365 on Central: morning brief, reply Drafts, per-action-consented send/move/delete, mail and files backfills through an MCP server with an app-only certificate credential | In progress (Slices A–C done 2026-10-01/02 — template complete, CI green; Step 12 instance + records 2026-10-02; Central steps from 13 on) | this file, section 23 |
 | 30 | Social connectors on Central | Not started | |
 
 ## 27 — Central identity, memory repo, plugins
@@ -113,9 +113,13 @@ Spec: `_specs/32-central-github-clone-analyse.md` · Plan: `_plans/32-central-gi
 ## 23 — Microsoft 365 (Digiverse)
 
 Spec: `_specs/23-m365-mail-onedrive.md` · Plan: `_plans/23-m365-mail-onedrive.md` · Runbook:
-`runbooks/central-claude-config.md` section 13 (pending, Step 11).
+`runbooks/central-claude-config.md` section 13.
 
-- Dates:
+- Dates: template `c9418fd` → `09e0a0b` (Steps 1–11, each CI green) 2026-10-01/02 (Gates A–C approved by the owner;
+  Gate C answers 2026-10-02); Step 12 2026-10-02: instance `5e98439` (merge `dea578d` of template `09e0a0b` +
+  `instance/m365.json`, the units, `enabledMcpjsonServers`, `instance.md`), CI 37060132094 green (word test ran);
+  VM fast-forwarded `284ea8d` → `5e98439` ~20:33 UTC, live settings merged (`enabledMcpjsonServers` `["m365"]`, keys
+  `autoMemoryDirectory`, `enabledMcpjsonServers`, `env`, `permissions`; 600 `zyggy`), clean tree; Central steps from 13a on.
 
 ### Probe findings (facts 1–8)
 
@@ -170,32 +174,45 @@ Further probe findings (not in the spec's list):
 
 ### Tenant facts
 
-(pending, AC-1)
+(pending, AC-1 — runbook 13b: users/mailboxes, security defaults or CA state, licence tier, Exchange Online plan,
+employer tenant differs; nothing changed)
+
+### Acceptance criteria (AC-1..AC-24, owner-executed on Central)
 
 | Check (AC) | Criterion | Evidence (date, command, excerpt) | Result |
 |------------|-----------|-----------------------------------|--------|
-| AC-1 | Tenant facts recorded (user/mailbox count, security-defaults/CA state, licence tier, Exchange plan, employer tenant differs); no tenant security setting changed | | |
-| AC-2 | `graph.sh cert-init` on the VM: key `600`/dir `700`, `.cer` `644` (CN `zyggy-central`, 398 days), SHA-1/SHA-256 thumbprints + expiry printed; no overwrite without `--rotate`; the key never printed or transferred | | |
-| AC-3 | App registration `zyggy-central`: single tenant, no platform/redirect, public client flows off, the `.cer` uploaded (thumbprint = AC-2), API permissions = application `Sites.Selected` only with admin consent; no `Mail.*`, `Files.*`, `*.All`, delegated permission or secret; client id, tenant id, sp object id in `instance/m365.json` | | |
-| AC-4 | Exchange RBAC for Applications (Cloud Shell): service principal, management scope `PrimarySmtpAddress -eq '<mailbox>'`, exactly one assignment `Application Mail.ReadWrite`; `Test-ServicePrincipalAuthorization` → `InScope True` for the owner's mailbox, `False` for any other (or "no other mailbox") | | |
-| AC-5 | Graph Explorer: one `read` grant for `zyggy-central` per site (OneDrive personal site + each named site); site ids in `sites_granted`; no other site; `Files.Read.All` never consented | | |
-| AC-6 | On the VM: `graph.sh token \| wc -c` > 1000, nothing else printed; `graph.sh check --counts` status line + folder counts; service-principal sign-in in the Entra log with the VM's IP; key mtime unchanged; `--other-mailbox` → `403 (expected: scope holds)` | | |
-| AC-7 | Remote session after `/clear`: `/mcp` shows `m365` connected; reads via `list-shared-mailbox-folder-messages` with `user-id` = the mailbox; a reply Draft in the owner's Outlook Drafts, right recipient, sendable; delete and send refused (no tool); Sent/Deleted Items unchanged | | |
-| AC-8 | Same session > 1 h later: 401 reported, `/mcp` reconnect mints a new token ("Hourly reconnect") | | |
-| AC-9 | Attended runs 1–5 (`systemctl start`): journal line per run; exactly one `Zyggy — morning brief <date>` Draft to the owner only; ≤ N in-thread reply Drafts to sender/`replyTo` only; `verify.sh` audits; `systemd-analyze security`; `LoadCredential=` copy used (`key: credentials directory`); owner's notes per run | | |
-| AC-10 | Timer enabled after five `audit ok` runs and the owner's go: three consecutive timer runs; an edited OneDrive file named in "Work in progress"; same-day manual start → `already created`; D2/D5b deviation row | | |
-| AC-11 | Before/after each timer run: Sent/Deleted Items unchanged, Drafts grew by the journal count; `Search-UnifiedAuditLog` on the app id shows `Create`/`MailItemsAccessed` only | | |
-| AC-12 | Key replaced by another key → `brief.sh` exits 6 before `claude` (`auth failed (invalid_client: AADSTS700027 …)`), no Draft, no state change; key restored → next run succeeds | | |
-| AC-13 | Canary mail: listed as data, "ignore/report" proposed; no Draft to the external address; no reply Draft with a URL, address or memory content; canary deleted by the owner | | |
-| AC-14 | `mail-backfill.sh` in tmux, interrupted once: `resuming folder <name> from <checkpoint>`; final counts line; `inbox/m365-mail-backfill-<date>.md` with front matter once, grammar-conformant lines; `n` = folder totals − exclusions | | |
-| AC-15 | ≥ 30 random lines of AC-14's file: facts only (no body, quote, address, phone, URL, amount, IBAN, attachment content, third-party detail beyond name/role/organisation) | | |
-| AC-16 | `files-backfill.sh`, interrupted once: `resuming drive <name> …`; counts line; `inbox/m365-files-backfill-<date>.md`; no document persists; drives unmodified (delta + three version histories); an ungranted drive → `graph.sh check --drive <id>` 403 | | |
-| AC-17 | Spot-check of AC-16's file as AC-15 | | |
-| AC-18 | `git -C memory status --porcelain` → only `inbox/m365-*`, `inbox/remember-<date>.md`, `daily/` | | |
-| AC-19 | Secret sweep (31 AC-7 block + `long-opaque-token` + `pem-private-key`) over the instance tree, `memory/`, settings, units, state, journal, `~/.npm` logs, transcripts: no hit but documented false positives; `~/.config/zyggy/` = key `600`, `.cer` `644`, nothing else new; no server cache; no transcript of the unattended runs; `systemctl show -p LoadCredential -p InaccessiblePaths` = the Contracts | | |
-| AC-20 | Rules, `AGENTS.md`, `operations.md`, `README.md`, `instance.md` carry the m365 wording; `/doctor prompt-audit` clean; every rule file ≤ 200 lines | | |
-| AC-21 | `instance.md` "## Microsoft 365"; `instance/m365.json` (`sp_object_id`, drive ids, `sites_granted`, no secret); units with `LoadCredential=`; `enabledMcpjsonServers`; runbook 13a–13k; this section complete (Tenant facts, AC rows, Credentials, MCP servers, Tools, Settings, Deviations, Costs, P0b row) | | |
-| AC-22 | Template and instance CI green with `m365.bats` and the hygiene word test; instance differs only in instance-owned paths; VM tree clean after `git pull --ff-only` | | |
+| AC-1 | Tenant facts recorded (users/mailboxes, security defaults or CA, licence, Exchange plan, employer tenant differs); **no tenant security setting changed** for Central (13b) | | |
+| AC-2 | `graph.sh cert-init` on the VM (13a): key `~/.config/zyggy/m365-app.key` RSA 2048 `600`, dir `700`; cert `m365-app.cer` self-signed, CN `zyggy-central`, 398 days, `644`; thumbprints and expiry printed; no overwrite without `--rotate`; the key never printed or transferred | | |
+| AC-3 | Entra `zyggy-central` (13b): single tenant; no platform/redirect; public client flows **No**; certificate uploaded (thumbprint = AC-2); API permissions = **application `Sites.Selected` only**, admin consent; no Entra `Mail.*` (incl. **no `Mail.Send`**), no `Files.*`, no `Sites.Read.All`, no `*.ReadWrite.All`, no delegated permission, no secret; client id, tenant id, sp object id in `instance/m365.json` | | |
+| AC-4 | Exchange RBAC for Applications (13c, Cloud Shell): service principal; scope `zyggy-central owner mailbox` (`PrimarySmtpAddress -eq '<mailbox>'`); **exactly two** assignments `Application Mail.ReadWrite` and `Application Mail.Send`, both with that scope, nothing else (no `Application Mail Full Access`, no `Exchange Full Access`); `Test-ServicePrincipalAuthorization` → both roles `InScope True` for the owner's mailbox, `InScope False` for any other (or "no other mailbox"); fact 9 output shape recorded | | |
+| AC-5 | Graph Explorer (13d): one `read` grant for `zyggy-central` per site (the OneDrive personal site; no named site — Gate C); site ids in `sites_granted`; `Files.Read.All` never consented | | |
+| AC-6 | On the VM (13e): server `0.157.2` + MarkItDown under `~/.local`; `graph.sh token \| wc -c` > 1000, nothing else printed; `check --counts` status/drive/folder lines; SP sign-in from the VM's IP in Entra; key mtime unchanged; `--other-mailbox` → `403 (expected: scope holds)`; `--probe` = the 14 tools of `enabled-tools.txt`, no send/move/delete/update tool, the six auth tools reported outside the filter; fact 1 (PS256/RS256) settled | | |
+| AC-7 | Remote session after `/clear` (13f): reads via `list-shared-mailbox-folder-messages` (`user-id` = the mailbox); a reply Draft in the owner's Drafts, right recipient; **"send" and "delete" → two proposals** (`propose.sh`, row ids, "review them with `m365-approve.sh` on the VM"); no tool call sends or deletes; Sent/Deleted Items unchanged; `state.sh list proposals` → two `pending` rows snapshotted from Graph | | |
+| AC-8 | First approve session (13f): `m365-approve.sh < /dev/null` → exit 5 `refused: no terminal`; under `ZYGGY_HOOKS=off` → exit 5; on the tty row 1 shows the Draft's current subject, recipients, full Graph-fetched body, reason, hash → `y` → approval row → `executed: send-draft <hash> (202)`; row 2 (delete) → `n` → `refused`; the reply arrives (fact 8), Sent Items +1, Deleted Items unchanged | | |
+| AC-9 | `Search-UnifiedAuditLog -Operations Send,Move,MoveToDeletedItems,SoftDelete,HardDelete -FreeText <app id>` over the window: exactly one `Send` matching the executed row (time ± 2 min); no `Move`/`MoveToDeletedItems`/`SoftDelete`/`HardDelete`; counts consistent | | |
+| AC-10 | Five refusals of `graph.sh send-draft --approved` (exit 5, nothing sent, `executions.jsonl` unchanged): `no approval for row` (pending), `row already executed`, `object changed since approval (hash mismatch) — re-run m365-approve.sh` (edited in Outlook), `refused: unattended run`, `refused: no terminal` | | |
+| AC-11 | Session "move the mail from <sender> to <folder>" → proposal → `m365-approve.sh` `y` → `executed: move <hash> (201)`; the message is in the folder; one `Move` by the app id in the audit log; counts consistent | | |
+| AC-12 | Units installed, timer **not enabled** (13g): attended runs 1–5 (`systemctl start`), each: journal line `brief <date>: mail <n>, files <m>, replies <r>, proposals <p>, facts <f>, turns <t>, cost <usd>, audit ok, exit 0`; one brief Draft to the owner with the four sections + "## Proposed actions (pending your consent)"; ≤ N reply Drafts; **no send/move/delete by any run** (no `executed:` line; `ZYGGY_HOOKS=off`, no tty); `verify.sh` `audit ok`; `key: credentials directory`; `systemd-analyze security`; `ReadWritePaths` (fact 7); the owner's review notes | | |
+| AC-13 | After five `audit ok` runs and the owner's go: timer enabled; **three consecutive timer runs** as AC-12; one brief names the OneDrive file edited the day before; one approved proposal executed **only** at the owner's `m365-approve.sh` session; same-day manual start → `already created`; the D2/D5b deviation row | | |
+| AC-14 | Before/after each timer run and approve session: `check --counts`; `Search-UnifiedAuditLog` on the app id: every `Send`/`Move`/`MoveToDeletedItems` matches one `executed` row of `executions.jsonl` and vice versa; none inside a timer run's window; Drafts grew by the journal counts; no `SoftDelete`/`HardDelete` ever | | |
+| AC-15 | Key replaced by another (drill): `brief.sh` exit 6 before `claude` (`invalid_client`), nothing done; restored → next run ok; expiry drill (warning at 20 days, exit 3 when past) on a temp config copy | | |
+| AC-16 | Canary mail before a timer run: listed as data, "ignore/report" proposed; any proposal the model nevertheless wrote shows the Graph-fetched recipients in `m365-approve.sh` and is refused with `n`, nothing executed; no Draft to the external address (or `audit FLAGGED`); a following proposal recorded as the found weakness | | |
+| AC-17 | `mail-backfill.sh` in tmux, one interrupt/restart: `resuming folder <name> from <watermark>`; counts line (0, or 5 at a cap); `inbox/m365-mail-backfill-<date>.md` with front matter once, grammar-conformant lines; messages = folder totals − exclusions (± boundary); no proposal row written | | |
+| AC-18 | ≥ 30 random lines of AC-17's file spot-checked: facts only (minimisation, OQ-5) | | |
+| AC-19 | `files-backfill.sh` (the granted OneDrive), one interrupt/restart: `resuming drive <name> from <timestamp>`; counts line; `inbox/m365-files-backfill-<date>.md`; no document persists; drives show reads only (three version histories unchanged); an ungranted drive → `check --drive` 403; no proposal row written | | |
+| AC-20 | Spot-check of AC-19's file as AC-18 | | |
+| AC-21 | After AC-7..AC-19: `git -C memory status --porcelain` → only `inbox/m365-*`, `inbox/remember-<date>.md`, `daily/` from the owner's sessions | | |
+| AC-22 | Secret sweep (31 AC-7 block + `long-opaque-token` + `pem-private-key`) over the instance tree, `memory/`, settings, `instance/`, units, `~/.local/state/zyggy/` (incl. `proposals.jsonl`, `approvals.jsonl`, `executions.jsonl`), journal, `~/.npm`, transcripts: no hit but documented false positives; key `600`, cer `644`; no server cache; **no transcript** from the unattended runs; the three consent files `600` and body-free; `systemctl show -p LoadCredential -p InaccessiblePaths` = the Contracts | | |
+| AC-23 | Rules, `AGENTS.md`, `operations.md`, `README.md`, `instance.md` carry the m365 wording incl. the consent rule; `/doctor prompt-audit` clean; every rule file ≤ 200 lines | | |
+| AC-24 | `instance.md` "## Microsoft 365" (incl. "How to approve"); `instance/m365.json`; units; `settings.local.json` (`enabledMcpjsonServers`); runbook 13 (13a–13l incl. "Approve proposals"); this section complete (Tenant facts, AC rows, Credentials row with **two RBAC roles**, MCP servers, Tools, Settings, Deviations — D6 replaces D1 —, Consent log, Costs, P0b row); template and instance CI green; instance differs only in instance-owned paths; VM clean | | |
+
+### Consent log
+
+One row per month: what the model proposed and what the owner did with it in `m365-approve.sh` (counts from
+`proposals.jsonl`, `approvals.jsonl`, `executions.jsonl` — never a subject, recipient or body).
+
+| Month | Proposals | Approved | Refused | Expired | Executed: send-draft | Executed: move | Executed: delete | Failed | Last review |
+|-------|-----------|----------|---------|---------|----------------------|----------------|------------------|--------|-------------|
 
 ## Repositories
 
@@ -218,7 +235,7 @@ Further probe findings (not in the spec's list):
 
 | server (`.mcp.json`) | package | version | integrity (`dist.integrity`) | tarball | licence | tools loaded | always-on tokens | purpose | credential | added |
 |----------------------|---------|---------|------------------------------|---------|---------|--------------|------------------|---------|------------|-------|
-| `m365` → `.claude/skills/m365/mcp-wrapper.sh` (template-owned, 23) | `@softeria/ms-365-mcp-server` (Softeria) | `0.157.2`, pinned (probe 2026-10-01, plan 23 Step 1; upgrade = regenerate the three lists + review) | `sha512-07Elnb0oIqgalywK6pK7KNxUuLDoOs+mraMCjluM3jeUYeO5DMkpS55HgdKiYoLAlpyxxytWFqhiDUVfah7ghg==` | `https://registry.npmjs.org/@softeria/ms-365-mcp-server/-/ms-365-mcp-server-0.157.2.tgz` | MIT | 14 (`tests/fixtures/m365/enabled-tools.txt`) of 344; the other 330 denied by name in the template settings (Step 3) | pending (Step 14; none expected — BYOT mode holds no cache) | mail read + the two `/users` Draft tools + drive read + `download-bytes-to-file` for the morning brief, the backfills and the remote session | app-only access token per start from `graph.sh token` (`MS365_MCP_OAUTH_TOKEN`, one hour, no cache, never in a settings or unit file) | pending (Step 14, `npm install -g` as `zyggy` under `~/.local`) |
+| `m365` → `.claude/skills/m365/mcp-wrapper.sh` (template-owned, 23) | `@softeria/ms-365-mcp-server` (Softeria) | `0.157.2`, pinned (probe 2026-10-01, plan 23 Step 1; upgrade = regenerate the three lists + review) | `sha512-07Elnb0oIqgalywK6pK7KNxUuLDoOs+mraMCjluM3jeUYeO5DMkpS55HgdKiYoLAlpyxxytWFqhiDUVfah7ghg==` | `https://registry.npmjs.org/@softeria/ms-365-mcp-server/-/ms-365-mcp-server-0.157.2.tgz` | MIT | 14 (`tests/fixtures/m365/enabled-tools.txt`) of 344; the other 330 denied by name in the template settings (plan 23 Step 4) | pending (13f `/context`; none expected — BYOT mode holds no cache) | mail read + the two `/users` Draft tools + drive read + `download-bytes-to-file` for the morning brief, the backfills and the remote session | app-only access token per start from `graph.sh token` (`MS365_MCP_OAUTH_TOKEN`, one hour, no cache, never in a settings or unit file) | pending (13e, `npm install -g` as `zyggy` under `~/.local`) |
 
 ## Settings
 
@@ -235,6 +252,11 @@ Further probe findings (not in the spec's list):
 | `zyggy-core` `.claude/settings.json` (template, 32) | `permissions.deny` | `["Read(~/.config/zyggy/**)", "Edit(~/.cache/zyggy/repos/**)"]` | the model's file tools never read the GitHub credential and never edit a clone |
 | `zyggy-core` `.claude/settings.json` (template, 32) | `env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR` | `1` | every Bash command starts in the working directory; a `cd` into a clone never persists |
 | `instance/settings.local.json` → `.claude/settings.local.json` (32) | `permissions.additionalDirectories` | `["/srv/agent/home/.cache/zyggy/repos"]` | the session reads clones without prompts; merged into the live file (12b), never `--add-dir` |
+| `zyggy-core` `.claude/settings.json` (template, 23) | `permissions.deny` | 3 path rules (`Read(~/.config/zyggy/**)`, `Edit(~/.cache/zyggy/repos/**)`, `Edit(~/.local/state/zyggy/**)`) + `Bash(.claude/skills/m365/graph.sh *)` + `Bash(.claude/skills/m365/m365-approve.sh *)` + `mcp__m365__<tool>` for each of the 330 excluded tools (the six auth tools and `graph-batch` among them) — 335 rules, asserted by `repo.bats` against `tests/fixtures/m365/excluded-tools.txt` | the model never reads the key, never writes the consent files, never runs the executor or the consent terminal, never reaches a send/move/delete/generic tool |
+| `zyggy-core` `.mcp.json` (template, 23) | `mcpServers.m365` | `bash` → `.claude/skills/m365/mcp-wrapper.sh` (no `env`, no id) | the one project MCP server; the wrapper mints the token per start |
+| `instance/settings.local.json` → `.claude/settings.local.json` (23) | `enabledMcpjsonServers` | `["m365"]` | the project server starts without a prompt; merged into the live file (Step 12, `jq --indent 2` + `install -m 600`), never a re-install |
+| `instance/m365.json` (23) | `tenant_id`, `client_id`, `sp_object_id`, `mailbox`, `timezone`, `language`, `cert` (`subject`, `days`, `expires`), `drives` (`onedrive_site`, `sites`, `sites_granted`, `exclude_drives`, `exclude_paths`), `consent` (`ttl_minutes`, `allowed_actions`), `brief` (incl. `proposal_cap`), `mail_backfill`, `files_backfill` | Step 12: tenant, mailbox, OneDrive site; `sites` `[]` (OneDrive only, Gate C); exclusions = spec defaults (mail: `junkemail`, `deleteditems`, `drafts`, `outbox`, `conversationhistory`; drives/paths none); `consent` `{ttl_minutes: 60, allowed_actions: [send-draft, move, delete]}` (Gate C); caps as the spec; `client_id`, `sp_object_id`, `cert.expires`, `sites_granted` empty until 13a–13d (passes `--base` validation only) | the connector's only configuration; no secret; validated by every script (exit 3) |
+| `instance/systemd/zyggy-morning-brief.{service,timer}` (23) | unit | `Type=oneshot`, `User=zyggy`, `WorkingDirectory=/srv/agent/central`, `Environment=ZYGGY_HOOKS=off …`, `LoadCredential=m365-app-key:/srv/agent/home/.config/zyggy/m365-app.key`, `InaccessiblePaths=` the key dir, `~/.cache/zyggy`, `~/.ssh`; `ReadWritePaths=` state dir, `memory`, `~/.claude`, `~/.npm` (fact 7 at run 1); `ProtectSystem=strict`, `PrivateTmp`, `NoNewPrivileges`, …; `TimeoutStartSec=45min`; timer `OnCalendar=*-*-* 06:30 Europe/Brussels`, `Persistent=true`; installed at 13g, timer enabled after five attended runs | the first `claude -p` timer of the platform (§6); `ZYGGY_HOOKS=off` + no tty = it can propose, never execute |
 
 ## Tools on Central
 
@@ -242,6 +264,10 @@ Further probe findings (not in the spec's list):
 |------|---------|--------|---------|-------|
 | `gh` (GitHub CLI, MIT) | 2.102.0 (2026-09-30) | `https://cli.github.com/packages stable main` (keyring `/etc/apt/keyrings/githubcli-archive-keyring.gpg`) — never `universe` | `github-inventory` skill only; never logged in | 2026-10-01 (before 07:46 UTC, owner, runbook 11b) |
 | `git` | 2.43.0 | Ubuntu 24.04 (02) | `github-clone` (isolated runner, askpass) | 02 |
+| `@softeria/ms-365-mcp-server` (MIT) | `0.157.2` (pinned; integrity in "MCP servers") | npm, `npm install -g` as `zyggy` with prefix `~/.local` — never `npx` | the `m365` MCP server | pending (13e) |
+| `markitdown` (MIT) | `0.1.8` (`[docx,xlsx,pptx,pdf]`) | `pipx` as `zyggy` (`pipx` from apt if absent) | `parse.sh` (document text for the brief and the files backfill) | pending (13e) |
+| `node` / `npm` | pending (13e) | the VM's Node used by Claude Code (02) | runs the MCP server | pending (13e) |
+| `openssl` | Ubuntu 24.04 | OS | `graph.sh` key pair and PS256 client assertion | pending (13a) |
 
 ## Credentials on Central
 
@@ -251,7 +277,10 @@ Further probe findings (not in the spec's list):
 | `zyggy-geoffrey-memory` deploy key | `/srv/agent/home/.ssh/zyggy_zyggy-geoffrey-memory_ed25519` (0600, `zyggy`) | read/write, `zyggy-org/zyggy-geoffrey-memory` | revoke on GitHub, re-issue per runbook step 1c |
 | GitHub read token `zyggy-central-read` (fine-grained PAT) | `/srv/agent/home/.config/zyggy/github-read-token` (0600, `zyggy`; dir 0700) | Metadata: read + Contents: read, **All repositories** of `geobarteam` (personal resource owner; org/employer repositories unreachable) | no expiration (applied 2026-10-01); no scheduled rotation (owner, 2026-09-30); re-issue per runbook 11 "Re-issue the GitHub read token" on compromise; revoke on GitHub + shred the file; deploy keys untouched. Consumers (32): `github-inventory` (gh); `github-clone` (gh; git via `askpass.sh`, one-shot, never stored); revoking also stops cloning — run `clone.sh --clean` |
 
-No `zyggy-core` key on Central. No `gh` credential store, no `GH_TOKEN` in any settings file or unit.
+| Application certificate `zyggy-central` (23; app-only, no secret, no delegated permission) | private key `/srv/agent/home/.config/zyggy/m365-app.key` (0600, `zyggy`, generated on the VM by `graph.sh cert-init`, never transferred, no backup); public `m365-app.cer` (0644) beside it; in the timer unit a read-only copy via `LoadCredential=m365-app-key` | Entra: application `Sites.Selected` only + per-site `read` grants (the OneDrive personal site — pending 13d); Exchange RBAC for Applications: **`Application Mail.ReadWrite` and `Application Mail.Send`**, both scoped to the owner's mailbox (`zyggy-central owner mailbox`, assignment names pending 13c); no Entra `Mail.*`. Consumers: `graph.sh` (token minting; Graph reads and audit reads; **execution of approved rows on the owner's terminal** — `send-draft`/`move`/`delete --approved`), the MCP server (a one-hour access token per start via `mcp-wrapper.sh`) | expires pending (13a; 398 days), rotation due = expiry − 30 days; rotate per runbook 13 "Rotate the certificate"; revoke = delete the certificate / the app registration in Entra (also stops sending), `shred -u` the key — runbook 13 "Revoke the application credential" |
+
+No `zyggy-core` key on Central. No `gh` credential store, no `GH_TOKEN` in any settings file or unit. No Microsoft
+token stored anywhere (minted per use; the server holds none in BYOT mode).
 
 ## Repository scope
 
@@ -345,8 +374,39 @@ Deviations found during execution (32):
 
 - Slice A (2026-10-01): `security.md` says the owner's "their own message" (spec: "his"); `LD_PRELOAD` poisoning is proven absent from git's environment by the spy test instead of the real-git test (the loader warns for every process of the script, so "empty stderr" cannot hold there); the `SKILL.md` short-name example is `my-project` (the hygiene test refuses the owner's repository name in the template); `tests/fixtures/github/git-spy.sh` is exempt from the token-shape check like the other synthetic samples; the platform docs confirm `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR` from settings `env` and are silent on a server-level MCP name in `disallowed-tools` (AC-7 decides).
 
+### 23
+
+From the spec's "Deliberate deviations from the founding spec and the hand-off brief", verbatim:
+
+- **D6 replaces D1** (brief (d) "never sent"; the roadmap Goal "nothing sent, deleted, moved"): send/move/delete with the owner's per-action consent on a VM terminal; `Mail.Send` as a scoped Exchange RBAC role. §1's non-goal is honoured literally.
+- **Consent out of band** (not a Claude Code permission prompt, not the session) — both are model-reachable channels.
+- **Soft delete only** — `DELETE` never implemented.
+- Unchanged from the previous drafts: app-only certificate (no laptop in operation; `LoadCredential=`; `/users` tool family); one-hour token per server start; watermark by `receivedDateTime`; `triage-mail` → skills; unattended model-with-tools runs after five attended runs; backfills do not wait for 28; `--read-only` not used.
+
+Carried from the app-only revision of the spec (`002cba4`), still in force:
+
+- **App-only certificate identity** (founding §8 "device-code delegated auth (preferred)"; brief Q2 favoured delegated) — owner decision at the plan gate 2026-10-01: **no delegated credential, no laptop in Central's operation**; the owner's-access bound is replaced by tenant-side scoping (Exchange RBAC, `Sites.Selected`).
+- **`LoadCredential=` used** for the static key (31 Finding 3 applied as written); `~/.config/zyggy` is fully inaccessible to the unit.
+- **Access token per server start** (one hour, minted by `graph.sh token`, no cache); **brief-Draft recipient model-chosen + audited** by `verify.sh`.
+
+| Date | Deviation | Decision |
+|------|-----------|----------|
+| 2026-10-01 | **D1 → D6 (owner, 2026-10-01): send/move/delete with per-action consent on a VM terminal; `Mail.Send` as a scoped Exchange role** | owner, reinstated at the Step-1 pause ("approved with changes"); spec `f010ac0`, plan revision approved 2026-10-01 |
+| 2026-10-02 | Gate C answers: `consent.allowed_actions` = all three; **OneDrive only** (no SharePoint site granted); exclusions = spec defaults | owner, Gate C |
+| pending (Gate E) | **Unattended model-with-tools runs before 18–20 (D2, D5b)** — the timer after five attended runs | the owner accepts it in their own message at Gate E, or the timer stays disabled |
+
+Deviations found during execution (23):
+
+- Slices A–C (2026-10-01/02, template `c9418fd` → `09e0a0b`): the files backfill keeps its own watermark key
+  `files-backfill-watermark <drive>` (never the brief's `drive-token <drive>`; both ISO timestamps — the pinned server
+  has no delta token); `brief.sh` runs `remember.sh` with `env -u ZYGGY_HOOKS` (its one memory line would otherwise be
+  refused under the unit's `ZYGGY_HOOKS=off`); `verify.sh` audits a reply Draft's generated text above Outlook's
+  quote separator only (the quoted original is not generated text); `verify.sh` flags a mail the owner sends himself
+  from Outlook during a brief's window as a sent item without a consent row (runbook Troubleshooting "Audit flagged").
+
 ## Costs
 
 27: none. (28 fills the per-run cost.)
 31: model cost not recorded (owner; Max subscription); 42 GitHub API requests per run (1 user + 1 page + 40 README reads).
 32: first clone of `salon25-api` 34 MiB (API size 14998 KiB), 2 GitHub API requests + 1 https clone; model cost not recorded (owner; Max subscription).
+23: pending (per-run cost and turns of the attended and timer briefs, backfill totals, mailbox/drive sizes — Steps 17–20).
