@@ -545,11 +545,13 @@ Fixture bodies (`tests/fixtures/graph/`): `token-ok.json`, `token-invalid-client
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: PROVE 1/2/3; the green `zyggy-core` CI URL + SHA with `m365.bats` and the word test; in the container: `mail-backfill.sh` (one batch's argv — no Draft tool, no `propose.sh` —, the checkpoint, the resume line, exit 5 at a cap); `files-backfill.sh` (run dir gone; the 403 drive skipped); `ZYGGY_HOOKS=off mail-backfill.sh` → 5.
-- [ ] Contract review: the owner reads `security.md` "## Microsoft 365" (the D6 bullets), the `AGENTS.md` bullets, `operations.md` and the four `SKILL.md` files as Central's instruction contract — in particular the `m365` skill's "send/move/delete → propose → review on the VM; never claim it was sent"; the backfill allow lists; the checkpoint schemas and counts lines; README's instance-owned paragraph (`consent` keys); "Approve proposals", "Rotate the certificate", "Upgrade the MCP server".
-- [ ] ⚠️ Risk review: shared instruction contracts changed deliberately; `security.md` ≤ 200 lines; the backfills are owner-started and can neither draft nor propose; 27/31/32 suites unchanged.
-- [ ] **Owner authorises the VM writes of Slice D** (fast-forwards, npm/pipx installs as `zyggy`, the live-settings merge) and names the **SharePoint sites** to grant, the exclusions, and whether `consent.allowed_actions` keeps all three actions for the instance (assumption 15).
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: PROVE 1/2/3; the green `zyggy-core` CI URL + SHA with `m365.bats` and the word test; in the container: `mail-backfill.sh` (one batch's argv — no Draft tool, no `propose.sh` —, the checkpoint, the resume line, exit 5 at a cap); `files-backfill.sh` (run dir gone; the 403 drive skipped); `ZYGGY_HOOKS=off mail-backfill.sh` → 5.
+- [x] Contract review: the owner reads `security.md` "## Microsoft 365" (the D6 bullets), the `AGENTS.md` bullets, `operations.md` and the four `SKILL.md` files as Central's instruction contract — in particular the `m365` skill's "send/move/delete → propose → review on the VM; never claim it was sent"; the backfill allow lists; the checkpoint schemas and counts lines; README's instance-owned paragraph (`consent` keys); "Approve proposals", "Rotate the certificate", "Upgrade the MCP server".
+- [x] ⚠️ Risk review: shared instruction contracts changed deliberately; `security.md` ≤ 200 lines; the backfills are owner-started and can neither draft nor propose; 27/31/32 suites unchanged.
+- [x] **Owner authorises the VM writes of Slice D** (fast-forwards, npm/pipx installs as `zyggy`, the live-settings merge) and names the **SharePoint sites** to grant, the exclusions, and whether `consent.allowed_actions` keeps all three actions for the instance (assumption 15).
+> **Owner answers at Gate C (2026-10-02)**: `consent.allowed_actions` = `send-draft`, `move`, `delete` (all three); sites = **OneDrive only** (more via runbook 13 "Grant another site"); exclusions = spec defaults only (Junk Email, Deleted Items, Drafts; no drive/path exclusions); Slice D VM writes authorised; **32's final gate is closed before Step 12 starts**.
+
+- [x] User approved — implementation may continue past this gate
 
 ---
 
