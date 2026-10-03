@@ -618,7 +618,7 @@ Fixture bodies (`tests/fixtures/graph/`): `token-ok.json`, `token-invalid-client
 
 ## Step 14 — The identity can read, draft **and send** in the owner's mailbox and nothing else, and read the granted sites only: Exchange RBAC for Applications holds exactly **two** assignments — `Application Mail.ReadWrite` and `Application Mail.Send` — both scoped to `PrimarySmtpAddress -eq '<mailbox>'`, and `Test-ServicePrincipalAuthorization` shows both roles `InScope True` for the owner's mailbox and `InScope False` for any other (fact 9 recorded); each site carries exactly one `read` grant for `zyggy-central`; the site ids land in `instance/m365.json` `sites_granted`; the instance CI is green
 
-- [ ] Done *(checked by the executor when the owner reports and the evidence is in 0002)*
+- [x] Done *(checked by the executor when the owner reports and the evidence is in 0002)*
 
 **Tag**: [owner, browser] (Cloud Shell — 13c; Graph Explorer — 13d) + [agent, laptop].
 
@@ -657,7 +657,7 @@ Fixture bodies (`tests/fixtures/graph/`): `token-ok.json`, `token-invalid-client
 
 ## Step 15 — Central mints its own tokens and reads the tenant from the VM alone: the pinned server and MarkItDown are under `~/.local`, the instance with the grants is on the VM; `graph.sh token` prints only a token, `check --counts` prints the status, drive and folder lines, a service-principal sign-in from the VM's IP appears in Entra, the key's mtime is unchanged, `--other-mailbox` answers 403, `--drive` on an ungranted drive answers 403, `mcp-wrapper.sh --probe` lists exactly the 14 tools with the real server and reports the six auth tools outside the filter; `state.sh list proposals` prints `no proposals`; the inbox folder id and the drive ids land in `instance.md`
 
-- [ ] Done *(checked by the executor when the owner reports and the evidence is in 0002)*
+- [x] Done *(checked by the executor when the owner reports and the evidence is in 0002)*
 
 **Tag**: [agent, VM] (installs, pull — 13e) + [owner, vm/zyggy] + [owner, browser] (sign-in log) + [agent, laptop].
 
