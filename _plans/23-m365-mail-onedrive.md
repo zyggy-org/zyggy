@@ -1240,7 +1240,7 @@ Fixture bodies (`tests/fixtures/graph/`): `token-ok.json`, `token-invalid-client
 
 *(Found at Step 20, 2026-10-03, owner-approved: the owner's OneDrive has 29 files at 2020-04-23T23:26:34Z and 32 at 2024-01-06T08:55:49Z; with `≥ watermark`, batch 10 and a second-precision watermark the drive stopped at batch 25 with "watermark not advanced"; 25 batches cost 4.53 USD for 7 parsed files because each batch re-listed 1680 items in the model.)*
 
-- [ ] Done *(checked by the executor when VERIFY passes)*
+- [x] Done *(checked by the executor when VERIFY passes)* — 2026-10-03: zyggy-core `e9d6ace` (suite 300/300 + shellcheck in `zyggy-core-test`; CI run 37125195190 green), instance merge `c770c9f` (CI green), VM pulled; read-only `graph.sh drive-files` on the OneDrive: 1680 files, 1486 after the stuck watermark (29 tied + 1457 newer). The owner's rerun is Step 20's.
 
 **Tag**: [agent, laptop], `d:\source\zyggy-core`, then the instance merge and the VM pull. Commit + push after VERIFY.
 
@@ -1402,7 +1402,7 @@ Every Keep/Reshape/Library row of the spec's Decision Table maps to a step: D7 c
 8. **`parse.sh` types**: `docx xlsx pptx pdf txt md csv json html htm`.
 9. **`permission_denials`** appended to the journal line as `denials <name,…>` after `audit`.
 10. **Backfill dup/refused counts** from the model's counts line; `-` when absent.
-11. **`exclude_paths`** passed to the files-backfill prompt as `skip paths under: …`; the model enforces them.
+11. **`exclude_paths`** passed to the files-backfill prompt as `skip paths under: …`; the model enforces them. *(Superseded by Step 20a: `files-backfill.sh` applies them, with the type and size rules, before any model run.)*
 12. **Ungranted drives**: `files-backfill.sh` pre-checks `check --drive` per drive and skips a 403 drive (counted `forbidden`).
 13. **`long-opaque-token` threshold 120** of `[A-Za-z0-9_.~-]`, raised above any legitimate run found (recorded). The `drive-*.token` files hold timestamps and no longer match it.
 14. **`security.md` over 200 lines** → the GitHub section moves to `.claude/rules/github.md` first, as a separate commit.

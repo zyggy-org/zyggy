@@ -1119,8 +1119,10 @@ The backfill never drafts and never proposes (`proposals.jsonl` unchanged).
 
 ### 13j. Files backfill (AC-19, AC-20) [vm/zyggy] — owner, in tmux
 
-As 13i with `.claude/skills/m365/files-backfill.sh`; interrupt once → `resuming drive <name> from <timestamp>` (the
-backfill's own watermark `files-backfill-watermark <drive>`, never the brief's `drive-token`); the final
+As 13i with `.claude/skills/m365/files-backfill.sh`; interrupt once → `resuming drive <name> from <cursor>` (the
+backfill's own cursor `files-backfill-watermark <drive>` = `<ISO>|<item-id>` of the last file handled, never the
+brief's `drive-token`; the script lists each drive once and skips other types, oversize files and
+`drives.exclude_paths` itself, so the model only sees files it can parse); the final
 `files-backfill: done — drives <k> (excluded <e>, forbidden <x>), …` line. A 403 drive is skipped (`forbidden`) —
 "Grant another site". Web: the drives' "Modified" views show nothing newer than your own edits; three sampled
 documents → Version history → no new version in the run window. No document stays on the VM (each is parsed in a run
@@ -1253,11 +1255,12 @@ the checkpoint). `state.sh get …` shows the value.
 ### Resume a backfill / Backfill stopped at a cap [vm/zyggy]
 
 Interrupted (`Ctrl-C`, SSH drop, exit 130/143): run the same command again → `resuming folder <name> from
-<watermark>` / `resuming drive <name> from <timestamp>`; the checkpoint (`mail-backfill.json` / `files-backfill.json`)
+<watermark>` / `resuming drive <name> from <cursor>`; the checkpoint (`mail-backfill.json` / `files-backfill.json`)
 of the last completed batch stands. `stopped: …` (exit 5) at `budget_usd_total`, `max_facts` or `max_messages`: raise
 the cap in `instance/m365.json` on the laptop (push, pull) and run again, or accept and record. `stopped: watermark
 not advanced in <folders>` → the model did not move it; look at the last batch lines, then run again (or `--folder
-<name>` alone). `--reset` starts the whole backfill again (watermarks and checkpoint cleared; facts already written
+<name>` alone). `stopped: batch not confirmed in <drives>` → the model's last batch ended without its counts line,
+the cursor stayed; run again (the same files are offered again; facts already written are dropped as duplicates). `--reset` starts the whole backfill again (watermarks and checkpoint cleared; facts already written
 stay, duplicates are dropped).
 
 ### Change caps, sites, exclusions or the brief time [laptop] [vm/zyggy] [vm/root]
