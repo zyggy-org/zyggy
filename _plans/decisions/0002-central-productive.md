@@ -182,6 +182,7 @@ Further probe findings (not in the spec's list):
 | Security defaults | **Enabled** → no Conditional Access policies can be active; app-only client credentials are not subject to the user MFA requirement | owner, Entra Overview → Properties, 2026-10-03 |
 | Identity Secure Score | 68.42 %; "Do not allow users to grant consent to unreliable applications" 0/4 (not changed; admin consent is given by the owner) | owner screenshot, 2026-10-03 |
 | Users/mailboxes, licence tier, Exchange plan | pending | 13b/13c |
+| Tenant changes made for 23 (owner, deliberate) | 2026-10-03: `Enable-OrganizationCustomization` (Exchange org hydrated; irreversible; needed for custom scopes/role assignments); Entra role **Exchange Administrator** assigned to `geoffrey@digiverse.be` (Active, Directory) because `New-ManagementRoleAssignment -App` was refused although the owner held the delegating right via `Organization Management\TenantAdmins_-578551966` — Microsoft's RBAC-for-Applications doc lists Exchange Administrator as a requirement; may be removed after 13c. No security setting weakened. | owner, Exchange PowerShell + Entra |
 
 Nothing in the tenant was changed to record these facts.
 
