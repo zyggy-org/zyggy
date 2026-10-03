@@ -174,8 +174,16 @@ Further probe findings (not in the spec's list):
 
 ### Tenant facts
 
-(pending, AC-1 — runbook 13b: users/mailboxes, security defaults or CA state, licence tier, Exchange Online plan,
-employer tenant differs; nothing changed)
+| Fact | Value | Source / date |
+|------|-------|---------------|
+| Tenant | Digiverse (`digiverse.be`), Entra tenant `d5fd07f0-…`, Exchange Online (MX `digiverse-be.mail.protection.outlook.com`) | DNS + OIDC issuer, 2026-10-01 |
+| Owner's role | Global Administrator (the only one — Secure Score "Designate more than one global admin" 0/1; a break-glass admin is advised, not required) | owner, 2026-10-01 / Secure Score screenshot 2026-10-03 |
+| Separate from the employer's tenant | yes | owner, 2026-10-01 |
+| Security defaults | **Enabled** → no Conditional Access policies can be active; app-only client credentials are not subject to the user MFA requirement | owner, Entra Overview → Properties, 2026-10-03 |
+| Identity Secure Score | 68.42 %; "Do not allow users to grant consent to unreliable applications" 0/4 (not changed; admin consent is given by the owner) | owner screenshot, 2026-10-03 |
+| Users/mailboxes, licence tier, Exchange plan | pending | 13b/13c |
+
+Nothing in the tenant was changed to record these facts.
 
 ### Acceptance criteria (AC-1..AC-24, owner-executed on Central)
 
