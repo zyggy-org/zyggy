@@ -96,6 +96,7 @@ Always start Claude in `/srv/agent/central`, never in `memory/` (hooks are per w
 | 13i Mail backfill (AC-17, AC-18) | pending | owner, tmux |
 | 13j Files backfill (AC-19, AC-20) | pending | owner, tmux |
 | 13k 0002 section 23 complete (AC-21..AC-24) | pending | agent |
+| 13-D8a Loopback server unit, self-refreshing token (AC-25..AC-29) | pending (after Gate R-B) | agent install; owner restart, probe, idle test |
 | 13l Acting on the brief's suggestions — the daily routine | pending | owner, from the first brief on |
 
 ## 1. Repositories, instance, deploy keys, SSH config [browser] [laptop] [vm/zyggy]
@@ -1052,6 +1053,32 @@ actions (no row for a denied or refused call), mode `600`, no body text; the new
 counts by tool name; key mtime unchanged; 0002 AC-7, AC-8, AC-11, AC-12 and the Actions log.
 **Any `Send`/`Move` in the audit log without an `actions.jsonl` row → "Revoke the application credential".**
 
+### 13-D8a. The loopback server and the self-refreshing token (AC-25..AC-29) [vm/root] [vm/zyggy] [vm/azureadmin] — agent, then owner
+
+One-off, after plan 23 Gate R-B. Agent (`az vm run-command`, authorised at Gate R-B): merge the template's D8 commits
+into the instance (laptop), `runuser -u zyggy -- git -C /srv/agent/central pull --ff-only`; as root
+`install -m 644 /srv/agent/central/instance/systemd/zyggy-m365-mcp.service /etc/systemd/system/ && systemctl
+daemon-reload && systemctl enable --now zyggy-m365-mcp`; `systemctl is-active zyggy-m365-mcp` → `active`;
+`ss -ltnp | grep 47365` → `127.0.0.1:47365` only; `jq '.projects["/srv/agent/central"].hasTrustDialogAccepted'
+/srv/agent/home/.claude.json` → `true` (the helper runs only in a trusted workspace — `claude -p` runs included).
+
+Owner, then:
+
+```bash
+ssh -t azureadmin@central
+sudo systemctl restart claude-remote      # once: loads the HTTP .mcp.json; ends the current conversation
+sudo -iu zyggy
+cd /srv/agent/central && set -a && . <(jq -r '.env | to_entries[] | "\(.key)=\(.value)"' .claude/settings.local.json) && set +a
+.claude/skills/m365/mcp-server.sh --probe     # tools: 16, the names, listen: 127.0.0.1:47365, env: the ten names
+journalctl -t zyggy-m365 -n 3 --no-pager      # token minted (no token in the line)
+exit
+```
+
+Then the session: a mail question works; after **95 minutes or more idle** a mail question and a OneDrive question are
+answered with no restart and no `/mcp` (AC-26; `journalctl -t zyggy-m365` shows a new `token minted`); a send after
+another idle period prompts once and sends once (AC-27); the key-drill of AC-28 ("Token refresh failed"); the secret
+sweep of AC-29. Paste each.
+
 ### 13g. The units, five attended runs, the owner's go, the timer (AC-12) [vm/root] [vm/zyggy] — agent, then owner
 
 Agent, as root (authorised at the plan's Slice D gate):
@@ -1233,13 +1260,30 @@ grant), its id appended to `drives.sites_granted`, `instance.md`, commit, push, 
 → 200. Remove: Graph Explorer `DELETE /sites/{site id}/permissions/{permission id}` (the grant only — never the
 site), drop it from both lists, push, pull; `check --drive <id>` → 403. Dated 0002 row either way.
 
-### Token refresh failed [vm/azureadmin]
+### Token refresh (automatic)
 
-Until D8 (plan 23 Steps R8–R10) the session's server holds a one-hour token minted at its start, and the remote
-session has no `/mcp`. When an `m365` tool reports an authentication failure (401, "Invalid token lifetime"), Claude
-says so and stops: `ssh -t azureadmin@central` → `sudo systemctl restart claude-remote` (ends the conversation; the
-wrapper mints a new token). If it fails again right after a restart: "Certificate rejected" or "Rotate the
-certificate".
+After 13-D8a nothing to do: the `m365` server answers 401 when a token has expired, Claude Code re-runs the
+headersHelper (`mcp-auth-header.sh` → `graph.sh token`), reconnects and retries the call once — about a second on
+that one call. Each refresh writes `zyggy-m365: token minted` to the journal (`journalctl -t zyggy-m365`), never
+the token. If it does not work: "Token refresh failed".
+
+### Token refresh failed [vm/zyggy] [vm/azureadmin]
+
+Claude says the `m365` credential could not be refreshed (or, before 13-D8a, a tool answers 401 "Invalid token
+lifetime"). After 13-D8a: `journalctl -t zyggy-m365 -n 5 --no-pager` → `token refresh failed: <graph.sh reason>`
+→ "Certificate rejected" (`invalid_client`, clock skew, key unreadable) or "Rotate the certificate"; fix the cause;
+the next tool call runs the helper again. Only if Claude still cannot reach `m365` after the cause is fixed:
+`ssh -t azureadmin@central` → `sudo systemctl restart claude-remote` (ends the conversation) — the one case left that
+needs the VM. **Before 13-D8a** (the stdio wrapper, token minted at start, expiring after about an hour): that
+restart is the only fix.
+
+### MCP server down [vm/zyggy] [vm/root]
+
+The `m365` tools are unavailable and Claude Code reports the server unreachable: `systemctl status zyggy-m365-mcp`,
+`journalctl -u zyggy-m365-mcp -n 20 --no-pager`; `ss -ltnp | grep 47365` (a port taken by another process →
+set `ZYGGY_M365_PORT` in the unit **and** in the `env` of `.claude/settings.local.json`, same value);
+`.claude/skills/m365/mcp-server.sh --probe` (environment line). `Restart=on-failure` restarts it; Claude Code
+reconnects an HTTP server by itself.
 
 ### Install or upgrade the MCP server [laptop] [vm/zyggy]
 
@@ -1248,7 +1292,8 @@ An upgrade is a template change first: regenerate `tests/fixtures/m365/tools-<ve
 `excluded-tools.txt` and the fixture `tools/list` from the package's endpoint list, review every new tool (a new write
 or generic tool stays excluded; the six auth tools and `graph-batch` stay denied), regenerate the deny rules and the
 `m365-lib.sh` lists, CI green; "Update Central from the template"; then 13e's install with the new pin,
-`mcp-wrapper.sh --probe`, and the 0002 MCP-servers row (version, integrity). The live settings need
+`sudo systemctl restart zyggy-m365-mcp` (after 13-D8a; no session restart needed), `mcp-server.sh --probe`
+(before 13-D8a: `mcp-wrapper.sh --probe`), and the 0002 MCP-servers row (version, integrity). The live settings need
 `"enabledMcpjsonServers": ["m365"]` — merge it, never re-install the file:
 
 ```bash
