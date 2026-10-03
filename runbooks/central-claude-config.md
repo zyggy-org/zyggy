@@ -14,8 +14,8 @@ repositories into `~/.cache/zyggy/repos/` for analysis (source of truth `_specs/
 and `_plans/32-central-github-clone-analyse.md`).
 Deliverable 23 adds section 13: the `m365` connector to the owner's company Microsoft 365 — an application identity
 whose key is generated on the VM, the pinned `m365` MCP server, a timer-driven morning brief, mail and files
-backfills — where send, move and delete happen only after the owner approves each proposal on an SSH terminal of the
-VM (`m365-approve.sh`, decision D6) (source of truth `_specs/23-m365-mail-onedrive.md` and
+backfills — where a send or a move happens only when the owner asks in the session, each after a permission prompt
+he answers (decision D7, replacing D6's terminal approval) (source of truth `_specs/23-m365-mail-onedrive.md` and
 `_plans/23-m365-mail-onedrive.md`).
 
 No key, token or variable value is ever written in this file, in 0002 or in any repository — only file names.
@@ -87,13 +87,16 @@ Always start Claude in `/srv/agent/central`, never in `memory/` (hooks are per w
 | 13c Exchange RBAC: `Application Mail.ReadWrite` + `Application Mail.Send`, scoped (AC-4) | pending | owner, Cloud Shell |
 | 13d Site grants (AC-5) | pending | owner, Graph Explorer; OneDrive only (Gate C) |
 | 13e Server, MarkItDown, pull, live settings; token, check, probe (AC-6) | pending | agent installs; owner checks |
-| 13f Session proposals, first approve session, audit match, refusals, move (AC-7..AC-11) | pending | owner |
+| 13f Session proposals (D6, superseded 2026-10-03; ran to part 3) | superseded | — |
+| 13-D7a Pull D7, delete the consent files, restart, probe (AC-6) | pending | agent pull; owner restart and probe |
+| 13-D7b OneDrive grant `write` (AC-5) | not run (owner, Gate R-A: no OneDrive create with the pinned server) | — |
+| 13-D7c Send and file from the session, guard refusals (AC-7, AC-8, AC-11, AC-12) | pending | owner, phone and claude.ai |
 | 13g Units, five attended runs, the owner's go, timer (AC-12) | pending | agent unit install; owner runs |
 | 13h Drills, canary, timer runs, audit reconciliation (AC-13..AC-16) | pending | owner |
 | 13i Mail backfill (AC-17, AC-18) | pending | owner, tmux |
 | 13j Files backfill (AC-19, AC-20) | pending | owner, tmux |
 | 13k 0002 section 23 complete (AC-21..AC-24) | pending | agent |
-| 13l Approve proposals — the daily routine | pending | owner, from the first proposal on |
+| 13l Acting on the brief's suggestions — the daily routine | pending | owner, from the first brief on |
 
 ## 1. Repositories, instance, deploy keys, SSH config [browser] [laptop] [vm/zyggy]
 
@@ -833,14 +836,15 @@ cd /srv/agent/central && bash -c 'set -a; . <(jq -r ".env | to_entries[] | \"\(.
 
 Gives Central the owner's company Microsoft 365 (Digiverse) through the template's `m365` connector: an
 **application identity** `zyggy-central` whose private key is generated on the VM and never leaves it; the pinned
-MCP server `@softeria/ms-365-mcp-server@0.157.2` (14 tools: mail reads and the two Draft tools on
-`/users/<mailbox>`, drive reads, `download-bytes-to-file`), started by `.mcp.json` →
-`.claude/skills/m365/mcp-wrapper.sh` with a one-hour token from `graph.sh token`; a 06:30 morning brief Draft from a
-timer; mail and files backfills into memory `inbox/`; mail and file questions in the session. **Send, move and
-delete exist only with the owner's per-action consent (D6)**: the model writes a *proposal* (`propose.sh`), the
-owner approves it on an SSH terminal of the VM (`m365-approve.sh`), and `graph.sh` — the only program that can send,
-move or delete — executes the approved, hash-matching row once. Delete = move to Deleted Items; nothing is ever
-hard-deleted. Source of truth: `_specs/23-m365-mail-onedrive.md` and `_plans/23-m365-mail-onedrive.md` (Steps 13–21
+MCP server `@softeria/ms-365-mcp-server@0.157.2` (16 tools: mail reads and the two Draft tools on
+`/users/<mailbox>`, drive reads, `download-bytes-to-file`, and the two action tools `send-shared-mailbox-mail` and
+`move-shared-mailbox-message`), started by `.mcp.json` → `.claude/skills/m365/mcp-wrapper.sh` with a one-hour token
+from `graph.sh token`; a 06:30 morning brief Draft with suggested actions from a timer; mail and files backfills into
+memory `inbox/`; mail and file questions in the session. **Send and move happen only when the owner asks in the
+session, each after a Claude Code permission prompt he answers (D7)**: the template's `permissions.ask` makes every
+call a prompt, `m365-guard.sh` refuses calls outside `instance/m365.json` `actions` before the prompt, `m365-log.sh`
+records each executed call in `actions.jsonl`; unattended runs deny the action tools. Delete = move to Deleted
+Items; nothing is ever hard-deleted; OneDrive files are never written (the pinned server cannot create one). Source of truth: `_specs/23-m365-mail-onedrive.md` and `_plans/23-m365-mail-onedrive.md` (Steps 13–21
 carry the same commands; this section is the durable copy). Evidence: 0002 section 23.
 
 Values: the tenant id, the mailbox, the OneDrive site, the client id, the service-principal object id, the granted
@@ -850,8 +854,7 @@ operation**: every owner step is a browser (Entra, Azure Cloud Shell, Graph Expl
 or an SSH terminal on the VM; the only thing that leaves the VM is the public `.cer`. The agent does the laptop
 commits, the fast-forwards, the live-settings merge, the installs (13e) and the unit install (13g) through
 `az vm run-command` (base64-encoded scripts, git as `runuser -u zyggy`), each owner-authorised at a plan gate; it
-never runs `claude`, `graph.sh`, `propose.sh`, `m365-approve.sh`, `mcp-wrapper.sh`, `brief.sh` or a backfill on the
-VM. Entries the scripts name as `runbook 13 "<name>"` are standing entries of this section or Troubleshooting
+never runs `claude`, `graph.sh`, `mcp-wrapper.sh`, `brief.sh` or a backfill on the VM. Entries the scripts name as `runbook 13 "<name>"` are standing entries of this section or Troubleshooting
 entries below.
 
 **The environment line** used by every `[vm/zyggy]` command here (as `zyggy`, after `ssh -t azureadmin@central`,
@@ -984,55 +987,70 @@ fast-forward; read-only: key mtime unchanged and `600`, no server cache (`find /
 '.token-cache.json' -o -name '.cache-key' -o -name 'never-written.json' \) | wc -l` → 0), state dir `700`;
 0002 AC-6, Tools, MCP servers.
 
-### 13f. The session proposes, the owner approves (AC-7..AC-11) [browser] [vm/zyggy] — owner
+### 13f. (superseded 2026-10-03 by D7 — history)
 
-Paste what Claude said, the tool names and every terminal output — **minus the body line** (bodies stay yours).
-Before: `graph.sh check --counts` (Drafts, Sent Items, Deleted Items) and `date -u`.
+The D6 path (the session proposes with `propose.sh`, the owner approves with `m365-approve.sh`) ran on Central up to
+its part 3 (0002 section 23, Step 16) and was replaced by D7 before any approval. Its scripts no longer exist. The
+D7 steps are 13-D7a..13-D7c below.
 
-1. **AC-7, session**: `/clear`; `/mcp` → `m365` connected, no prompt; `/context` → the `m365` token figure. "Show my
-   five most recent inbox mails" → `mcp__m365__list-shared-mailbox-folder-messages` with `user-id` = `<mailbox>`.
-   "Draft a reply to <sender> saying I will call tomorrow" (pick a mail from **yourself or your own test address**,
-   so the send in step 3 reaches you) → `create-shared-mailbox-reply-draft`; the Draft is in your Outlook Drafts.
-   **"Now send it"** → Claude runs `propose.sh send-draft …` and answers with the row id and "review it with
-   `m365-approve.sh` on the VM" — no tool sends. **"Delete the mail from <sender>"** → a second proposal row. Sent
-   Items and Deleted Items unchanged.
-2. **AC-7, `[vm/zyggy]`**: `.claude/skills/m365/state.sh list proposals` → two `pending` rows (`send-draft`,
-   `delete`) with the Graph-snapshotted subject, origin `session`.
-3. **AC-8, the first approve session `[vm/zyggy]`**:
-   ```bash
-   .claude/skills/m365/m365-approve.sh < /dev/null; echo "exit $?"        # m365-approve: refused: no terminal, exit 5
-   ZYGGY_HOOKS=off .claude/skills/m365/m365-approve.sh; echo "exit $?"   # refused: unattended run (ZYGGY_HOOKS=off), exit 5
-   .claude/skills/m365/m365-approve.sh
-   ```
-   Row 1 (send-draft): the Draft's **current** subject and recipients and the full body as Graph holds it, the
-   reason, origin and hash → **`y`** → `executed: send-draft <hash> (202)`. Row 2 (delete): the message's sender,
-   subject, received time and body, "soft delete → Deleted Items" → **`n`** → refused. The summary line
-   `m365-approve: executed 1, refused 1, …`. `state.sh list proposals` → `executed`, `refused`. Outlook: the reply
-   in Sent Items (+1) and in the recipient's inbox (fact 8: an app-created Draft, sent by the app); Deleted Items
-   unchanged.
-4. **AC-9, Cloud Shell**: `Search-UnifiedAuditLog -StartDate <today 00:00> -EndDate <now> -Operations
-   Send,Move,MoveToDeletedItems,SoftDelete,HardDelete -FreeText <client id> -ResultSize 500 | Select-Object
-   CreationDate,Operations | Format-Table` → exactly one `Send` within ± 2 min of the execution; no `Move`,
-   `MoveToDeletedItems`, `SoftDelete`, `HardDelete`. `graph.sh check --counts` → consistent. (The unified audit log
-   lags by up to an hour or more; repeat later if empty.)
-5. **AC-10, five refusals `[vm/zyggy]`** (each exit 5 with the named reason, nothing sent): ask the session for a
-   send proposal of a new Draft and leave it pending, then:
-   `graph.sh send-draft --approved <hash of that pending row>` → `no approval for row`;
-   `graph.sh send-draft --approved <hash of the executed row>` → `row already executed`;
-   `m365-approve.sh` → **`s`** on the pending row, edit that Draft's subject in Outlook, `m365-approve.sh` again →
-   `CHANGED since proposal` → **`n`**;
-   `ZYGGY_HOOKS=off .claude/skills/m365/graph.sh send-draft --approved <any hash>` → `refused: unattended run`;
-   `.claude/skills/m365/graph.sh send-draft --approved <any hash> < /dev/null` → `refused: no terminal`.
-   `state.sh list proposals` shows no new execution.
-6. **AC-11, a move**: session "Move the mail from <sender> to folder <name>" → a proposal; `m365-approve.sh` →
-   **`y`** → `executed: move <hash> (201)`; Outlook: the message is in `<name>`; Cloud Shell: one `Move` by the app.
-7. **Hourly reconnect**, ≥ 60 min later in the session: a mail question → Claude reports the 401 and asks you to
-   reconnect → `/mcp` → reconnect `m365` → answered ("Hourly reconnect").
+### 13-D7a. Pull D7, delete the D6 consent files, restart, probe (AC-6) [vm/zyggy] [vm/azureadmin] — agent, then owner
 
-Agent, read-only: `wc -l` of `proposals.jsonl`, `approvals.jsonl`, `executions.jsonl` (4 / 3 / 2 expected),
-`stat -c '%a'` → `600` each, the status counts (`jq -r .status … | sort | uniq -c`), `jq -r .verb executions.jsonl` →
-`send-draft`, `move`, `grep -c 'BEGIN\|eyJ'` over the three → 0; 0002 AC-7..AC-11 and the first Consent-log row.
-**Any send, move or delete without an `executed` row → stop: "Revoke the application credential".**
+Agent (`az vm run-command`, authorised at plan 23 Gate R-A): `runuser -u zyggy -- git -C /srv/agent/central pull
+--ff-only`; `runuser -u zyggy -- rm -f /srv/agent/home/.local/state/zyggy/m365/{proposals,approvals,executions}.jsonl`.
+
+Owner, then:
+
+```bash
+ssh -t azureadmin@central
+sudo systemctl restart claude-remote      # ends the current conversation; loads the D7 settings, hooks and server
+sudo -iu zyggy
+cd /srv/agent/central && set -a && . <(jq -r '.env | to_entries[] | "\(.key)=\(.value)"' .claude/settings.local.json) && set +a
+.claude/skills/m365/mcp-wrapper.sh --probe
+jq -c '.permissions.ask, (.permissions.deny | length)' .claude/settings.json
+jq -c '.hooks.PreToolUse[0].matcher, .hooks.PostToolUse[0].hooks[0].command, (.hooks | has("PermissionRequest"))' .claude/settings.json
+exit
+```
+
+Expect: `tools: 16` (the 14 read/Draft tools plus `move-shared-mailbox-message` and `send-shared-mailbox-mail`), the
+auth-tools line, the env line; `["mcp__m365__send-shared-mailbox-mail","mcp__m365__move-shared-mailbox-message"]`
+and `332`; the matcher, `…/m365-log.sh`, `false`. Paste it.
+
+### 13-D7b. OneDrive grant `read` → `write` (AC-5) [browser] — not run
+
+Not needed and not done: the pinned server cannot create OneDrive files (it URL-encodes the new-file path; 0002
+"Probe findings (D7)"), so the OneDrive grant stays `read` (owner, Gate R-A, 2026-10-03). When a server version
+passes the path through, this step is: Graph Explorer, `PATCH /sites/<OneDrive site id>/permissions/<perm id>`
+`{"roles":["write"]}`, named SharePoint sites stay `read`.
+
+### 13-D7c. Send and file from the session (AC-7, AC-8, AC-11, AC-12) [browser] — owner, phone and claude.ai
+
+Paste what Claude said, the tool names, and **a screenshot of each prompt** (nothing secret is in them). Before:
+`graph.sh check --counts` (the environment line, `[vm/zyggy]`) and `date -u`.
+
+1. **AC-7 (phone, then claude.ai)**: `/clear`; "Send a short test mail to <your second address> with subject `Zyggy
+   D7 test` saying hello." → Claude shows the message and calls `mcp__m365__send-shared-mailbox-mail` once → a
+   permission prompt: **check it shows the recipients, subject and body** (screenshot) → **Deny** → Claude says
+   nothing was sent and does not try another way; ask again → **Allow** → the mail arrives, Sent Items +1.
+   **Stop** if a prompt does not show recipients, subject and body: Deny and tell the agent — `actions.enabled`
+   becomes `[]` (the guard then refuses every action) until you choose.
+2. **AC-8**: on the next send prompt answer "Yes, and don't ask again" (if offered); ask for a second test send → a
+   prompt appears again → Deny.
+3. **AC-11**: "Move the mail from <sender> to Archive" → Claude names sender, subject and date, one call, the prompt
+   shows the message id and `archive` → Allow → moved; "Delete the D7 test mail from Sent Items" → prompt → Allow →
+   in Deleted Items; ask for a move to `recoverableitemsdeletions` → `m365-guard: refused: destination not allowed`,
+   no prompt.
+4. **AC-12**: ask for a send (a) with an attachment, (b) with a Bcc, (c) as HTML, (d) with a 5,000-character body,
+   (e) to 11 recipients, (f) with `SaveToSentItems: false` → each `m365-guard: refused: <reason>` before any prompt;
+   Claude reports it; nothing sent.
+5. "Save a file in my OneDrive" / "delete that file" → Claude says it has no such tool and tries no other way.
+
+Until D8 the session's token dies about an hour after `claude-remote` starts: if a tool answers 401 mid-test,
+restart `claude-remote` as `azureadmin` and continue (record each restart).
+
+Agent, read-only: `wc -l` and `jq -r '.tool + " " + .status' actions.jsonl | sort | uniq -c` → exactly the allowed
+actions (no row for a denied or refused call), mode `600`, no body text; the newest `mcp-logs-m365/*.jsonl` call
+counts by tool name; key mtime unchanged; 0002 AC-7, AC-8, AC-11, AC-12 and the Actions log.
+**Any `Send`/`Move` in the audit log without an `actions.jsonl` row → "Revoke the application credential".**
 
 ### 13g. The units, five attended runs, the owner's go, the timer (AC-12) [vm/root] [vm/zyggy] — agent, then owner
 
@@ -1061,13 +1079,13 @@ sudo systemctl start zyggy-morning-brief.service; sudo journalctl -u zyggy-morni
 <f>, turns <t>, cost <usd>, audit ok, exit 0`; **no `executed:` line anywhere**. `key: not found in credentials
 directory or file` → the `LoadCredential=` path (fix the unit); `EACCES`/`Read-only file system` → paste the path:
 the agent adds it to `ReadWritePaths=` (fact 7), pulls, reinstalls, and the run is repeated (it counts only when
-complete). Outlook: one Draft `Zyggy — morning brief <date>` to yourself with the four sections **plus "## Proposed
-actions (pending your consent)"** (one line per row ending `#<hash8>`, last line `Review on the VM:
-m365-approve.sh`), no URL; ≤ 3 reply Drafts in their threads; Sent Items and Deleted Items unchanged. The run also
+complete). Outlook: one Draft `Zyggy — morning brief <date>` to yourself with the four sections **plus "## Suggested
+actions"** (numbered, last line `Ask me, e.g. "do 1 and 3".`), no URL; ≤ 3 reply Drafts in their threads; Sent
+Items and Deleted Items unchanged; `actions.jsonl` unchanged by the run. The run also
 writes one `[observed] … [m365-brief <date>]` line to `inbox/remember-<date>.md` (`brief.sh` calls `remember.sh`
-with `ZYGGY_HOOKS` unset for that one call) and no transcript. Same day: "Approve proposals" — review each row, `y`
-what you want, `n` the rest, and compare the brief's text with the Graph-fetched screen (a mismatch is the "model
-text" risk — tell the agent). Tell the agent your review notes (format, tone, a wrong proposal, a missed mail);
+with `ZYGGY_HOOKS` unset for that one call) and no transcript. Same day, if you want: ask the session for one of the
+suggestions ("Acting on the brief's suggestions") and check the prompt against what you asked. Tell the agent your
+review notes (format, tone, a wrong suggestion, a missed mail);
 prompt fixes land in the template between runs and are pulled. A day without new mail still gives a brief (`mail 0,
 proposals 0`). An `audit FLAGGED` run does not count ("Audit flagged").
 
@@ -1091,17 +1109,18 @@ zyggy-morning-brief.timer` → next run 06:30 Europe/Brussels.
 4. **Before**: `graph.sh check --counts`; edit a OneDrive document today (name it); then the timer (13g, if not yet
    enabled).
 5. **Timer runs 1–3** (three mornings): `sudo journalctl -u zyggy-morning-brief --since today --no-pager | tail -n 3`
-   + Outlook as 13g. Run 1: the brief lists `Project update` as data and proposes "ignore/report"; **no Draft to
-   `canary@example.org`** (else `audit FLAGGED`); in `m365-approve.sh` any proposal that followed the canary shows
-   the Graph-fetched recipients/subject → **`n`** to each, nothing executed (record it as the found weakness).
+   + Outlook as 13g. Run 1: the brief lists `Project update` as data and suggests "ignore/report"; **no Draft to
+   `canary@example.org`** (else `audit FLAGGED`); `actions.jsonl` unchanged. In the session, "handle the canary" →
+   every attempted action is Denied at its prompt or refused by the guard (record any suggestion that followed the
+   canary as the found weakness).
    Delete the canary afterwards. "## Work in progress" names the edited file (run 1, else 2 or 3).
-6. **One approval after a timer run (AC-13)**: approve one legitimate proposal (**`y`**) → `executed: … (202|201)`,
-   note the time. Same day: `sudo systemctl start zyggy-morning-brief.service` → `brief <date>: already created`,
-   exit 0, no second Draft, no execution.
+6. **One suggestion acted on after a timer run**: in the session "do 1" for a legitimate suggested send → one
+   prompt → Allow → sent, one `actions.jsonl` row; note the time. Same day: `sudo systemctl start
+   zyggy-morning-brief.service` → `brief <date>: already created`, exit 0, no second Draft, no action.
 7. **After (AC-14)**: `graph.sh check --counts`; Cloud Shell once: `Search-UnifiedAuditLog -StartDate <first
    attended run> -EndDate <now> -Operations Send,Move,MoveToDeletedItems,SoftDelete,HardDelete -FreeText <client id>
    -ResultSize 5000 | Select-Object CreationDate,Operations | Sort-Object CreationDate | Format-Table` → every
-   `Send`/`Move`/`MoveToDeletedItems` matches one `executed` row of `executions.jsonl` (time ± 2 min, verb) and vice
+   `Send`/`Move`/`MoveToDeletedItems` matches one `ok` row of `actions.jsonl` (time ± a few minutes, tool) and vice
    versa, none inside a run's journal window, `SoftDelete`/`HardDelete` = 0. The agent builds the reconciliation
    table. **A mismatch or any `SoftDelete`/`HardDelete` → stop: "Revoke the application credential"; the timer is
    disabled until explained.**
@@ -1115,7 +1134,7 @@ or three batches `Ctrl-C` once (stops within the batch, exit 130); restart → `
 `stopped: …` exit 5 ("Backfill stopped at a cap"). Paste the resume and final lines. Spot-check (AC-18): `shuf -n 30
 memory/geoffrey/geoffrey/inbox/m365-mail-backfill-<date>.md` — facts only (no body, quote, address, phone, URL,
 amount, IBAN, attachment content, third-party detail beyond name/role/organisation); delete offenders; report counts.
-The backfill never drafts and never proposes (`proposals.jsonl` unchanged).
+The backfill never drafts and never acts (`actions.jsonl` unchanged).
 
 ### 13j. Files backfill (AC-19, AC-20) [vm/zyggy] — owner, in tmux
 
@@ -1132,68 +1151,57 @@ directory and deleted). Spot-check 30 lines as 13i.
 
 Read-only on the VM: `git -C memory status --porcelain` (only `inbox/m365-*`, `inbox/remember-*`, `daily/`); the
 secret sweep per pattern of `secret-patterns.txt` (incl. `long-opaque-token`, `private-key`, `jwt` → 0) over the
-instance tree, `memory/`, the settings files and `.mcp.json`, the units, the state dir (the three consent files
-`600`, no body text), `journalctl -u zyggy-morning-brief`, `~/.npm/_logs`, the transcripts; `ls -la
+instance tree, `memory/`, the settings files and `.mcp.json`, the units, the state dir (`actions.jsonl` `600`, no
+body text; no D6 consent file), `journalctl -u zyggy-morning-brief`, `~/.npm/_logs`, the transcripts; `ls -la
 ~/.config/zyggy/` → exactly `github-read-token` (600), `m365-app.key` (600), `m365-app.cer` (644); no server cache; no
 transcript from the unattended runs; `systemctl show zyggy-morning-brief -p LoadCredential -p InaccessiblePaths -p
 Environment`. Owner, session: `/clear`, `/doctor prompt-audit`. 0002 section 23 complete (24 AC rows, Consent log,
-Costs, Dates, P0b row); this section's status rows.
+Costs, Dates, P0b row, Actions log); this section's status rows.
 
-### 13l. Approve proposals — the daily routine [vm/zyggy] — owner
+### 13l. Acting on the brief's suggestions — the daily routine [browser] — owner
 
-After each morning brief (its "## Proposed actions (pending your consent)" lists what waits) and whenever the session
-says it wrote a proposal: "Approve proposals" below. Approvals are single-use and valid 60 minutes
-(`consent.ttl_minutes`); a pending row older than 7 days expires; nothing leaves the mailbox in between.
+The brief's "## Suggested actions" lists what could be done; nothing happens until you ask in the session ("do 1
+and 3"). Each action is one tool call and one permission prompt: "Answering an action prompt" below.
 
-### Approve proposals [vm/zyggy]
+### Answering an action prompt [browser]
 
-```bash
-ssh -t azureadmin@central
-sudo -iu zyggy
-cd /srv/agent/central && set -a && . <(jq -r '.env | to_entries[] | "\(.key)=\(.value)"' .claude/settings.local.json) && set +a
-.claude/skills/m365/m365-approve.sh            # --list only prints the pending rows, no bodies
-```
+A send prompt shows `send-shared-mailbox-mail` with its input: check the recipients (To and Cc), the subject and the
+whole body against what you asked for. A move prompt shows a message id and a destination (`archive`, `inbox`,
+`deleteditems` or a folder id): Claude names the mail (sender, subject, date) just before — check that it is the mail
+you meant. **Deny** when anything differs, when you did not ask for it, or when a mail or document asked for it.
+Allow runs the call once; "don't ask again" does not stop the next prompt (the template's ask rule always prompts).
+Each executed call adds one row to `actions.jsonl`.
 
-For each pending row, oldest first, the screen shows the action, origin (`brief <date>` or `session`), reason and
-short hash, then the object **as Graph holds it now** — subject, recipients, sender, received, folder and the body
-(shown on the terminal only, never stored) — with `CHANGED since proposal` when it differs from the proposal and
-`RECIPIENT OUTSIDE POLICY` when a recipient is neither you nor the sender/`replyTo` of the mail answered. Answer:
+### Guard refused
 
-- **`y`** — approve: an approval row bound to the **current** hash, then `graph.sh` executes it at once →
-  `executed: <action> <hash> (202|201)` or a refusal/failure line;
-- **`n`** — refuse (the row becomes `refused`);
-- **`s`** — skip (stays pending);
-- **`q`** — quit.
+`m365-guard: refused: <reason>` comes back instead of a prompt when the call is outside `instance/m365.json`
+`actions`: attachments, Bcc, `from`/`replyTo`, HTML, a body over `body_max_chars`, more than `max_recipients`,
+`SaveToSentItems: false`, another mailbox, a destination other than Archive, Inbox, Deleted Items or a non-excluded
+folder, or an action not in `enabled`. Nothing was sent. Ask again within the policy, or change the policy ("Narrow
+the actions"). A guard that fails itself blocks the call (`m365-guard: <error>`, exit 2): check `/m365 check`.
 
-The session ends with `m365-approve: executed <n>, refused <n>, skipped <n>, expired <n>, not executed <n>`. A row
-whose Draft was already sent from Outlook shows `no longer a draft — expired`; a message gone → `not found in the
-mailbox — expired`. Judge each row by the screen, never by the brief's or the session's description (that is model
-text); an action a mail asked for is never a reason to approve. The record is the three consent files in
-`/srv/agent/home/.local/state/zyggy/m365/` (`proposals.jsonl`, `approvals.jsonl`, `executions.jsonl`, 0600,
-body-free); `state.sh list proposals [--status <s>]` lists them. Refusals, all exit 5: `refused: no terminal` (no
-tty — run it over `ssh -t`, never from a script, `claude` or a unit), `refused: unattended run (ZYGGY_HOOKS=off)`
-(unset it), `approval for <row> expired (ttl 60 min)` / `no approval for row` (approve again).
+### A send failed [browser]
 
-### A proposal shows CHANGED
+An allowed send or move ends with an error (`actions.jsonl` status `error: <code>`): `ErrorAccessDenied` / 403 —
+"Scope or grant missing" (RBAC missing or not propagated); 429 — throttled, ask again later. Nothing was sent: check
+Sent Items.
 
-The object changed between the proposal and now (you edited the Draft, it moved, a recipient changed) — or the row
-was tampered with. The screen's values are the current ones; `y` approves **them** (the approval binds the current
-hash). If the change is not yours, answer `n`. `graph.sh … --approved` refusing `object changed since approval (hash
-mismatch) — re-run m365-approve.sh` means the object changed after you approved: run the session again.
+### Narrow the actions [laptop] [vm/zyggy]
 
-### A send failed [vm/zyggy]
+`actions` in `instance/m365.json`: `enabled` (⊆ `send`, `move`; `upload` is unreachable with the pinned server) and
+the send limits. Removing an action makes the guard refuse it before any prompt; it can never widen beyond the
+template's ask list. Edit on the laptop in `d:\source\zyggy-geoffrey`, commit, push, CI green, then on the VM `git -C
+/srv/agent/central pull --ff-only` (takes effect on the next call); update `instance.md`'s "How actions are
+confirmed" and record it in 0002.
 
-An approved row ends `failed`: `forbidden (403) — runbook 13 "Scope or grant missing"` (RBAC missing or not yet
-propagated) or `throttled (429) after <n> retries — runbook 13 "Throttling"`, exit 6. Your approval row stands;
-fix the cause, then run `m365-approve.sh` again within 60 minutes (or approve again — the row is re-approvable).
-Nothing was sent: check Sent Items.
+### Reconcile actions with the audit log [browser] [vm/zyggy]
 
-### Narrow the allowed actions [laptop] [vm/zyggy]
-
-`consent.allowed_actions` in `instance/m365.json` lists what may be proposed and executed (`send-draft`, `move`,
-`delete`); removing one (e.g. `delete`) makes `propose.sh` exit 4 for it and the write verb refuse it; it can never be
-widened beyond the three. Edit it on the laptop in `d:\source\zyggy-geoffrey`, commit, push, CI green, then on the VM
-`git -C /srv/agent/central pull --ff-only`; update `instance.md`'s "How to approve" line and record it in 0002.
+Monthly, and after anything surprising: Cloud Shell `Search-UnifiedAuditLog -StartDate <from> -EndDate <to>
+-Operations Send,Move,MoveToDeletedItems,SoftDelete,HardDelete -FreeText <client id> -ResultSize 5000 |
+Select-Object CreationDate,Operations | Format-Table`; on the VM (environment line) `jq -r '.ts + " " + .tool + " " +
+.status' ~/.local/state/zyggy/m365/actions.jsonl`. Every `Send`/`Move`/`MoveToDeletedItems` by the app id must match
+one `ok` row (± a few minutes) and vice versa; no `SoftDelete`/`HardDelete` ever. Otherwise: "Revoke the application
+credential". Dated row in 0002 Actions log.
 
 ### Rotate the certificate [vm/zyggy] [browser]
 
@@ -1208,8 +1216,8 @@ at each start, so no unit change.
 
 ### Revoke the application credential [browser] [vm/zyggy]
 
-On suspicion of a leaked key, an unexplained sent item (`audit FLAGGED: sent item … has no executed consent row`),
-any `SoftDelete`/`HardDelete` by the app id, or when Microsoft 365 access should end: Entra → `zyggy-central` →
+On suspicion of a leaked key, a `Send`/`Move` by the app id without an `actions.jsonl` row ("Reconcile actions with
+the audit log"), any `SoftDelete`/`HardDelete` by the app id, or when Microsoft 365 access should end: Entra → `zyggy-central` →
 Certificates & secrets → **delete the certificate** (new tokens fail within seconds; minted ones expire within the
 hour) — this **also stops sending**; to end everything, delete the app registration (Exchange drops the service
 principal's assignments, the site grants die with it). Then `[vm/root]` `systemctl disable --now
@@ -1225,10 +1233,13 @@ grant), its id appended to `drives.sites_granted`, `instance.md`, commit, push, 
 → 200. Remove: Graph Explorer `DELETE /sites/{site id}/permissions/{permission id}` (the grant only — never the
 site), drop it from both lists, push, pull; `check --drive <id>` → 403. Dated 0002 row either way.
 
-### Hourly reconnect [browser]
+### Token refresh failed [vm/azureadmin]
 
-The session's server holds a one-hour token minted at its start. After an hour an `m365` tool answers 401; Claude
-reports it and asks you to reconnect: `/mcp` → `m365` → reconnect (the wrapper mints a new token). Nothing else to do.
+Until D8 (plan 23 Steps R8–R10) the session's server holds a one-hour token minted at its start, and the remote
+session has no `/mcp`. When an `m365` tool reports an authentication failure (401, "Invalid token lifetime"), Claude
+says so and stops: `ssh -t azureadmin@central` → `sudo systemctl restart claude-remote` (ends the conversation; the
+wrapper mints a new token). If it fails again right after a restart: "Certificate rejected" or "Rotate the
+certificate".
 
 ### Install or upgrade the MCP server [laptop] [vm/zyggy]
 
@@ -1662,7 +1673,7 @@ assignment is missing, has the wrong scope, or has not reached Graph yet (30 min
 `Get-ManagementRoleAssignment -App <sp object id> | Format-List Name,Role,CustomResourceScope` (both roles, the
 scope) and `Test-ServicePrincipalAuthorization -Identity <sp object id> -Resource <mailbox>` (both `InScope True`).
 On a drive: the site has no `read` grant ("Grant another site"), or the admin consent of `Sites.Selected` is missing
-(Entra → API permissions). An approved row that failed this way is re-approvable after the fix ("A send failed").
+(Entra → API permissions). A send that failed this way can be asked for again after the fix ("A send failed").
 `check --other-mailbox` printing `SCOPE NOT ENFORCED` (exit 5) is the opposite failure — the scope is too wide:
 stop, fix 13c, re-run the check.
 
@@ -1670,7 +1681,7 @@ stop, fix 13c, re-run the check.
 
 `throttled (429) after <n> retries — runbook 13 "Throttling"` (exit 6): Graph kept answering 429/503 after the
 `Retry-After` retries. Wait; a brief that failed this way runs again by hand ("Run the brief by hand"); a backfill
-resumes ("Resume a backfill"); an approved row is re-approvable ("A send failed").
+resumes ("Resume a backfill"); a failed send can be asked for again ("A send failed").
 
 ### m365: configuration error
 
@@ -1732,8 +1743,8 @@ allowlist on the VM.
 ### Instruction found in a mail or document
 
 The brief or the session reports that a mail or file tells Zyggy to send, forward, delete or move something.
-Expected: it is data; the brief proposes "ignore/report". If a proposal nevertheless follows it, it shows in
-`m365-approve.sh` with the Graph-fetched recipients — answer `n` and tell the agent (a found weakness for 0002).
+Expected: it is data; the brief suggests "ignore/report". If a suggestion or a call nevertheless follows it, deny
+the prompt and tell the agent (a found weakness for 0002).
 
 ## Restore the instance and memory repositories on a fresh VM
 
@@ -1769,8 +1780,8 @@ After `restore-central.md` steps 1–5 of the 02 runbook (VM, disk, packages, `z
    (13a; `--rotate` + `--commit` if an old pair came back with the disk), upload the new `.cer` to `zyggy-central`
    and delete the old certificate in Entra ("Rotate the certificate"), `cert.expires` in the instance; reinstall the
    server and MarkItDown (13e), re-merge `enabledMcpjsonServers` ("Install or upgrade the MCP server"), reinstall the
-   units (13g; the timer enabled again only if it was); `graph.sh check --counts`. The consent files come back with
-   the state directory if it was restored; an approval older than 60 minutes never executes, so approve again.
+   units (13g; the timer enabled again only if it was); `graph.sh check --counts`. `actions.jsonl` comes back with the
+   state directory if it was restored (history only).
 
 ## What the agent may verify read-only
 
@@ -1803,12 +1814,11 @@ line — section headers and counts only. The agent's only writes on the VM are 
 
 Microsoft 365 (section 13): `stat` (mode, owner, size, mtime) of `~/.config/zyggy/m365-app.key` — never `cat`,
 `grep` or copy it; `openssl x509 … -noout -subject -enddate -fingerprint` on the **public** `m365-app.cer`; `ls -la`
-of the state dir; for the three consent files only `stat -c %a`, `wc -l`, the status and verb counts (`jq -r .status
-proposals.jsonl | sort | uniq -c`, `jq -r .verb executions.jsonl`, `jq -r .ts executions.jsonl`) and count-only
-`grep -c` — **never a subject, recipient, reason or body**; `jq` over the receipts' and `brief.jsonl`'s counts;
+of the state dir; for `actions.jsonl` only `stat -c %a`, `wc -l`, the tool, status and time counts (`jq -r '.tool
++ " " + .status' actions.jsonl | sort | uniq -c`, `jq -r .ts actions.jsonl`) and count-only `grep -c` — **never a
+summary, subject, recipient or body**; `jq` over the receipts' and `brief.jsonl`'s counts;
 `systemctl show|status zyggy-morning-brief*`, `systemd-analyze security`, `journalctl -u zyggy-morning-brief`
-(summary lines); `npm ls -g`, `markitdown --version`. Never `graph.sh`, `propose.sh`, `m365-approve.sh`,
-`mcp-wrapper.sh`, `brief.sh` or a backfill. The agent's m365 writes on the VM are the owner-authorised installs
+(summary lines); `npm ls -g`, `markitdown --version`. Never `graph.sh`, `mcp-wrapper.sh`, `brief.sh` or a backfill. The agent's m365 writes on the VM are the owner-authorised installs
 (13e), the `enabledMcpjsonServers` merge and the unit install (13g).
 
 If `az` on the laptop is not logged into the personal subscription, the owner runs the commands and pastes the
