@@ -330,6 +330,7 @@ Owner answers (spec "Decisions log", 2026-09-30):
 | OQ-7 | Visibility of the `zyggy-core` template | **Private for now, publishable by construction** (AC-30 keeps it principal-free); flipped later as an owner decision (e.g. at 26) together with a licence, removing the pointers into the private `zyggy` repository (`PROTOCOL.md`, `tests/README.md`) and a push-protection dry run for the synthetic secret samples. |
 
 Deviations found during execution: none yet.
+- 2026-10-03 (Step 16): the remote session's `m365` server did not start — `claude-remote.service` has no `~/.local/bin` on `PATH`, `mcp-wrapper.sh` resolved the binary via `PATH` only (`--probe` from a login shell hid it). Fixed in the template (`zy_m365_user_bin`: PATH, then `$HOME/.local/bin`; also for `markitdown` in `parse.sh`) with two regression tests. The model in the session reported the failure and tried no other route.
 
 ### 31
 
