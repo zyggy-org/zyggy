@@ -774,7 +774,7 @@ Fixture bodies (`tests/fixtures/graph/`): `token-ok.json`, `token-invalid-client
 
 ## Step R1 — The pinned server's tool partition grows from 14 to 17 and the three action tools' real input shapes are known: `send-shared-mailbox-mail`, `upload-file-content` and `move-shared-mailbox-message` move from `excluded-tools.txt` to `enabled-tools.txt` (327 stay excluded, incl. every other send/reply/forward/update/delete/rename/copy/share tool, `create-upload-session`, `create-onedrive-folder`, `graph-batch`, the six auth tools and all `/me` tools); the fixture `tools/list` carries the three tools' full `inputSchema`; 0002 records how `user-id`, the message, recipients, body, `saveToSentItems`, `driveId`/`driveItemId`, the upload content and `destinationId` are passed, whether the server URL-encodes the `<parent-id>:/<name>:` form, and whether upload content is a string or base64 (spec facts 2–4)
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)* — 2026-10-03: `zyggy-core` `7ead856`, CI 37132567894 green. **Fact-3 branch taken**: the server URL-encodes `driveItemId` → partition **16 / 328**, `upload-file-content` stays excluded (0002 "Probe findings (D7)"). Pulled forward for safety: `ZY_M365_ACTION_TOOLS` and the brief allow list without action tools (so no intermediate commit lets a run send).
 
 **Tag**: [agent, laptop] — scratchpad for the package, `d:\source\zyggy-core` for fixtures, this repository for the findings (P1).
 
@@ -807,7 +807,7 @@ Fixture bodies (`tests/fixtures/graph/`): `token-ok.json`, `token-invalid-client
 
 ## Step R2 — The D6 terminal-consent path no longer exists and `graph.sh` is a read-only tool again with the two lookups the guard needs: `propose.sh`, `m365-approve.sh`, the pty harness, the consent fixtures and their tests are gone; `graph.sh send-draft|move|delete|snapshot|get|sent-since` and any unknown verb exit 4; `graph.sh item-exists <drive-id> <parent-id> <name>` prints `exists`/`absent` and `item-kind <drive-id> <item-id>` prints `folder`/`file`/`absent` (GET only, never `/me`); `state.sh` holds only the named watermark/token keys (`list proposals` → 4); `instance/m365.json`'s `consent` block is replaced by the validated `actions` block (exit 3 on violations)
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)* — 2026-10-03: `zyggy-core` `fdf2bd7` (one commit with R4: `brief.sh` counted proposals through `state.sh list`, so neither step is green alone; `verify.sh` §5 removal pulled in from R4), CI 37135394492 green. `write_drive_id` fixture = `b!onedrive0001` (the fixture OneDrive), not `b!acmeOneDriveDrive01`.
 
 **Tag**: [agent, laptop], `d:\source\zyggy-core`. Commit + push after VERIFY.
 
@@ -843,7 +843,7 @@ Fixture bodies (`tests/fixtures/graph/`): `token-ok.json`, `token-invalid-client
 
 ## Step R3 — An action tool reaches the owner only as a permission prompt, only if policy allows it, and leaves one log row when it ran: the template `.claude/settings.json` has `permissions.ask` = exactly the three action tools, `permissions.deny` = the path rules + `Bash(.claude/skills/m365/graph.sh *)` + the 327 excluded tools (the `m365-approve.sh` line gone), PreToolUse → `.claude/hooks/m365-guard.sh` and PostToolUse → `.claude/hooks/m365-log.sh` with matcher `^mcp__m365__(send-shared-mailbox-mail|upload-file-content|move-shared-mailbox-message)$`, timeout 20, and no `PermissionRequest` hook; the guard denies every out-of-policy call with a reason and fails closed on its own errors; the log appends a body-free row per call to `actions.jsonl`; the stdio wrapper loads the 17 tools
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)* — 2026-10-03: `zyggy-core` `546497e`, CI 37138014882 green. Fact-3 branch: `permissions.ask` = send + move (upload stays in deny; ask ∩ deny = ∅), deny = 4 + 328 = 332. Guard also refuses `from`/`sender`/`replyTo`, message fields beyond subject/body/to/cc/importance, stray top-level arguments (server "Body field fallback") and case-variant duplicate keys (0002 Probe findings).
 
 **Tag**: [agent, laptop], `d:\source\zyggy-core`. Commit + push after VERIFY.
 
@@ -879,7 +879,7 @@ Fixture bodies (`tests/fixtures/graph/`): `token-ok.json`, `token-invalid-client
 
 ## Step R4 — No unattended run can act and the brief only suggests: `brief.sh` drops `propose.sh` from its allow list, adds the three action tools to `--disallowedTools` (deny wins over the template ask) and keeps `--permission-prompts none`; the `morning-brief` prompt renders "## Suggested actions" (numbered, "Ask me, e.g. 'do 1 and 3'") and the journal line carries `suggestions <s>`; `verify.sh` keeps the Draft audit only (no sent-items section, no consent fields in the receipt); both backfills deny the three action tools
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)* — 2026-10-03: in `fdf2bd7` with R2. Receipt keeps `window_start` (not a consent field). The suggestions block drops line 3 ("save … in OneDrive") on the fact-3 branch.
 
 **Tag**: [agent, laptop], `d:\source\zyggy-core`. Commit + push after VERIFY.
 
@@ -909,7 +909,7 @@ Fixture bodies (`tests/fixtures/graph/`): `token-ok.json`, `token-invalid-client
 
 ## Step R5 — Claude knows the D7 rules: `security.md` "## Microsoft 365" carries the spec's replacement bullets verbatim, `AGENTS.md` the D7 bullet, `operations.md` "a denied prompt or a guard refusal ends the action — report it" (the D6 exit-5 strings gone), the `m365` skill the session procedure (request in the owner's own words → show the full message / name the mail / name the file → one tool call → report; never retry another way); every "hourly reconnect" and `/mcp` instruction for `m365` is removed (interim wording until D8: "If an `m365` tool reports an authentication failure, tell the owner and point to runbook 13 'Token refresh failed'; do not retry another way"); README and `tests/README.md` describe `actions`, the hooks and `actions.jsonl`; `repo.bats` asserts the wording; template CI green
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)* — 2026-10-03: `zyggy-core` `7db2670`, CI 37139851564 green (word list passed). PROVE 1/2/3 282/282/230, one skip (no system curl in the image — pre-existing, not the word-list test); AC-46 diff since `09e0a0b` empty. The spec bullets are adapted to the fact-3 branch ("two action tools", "Files are never created, …").
 
 **Tag**: [agent, laptop], `d:\source\zyggy-core`. Commit + push after VERIFY.
 
