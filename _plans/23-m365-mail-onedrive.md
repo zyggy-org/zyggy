@@ -589,7 +589,7 @@ Fixture bodies (`tests/fixtures/graph/`): `token-ok.json`, `token-invalid-client
 
 ## Step 13 — Central has its own key and the tenant knows its certificate: `graph.sh cert-init` on the VM writes the 600 key and the 644 certificate and prints the thumbprints; the owner records the tenant facts, registers `zyggy-central` (no platform, no redirect, public client flows off, no secret), uploads the `.cer`, consents application `Sites.Selected` only (**no Entra `Mail.*`, incl. no `Mail.Send`**); the client id, the service-principal object id and the expiry land in `instance/m365.json` and `instance.md`
 
-- [ ] Done *(checked by the executor when the owner reports and the evidence is in 0002)*
+- [x] Done *(checked by the executor when the owner reports and the evidence is in 0002)*
 
 **Tag**: [owner, vm/zyggy] (13a) + [owner, browser] (AC-1, AC-3 — 13b) + [agent, VM read-only] + [agent, laptop].
 
