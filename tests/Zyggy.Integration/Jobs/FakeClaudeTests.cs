@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 
 using Zyggy.Integration.Infrastructure;
 
@@ -173,12 +174,82 @@ public sealed class FakeClaudeTests
         FakeClaude.ReadCapture(captureB).Arguments.Should().Equal(argsB);
     }
 
+    [Fact]
+    public async Task Run_StdinCaptureSet_WritesStdinByteExact()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        using var scratch = new ScratchDirectory();
+        var stdinPath = scratch.File("stdin.bin");
+        const string Prompt = "Ligne é \"quoted\"\n\ttwo\n";
+
+        // Act
+        var result = await RunAsync(
+            "done", null, ["-p"], scratch.Path, ct, new() { ["ZYGGY_FAKE_CLAUDE_STDIN_CAPTURE"] = stdinPath }, Prompt);
+
+        // Assert
+        result.ExitCode.Should().Be(0);
+        (await File.ReadAllBytesAsync(stdinPath, ct)).Should().Equal(new UTF8Encoding(false).GetBytes(Prompt));
+    }
+
+    [Fact]
+    public async Task Run_StdinCaptureUnset_NeverReadsStdin()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        using var scratch = new ScratchDirectory();
+
+        // Act: stdin is left open and never written; a fake that read it would block until the test timeout.
+        var result = await RunAsync("done", null, ["-p"], scratch.Path, ct, keepStdinOpen: true);
+
+        // Assert
+        result.ExitCode.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Run_ExitSet_ExitsWithThatCodeAfterStreaming()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        using var scratch = new ScratchDirectory();
+        var expected = await File.ReadAllBytesAsync(Path.Combine(FakeClaude.ScenarioDirectory, "error.jsonl"), ct);
+
+        // Act
+        var result = await RunAsync("error", null, ["-p"], scratch.Path, ct, new() { ["ZYGGY_FAKE_CLAUDE_EXIT"] = "1" });
+
+        // Assert
+        result.ExitCode.Should().Be(1);
+        result.Stdout.Should().Equal(expected);
+    }
+
+    [Theory]
+    [InlineData("ZYGGY_FAKE_CLAUDE_DELAY_MS", "soon")]
+    [InlineData("ZYGGY_FAKE_CLAUDE_DELAY_MS", "-5")]
+    [InlineData("ZYGGY_FAKE_CLAUDE_EXIT", "x")]
+    public async Task Run_InvalidDelay_ExitsFiveWithDiagnostic(string name, string value)
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        using var scratch = new ScratchDirectory();
+
+        // Act
+        var result = await RunAsync("done", null, ["-p"], scratch.Path, ct, new() { [name] = value });
+
+        // Assert
+        result.ExitCode.Should().Be(5);
+        result.Stdout.Should().BeEmpty();
+        result.Stderr.TrimEnd().Should().Be($"fake-claude: invalid {name} '{value}'");
+    }
+
     private static async Task<(int ExitCode, byte[] Stdout, string Stderr)> RunAsync(
         string? scenario,
         string? capturePath,
         IReadOnlyList<string> args,
         string workingDirectory,
-        CancellationToken ct)
+        CancellationToken ct,
+        Dictionary<string, string>? env = null,
+        string? stdin = null,
+        bool keepStdinOpen = false)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -196,8 +267,23 @@ public sealed class FakeClaudeTests
 
         SetOrRemove(startInfo, "ZYGGY_FAKE_CLAUDE_SCENARIO", scenario);
         SetOrRemove(startInfo, "ZYGGY_FAKE_CLAUDE_CAPTURE", capturePath);
+        foreach (var (name, value) in env ?? [])
+        {
+            startInfo.Environment[name] = value;
+        }
 
         using var process = Process.Start(startInfo)!;
+        if (stdin is not null)
+        {
+            var bytes = new UTF8Encoding(false).GetBytes(stdin);
+            await process.StandardInput.BaseStream.WriteAsync(bytes, ct);
+        }
+
+        if (!keepStdinOpen)
+        {
+            process.StandardInput.Close();
+        }
+
         using var stdout = new MemoryStream();
         var stdoutTask = process.StandardOutput.BaseStream.CopyToAsync(stdout, ct);
         var stderrTask = process.StandardError.ReadToEndAsync(ct);
@@ -215,32 +301,6 @@ public sealed class FakeClaudeTests
         else
         {
             startInfo.Environment[name] = value;
-        }
-    }
-
-    /// <summary>A per-test directory under &lt;temp&gt;/zyggy-it/, deleted on dispose.</summary>
-    private sealed class ScratchDirectory : IDisposable
-    {
-        public ScratchDirectory()
-        {
-            Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "zyggy-it", Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(Path);
-        }
-
-        public string Path { get; }
-
-        public string File(string name) => System.IO.Path.Combine(Path, name);
-
-        public void Dispose()
-        {
-            try
-            {
-                Directory.Delete(Path, recursive: true);
-            }
-            catch (IOException)
-            {
-                // Leaked temp directories are documented in the README.
-            }
         }
     }
 }

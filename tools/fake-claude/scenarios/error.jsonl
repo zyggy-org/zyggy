@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","model":"fake-model-1","session_id":"fake-session-2"}
+{"type":"result","subtype":"error_during_execution","is_error":true,"result":"","session_id":"fake-session-2","total_cost_usd":0.001,"num_turns":1,"duration_ms":300,"usage":{"input_tokens":10,"output_tokens":0},"permission_denials":[]}

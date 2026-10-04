@@ -144,7 +144,7 @@ Gate placement: one per vertical slice, plus one extra after Step 17 (⚠️ fir
 
 ## Step 3 — The real process runner drives `tools/fake-claude`: the prompt arrives on stdin byte-exact, a child that hangs past its timeout is killed with its whole tree and reported as `timeout`, an error scenario is `claude_error`, a missing executable is a result (not an exception), and a large prompt never deadlocks
 
-- [ ] Done
+- [x] Done — 2026-10-04: 27 integration tests green on Windows (PROVE 520 + 55); Linux /proc probe proven by CI at Gate A.
 
 **Scope**:
 - `src/Zyggy.Core/Processes/ProcessRunner.cs` *(create, internal sealed)*, `src/Zyggy.Core/Processes/ServiceCollectionExtensions.cs` *(create)*: `AddProcessRunner(this IServiceCollection)` registers `ProcessRunner` and `TimeProvider.System` with `TryAdd`.
