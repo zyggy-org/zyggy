@@ -24,13 +24,17 @@ public static class ZyggyCli
         }
     }
 
-    /// <summary>Runs <c>zyggy</c> with <paramref name="args"/> and returns its exit code and both streams.</summary>
+    /// <summary>
+    /// Runs <c>zyggy</c> with <paramref name="args"/> and returns its exit code and both streams. Stdin is written (when given)
+    /// and closed, unless <paramref name="keepStdinOpen"/> leaves it open and unwritten for the whole run.
+    /// </summary>
     public static async Task<ZyggyRun> RunAsync(
         IReadOnlyList<string> args,
         IReadOnlyDictionary<string, string?> env,
         string? stdin,
         string workingDirectory,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool keepStdinOpen = false)
     {
         var info = new ProcessStartInfo(ExecutablePath)
         {
@@ -75,7 +79,11 @@ public static class ZyggyCli
             await process.StandardInput.WriteAsync(stdin.AsMemory(), cancellationToken);
         }
 
-        process.StandardInput.Close();
+        if (!keepStdinOpen)
+        {
+            process.StandardInput.Close();
+        }
+
         await process.WaitForExitAsync(cancellationToken);
         return new ZyggyRun(process.ExitCode, await stdout, await stderr);
     }

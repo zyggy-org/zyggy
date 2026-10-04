@@ -266,7 +266,7 @@ Gate placement: one per vertical slice, plus one extra after Step 17 (⚠️ fir
 
 ## Step 5 — `zyggy memory digest <identity|index|daily>` honours the 27 hook contract (principal from env, hook JSON on stdin, `CLAUDE.md` guard, exit 3/4, `ZYGGY_HOOKS=off` silent) and prints the same bytes as the builder, and a symlink leaving the principal is refused on a real file system
 
-- [ ] Done
+- [x] Done — 2026-10-04: 13 integration tests green on Windows (the Linux symlink fact runs in CI); `ZYGGY_TIMEZONE` is not validated by the digest (it uses no local time); stdin is read for at most 2 s so an open, unwritten stdin never blocks.
 
 **Scope**:
 - `src/Zyggy.Cli/Commands/MemoryDigestCommand.cs` *(create)*: `memory digest <section>`. The section is a free string so an unknown value is exit 4, not a parse error.
