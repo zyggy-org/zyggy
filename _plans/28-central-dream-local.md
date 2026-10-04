@@ -452,7 +452,7 @@ Deserialisation uses `DreamJsonContext`; any `JsonException` → `Aborted(Format
 
 ## Step 9 — A whole run orchestrates batches, compressions, caps and partial progress, writes the accepted result atomically with a pending marker, records the consumed lines in the same change set as the edits, and produces a run record (fake model; git through a substituted process runner, happy path)
 
-- [ ] Done
+- [x] Done — 2026-10-04: 40 unit tests; adds the package Microsoft.Extensions.Logging.Abstractions 10.0.12 (Core logs through `ILogger`, `LoggerMessage`); `Compressor` takes no clock; quarantine lines are `- <hash> <path>: <line>` in `.dream/quarantine.md`.
 
 **Scope**:
 - `src/Zyggy.Core/Dream/DreamRunner.cs` *(public sealed: `Task<DreamRunRecord> RunAsync(DreamTrigger trigger, CancellationToken)`; never throws except `OperationCanceledException`)*.
