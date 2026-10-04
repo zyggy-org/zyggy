@@ -7,6 +7,11 @@
     <PackageReference Include="Microsoft.Extensions.Options" />
   </ItemGroup>
 
+  <!-- The dream model contract (OQ-3): prompts and schemas ship inside the binary. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Dream/Prompts/*" LogicalName="Zyggy.Core.Dream.Prompts.%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="Zyggy.Core.Tests" />
     <InternalsVisibleTo Include="Zyggy.Integration" />
