@@ -69,6 +69,7 @@ internal static class ProposalApplier
             catch (FormatException)
             {
                 mismatch = true;
+                first ??= new EditMismatchInfo(path, "unreadable front matter", 1, string.Empty);
                 continue;
             }
 

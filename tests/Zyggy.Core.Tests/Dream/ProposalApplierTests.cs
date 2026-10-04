@@ -171,4 +171,22 @@ public sealed class ProposalApplierTests
             .ToDictionary(f => f, f => Convert.ToHexString(File.ReadAllBytes(f))).Should().Equal(before);
         Encoding.UTF8.GetString(File.ReadAllBytes(tree.Full("private/people/carol.md"))).Should().Be(Carol);
     }
+
+    [Fact]
+    public void Apply_EditFileWithUnquotedColonDescription_Succeeds()
+    {
+        // Arrange
+        using var tree = Tree();
+        tree.Write("business/areas/calizr.md", "---\nname: calizr\ndescription: Calizr: the salon app\nupdated: 2026-09-30\n---\n- [stated] 2026-09-30: Calizr exists.\n");
+        var proposal = TestProposals.New().Edit("business/areas/calizr.md", append: ["- [stated] 2026-10-01: Calizr has three salons."]);
+
+        // Act
+        var (set, result) = Apply(tree, proposal);
+
+        // Assert
+        result.EditMismatch.Should().BeFalse();
+        var file = Read(set, "business/areas/calizr.md");
+        file.Description.Should().Be("Calizr: the salon app");
+        file.BodyLines.Should().HaveCount(2);
+    }
 }

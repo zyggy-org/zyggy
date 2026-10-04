@@ -86,4 +86,25 @@ public sealed class MemoryFileTests
         Encoding.UTF8.GetString(bytes).Should().StartWith("---\nname: marathon\n");
         Directory.EnumerateFiles(Path.GetDirectoryName(path)!).Should().ContainSingle();
     }
+
+    [Fact]
+    public void Read_UnquotedDescriptionWithColon_FallsBackToKeyValueLines()
+    {
+        // Arrange: written by the 27 shell tools; strict YAML refuses "a: b: c".
+        const string Text = "---\nname: calizr-founding-salons\ndescription: Calizr: founding salons, the first customers\n" +
+            "aliases: [calizr salons, founding]\nupdated: 2026-09-30\nowner: 'alice'\n---\n- [stated] 2026-09-30: Three salons signed.\n";
+
+        // Act
+        var file = MemoryFileReader.Parse(Text);
+
+        // Assert
+        file.HasFrontMatter.Should().BeTrue();
+        file.Name.Should().Be("calizr-founding-salons");
+        file.Description.Should().Be("Calizr: founding salons, the first customers");
+        file.Aliases.Should().Equal("calizr salons", "founding");
+        file.Updated.Should().Be(new DateOnly(2026, 9, 30));
+        file.UnknownKeys.Should().Contain("owner", "alice");
+        file.BodyLines.Should().Equal("- [stated] 2026-09-30: Three salons signed.");
+        MemoryFileReader.Parse(MemoryFileWriter.Render(file)).Description.Should().Be(file.Description, "the writer quotes it, so it reads back as YAML");
+    }
 }
