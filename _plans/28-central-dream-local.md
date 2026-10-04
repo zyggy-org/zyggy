@@ -780,7 +780,7 @@ Every exception other than `OperationCanceledException` becomes `failed` with `c
 
 ## Step 15 — The first `zyggy dream` on a 27-layout repository migrates it through fake-claude into one pushed commit with byte-identical moves and no legacy directory left; a bad migration proposal exits 5 with `migration_rejected` and leaves the repository untouched; the next run files normally
 
-- [ ] Done
+- [x] Done — 2026-10-04: 6 integration tests, no production change needed beyond Step 14; the compression fixture is built in the test (a committed 310-line `zyggy.md`, empty inbox).
 
 **Scope**:
 - `tests/Zyggy.Integration/Fixtures/dream-legacy/acme/alice/**`: the 27 layout, i.e. a byte copy of `tests/golden/digest/27/acme/alice/{areas,people,topics,profile.md,preferences.md,agents.md}` + one inbox file.
