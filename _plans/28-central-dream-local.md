@@ -811,10 +811,10 @@ Every exception other than `OperationCanceledException` becomes `failed` with `c
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: the migration commit in the bare repo (`git show --stat`, blob-equality assertion), the `migration_rejected` test, the digest `index` after migration, the compression end-to-end test.
-- [ ] Contract review: AC-27 and AC-16 against spec; the migration schema (Appendix A); initial categories `areas`, `people`, `topics` on both sides (spec Memory layout).
-- [ ] ⚠️ Risk review: no file content is changed by the migration; nothing is deleted except empty legacy directories; employer-named files are kept (OQ-2).
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: the migration commit in the bare repo (`git show --stat`, blob-equality assertion), the `migration_rejected` test, the digest `index` after migration, the compression end-to-end test.
+- [x] Contract review: AC-27 and AC-16 against spec; the migration schema (Appendix A); initial categories `areas`, `people`, `topics` on both sides (spec Memory layout).
+- [x] ⚠️ Risk review: no file content is changed by the migration; nothing is deleted except empty legacy directories; employer-named files are kept (OQ-2).
+- [x] User approved — implementation may continue past this gate — 2026-10-04 owner: "Yes"
 
 ---
 

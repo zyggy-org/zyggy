@@ -1355,6 +1355,131 @@ already pushed and must leave history, rewrite the memory repository's history o
 nothing uncommitted — `git -C memory fetch && git -C memory reset --hard origin/main`; record it in 0002 (without
 the fact's text).
 
+## 14. Dream pass (deliverable 28) [vm/root] [vm/zyggy] [agent]
+
+The dream pass files the facts waiting in `memory/<tenant>/<user>/inbox/` and `daily/` into `private/` and `business/`,
+compresses files over 300 lines, rolls up old daily files, commits once (`dream YYYY-MM-DD`) and pushes — every night at
+03:00 Europe/Brussels (`zyggy-dream.timer`) and on request (`zyggy dream request` → `zyggy-dream.path`). Nobody reviews
+a run; the automatic checks and the run-level breaker are the controls, and one `git revert` undoes a night. The run is
+`/usr/local/bin/zyggy dream`, a root-owned, pinned .NET binary; it calls `claude -p` only through its model runner, with
+`Read,Grep,Glob` and no MCP, hooks, auto memory or transcript. Run records: `~zyggy/.local/state/zyggy/dream-runs.jsonl`
+(counts only, never a fact). Exit codes: 0 committed / nothing to do · 3 configuration or pin · 4 locked · 5 aborted by
+a check (incl. `partial`) · 6 failed (`claude_error`, `timeout`, `git_error`) · 7 committed, push deferred.
+
+Everything below uses the service environment. As `zyggy` (`sudo -iu zyggy`), load it once per shell:
+
+```bash
+set -a; . <(systemctl show zyggy-dream.service -p Environment --value | tr ' ' '\n'); set +a
+```
+
+### 14a. Install [agent: laptop + vm/root]
+
+1. Tag `v<x.y.z>` on `zyggy` `main`; the tag's CI run publishes `zyggy-linux-x64` with `SHA256SUMS`.
+2. Laptop: `gh run download <run> -n zyggy-linux-x64 -D artifacts/release-<v>` and `sha256sum -c SHA256SUMS`.
+3. Instance (`zyggy-geoffrey`): `instance/zyggy.json` = `{ "version": "<v>", "sha256": { "linux-x64": "<hex>" } }`;
+   the three units under `instance/systemd/`; commit, push, instance CI green.
+4. Copy the binary to the VM (`scp … azureadmin@central:/tmp/zyggy-<v>/`, or the owner when the agent's shell cannot
+   reach the VM). As root: `sha256sum -c`, `install -d -o root -g root -m 0755 /opt/zyggy/<v>`,
+   `install -o root -g root -m 0755 /tmp/zyggy-<v>/zyggy /opt/zyggy/<v>/zyggy`,
+   `ln -sfn /opt/zyggy/<v>/zyggy /usr/local/bin/zyggy`, `rm -rf /tmp/zyggy-<v>`.
+5. Only then `runuser -u zyggy -- git -C /srv/agent/central pull --ff-only` (the template's `session-start.sh` now
+   needs `zyggy`). As root: `install -m 644 /srv/agent/central/instance/systemd/zyggy-dream.{service,timer,path}
+   /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now zyggy-dream.path`.
+6. First run (it migrates the legacy layout): `runuser -u zyggy -- zyggy dream request`; wait for
+   `systemctl show zyggy-dream.service -p ActiveState` = `inactive`; `zyggy dream status` → `committed`, body
+   `layout migrated`. Second request → the first filing run. Then `systemctl enable --now zyggy-dream.timer`.
+
+### 14b. Upgrade [agent]
+
+As 14a steps 1–4 with the new version, then update `instance/zyggy.json` (commit, push, `git pull --ff-only` on the
+VM). Until the pin matches, every run exits 3 `version_mismatch`; keep the previous `/opt/zyggy/<old>/` for rollback.
+
+### 14c. Rollback [vm/root]
+
+`ln -sfn /opt/zyggy/<old>/zyggy /usr/local/bin/zyggy` and revert the instance's `zyggy.json` commit (pull on the VM).
+
+### 14d. Binary missing or wrong version [vm/root]
+
+- Unit fails with `status=203/EXEC`, or sessions show `session-start.sh: zyggy not found — no <section> section`:
+  the symlink or `/opt/zyggy/<v>/zyggy` is gone — redo 14a step 4.
+- Exit 3 `configuration error: version_mismatch: …`: the binary is not the pinned one. `sha256sum /opt/zyggy/<v>/zyggy`
+  against `instance/zyggy.json`; reinstall the pinned artefact or upgrade the pin (14b). Never edit the pin to match an
+  unknown binary.
+
+### 14e. Configuration error (exit 3) [vm/zyggy]
+
+The one stderr/journal line names the key: `ZYGGY_MEMORY_ROOT`, `ZYGGY_TENANT`, `ZYGGY_USER`, `ZYGGY_TIMEZONE`,
+`ZYGGY_SECRET_PATTERNS` (the template's `.claude/hooks/secret-patterns.txt`; fail closed), `zyggy.json`, or a
+`dream.json` key above its ceiling. Fix the unit's `Environment=` (instance) or `instance/dream.json`, pull, rerun.
+
+### 14f. Failed run (exit 6) [vm/zyggy]
+
+`zyggy dream status --json` → `reason` and `detail`:
+
+- `claude_error` `not_found` — `ZYGGY_CLAUDE_PATH` is wrong; `auth` — run `claude` once as `zyggy` and log in;
+  `rate_limit` — the usage window is spent, the next night continues; `error_max_turns`, `error_max_budget_usd`,
+  `timeout`, `output_too_large` — the batch was too big, the next run halves it (14i).
+- `git_error` — `not_on_branch` or `operation_in_progress` (finish or abort the rebase or merge in `memory/` by hand),
+  `commit_failed` (a stale `memory/.git/index.lock`: remove it only when no git process runs), `recovery_failed`.
+- Batches accepted before the failure are committed (`partial`); the failed batch is retried. Nothing is lost.
+- A run killed between write and commit leaves `.dream/pending.json`; the next run undoes it (`dirty_pending` → 14g).
+
+### 14g. Aborted run (exit 5) [vm/zyggy]
+
+The check named in the record refused a proposal; nothing of that batch was written, earlier batches are committed, and
+the batch is retried smaller. Per check:
+
+- `path_refused`, `slug_invalid`, `slug_duplicate`, `category_invalid`, `category_cap` — the model proposed a file
+  outside `private/`/`business/`, a bad or reused name, or too many categories; retried automatically.
+- `format_invalid`, `foreign_tag`, `provenance_missing`, `tag_upgrade` — a line broke the memory line format.
+- `identity_observed`, `identity_shrink` — an `[observed]` line for `profile.md`/`preferences.md`, or too many removals.
+- `secret_pattern`, `contact_detail` — the proposal held a secret, an e-mail address or a phone number. When the source
+  line itself holds it, it ends in quarantine (14i).
+- `edit_mismatch`, `removal_limit`, `run_removal_limit` — edits to lines that do not exist, or too much removed in a
+  batch or a night (`run_removal_limit` commits nothing).
+- `coverage`, `stated_dropped`, `fact_not_found` — a line without exactly one decision, a fact you stated dropped, or a
+  filed fact whose source is not in its target.
+- `concurrent_edit` — a target was being edited (yours or a session's); it is retried the next night.
+- `compress_rejected` — a compression broke its rules; the file stays long until the next try.
+- `migration_rejected` — the one-time layout migration was refused as a whole; nothing moved.
+- `unfiled_deletion` — a deletion outside the rollup plan; report it (a bug).
+- `dirty_pending` — a dead run's file was edited since: compare `.dream/pending.json` with `git -C memory diff`, keep
+  what you want, then delete the marker by hand.
+
+### 14h. Push deferred (exit 7) [vm/zyggy]
+
+The remote had a commit that conflicts with the run's; the rebase was aborted and the local `dream` commit kept. The
+next run pushes it first. If it stays deferred: `git -C memory fetch && git -C memory rebase origin/main`, resolve,
+push. Never `--force`.
+
+### 14i. Backlog resume and quarantine [vm/zyggy]
+
+`zyggy dream status` → `remaining`: unconsumed lines; each night works it down in batches (caps in
+`instance/dream.json`). After three batch-attributable failures at the smallest batch with the same first line, those
+lines move to `memory/<tenant>/<user>/.dream/quarantine.md` (committed, never offered again). To re-offer one, delete
+its line there and commit; the next run offers it again.
+
+### 14j. Withheld file [vm/zyggy]
+
+`withheld` in the record names an `auto/` or `daily/` file with a secret-pattern line; it is not committed until the
+line is gone. Edit the line, and the next run commits the file.
+
+### 14k. Undo a bad night [vm/zyggy]
+
+`git -C memory revert <sha> && git -C memory push`. The ledger reverts with it, so the night's lines are offered again
+while their inbox files are within the 7-day grace (closed inbox files are deleted only after it).
+
+### 14l. Lock held (exit 4) [vm/zyggy]
+
+Another run is going (the nightly one, or a request). Wait for `systemctl show zyggy-dream.service -p ActiveState` =
+`inactive`. The lock is an OS lock on `~/.local/state/zyggy/dream.lock`; a killed run frees it at once, so there is
+never a stale lock to remove.
+
+### 14m. Digest missing [vm/zyggy]
+
+A session has no `<zyggy-memory-digest …>` section: run `.claude/hooks/session-start.sh identity` by hand (section
+"Re-run the digest by hand"). `zyggy not found` → 14d; exit 3 → the hook's `ZYGGY_*` in `settings.local.json`.
+
 ## Re-run the digest by hand
 
 ```bash

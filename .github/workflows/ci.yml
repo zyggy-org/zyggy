@@ -5,6 +5,8 @@ name: ci
 on:
   push:
     branches: [main]
+    # A release tag builds the artefacts Central installs: MinVer then versions them from the tag (spec 28, runbook 14a).
+    tags: ['v*']
   pull_request:
 
 permissions:

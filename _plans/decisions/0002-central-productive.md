@@ -13,7 +13,7 @@ secret-shaped sample is quoted truncated (`ghp…`).
 | 27 | Central identity, memory repo and base plugin set | Done 2026-09-30 (final gate approved by the owner) | this file, section 27 — 22 AC rows |
 | 31 | Central reads the owner's GitHub account: read-only token and repository inventory | Done 2026-10-01 (final gate approved by the owner) | this file, section 31 |
 | 32 | Central clones and analyses the owner's repositories on request | Done 2026-10-02 (final gate approved by the owner; 8 pass, 2 partial, 5 not run by owner decision; O32 applied) | this file, section 32 |
-| 28 | Nightly dream pass on Central without the bus | Not started | |
+| 28 | Nightly dream pass on Central without the bus (nightly and on demand, in .NET) | In progress (Slices A–E done 2026-10-04, CI green; Step 16 release + template + instance) | this file, section 28 |
 | 29 | Telegram as Central's chat channel | Not started | |
 | 23 | Digiverse Microsoft 365 on Central: morning brief, reply Drafts, per-action-consented send/move/delete, mail and files backfills through an MCP server with an app-only certificate credential | In progress (Slices A–C done 2026-10-01/02 — template complete, CI green; Step 12 instance + records 2026-10-02; Central steps from 13 on) | this file, section 23 |
 | 30 | Social connectors on Central | Not started | |
@@ -267,6 +267,41 @@ reconciliation (runbook 13 "Reconcile actions with the audit log").
 |-------|----------|----------|--------|------------------------------------|-----------|---------------------------|-------------|
 | 2026-10 | not counted | not counted | not counted | not reconciled | — | — | not run (owner decision 2026-10-04) |
 
+## 28 — Dream pass (nightly and on demand)
+
+Spec: `_specs/28-central-dream-local.md` · Plan: `_plans/28-central-dream-local.md` · Runbook: section 14 "Dream pass".
+
+- Decision (spec 28): Claude Code's own auto memory and the community "autoDream" are **not** a substitute for the §7
+  dream pass — a different store (`auto/`, per project), an undocumented trigger, no `[stated]`/`[observed]` provenance
+  and no git history of what changed. Auto memory stays as it is and is committed as found (AC-25).
+- Owner decisions (2026-10-04): nightly **and on demand**; facts filed by category; **no daily review — commit and push
+  automatically**; the whole run in .NET (`zyggy dream`); categories grow when needed; memory split into `private/` and
+  `business/` (OQ-1); employer facts from the owner's own mailbox and OneDrive are kept and filed under `business/`
+  (OQ-2); prompts embedded in the binary (OQ-3); founding-spec wording W-1..W-12 accepted (OQ-4); `inbox/` never
+  committed (OQ-5); the default thresholds (OQ-6).
+- Release: `zyggy` `<version>` (tag `<tag>`, CI run `<id>`), `linux-x64` SHA-256 `<hex>`; template `zyggy-core`
+  `<sha>`; instance `zyggy-geoffrey` `<sha>` (pin + units).
+
+### Acceptance criteria on Central (AC-30..AC-39; from run records, the journal and git history — no owner action per run)
+
+| AC | Criterion | Evidence (date, source, excerpt) | Result |
+|----|-----------|----------------------------------|--------|
+| AC-30 | First on-demand run (the `dream` skill's command) completes, commits and pushes; journal shows the argument vector; record has cost and turns | | |
+| AC-31 | Three consecutive nightly runs exit 0, each with a `dream` commit on `origin/main` | | |
+| AC-32 | A fact remembered on day N is in its category file after the run of day N+1 (ledger hash in the same commit) | | |
+| AC-33 | Per-run counts and cost; the backlog reaches 0 or a stated remainder | | |
+| AC-34 | Digest sections within their caps after the backlog | | |
+| AC-35 | A request during a run is served after it, without overlap | | |
+| AC-36 | Secret and contact-detail grep over `origin/main` contents and history: no hit | | |
+| AC-37 | Binary root-owned, not writable by `zyggy`, hash = CI `SHA256SUMS` = pin; a wrong pin exits 3 before any model call | | |
+| AC-38 | Runbook section 14 covers install, upgrade, rollback, every failure mode and "undo a bad night" | 2026-10-04: section 14a–14m written (agent) | pass |
+| AC-39 | W-1..W-12 present in the founding spec | | |
+
+### Runs
+
+| date (UTC) | trigger | outcome | batches / lines | filed / merged / dup / dropped | quarantined | cost USD | commit |
+|------------|---------|---------|-----------------|--------------------------------|-------------|----------|--------|
+
 ## Repositories
 
 | repo | role (template/instance/memory) | owner | visibility | laptop checkout + remotes | VM clone path | remote alias | key (name, scope) |
@@ -321,6 +356,7 @@ reconciliation (runbook 13 "Reconcile actions with the audit log").
 | `markitdown` (MIT) | `0.1.8` (`[docx,xlsx,pptx,pdf]`) | `pipx` as `zyggy` (`pipx` from apt if absent) | `parse.sh` (document text for the brief and the files backfill) | pending (13e) |
 | `node` / `npm` | pending (13e) | the VM's Node used by Claude Code (02) | runs the MCP server | pending (13e) |
 | `openssl` | Ubuntu 24.04 | OS | `graph.sh` key pair and PS256 client assertion | pending (13a) |
+| `zyggy` (this repo, MIT) | pending (Step 17) | CI artefact `zyggy-linux-x64` of the release tag, SHA-256 pinned in `instance/zyggy.json`; `/opt/zyggy/<v>/zyggy` root:root 0755, symlink `/usr/local/bin/zyggy` | the dream pass (`zyggy-dream.service`) and the session digest (`session-start.sh` launcher) | pending (Step 17) |
 
 ## Credentials on Central
 
@@ -474,7 +510,7 @@ Deviations found during execution (23):
 
 ## Costs
 
-27: none. (28 fills the per-run cost.)
+27: none. 28: per-run cost in section 28 "Runs".
 31: model cost not recorded (owner; Max subscription); 42 GitHub API requests per run (1 user + 1 page + 40 README reads).
 32: first clone of `salon25-api` 34 MiB (API size 14998 KiB), 2 GitHub API requests + 1 https clone; model cost not recorded (owner; Max subscription).
 23: pending (per-run cost and turns of the attended and timer briefs, backfill totals, mailbox/drive sizes — Steps 17–20).
