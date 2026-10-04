@@ -741,16 +741,16 @@ Every exception other than `OperationCanceledException` becomes `failed` with `c
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: rollup boundary tests (30/31 days, month end); integration commits showing `daily/YYYY-MM.md` created, the closed inbox file gone from disk and absent from every commit, the withheld `auto/` file named in the run record; the concurrency, kill and recovery tests; the push-conflict test with exit 7, then push-first.
-- [ ] Contract review: AC-11, AC-20, AC-23..AC-26 against spec; "inbox never committed" (OQ-5); commit identity from the repository config.
-- [ ] ⚠️ Risk review: no writer code changed (`zyggy-core` untouched so far); no force push anywhere (grep `--force`/`-f` in `src/`); deletions are limited to the rollup plan.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: rollup boundary tests (30/31 days, month end); integration commits showing `daily/YYYY-MM.md` created, the closed inbox file gone from disk and absent from every commit, the withheld `auto/` file named in the run record; the concurrency, kill and recovery tests; the push-conflict test with exit 7, then push-first.
+- [x] Contract review: AC-11, AC-20, AC-23..AC-26 against spec; "inbox never committed" (OQ-5); commit identity from the repository config.
+- [x] ⚠️ Risk review: no writer code changed (`zyggy-core` untouched so far); no force push anywhere (grep `--force`/`-f` in `src/`); deletions are limited to the rollup plan.
+- [x] User approved — implementation may continue past this gate — 2026-10-04 owner: "Yea"
 
 ---
 
 ## Step 14 — When the 27 layout (root `areas/`, `people/`, `topics/`) exists, the run only migrates: the model proposes a side and category per file, and .NET moves every legacy file exactly once with byte-identical content, creates the `_index.md` files and commits "layout migrated" — or refuses any loss, duplicate or change with `migration_rejected` (fake model)
 
-- [ ] Done
+- [x] Done — 2026-10-04: 17 unit tests. A move must keep the file name (no rename) and the bytes; empty legacy placeholders (`.gitkeep`) are deleted, any other non-Markdown legacy file refuses the migration; the initial `_index.md` descriptions are fixed in `Migrator` (not the prompt resource); the commit body starts with `layout migrated`; the record gains `migrated`.
 
 **Scope**:
 - `src/Zyggy.Core/Dream/Migrator.cs` *(internal sealed: `MigrateAsync(MemorySnapshot, DreamRunContext, CancellationToken) → MigrationOutcome`)*: renders the legacy file list (path, `name`, `description`) as data; calls the model with `migration.schema.json`; checks; produces moves + `_index.md` creates in a `WorkingSet`.

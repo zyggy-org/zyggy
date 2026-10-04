@@ -46,7 +46,8 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<Compressor>(),
             sp.GetRequiredService<GitClient>(),
             sp.GetRequiredService<TimeProvider>(),
-            sp.GetRequiredService<ILogger<DreamRunner>>()));
+            sp.GetRequiredService<ILogger<DreamRunner>>(),
+            new Migrator(sp.GetRequiredService<IModelRunner>(), sp.GetRequiredService<DreamPrompts>())));
         return services;
     }
 }

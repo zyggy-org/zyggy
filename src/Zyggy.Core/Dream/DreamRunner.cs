@@ -32,6 +32,7 @@ public sealed partial class DreamRunner
     private readonly GitClient _git;
     private readonly TimeProvider _clock;
     private readonly ILogger<DreamRunner> _logger;
+    private readonly Migrator? _migrator;
 
     internal DreamRunner(
         DreamEnvironment environment,
@@ -40,7 +41,8 @@ public sealed partial class DreamRunner
         Compressor compressor,
         GitClient git,
         TimeProvider clock,
-        ILogger<DreamRunner> logger)
+        ILogger<DreamRunner> logger,
+        Migrator? migrator = null)
     {
         _environment = environment;
         _options = options;
@@ -49,6 +51,7 @@ public sealed partial class DreamRunner
         _git = git;
         _clock = clock;
         _logger = logger;
+        _migrator = migrator;
     }
 
     /// <summary>Runs the dream once and appends its record to <c>dream-runs.jsonl</c>.</summary>
@@ -194,6 +197,29 @@ public sealed partial class DreamRunner
         decimal spent = 0m;
         var newCategories = 0;
 
+        // AC-27: the first run on the 27 layout only migrates it.
+        if (_migrator is not null && snapshot.Files.Keys.Any(p => paths.TryResolve(p) is { Succeeded: true, Area: MemoryArea.Legacy }))
+        {
+            run.Phase = Phase.Batches;
+            var migration = await _migrator.MigrateAsync(snapshot, set, context, cancellationToken).ConfigureAwait(false);
+            record = record with { CostUsdTotal = migration.CostUsd ?? 0m };
+            if (!migration.Accepted)
+            {
+                return record with
+                {
+                    Outcome = DreamRunOutcomeWire.ToWire(migration.Rejected is not null ? DreamRunOutcome.Aborted : DreamRunOutcome.Failed),
+                    Check = migration.Rejected is { } rejected ? DreamCheckWire.ToWire(rejected) : null,
+                    Reason = migration.Failure is { } failure ? RunFailureReasonWire.ToWire(failure) : null,
+                    Detail = migration.Detail,
+                };
+            }
+
+            LogMigrated(run.Id, migration.Moves);
+            record = record with { Migrated = migration.Moves };
+            return await CommitRunAsync(run, record, DreamRunOutcome.Committed, snapshot, set, secrets.Patterns, carried, branch, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         run.Phase = Phase.Batches;
         while (batches.Count < _options.MaxBatchesPerRun
                && _clock.GetElapsedTime(run.Timestamp) < TimeSpan.FromMinutes(_options.RunMaxMinutes)
@@ -321,10 +347,27 @@ public sealed partial class DreamRunner
             return record with { Outcome = DreamRunOutcomeWire.ToWire(runOutcome) };
         }
 
+        return await CommitRunAsync(run, record, runOutcome, snapshot, set, secrets.Patterns, carried, branch, cancellationToken).ConfigureAwait(false);
+    }
+
+    // AC-19, AC-25: pass-through and carried files, the write-time check, the write, one commit and the push.
+    private async Task<DreamRunRecord> CommitRunAsync(
+        RunState run,
+        DreamRunRecord record,
+        DreamRunOutcome runOutcome,
+        MemorySnapshot snapshot,
+        WorkingSet set,
+        SecretPatterns secrets,
+        CarriedResult carried,
+        string branch,
+        CancellationToken cancellationToken)
+    {
+        var paths = _environment.Paths;
+        var repository = _environment.MemoryRoot;
         // AC-25: auto/ and daily/ as found (a secret-bearing file withheld), and other writers' unstaged durable edits (carried).
         var changed = set.ChangedPaths.ToHashSet(StringComparer.Ordinal);
         var passThrough = PassThrough.Classify(await _git.StatusEntriesAsync(repository, cancellationToken).ConfigureAwait(false),
-            _environment.Principal, snapshot, secrets.Patterns, changed);
+            _environment.Principal, snapshot, secrets, changed);
         var carriedCommit = carried.CommitAsFound.Where(p => !changed.Contains(p)).ToList();
         record = record with { Withheld = passThrough.Withheld, Carried = carriedCommit };
 
@@ -343,6 +386,10 @@ public sealed partial class DreamRunner
         record = record with { Outcome = DreamRunOutcomeWire.ToWire(runOutcome) };
         run.Phase = Phase.Write;
         var written = new DreamWriter().Write(paths, set, run.Id);
+        if (record.Migrated > 0)
+        {
+            RemoveEmptyLegacyDirectories(paths);
+        }
 
         run.Phase = Phase.Git;
         var repoPaths = DreamCommitter.RepoPaths(_environment.Principal, written.Concat(passThrough.Include).Concat(carriedCommit));
@@ -391,6 +438,18 @@ public sealed partial class DreamRunner
 
         LogPushed(push.Succeeded);
         return push.Succeeded;
+    }
+
+    private static void RemoveEmptyLegacyDirectories(MemoryPaths paths)
+    {
+        foreach (var legacy in new[] { "areas", "people", "topics" })
+        {
+            var directory = Path.Join(paths.PrincipalDirectory, legacy);
+            if (Directory.Exists(directory) && !Directory.EnumerateFileSystemEntries(directory).Any())
+            {
+                Directory.Delete(directory);
+            }
+        }
     }
 
     private static bool ChangedOnDisk(MemorySnapshot snapshot, string relative)
@@ -485,6 +544,9 @@ public sealed partial class DreamRunner
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "dream {Run} recovered the pending files of dead run {DeadRun}")]
     private partial void LogRecovered(string run, string deadRun);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "dream {Run} migrated the legacy layout ({Moves} files)")]
+    private partial void LogMigrated(string run, int moves);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "dream push: {Pushed}")]
     private partial void LogPushed(bool pushed);

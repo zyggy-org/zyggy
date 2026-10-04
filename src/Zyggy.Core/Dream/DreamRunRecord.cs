@@ -43,6 +43,9 @@ public sealed record DreamRunRecord
     /// <summary>Gets one entry per compression call.</summary>
     public IReadOnlyList<DreamCompressionRecord> Compressions { get; init; } = [];
 
+    /// <summary>Gets how many legacy files the one-time layout migration moved (0 for a normal run).</summary>
+    public int Migrated { get; init; }
+
     /// <summary>Gets how many lines were quarantined.</summary>
     public int Quarantined { get; init; }
 
