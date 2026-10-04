@@ -224,6 +224,24 @@ public sealed class MigratorTests : IDisposable
     }
 
     [Fact]
+    public async Task Run_UntrackedLegacyFileMoved_OldPathNotInCommitNewPathAdded()
+    {
+        // Arrange: on Central a legacy file can be untracked (written but never committed); git cannot commit its deletion.
+        Returns(Proposal(ValidMoves()));
+        var git = new RecordingProcessRunner().On("status", RecordingProcessRunner.Ok("?? acme/alice/areas/riziv-redis.md\0 M acme/alice/topics/tea.md\0"));
+
+        // Act
+        var record = await Runner(git).RunAsync(DreamTrigger.Manual, TestContext.Current.CancellationToken);
+
+        // Assert
+        record.Outcome.Should().Be("committed");
+        var commit = git.CallsOf("commit").Single().Arguments;
+        commit.Should().NotContain("acme/alice/areas/riziv-redis.md").And.Contain("acme/alice/business/areas/riziv-redis.md");
+        commit.Should().Contain("acme/alice/topics/tea.md", "a tracked legacy file's deletion is committed");
+        git.CallsOf("add").Single().Arguments.Should().Contain("acme/alice/business/areas/riziv-redis.md");
+    }
+
+    [Fact]
     public async Task Run_NoLegacy_NoMigrationCall()
     {
         // Arrange

@@ -392,7 +392,10 @@ public sealed partial class DreamRunner
         }
 
         run.Phase = Phase.Git;
-        var repoPaths = DreamCommitter.RepoPaths(_environment.Principal, written.Concat(passThrough.Include).Concat(carriedCommit));
+        // A path git never tracked and the run deleted (an untracked legacy file it moved) has nothing to commit; naming it
+        // would make `commit --only` fail.
+        var committable = written.Where(p => set.Exists(p) || !carried.Untracked.Contains(p));
+        var repoPaths = DreamCommitter.RepoPaths(_environment.Principal, committable.Concat(passThrough.Include).Concat(carriedCommit));
         var added = DreamCommitter.RepoPaths(_environment.Principal, written.Where(p => !set.ExistedBefore(p) && set.Exists(p))
             .Concat(passThrough.Untracked).Concat(carried.Untracked.Where(carriedCommit.Contains)));
         var add = await _git.AddAsync(repository, added, cancellationToken).ConfigureAwait(false);
