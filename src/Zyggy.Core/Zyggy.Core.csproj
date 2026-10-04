@@ -7,4 +7,11 @@
     <PackageReference Include="Microsoft.Extensions.Options" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Zyggy.Core.Tests" />
+    <InternalsVisibleTo Include="Zyggy.Integration" />
+    <!-- NSubstitute proxies for internal types. -->
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
 </Project>

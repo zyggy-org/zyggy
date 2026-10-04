@@ -89,7 +89,7 @@ Gate placement: one per vertical slice, plus one extra after Step 17 (⚠️ fir
 
 ## Step 2 — A model request becomes exactly the Invocation-contract argument vector with the prompt on stdin, and every stream outcome (success, error subtype, missing result, bad JSON, non-zero exit, timeout, start failure, oversized output) becomes a typed result with a closed reason — never an exception (fake process runner)
 
-- [ ] Done
+- [x] Done — 2026-10-04: 81 unit tests; `StreamJsonReader` uses `JsonDocument` (no source-generated `StreamJsonContext`: nothing is deserialised to a type); `InternalsVisibleTo DynamicProxyGenAssembly2` added for NSubstitute.
 
 **Scope**:
 - `src/Zyggy.Core/Processes/IProcessRunner.cs`, `ProcessSpec.cs`, `ProcessResult.cs` *(create, public)*: exactly the spec's `IProcessRunner` contract. `ProcessSpec.Environment` defaults to an empty dictionary, `Timeout` is required to be positive, `MaxStdoutBytes`/`MaxStderrBytes` default `2 MiB` / `64 KiB`.
