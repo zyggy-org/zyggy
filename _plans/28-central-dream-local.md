@@ -306,16 +306,16 @@ Gate placement: one per vertical slice, plus one extra after Step 17 (⚠️ fir
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: the golden parity tests (identity/daily byte-identical to 27's copied oracles) and the hand-derived sided `index` golden; `zyggy memory digest index` run by hand on the sided fixture (output shown, byte count ≤ 6,000); the refusal theory for `MemoryPaths`; the Linux symlink fact green in CI.
-- [ ] Contract review: AC-2 and AC-28 against spec; digest exit codes and env names against the 27 hook contract; sides `private`/`business` only (OQ-1); `_*.md`, `.dream/`, `inbox/`, `daily/`, `auto/` absent from `index`.
-- [ ] ⚠️ Risk review: public API of `Zyggy.Core.Memory`; the `work` name cannot be produced as a side (§8 boundary); no tenant literal in `src/`.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: the golden parity tests (identity/daily byte-identical to 27's copied oracles) and the hand-derived sided `index` golden; `zyggy memory digest index` run by hand on the sided fixture (output shown, byte count ≤ 6,000); the refusal theory for `MemoryPaths`; the Linux symlink fact green in CI.
+- [x] Contract review: AC-2 and AC-28 against spec; digest exit codes and env names against the 27 hook contract; sides `private`/`business` only (OQ-1); `_*.md`, `.dream/`, `inbox/`, `daily/`, `auto/` absent from `index`.
+- [x] ⚠️ Risk review: public API of `Zyggy.Core.Memory`; the `work` name cannot be produced as a side (§8 boundary); no tenant literal in `src/`.
+- [x] User approved — implementation may continue past this gate — 2026-10-04 owner: "Yes"
 
 ---
 
 ## Step 6 — A dream run plans its next batch from the ledger in the AC-9 priority order within the line and byte caps, never offers a consumed or quarantined line again, refuses a second concurrent run as `locked`, and halves or restores its batch size and quarantines a stuck head after repeated batch-attributable failures
 
-- [ ] Done
+- [x] Done — 2026-10-04: 51 unit tests (hashes checked against sha256sum by hand); the ledger load also reports `Invalid` for malformed JSON.
 
 **Scope**:
 - `src/Zyggy.Core/Dream/LineHash.cs` *(internal static: first 16 lowercase hex of SHA-256 over the UTF-8 line with trailing whitespace removed)*.
