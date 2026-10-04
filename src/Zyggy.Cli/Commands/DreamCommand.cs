@@ -43,6 +43,16 @@ internal static class DreamCommand
 
     private static async Task<int> RunAsync(CliEnvironment environment, string triggerText, CancellationToken cancellationToken)
     {
+        // Consume a request first: zyggy-dream.path starts the service while the file exists, so a run that fails before
+        // deleting it (configuration, pin) would be restarted in a loop.
+        DreamTriggerWire.TryFromWire(triggerText, out var trigger);
+        var request = Path.Join(StateDirectory(environment), RequestFile);
+        if (File.Exists(request))
+        {
+            File.Delete(request);
+            trigger = DreamTrigger.OnDemand;
+        }
+
         var version = InformationalVersion();
         var configuration = DreamConfiguration.Load(environment.Variables, version, path => File.Exists(path) ? File.ReadAllText(path) : null);
         if (configuration.Environment is not { } dreamEnvironment || configuration.Options is not { } options)
@@ -59,14 +69,6 @@ internal static class DreamCommand
             {
                 return ConfigurationError("version_mismatch: " + check.Detail);
             }
-        }
-
-        DreamTriggerWire.TryFromWire(triggerText, out var trigger);
-        var request = Path.Join(dreamEnvironment.StateDirectory, RequestFile);
-        if (File.Exists(request))
-        {
-            File.Delete(request);
-            trigger = DreamTrigger.OnDemand;
         }
 
         var claude = environment.Get("ZYGGY_CLAUDE_PATH");

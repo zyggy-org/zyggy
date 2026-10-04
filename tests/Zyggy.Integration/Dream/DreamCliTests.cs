@@ -58,6 +58,22 @@ public sealed class DreamCliTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Dream_RequestFileWithBrokenConfiguration_ConsumedSoThePathUnitCannotLoop()
+    {
+        // Arrange
+        await Zyggy("dream", "request");
+        var env = _repo.DreamEnv("dream-file-ok");
+        env["ZYGGY_TENANT"] = null;
+
+        // Act
+        var run = await ZyggyCli.RunAsync(["dream"], env, null, _repo.RootDir, Ct);
+
+        // Assert
+        run.ExitCode.Should().Be(3);
+        File.Exists(RequestFile).Should().BeFalse("a request is consumed before anything can fail");
+    }
+
+    [Fact]
     public async Task Dream_TriggerOption_IsRecorded()
     {
         // Act
