@@ -19,6 +19,8 @@ internal sealed class CliEnvironment(IReadOnlyDictionary<string, string?> variab
         return new CliEnvironment(variables);
     }
 
+    public IReadOnlyDictionary<string, string?> Variables => variables;
+
     public string? Get(string name) => variables.TryGetValue(name, out var value) && !string.IsNullOrEmpty(value) ? value : null;
 
     public bool HooksOff => Get("ZYGGY_HOOKS") == "off";

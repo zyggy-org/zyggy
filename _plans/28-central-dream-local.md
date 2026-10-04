@@ -555,7 +555,7 @@ Every exception other than `OperationCanceledException` becomes `failed` with `c
 
 ## Step 11 — `zyggy dream`, `zyggy dream request` and `zyggy dream status` run end to end against a temporary memory repository with a local bare remote and `tools/fake-claude`: facts are filed into existing and new categories on both sides, the ledger is in the same pushed commit, a fake error or hang leaves everything untouched with exit 6, a held lock exits 4, and a bad configuration or a wrong version pin exits 3 before any model call
 
-- [ ] Done
+- [x] Done — 2026-10-04: 21 unit + 20 integration tests; the CLI builds a ServiceCollection with the systemd console logger (no full host); the hang test pins the test binary itself (`ZyggyCli.MatchingPin`) so `dream.json` can set `callTimeoutMinutes: 1` with no test-only switch in the binary.
 
 **Scope**:
 - `src/Zyggy.Core/Dream/DreamConfiguration.cs` *(public static: `Load(IReadOnlyDictionary<string,string?> env, string version, Func<string,string?> readFile) → DreamConfigurationResult` = `DreamEnvironment` + `DreamOptions` or `ConfigurationError(string key, string message)`)*:

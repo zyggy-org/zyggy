@@ -1,0 +1,2 @@
+- [observed] 2026-09-29 [m365-mail 2026-09-29]: Acme Corp renewed its support contract until 2027.
+- [observed] 2026-09-29 [m365-mail 2026-09-29]: Acme Corp asked for a demo of the new product in November.

@@ -24,6 +24,17 @@ public static class ZyggyCli
         }
     }
 
+    /// <summary>A <c>zyggy.json</c> pin that matches the test build of <c>zyggy</c> on this runtime.</summary>
+    public static string MatchingPin()
+    {
+        var assembly = System.Reflection.Assembly.LoadFrom(Path.Combine(Path.GetDirectoryName(ExecutablePath)!, "zyggy.dll"));
+        var version = System.Reflection.CustomAttributeExtensions
+            .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(assembly)!.InformationalVersion.Split('+')[0];
+        var hash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(ExecutablePath)));
+        var rid = System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier;
+        return $$"""{ "version": "{{version}}", "sha256": { "{{rid}}": "{{hash}}" } }""";
+    }
+
     /// <summary>
     /// Runs <c>zyggy</c> with <paramref name="args"/> and returns its exit code and both streams. Stdin is written (when given)
     /// and closed, unless <paramref name="keepStdinOpen"/> leaves it open and unwritten for the whole run.

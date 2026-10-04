@@ -10,6 +10,7 @@
   <!-- Golden envelopes (deliverable 03) and the single file that holds the synthetic test keys, shared with Zyggy.Core.Tests. -->
   <ItemGroup>
     <None Include="../golden/**" CopyToOutputDirectory="PreserveNewest" LinkBase="golden" />
+    <None Include="Fixtures/**" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../Zyggy.Core.Tests/Infrastructure/TestKeys.cs" Link="Infrastructure/TestKeys.cs" />
   </ItemGroup>
 
