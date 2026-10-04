@@ -696,7 +696,7 @@ Every exception other than `OperationCanceledException` becomes `failed` with `c
 
 ## Step 13 — Against a real repository: a writer appending during a run loses no line and gets none twice, `inventory.sh`-style replacement is handled, a killed run frees the lock and the next run recovers, `auto/`/`daily/` are committed as found and a secret-bearing one is withheld, a closed inbox file is deleted outside the commit, an empty backlog makes no commit, and a rejected push is rebased once or deferred with exit 7 and pushed first next time
 
-- [ ] Done
+- [x] Done — 2026-10-04: 12 integration tests, no production change needed beyond Step 12; the rollup fixture is built in the test (dates materialised in code) instead of a `Fixtures/dream-rollup` folder; the inventory and rollup runs use the `error` scenario because only the offered lines or the no-model path matter.
 
 **Scope**:
 - `tests/Zyggy.Integration/Dream/DreamConcurrencyTests.cs`, `DreamPushTests.cs`, `DreamRollupTests.cs` *(create)*.

@@ -143,6 +143,29 @@ public sealed class MemoryRepoFixture : IAsyncLifetime
 
     public Task<string> StatusAsync(CancellationToken ct) => GitAsync(CloneDir, ["status", "--porcelain=v1", "--untracked-files=all"], ct);
 
+    /// <summary>Sets a principal-relative file's modification time to <paramref name="age"/> ago.</summary>
+    public void SetMtime(string relativePath, TimeSpan age) =>
+        File.SetLastWriteTimeUtc(Path.Combine(PrincipalDir, relativePath), DateTime.UtcNow - age);
+
+    /// <summary>Commits <paramref name="content"/> to a repository-relative path from a second clone and pushes it (the remote moves ahead).</summary>
+    public async Task<string> PushFromSecondCloneAsync(string path, string content, CancellationToken ct)
+    {
+        var second = Path.Combine(RootDir, "second-" + Guid.NewGuid().ToString("N")[..8]);
+        await GitAsync(RootDir, ["clone", "-q", BareDir, second], ct);
+        await GitAsync(second, ["config", "user.name", "someone else"], ct);
+        await GitAsync(second, ["config", "user.email", "else@zyggy.org"], ct);
+        var full = Path.Combine(second, path);
+        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+        await File.WriteAllTextAsync(full, content, ct);
+        await GitAsync(second, ["add", "--", path], ct);
+        await GitAsync(second, ["commit", "-q", "-m", "edit from elsewhere"], ct);
+        await GitAsync(second, ["push", "-q", "origin", "HEAD:main"], ct);
+        return await GitAsync(second, ["rev-parse", "HEAD"], ct);
+    }
+
+    /// <summary>Moves the remote's <c>main</c> to <paramref name="sha"/> (as if the conflicting push had never happened).</summary>
+    public Task<string> ResetRemoteToAsync(string sha, CancellationToken ct) => GitAsync(BareDir, ["update-ref", "refs/heads/main", sha], ct);
+
     /// <summary>Runs git with the fixture's isolated environment and returns trimmed stdout.</summary>
     /// <exception cref="InvalidOperationException">git exited non-zero.</exception>
     public async Task<string> GitAsync(string workingDirectory, IReadOnlyList<string> args, CancellationToken ct)

@@ -24,6 +24,50 @@ public static class ZyggyCli
         }
     }
 
+    /// <summary>Starts <c>zyggy</c> without waiting (to kill it mid-run); output is drained and discarded.</summary>
+    public static Process Start(IReadOnlyList<string> args, IReadOnlyDictionary<string, string?> env, string workingDirectory)
+    {
+        var info = new ProcessStartInfo(ExecutablePath)
+        {
+            UseShellExecute = false,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            WorkingDirectory = workingDirectory,
+        };
+        foreach (var arg in args)
+        {
+            info.ArgumentList.Add(arg);
+        }
+
+        foreach (var name in info.Environment.Keys.Where(k => k.StartsWith("ZYGGY_", StringComparison.OrdinalIgnoreCase)).ToList())
+        {
+            info.Environment.Remove(name);
+        }
+
+        info.Environment["GIT_CONFIG_NOSYSTEM"] = "1";
+        info.Environment["GIT_TERMINAL_PROMPT"] = "0";
+        foreach (var (name, value) in env)
+        {
+            if (value is null)
+            {
+                info.Environment.Remove(name);
+            }
+            else
+            {
+                info.Environment[name] = value;
+            }
+        }
+
+        var process = Process.Start(info) ?? throw new InvalidOperationException("zyggy did not start.");
+        process.StandardInput.Close();
+        process.OutputDataReceived += (_, _) => { };
+        process.ErrorDataReceived += (_, _) => { };
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+        return process;
+    }
+
     /// <summary>A <c>zyggy.json</c> pin that matches the test build of <c>zyggy</c> on this runtime.</summary>
     public static string MatchingPin()
     {
