@@ -1775,8 +1775,18 @@ key reaches the run only as the credential copy.
 ### Read-only file system in the brief unit
 
 A unit run fails with `EACCES`/`Read-only file system` on a path: `ProtectSystem=strict` allows writes only under
-`ReadWritePaths=` (the state dir, `memory/`, `~/.claude`, `~/.npm`). Add the path the run proved it needs (fact 7)
+`ReadWritePaths=` (the state dir, `memory/`, `~/.claude`, `~/.npm`, the download root). Add the path the run proved it needs (fact 7)
 to `instance/systemd/zyggy-morning-brief.service`, push, pull, reinstall (13g); record it in 0002.
+
+### A download fails or lands nowhere
+
+`zyggy-m365-mcp.service` has its own private `/tmp` and may write only `~/.ms-365-mcp-server` and the download
+root `/srv/agent/home/.cache/zyggy-m365-downloads` (0700, `zyggy`; the unit's `ExecStartPre=` creates it). Every
+`outputPath` of `download-bytes-to-file` must be an absolute path inside that root — a session uses
+`<root>/<session>/`, `brief.sh` and `files-backfill.sh` make their run directories there. A path in `/tmp` fails, or
+lands in the server's private `/tmp` where the caller never sees it. `mcp-server.sh` refuses to start (exit 3, "the
+download root … is not a writable directory") when the root is missing from `ReadWritePaths=`: reinstall the unit
+from `instance/systemd/`, `sudo systemctl daemon-reload`, `sudo systemctl restart zyggy-m365-mcp` [vm/azureadmin].
 
 ### Server offered unexpected tools
 
