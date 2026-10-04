@@ -52,6 +52,9 @@ public sealed record DreamRunRecord
     /// <summary>Gets the files withheld from the commit because of a secret pattern.</summary>
     public IReadOnlyList<string> Withheld { get; init; } = [];
 
+    /// <summary>Gets the durable files someone else changed that the run committed as found.</summary>
+    public IReadOnlyList<string> Carried { get; init; } = [];
+
     /// <summary>Gets what is left in the backlog.</summary>
     public DreamInboxRemaining InboxRemaining { get; init; } = new(0, 0);
 

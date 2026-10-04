@@ -29,7 +29,7 @@ internal static class DreamCommitter
         text.Append(c, $"files: {batches.Sum(b => b.FilesCreated)} created, {batches.Sum(b => b.FilesEdited)} edited; ");
         text.Append(c, $"categories created: {batches.Sum(b => b.CategoriesCreated)}; compressions: {record.Compressions.Count(x => x.Result == "accepted")}; ");
         text.Append(c, $"quarantined lines: {record.Quarantined}\n");
-        text.Append(c, $"rollup: {record.Rollup.DailyRolled} daily files rolled, {record.Rollup.InboxDeleted} inbox files deleted; withheld: {record.Withheld.Count}\n");
+        text.Append(c, $"rollup: {record.Rollup.DailyRolled} daily files rolled, {record.Rollup.InboxDeleted} inbox files deleted; withheld: {record.Withheld.Count}; carried: {record.Carried.Count}\n");
         text.Append(c, $"cost: {record.CostUsdTotal:0.00} USD\n\n");
         text.Append(c, $"Zyggy-Run: {record.Run}\n");
         text.Append(c, $"Zyggy-Trigger: {record.Trigger}\n");

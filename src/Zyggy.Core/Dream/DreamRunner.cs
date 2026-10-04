@@ -132,6 +132,32 @@ public sealed partial class DreamRunner
             };
         }
 
+        // AC-26: undo a run killed between its write and its commit, unless someone edited a path since.
+        if (PendingRecovery.Plan(paths) is { } pending)
+        {
+            if (pending.Dirty is not null)
+            {
+                return record with { Outcome = DreamRunOutcomeWire.ToWire(DreamRunOutcome.Aborted), Check = DreamCheckWire.ToWire(DreamCheck.DirtyPending) };
+            }
+
+            var restore = await _git.CheckoutPathsAsync(repository, DreamCommitter.RepoPaths(_environment.Principal, pending.Restore), cancellationToken)
+                .ConfigureAwait(false);
+            if (!restore.Succeeded)
+            {
+                return record with { Reason = RunFailureReasonWire.ToWire(RunFailureReason.GitError), Detail = "recovery_failed" };
+            }
+
+            foreach (var created in pending.Delete)
+            {
+                File.Delete(Path.Join(paths.PrincipalDirectory, created));
+            }
+
+            DreamWriter.DeleteMarker(paths);
+            LogRecovered(run.Id, pending.Run);
+        }
+
+        var carried = PassThrough.Carried(await _git.StatusEntriesAsync(repository, cancellationToken).ConfigureAwait(false), _environment.Principal, paths);
+
         run.Phase = Phase.Start;
         var secrets = SecretPatterns.Load(_environment.SecretPatternsPath);
         if (secrets.Patterns is null)
@@ -156,7 +182,11 @@ public sealed partial class DreamRunner
 
         var set = new WorkingSet(snapshot);
         var staged = ledger.Clone();
-        var context = new DreamRunContext(paths, _environment.StateDirectory, run.LocalDate, _options) { Secrets = secrets.Patterns };
+        var context = new DreamRunContext(paths, _environment.StateDirectory, run.LocalDate, _options)
+        {
+            Secrets = secrets.Patterns,
+            CarriedPaths = carried.ReadOnly,
+        };
         var batches = new List<DreamBatchRecord>();
         var quarantined = new List<DreamBatchLine>();
         DreamCheck? stopCheck = null;
@@ -258,6 +288,17 @@ public sealed partial class DreamRunner
             return record with { Outcome = DreamRunOutcomeWire.ToWire(DreamRunOutcome.Aborted), Check = DreamCheckWire.ToWire(runCheck) };
         }
 
+        if (stopCheck is null && stopFailure is null)
+        {
+            var rollup = Rollup.Plan(snapshot, staged, run.LocalDate, _clock.GetUtcNow(), _options);
+            Rollup.Apply(rollup, set, staged);
+            record = record with { Rollup = new DreamRollupRecord(rollup.Archives.Sum(a => a.Days.Count), rollup.InboxDeletions.Count) };
+            if (Rollup.CheckDeletions(set, rollup) is { } deletionCheck)
+            {
+                return record with { Outcome = DreamRunOutcomeWire.ToWire(DreamRunOutcome.Aborted), Check = DreamCheckWire.ToWire(deletionCheck) };
+            }
+        }
+
         var ledgerText = staged.Serialize();
         if (ledgerText != ledger.Serialize())
         {
@@ -274,10 +315,29 @@ public sealed partial class DreamRunner
             Detail = stopFailure?.Detail,
         };
 
-        if (set.ChangedPaths.Count == 0)
+        // A run that accepted nothing before its abort or failure commits nothing at all (exit 5 or 6, tree untouched).
+        if (runOutcome is DreamRunOutcome.Aborted or DreamRunOutcome.Failed)
+        {
+            return record with { Outcome = DreamRunOutcomeWire.ToWire(runOutcome) };
+        }
+
+        // AC-25: auto/ and daily/ as found (a secret-bearing file withheld), and other writers' unstaged durable edits (carried).
+        var changed = set.ChangedPaths.ToHashSet(StringComparer.Ordinal);
+        var passThrough = PassThrough.Classify(await _git.StatusEntriesAsync(repository, cancellationToken).ConfigureAwait(false),
+            _environment.Principal, snapshot, secrets.Patterns, changed);
+        var carriedCommit = carried.CommitAsFound.Where(p => !changed.Contains(p)).ToList();
+        record = record with { Withheld = passThrough.Withheld, Carried = carriedCommit };
+
+        if (changed.Count == 0 && passThrough.Include.Count == 0 && carriedCommit.Count == 0)
         {
             var nothing = runOutcome == DreamRunOutcome.Committed ? DreamRunOutcome.NothingToDo : runOutcome;
             return record with { Outcome = DreamRunOutcomeWire.ToWire(nothing) };
+        }
+
+        // A durable file changed on disk after the snapshot is someone else's work: write nothing.
+        if (changed.Where(p => !p.StartsWith(".dream/", StringComparison.Ordinal)).Any(p => ChangedOnDisk(snapshot, p)))
+        {
+            return record with { Outcome = DreamRunOutcomeWire.ToWire(DreamRunOutcome.Aborted), Check = DreamCheckWire.ToWire(DreamCheck.ConcurrentEdit) };
         }
 
         record = record with { Outcome = DreamRunOutcomeWire.ToWire(runOutcome) };
@@ -285,8 +345,9 @@ public sealed partial class DreamRunner
         var written = new DreamWriter().Write(paths, set, run.Id);
 
         run.Phase = Phase.Git;
-        var repoPaths = DreamCommitter.RepoPaths(_environment.Principal, written);
-        var added = DreamCommitter.RepoPaths(_environment.Principal, written.Where(p => !set.ExistedBefore(p) && set.Exists(p)));
+        var repoPaths = DreamCommitter.RepoPaths(_environment.Principal, written.Concat(passThrough.Include).Concat(carriedCommit));
+        var added = DreamCommitter.RepoPaths(_environment.Principal, written.Where(p => !set.ExistedBefore(p) && set.Exists(p))
+            .Concat(passThrough.Untracked).Concat(carried.Untracked.Where(carriedCommit.Contains)));
         var add = await _git.AddAsync(repository, added, cancellationToken).ConfigureAwait(false);
         var commit = add.Succeeded
             ? await _git.CommitOnlyAsync(repository, DreamCommitter.Message(record, run.LocalDate), repoPaths, cancellationToken).ConfigureAwait(false)
@@ -330,6 +391,14 @@ public sealed partial class DreamRunner
 
         LogPushed(push.Succeeded);
         return push.Succeeded;
+    }
+
+    private static bool ChangedOnDisk(MemorySnapshot snapshot, string relative)
+    {
+        var full = Path.Join(snapshot.Paths.PrincipalDirectory, relative);
+        return snapshot.Files.TryGetValue(relative, out var file)
+            ? !File.Exists(full) || MemorySnapshot.Hash(File.ReadAllBytes(full)) != file.Sha256
+            : File.Exists(full);
     }
 
     private static bool IsRejected(string stderr) =>
@@ -413,6 +482,9 @@ public sealed partial class DreamRunner
 
     [LoggerMessage(Level = LogLevel.Information, Message = "dream {Run} committed {Sha}")]
     private partial void LogCommitted(string run, string sha);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "dream {Run} recovered the pending files of dead run {DeadRun}")]
+    private partial void LogRecovered(string run, string deadRun);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "dream push: {Pushed}")]
     private partial void LogPushed(bool pushed);

@@ -28,7 +28,19 @@ internal sealed class GitClient(IProcessRunner processes, GitClientOptions optio
     public TimeProvider Clock { get; } = clock;
 
     public Task<GitResult> StatusPorcelainAsync(string repository, CancellationToken cancellationToken) =>
-        RunAsync(repository, ["status", "--porcelain=v1", "--untracked-files=all"], null, cancellationToken);
+        RunAsync(repository, ["status", "--porcelain=v1", "-z", "--untracked-files=all"], null, cancellationToken);
+
+    /// <summary>Restores paths from <c>HEAD</c> (pending-marker recovery).</summary>
+    public Task<GitResult> CheckoutPathsAsync(string repository, IReadOnlyList<string> paths, CancellationToken cancellationToken) =>
+        paths.Count == 0
+            ? Task.FromResult(new GitResult(0, string.Empty, string.Empty))
+            : RunAsync(repository, ["checkout", "HEAD", "--", .. paths], null, cancellationToken);
+
+    public async Task<IReadOnlyList<GitStatusEntry>> StatusEntriesAsync(string repository, CancellationToken cancellationToken)
+    {
+        var result = await StatusPorcelainAsync(repository, cancellationToken).ConfigureAwait(false);
+        return result.Succeeded ? GitStatus.Parse(result.Stdout) : [];
+    }
 
     public Task<GitResult> AddAsync(string repository, IReadOnlyList<string> paths, CancellationToken cancellationToken) =>
         paths.Count == 0

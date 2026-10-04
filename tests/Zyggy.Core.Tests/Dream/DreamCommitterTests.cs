@@ -34,7 +34,7 @@ public sealed class DreamCommitterTests
             "outcome: partial (check path_refused)\n" +
             "batches: 2 (1 accepted), lines: 20, filed: 6, merged: 2, duplicate: 1, dropped: 1\n" +
             "files: 1 created, 3 edited; categories created: 1; compressions: 0; quarantined lines: 0\n" +
-            "rollup: 0 daily files rolled, 0 inbox files deleted; withheld: 0\n" +
+            "rollup: 0 daily files rolled, 0 inbox files deleted; withheld: 0; carried: 0\n" +
             "cost: 0.70 USD\n\n" +
             "Zyggy-Run: 01JABCDEFGHJKMNPQRSTVWXYZ0\n" +
             "Zyggy-Trigger: nightly\n");

@@ -623,26 +623,26 @@ Every exception other than `OperationCanceledException` becomes `failed` with `c
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification:
+- [x] Behavioral verification:
   - `DreamEndToEndTests` green: show the bare repo's `git log -1 --stat` and the commit body.
   - `DreamFailureTests` green: error, hang, three checks, locked, pin, config.
   - One `DreamChecksTests` row per `DreamCheck` (list of 24 → test names).
   - `BatchPlannerTests` for the AC-9 order; `DreamRunnerTests` for partial, caps, halving and quarantine.
-- [ ] Contract review: the three JSON schemas (Appendix A) and the prompt texts against spec "Model output schemas" and §7 Rules; `.dream/ledger.json`, the run record and the commit message against spec Contracts; the CLI table and exit codes; `DreamOptions` defaults and ceilings (OQ-6).
-- [ ] ⚠️ Risk review:
+- [x] Contract review: the three JSON schemas (Appendix A) and the prompt texts against spec "Model output schemas" and §7 Rules; `.dream/ledger.json`, the run record and the commit message against spec Contracts; the CLI table and exit codes; `DreamOptions` defaults and ceilings (OQ-6).
+- [x] ⚠️ Risk review:
   - Single durable state: checks, run breaker, one commit, ledger-backed revert.
   - Prompt injection: no write/shell/MCP tool; data delimiters.
   - GDPR: `contact_detail`; no fact text in logs or records.
   - Work boundary: no `work` side; employer facts filed under `business/` without filter (OQ-2); `not_owner_data` reserved.
   - Public API of `Zyggy.Core.Dream`.
   - Assumptions 4–8 (provenance tokens, scan scope, single oversized line, push failure → 7, test timeout floor).
-- [ ] User approved — implementation may continue past this gate
+- [x] User approved — implementation may continue past this gate — 2026-10-04 owner: "Yes"
 
 ---
 
 ## Step 12 — A run rolls `daily/` files older than 30 days into `daily/YYYY-MM.md` and deletes closed, fully consumed inbox files after the grace period (refusing any other deletion), commits `auto/` and `daily/` as found while withholding a file with a secret-pattern line, carries other writers' uncommitted durable edits read-only, and recovers from a crash between write and commit (fake model, substituted git)
 
-- [ ] Done
+- [x] Done — 2026-10-04: 31 new unit tests. Decisions: carried = durable files with any uncommitted change (read-only for the model); only unstaged or untracked ones are committed as found, staged ones stay staged (AC-19); an aborted or failed run with nothing accepted commits nothing (no pass-through); `unfiled_deletion` is tested on `Rollup.CheckDeletions` directly (no run path can delete an unplanned file); the record gains `carried` and the commit body `carried: n`.
 
 **Scope**:
 - `src/Zyggy.Core/Dream/Rollup.cs` *(internal static: `Plan(MemorySnapshot, DreamLedger, DateOnly localToday, DateTimeOffset nowUtc, DreamOptions) → RollupPlan(DailyArchives, InboxDeletions)`)*.
