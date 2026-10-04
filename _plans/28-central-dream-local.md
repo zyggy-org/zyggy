@@ -421,7 +421,7 @@ Deserialisation uses `DreamJsonContext`; any `JsonException` → `Aborted(Format
 
 ## Step 8 — Every proposal that breaks a rule aborts its batch with the named `DreamCheck` before anything reaches disk — one test per check — and the run-level breaker refuses a run whose accepted batches together remove too much
 
-- [ ] Done
+- [x] Done — 2026-10-04: 81 new tests (one producing test per batch check, guarded by `EveryBatchCheck_HasAProducingTest`); checks in Appendix B order, the edit mismatch found by the applier is reported in its table slot.
 
 **Scope**:
 - `src/Zyggy.Core/Memory/SecretPatterns.cs` *(internal sealed: `Load(string path)` → patterns or a load failure; `bool TryMatch(string text, out string name)`; the file format and flags `icase`, `nospace`, `nospace-nohyphen` of `secret-patterns.txt`, applied with `RegexOptions.CultureInvariant` (+ `IgnoreCase` for `icase`) and a 1 s match timeout)*.

@@ -5,7 +5,17 @@ using Zyggy.Core.Runs;
 namespace Zyggy.Core.Dream;
 
 /// <summary>What a run passes to each batch.</summary>
-internal sealed record DreamRunContext(MemoryPaths Paths, string StateDirectory, DateOnly RunDate, DreamOptions Options);
+internal sealed record DreamRunContext(MemoryPaths Paths, string StateDirectory, DateOnly RunDate, DreamOptions Options)
+{
+    /// <summary>The secret patterns every added line, description and alias is scanned with.</summary>
+    public SecretPatterns Secrets { get; init; } = SecretPatterns.None;
+
+    /// <summary>Durable files with someone else's uncommitted changes: read-only for the model in this run.</summary>
+    public IReadOnlySet<string> CarriedPaths { get; init; } = new HashSet<string>(StringComparer.Ordinal);
+
+    /// <summary>Categories created by earlier batches of this run.</summary>
+    public int NewCategoriesSoFar { get; init; }
+}
 
 /// <summary>Counts of one batch for the run record (never a fact text).</summary>
 internal sealed record BatchCounts(
@@ -92,9 +102,9 @@ internal sealed class DreamFiler(IModelRunner model, DreamPrompts prompts, TimeP
 
             var candidate = set.Clone();
             var applied = ProposalApplier.Apply(proposal, snapshot, candidate, context.RunDate);
-            if (applied.EditMismatch)
+            if (DreamChecks.CheckBatch(batch, proposal, set, candidate, applied, context) is { } check)
             {
-                return new BatchAborted(DreamCheck.EditMismatch, result.CostUsd, result.NumTurns, result.Duration);
+                return new BatchAborted(check, result.CostUsd, result.NumTurns, result.Duration);
             }
 
             set.Adopt(candidate);
