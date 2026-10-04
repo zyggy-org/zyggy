@@ -2,7 +2,7 @@
 
 > Founding-spec sections: §3 Components (`Zyggy.Cli` verbs, `dream`/`remember` skills, Hooks `SessionStart`), §6 Invocation, Streaming and limits, "Central executing its own jobs"; §7 Layout, File format, Context loading, Dream pass steps 2–4, 6, 7, Rules; §8 Work boundary, Secrets, Isolation, Injection, Data protection; §9 Solution structure, Packages, Design rules, Publish; §10 Central, Upgrade path; §11 Logging, Alerts (identity diff — deferred), Runbooks; §12 Definition of done; §13 Decisions (O6; no LibGit2Sharp; three principals); §14 (memory path shape, `IModelRunner`). Roadmap entry: `_plans/ROADMAP.md` #28 and its hand-off brief (gate passed 2026-10-04), rule R1, O36, O37. Repository inputs read: `_specs/27-central-identity-memory.md` (layout, hook interfaces, `secret-patterns.txt`, forwarded findings 1–2), `zyggy-core` `lib.sh`, `remember.sh`, `m365/facts.sh`, `github-inventory/inventory.sh`, `tools/fake-claude/*`, `src/Zyggy.Core/{Tenancy,Secrets,Envelope}`, `Directory.Packages.props`, `.github/workflows/ci.yml`.
 >
-> Status: **draft — 5 Open Questions for the owner** (OQ-1, OQ-3..OQ-6, bottom); OQ-2 decided by the owner 2026-10-04 (Decisions log). Not planner-ready until the rest are answered.
+> Status: **Approved 2026-10-04 — zero Open Questions; planner-ready.** OQ-2 was decided by the owner on 2026-10-04 ("…it can be saved and used"). OQ-1 and OQ-3..OQ-6 were decided the same day ("Okay accept") — see the Decisions log. The founding-spec amendments W-1..W-12 are accepted and applied to `_specs/00 …` on 2026-10-04 (see the section "Founding-spec amendments").
 
 ## Current state (measured 2026-10-04 ~08:10 UTC, read-only on Central)
 
@@ -118,7 +118,7 @@ Evidence kinds: **U** = unit test (`tests/Zyggy.Core.Tests`, substitutes, `FakeT
 | AC-36 | `memory/` after the backlog | the secret grep of 27 AC-15 (plus e-mail/phone patterns) over all tracked files and `git log -p` | no hit (C) |
 | AC-37 | the binary on Central | inspected | `/opt/zyggy/<version>/zyggy` owned by root, mode 0755, directory not writable by `zyggy`; SHA-256 equals the CI artefact's `SHA256SUMS` and `instance/zyggy.json`; `zyggy dream` started with a binary whose version or hash differs from the pin exits 3 (`version_mismatch`) before any model call (C + U) |
 | AC-38 | the runbook | reviewed at the plan gate | entries exist for: install, upgrade, rollback, binary missing / wrong version, failed run, aborted run (per check), push deferred, backlog resume / quarantine, undo a bad night (`git revert <sha>` + push, re-fed within the grace period), lock held, digest missing (C) |
-| AC-39 | the spec | at the plan gate | founding-spec wording W-1..W-12 proposed (Open Question 4); 0002 §28 records the auto-memory/autoDream decision (Claude Code auto memory and community "autoDream" are not a substitute: different store, undocumented trigger, no provenance, no history) (C) |
+| AC-39 | the spec | at the plan gate | founding-spec amendments W-1..W-12 (owner-accepted 2026-10-04) are present in `_specs/00 …`; 0002 §28 records the auto-memory/autoDream decision (Claude Code auto memory and community "autoDream" are not a substitute: different store, undocumented trigger, no provenance, no history) (C) |
 
 ---
 
@@ -141,7 +141,7 @@ Evidence kinds: **U** = unit test (`tests/Zyggy.Core.Tests`, substitutes, `FakeT
 | Step 7 Telegram diff of identity files (§7, §11) | **Defer** (22/29) | — | Informational only; never blocks a commit. |
 | Rules: two tags, `[observed]` until confirmed, no secrets/credentials/mail bodies, work facts stay on the work node (§7, §8 Data protection) | **Keep** | `DreamCheck` members (AC-15) | Security/data rules are never softened; they become pre-commit checks. |
 | Layout `profile.md`, `preferences.md`, `areas/`, `people/`, `topics/`, `agents.md`, `daily/`, `inbox/`, `auto/` (§7) | **Reshape** | Two sides × open category set (Contracts, OQ-1); identity files, `agents.md`, `daily/`, `inbox/`, `auto/` unchanged; `.dream/` added | Owner decision O37. |
-| `work/` reserved for the employer's work node (§7, §8) | **Keep** | Side names never `work`; `not_owner_data` drop reason only for work-laptop / `work/` provenance | §8 boundary unchanged; naming is OQ-1. Facts about the employer from the owner's own Digiverse mail/OneDrive or his own statements are owner data (OQ-2, decided): kept, no filter. |
+| `work/` reserved for the employer's work node (§7, §8) | **Keep** | Side names never `work`; `not_owner_data` drop reason only for work-laptop / `work/` provenance | §8 boundary unchanged; sides `private/`/`business/` (OQ-1, decided). Facts about the employer from the owner's own Digiverse mail/OneDrive or his own statements are owner data (OQ-2, decided): kept, no filter. |
 | Context loading `index` = description of every file (§7) | **Reshape** | `zyggy memory digest index`: category lines + recency-ordered file lines to the cap | Per-file lines cannot fit 6,000 bytes once the backlog creates clients/people files; the cap now holds by construction. |
 | `SessionStart` hook as shell (§3 Hooks, 27) | **Reshape** (pulled forward from 11) | `zyggy memory digest <section>`; `session-start.sh` becomes a thin `exec` launcher | The index logic must change for the new layout; R1 forbids new features in shell; one implementation instead of two. Identity/daily parity with 27's goldens. |
 | `IModelRunner` seam, one Claude Code CLI implementation (§9, §14) | **Keep** | `IModelRunner` + `ClaudeCodeCliRunner` (`Zyggy.Core.Models`) | §9 seam; built here first, shaped for 06 (Contracts). |
@@ -282,7 +282,7 @@ New scenarios (fixture-specific, under `scenarios/`): `dream-file-ok`, `dream-fi
 
 `UnknownProject` `unknown_project` · `UnknownAgent` `unknown_agent` · `Locked` `locked` · `Timeout` `timeout` · `DlpFilter` `dlp_filter` · `ClaudeError` `claude_error` · `GitError` `git_error` · `SchemaUnsupported` `schema_unsupported` · `BudgetExceeded` `budget_exceeded` (reserved, never emitted in v1, §11). A per-call `--max-budget-usd` stop is `claude_error` / `error_max_budget_usd`, not `budget_exceeded` (which is the monthly budget, §14).
 
-### Memory layout after 28 (relative to `<root>/<tenant>/<user>/`; side names pending OQ-1)
+### Memory layout after 28 (relative to `<root>/<tenant>/<user>/`; side names `private/` and `business/`, OQ-1 decided)
 
 ```
 profile.md, preferences.md        identity (unsided; unchanged; only [stated] lines are added by the dream)
@@ -445,7 +445,7 @@ No other package. Rejected: Serilog for 28 (deferred to 07), CliWrap, JsonSchema
 
 ## Deliberate deviations from the founding spec
 
-Each is listed for the owner in OQ-4 (founding-spec wording); none is final until answered.
+All accepted by the owner on 2026-10-04 (Decisions log; founding-spec wording W-1..W-12).
 
 1. The dream is one .NET command; the `dream` skill only triggers it (§3, §7) — owner decision 2026-10-04 (R1, "whole run in .NET").
 2. Nightly **and on demand**; timer runs the binary, not a bus job (§3, §6, §10) — owner decision; bus job is 13.
@@ -501,7 +501,7 @@ Each is listed for the owner in OQ-4 (founding-spec wording); none is final unti
 - **Single durable state, no daily review:** mis-filing that passes every check stays until noticed; controls are the checks, the run-level breaker, one commit per run, the ledger-backed revert and the run record.
 - **Large first runs:** ~11 batches for the 1,579-line backlog, unattended from the first night; usage-window exhaustion can delay the morning brief (23) — `runMaxMinutes` 150 ends the run by ~05:30.
 - **GDPR (O34, §8 Data protection):** client and third-party facts move from never-injected `inbox/` into files whose descriptions appear in every session's index; contact details are refused by check; inbox raw lines never reach GitHub history (OQ-5).
-- **Work boundary (§8):** side naming (OQ-1). Unchanged: nothing from the employer's work laptop or `work/` reaches Central. Decided (OQ-2): employer-related facts from the owner's own Digiverse sources are owner data and stay; the three existing RIZIV/NIHDI files are migrated like any other file (no removal, no history rewrite).
+- **Work boundary (§8):** the sides are `private/` and `business/`, never `work` (OQ-1, decided). Unchanged: nothing from the employer's work laptop or `work/` reaches Central. Decided (OQ-2): employer-related facts from the owner's own Digiverse sources are owner data and stay; the three existing RIZIV/NIHDI files are migrated like any other file (no removal, no history rewrite).
 - **Prompt injection:** backfill lines come from mail and documents; the model has no write, shell or network tool and every proposal is checked.
 - **First `Zyggy.*` binary on Central:** provenance (tagged CI artefact + `SHA256SUMS`), root-owned path, pin check, rollback.
 - **New dependency:** System.CommandLine (MIT, §9-listed).
@@ -513,30 +513,32 @@ Each is listed for the owner in OQ-4 (founding-spec wording); none is final unti
 
 - **OQ-2 — Employer-named files and employer facts — decided by the owner 2026-10-04** (verbatim: "no what you find on my one drive or email is not confidential for my employer so it can be saved and used"). Facts extracted by the backfills from the owner's own Digiverse mailbox and OneDrive may be stored and used, including those about RIZIV/NIHDI (his employer). The three existing files `areas/nihdi-core-configuration.md`, `areas/riziv-platform.md`, `areas/riziv-redis.md` stay: no removal, no history rewrite; the migration (AC-27) moves them like any other file. They and every new fact of this kind go to the professional side (`business/` under OQ-1 (a)). The dream applies no employer-fact filter to these sources. Unchanged: the §8 work boundary — nothing from the employer's work laptop or its `work/` memory reaches Central.
 
+- **OQ-1, OQ-3, OQ-4, OQ-5, OQ-6 — decided by the owner 2026-10-04** (verbatim: "Okay accept", in reply to the list of the analyst's recommendations):
+  - **OQ-1 — side names:** `private/` and `business/` (never `work`, reserved by §7/§8 for the employer's work-laptop memory). Every `<side>` in this spec is one of these two; employer facts from the owner's own Digiverse sources go to `business/` (OQ-2).
+  - **OQ-3 — prompt location:** the filing, compression and migration prompts and their JSON schemas are embedded resources of `Zyggy.Core` (`prompt-version: 1`); `zyggy-core` holds only the thin `dream` skill. Changing the prompt is a binary release.
+  - **OQ-4 — founding-spec wording:** W-1..W-12 below accepted as written.
+  - **OQ-5 — commit content:** the dream commits durable files, `_index.md`, `.dream/ledger.json`, `.dream/quarantine.md`, rollup results, `auto/` and `daily/`; never `inbox/`. Undo of a bad night relies on the 7-day inbox grace period.
+  - **OQ-6 — thresholds:** the defaults and ceilings of the `DreamOptions` table are accepted; they are revisited from the run records after the backlog run, with no daily owner action.
+
+## Founding-spec amendments (accepted by the owner 2026-10-04, OQ-4)
+
+Application to `_specs/00 - Personal Agent Platform — Technical Specification.md` is **pending**: under the technical-analyst's rules the analyst never edits the founding spec, so the orchestrator or the owner pastes the texts below (as was done for 27 and 32). The column "Lands in" names the target place.
+
+| # | Lands in (founding spec) | Accepted text |
+|---|--------------------------|---------------|
+| W-1 | §3 intro sentence ("Six deliverables. Four are .NET binaries, two are Claude Code configuration (Markdown).") | "Six deliverables. Four are .NET binaries; two are Claude Code configuration (Markdown plus thin launchers that call `zyggy`)." (O36 a) |
+| W-2 | §3 Components table, `AgentBus.Cli` row; §9 tree, `AgentBus.Cli/` line | verbs gain `dream`, `dream request`, `dream status`, `memory digest`; `--version` |
+| W-3 | §3 Central agent instance, "Nightly systemd timer" bullet | "Nightly at 03:00 and on the owner's request, `zyggy-dream.service` runs `zyggy dream` (timer and a request-file path unit); from 13 the timer submits a `dream` job instead." |
+| W-4 | §3 Skills table, `dream` row | "Owner-requested trigger: `zyggy dream request` / `status`. The run itself — lock, batching, the model call through `IModelRunner`, checks, rollup, commit and push — is `zyggy dream`; the model only proposes structured edits." |
+| W-5 | §3 Hooks, `SessionStart` (Central) bullet | append "… emitted by `zyggy memory digest <section>` (thin hook launcher)." |
+| W-6 | §6 Invocation block and "Central executing its own jobs", second paragraph | working directory set on the process (no `--cwd`), prompt on stdin, the flag list of this spec's Invocation contract, `total_cost_usd` instead of `cost_usd`; "Until the bus runs on Central … scheduled work is a systemd timer running `zyggy` …" |
+| W-7 | §7 Layout block | the layout tree of this spec (`private/` and `business/` sides, open categories with `_index.md`, `.dream/`), plus "a new category is created only when no existing category of that side fits; at most 12 per side" |
+| W-8 | §7 Context loading paragraph | caps 6,000 / 6,000 / 8,000 (Σ ≤ 20,000); `index` = `agents.md`, one line per category, then file lines by `updated` descending to the cap |
+| W-9 | §7 Dream pass header and steps 2, 3, 4, 6, 7 | header "nightly 03:00 Europe/Brussels and on demand"; step 2 "unconsumed lines of `inbox/` and `daily/` (ledger), in capped batches"; step 3 "decide side and category; create a category when none fits"; step 6 "delete closed, fully consumed inbox files after 7 days; archive `daily/` older than 30 days into `daily/YYYY-MM.md`"; step 7 "… commit and push" |
+| W-10 | §7 "Rules that constrain the dream pass" | add "`[stated]` facts are never dropped; contact details are never stored; every proposal passes the automatic checks before it is written" |
+| W-11 | §9 Packages table (CLI row, Logging row) | System.CommandLine 2.0.11; CLI logs to journald via the console logger; Serilog for the Node (07) |
+| W-12 | §10 Central, systemd units bullet (`agent-dream.timer`) and Upgrade path | `zyggy-dream.timer`, `zyggy-dream.path`, `zyggy-dream.service`; binary under `/opt/zyggy/<version>/`, pinned in `instance/zyggy.json` |
+
 ## Open Questions
 
-- [ ] **OQ-1 — Names of the two sides.** Found: the owner asked for "work / private" (O37); §7/§8 reserve `work/` for the employer's work-laptop memory that never reaches Central; §13 names three principals: personal, the owner's company (Digiverse), work (employer). Why it matters: the name is in every path, digest line and future Hub query; a wrong word invites employer data onto Central. Options: (a) `private/` + `business/`; (b) `personal/` + `company/` (the §13 vocabulary); (c) `private/` + `professional/` (covers Digiverse and the owner's own statements about his job, but blurs the employer line). **Recommendation: (a)** — short, matches the owner's "private", and "business" clearly means his own company, not the employer.
-
-
-- [ ] **OQ-3 — Where the dream prompt lives.** Found: the roadmap scope (b) says "a prompt template in `zyggy-core`". The prompt and the JSON schema the binary parses must match exactly, and a template↔binary mismatch on Central would make every run fail. Options: (a) embed prompt + schemas in the binary (versioned, tested with the code, nothing to keep in sync); (b) prompt in `zyggy-core/templates/dream-prompt.md` with a `prompt-version` the binary checks; (c) embedded default, optional override file in the instance. **Recommendation: (a)** — the instructions are still data (a resource file), the owner tunes them through a normal release, and there is one less version pin.
-
-- [ ] **OQ-4 — Founding-spec wording (you edit the founding spec).** Proposed replacements:
-  - **W-1 §3 intro:** "Six deliverables. Four are .NET binaries; two are Claude Code configuration (Markdown plus thin launchers that call `zyggy`)." (O36 a)
-  - **W-2 §3 `Zyggy.Cli` row and §9 tree:** verbs gain `dream`, `dream request`, `dream status`, `memory digest`; `--version`.
-  - **W-3 §3 Central instance, timer bullet:** "Nightly at 03:00 and on the owner's request, `zyggy-dream.service` runs `zyggy dream` (timer and a request-file path unit); from 13 the timer submits a `dream` job instead."
-  - **W-4 §3 Skills `dream` row:** "Owner-requested trigger: `zyggy dream request` / `status`. The run itself — lock, batching, the model call through `IModelRunner`, checks, rollup, commit and push — is `zyggy dream`; the model only proposes structured edits."
-  - **W-5 §3 Hooks `SessionStart`:** "… emitted by `zyggy memory digest <section>` (thin hook launcher)."
-  - **W-6 §6 Invocation:** working directory set on the process (no `--cwd`), prompt on stdin, the flag list of this spec's Invocation contract, `total_cost_usd`; "Until the bus runs on Central … scheduled work is a systemd timer running `zyggy` …".
-  - **W-7 §7 Layout:** the tree of this spec (two sides, open categories with `_index.md`, `.dream/`), plus "a new category is created only when no existing category of that side fits; at most 12 per side".
-  - **W-8 §7 Context loading:** caps 6,000 / 6,000 / 8,000 (Σ ≤ 20,000); `index` = `agents.md`, one line per category, then file lines by `updated` descending to the cap.
-  - **W-9 §7 Dream pass header and steps 2–4, 6, 7:** "nightly 03:00 Europe/Brussels and on demand"; step 2 "unconsumed lines of `inbox/` and `daily/` (ledger), in capped batches"; step 3 "decide side and category; create a category when none fits"; step 6 "delete closed, fully consumed inbox files after 7 days; archive `daily/` older than 30 days into `daily/YYYY-MM.md`"; step 7 "… commit and push".
-  - **W-10 §7 Rules:** add "`[stated]` facts are never dropped; contact details are never stored; every proposal passes the automatic checks before it is written".
-  - **W-11 §9 Packages / Logging:** System.CommandLine 2.0.11; CLI logs to journald via the console logger; Serilog for the Node (07).
-  - **W-12 §10 Central units:** `zyggy-dream.timer`, `zyggy-dream.path`, `zyggy-dream.service`; binary under `/opt/zyggy/<version>/`, pinned in `instance/zyggy.json`.
-  Options: accept all / amend some / reject some (that part of the spec then changes). **Recommendation:** accept all.
-
-- [ ] **OQ-5 — What the dream commits (GitHub history).** Found: today nobody commits `inbox/` or `daily/` (27 commits on request exclude them); §7 says `auto/` is "committed by the dream pass" and is silent on `daily/`/`inbox/`; §8 Data protection asks for minimisation. Why it matters: whatever is committed stays in the GitHub history until a rewrite. Options: (a) commit durable files, `.dream/`, `auto/`, `daily/`; never `inbox/` (raw third-party intake, incl. dropped lines, never reaches history; undo relies on the 7-day grace); (b) also commit `inbox/` (full recoverability, raw client lines in history forever); (c) commit neither `daily/` nor `inbox/`. **Recommendation: (a).**
-
-- [ ] **OQ-6 — Thresholds for the automatic safety net.** Found: the brief leaves the thresholds to the analyst; too strict stalls the backlog, too loose lets a bad batch through unreviewed. Proposed defaults (Configuration table): batch 150 lines; ≤ 25 % / 40 lines removed per batch; ≤ 10 % of all durable lines removed per run; identity files shrink ≤ 10 % and only gain `[stated]` lines; ≤ 12 categories per side, ≤ 3 new per run; ≤ 5 USD and 15 min per call, ≤ 100 USD and 150 min per run, ≤ 20 batches per run; quarantine after 3 failures at 10 lines; inbox files deleted 7 days after full consumption. Options: accept, or change any number (each is in `instance/dream.json` within a hard ceiling). **Recommendation:** accept; revisit after the backlog run using the run records (no daily action needed).
-
-**Next action:** answer the Open Questions and approve the spec (or request changes). Once approved with zero Open Questions, invoke the `planner` subagent with this spec to produce `_plans/28-central-dream-local.md`.
+None. **Next action:** invoke the `planner` subagent with this spec to produce `_plans/28-central-dream-local.md`. The founding-spec amendments W-1..W-12 are pasted by the orchestrator or the owner; this does not block the planner.
