@@ -75,8 +75,21 @@ jobs:
       - name: Publish zyggy (${{ matrix.rid }})
         run: dotnet publish src/Zyggy.Cli -c Release -r ${{ matrix.rid }} --self-contained -p:PublishSingleFile=true -o artifacts/${{ matrix.rid }}
 
+      # sha256sum format (<64 lowercase hex>  <name>\n, LF) so Central can check the pinned binary (spec 28).
+      - name: Write SHA256SUMS
+        shell: pwsh
+        run: |
+          $exe = 'artifacts/${{ matrix.rid }}/${{ matrix.exe }}'
+          $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText('artifacts/${{ matrix.rid }}/SHA256SUMS', "$hash  ${{ matrix.exe }}`n")
+
       - name: Smoke-run the published binary
-        run: artifacts/${{ matrix.rid }}/${{ matrix.exe }}
+        shell: pwsh
+        run: |
+          $out = & 'artifacts/${{ matrix.rid }}/${{ matrix.exe }}' --version
+          if ($LASTEXITCODE -ne 0) { Write-Error "zyggy --version exited $LASTEXITCODE"; exit 1 }
+          if ("$out" -notmatch '^\d+\.\d+\.\d+') { Write-Error "unexpected version output: $out"; exit 1 }
+          "zyggy --version: $out"
 
       - uses: actions/upload-artifact@v7
         with:

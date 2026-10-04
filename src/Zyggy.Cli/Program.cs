@@ -1,1 +1,1 @@
-return 0;
+return await Zyggy.Cli.CliApplication.RunAsync(args);

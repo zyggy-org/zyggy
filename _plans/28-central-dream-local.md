@@ -54,7 +54,7 @@ Gate placement: one per vertical slice, plus one extra after Step 17 (⚠️ fir
 
 ## Step 1 — `zyggy --version` prints the MinVer version and exits 0, a wrong verb exits 2, and every CI publish carries a `SHA256SUMS` file and smoke-runs `--version`
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `Directory.Packages.props` *(modify)*: `<PackageVersion Include="System.CommandLine" Version="2.0.11" />`.
