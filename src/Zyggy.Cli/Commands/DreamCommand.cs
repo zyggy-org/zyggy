@@ -115,7 +115,7 @@ internal static class DreamCommand
         var why = record.Check ?? record.Reason;
         var ended = (record.Ended ?? record.Started).UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
         Console.Out.WriteLine(string.Create(CultureInfo.InvariantCulture,
-            $"{ended} {record.Trigger} {record.Outcome}{(why is null ? "" : $" ({why})")} — batches {record.Batches.Count}, lines {record.Batches.Sum(b => b.Lines)}, " +
+            $"{ended} {record.Trigger} {record.Outcome}{(why is null ? "" : $" ({why})")}: batches {record.Batches.Count}, lines {record.Batches.Sum(b => b.Lines)}, " +
             $"quarantined {record.Quarantined}, remaining {record.InboxRemaining.Lines}, cost {record.CostUsdTotal:0.00} USD, " +
             $"commit {(record.Commit is { Length: >= 7 } sha ? sha[..7] : "-")}, pushed {(record.Pushed ? "yes" : "no")}"));
         return ExitCodes.Ok;
