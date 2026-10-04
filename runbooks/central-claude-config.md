@@ -96,7 +96,7 @@ Always start Claude in `/srv/agent/central`, never in `memory/` (hooks are per w
 | 13i Mail backfill (AC-17, AC-18) | pending | owner, tmux |
 | 13j Files backfill (AC-19, AC-20) | pending | owner, tmux |
 | 13k 0002 section 23 complete (AC-21..AC-24) | pending | agent |
-| 13-D8a Loopback server unit, self-refreshing token (AC-25..AC-29) | pending (after Gate R-B) | agent install; owner restart, probe, idle test |
+| 13-D8a Loopback server unit, self-refreshing token (AC-25..AC-29) | installed 2026-10-04 (ahead of R7, owner's go); probe and idle tests pending | agent install and restart done; owner probe, idle test |
 | 13l Acting on the brief's suggestions — the daily routine | pending | owner, from the first brief on |
 
 ## 1. Repositories, instance, deploy keys, SSH config [browser] [laptop] [vm/zyggy]
