@@ -1,0 +1,1 @@
+- [observed] 2026-09-02 [m365-mail 2026-09-02]: Globex asked for a quote.

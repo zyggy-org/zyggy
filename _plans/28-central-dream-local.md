@@ -195,16 +195,16 @@ Gate placement: one per vertical slice, plus one extra after Step 17 (⚠️ fir
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: `zyggy --version` output from the local single-file publish; the CI run on both runners with the `SHA256SUMS` files in the artefacts; `ProcessRunnerTests` and `ClaudeCodeCliRunnerTests` green, including the hang-killed-no-orphan case; one captured argument vector shown next to the spec's Invocation contract.
-- [ ] Contract review: `IProcessRunner`/`ProcessSpec`/`ProcessResult`, `IModelRunner`/`ModelRunRequest`/`ModelRunResult`/`ModelSessionIsolation` and `ModelFailureDetail` tokens against spec Contracts; `RunFailureReason` 9 members and wire strings against §9; the fake-claude README contract.
-- [ ] ⚠️ Risk review: shared §6/§9 contract (06 will reuse it unchanged: `AllowedTools`, `TranscriptPath`, `MaxCaptureBytes` present); no request field can produce a forbidden flag; prompt never in argv; new package System.CommandLine 2.0.11 (MIT). The auth/rate-limit marker heuristic (Assumption 3) is acknowledged as unverified until AC-30.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `zyggy --version` output from the local single-file publish; the CI run on both runners with the `SHA256SUMS` files in the artefacts; `ProcessRunnerTests` and `ClaudeCodeCliRunnerTests` green, including the hang-killed-no-orphan case; one captured argument vector shown next to the spec's Invocation contract.
+- [x] Contract review: `IProcessRunner`/`ProcessSpec`/`ProcessResult`, `IModelRunner`/`ModelRunRequest`/`ModelRunResult`/`ModelSessionIsolation` and `ModelFailureDetail` tokens against spec Contracts; `RunFailureReason` 9 members and wire strings against §9; the fake-claude README contract.
+- [x] ⚠️ Risk review: shared §6/§9 contract (06 will reuse it unchanged: `AllowedTools`, `TranscriptPath`, `MaxCaptureBytes` present); no request field can produce a forbidden flag; prompt never in argv; new package System.CommandLine 2.0.11 (MIT). The auth/rate-limit marker heuristic (Assumption 3) is acknowledged as unverified until AC-30.
+- [x] User approved — implementation may continue past this gate — 2026-10-04 owner: "yes"
 
 ---
 
 ## Step 4 — Every memory path is built for an explicit principal and every escape is refused with a typed reason; memory files round-trip through front matter and body lines; the digest builder reproduces 27's `identity` and `daily` bytes and builds the new `index` (categories first, then files by `updated`, then a "more files" line) within its cap
 
-- [ ] Done
+- [x] Done — 2026-10-04: 105 unit tests; identity/daily byte-identical to the copied 27 oracles; `DigestOutput.StderrLines` is a list (the CLAUDE.md warning and the truncation line can both occur), not one `StderrLine`.
 
 **Scope**:
 - `src/Zyggy.Core/Memory/MemorySide.cs` *(public enum `Private`, `Business` + wire `private`/`business`; there is no `work` member)*, `CategoryName.cs`, `Slug.cs` *(public sealed records, private ctor, `TryParse`/`Parse` per public-api.md; regexes `^[a-z][a-z0-9-]{1,30}$` and `^[a-z0-9][a-z0-9-]{0,59}$`)*.
