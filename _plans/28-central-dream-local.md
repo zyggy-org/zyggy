@@ -820,7 +820,7 @@ Every exception other than `OperationCanceledException` becomes `failed` with `c
 
 ## Step 16 — A tagged release exists with checksummed `linux-x64`/`win-x64` artefacts; the `zyggy-core` template ships the thin `session-start.sh` launcher and the `dream` skill with exactly two allow rules, proven by bats; the instance carries the version pin and the three units; the runbook has section 14 "Dream pass" and 0002 has a §28 skeleton — nothing on Central changes yet
 
-- [ ] Done
+- [x] Done — 2026-10-04: release `v0.1.2` (tag CI 37223210310 green, `SHA256SUMS` verified; `v0.1.0` and `v0.1.1` superseded by two fixes found on the way: the request file is consumed before any check so the path unit cannot loop, and an untracked legacy file moved by the migration is not named in `commit --only`); CI now also builds `v*` tags; template `zyggy-core` `5201115` (CI 37221116582 green, 261 bats); instance `zyggy-geoffrey` `57c7267` units + `81c371a` pin 0.1.2 (CI 37222382092 green; 37223562882 for the pin); runbook section 14a–14m; 0002 section 28.
 
 **Scope**:
 - This repo:

@@ -279,21 +279,30 @@ Spec: `_specs/28-central-dream-local.md` · Plan: `_plans/28-central-dream-local
   `business/` (OQ-1); employer facts from the owner's own mailbox and OneDrive are kept and filed under `business/`
   (OQ-2); prompts embedded in the binary (OQ-3); founding-spec wording W-1..W-12 accepted (OQ-4); `inbox/` never
   committed (OQ-5); the default thresholds (OQ-6).
-- Release: `zyggy` `<version>` (tag `<tag>`, CI run `<id>`), `linux-x64` SHA-256 `<hex>`; template `zyggy-core`
-  `<sha>`; instance `zyggy-geoffrey` `<sha>` (pin + units).
+- Release: `zyggy` `0.1.2` (tag `v0.1.2` on `a389a54`, CI run 37223210310), `linux-x64` SHA-256
+  `0013c823360601a3ee3fa48cda9aaeee07a8115ddf6c35dc3e76b505414155c8`; template `zyggy-core` `5201115`; instance `zyggy-geoffrey`
+  `57c7267` (units) + `81c371a` (pin 0.1.2). Installed 2026-10-04 18:1x UTC: `/opt/zyggy/0.1.2/zyggy` root:root 0755, not
+  writable by `zyggy`, `/usr/local/bin/zyggy` → it, `--version` = `0.1.2+a389a54…`.
+
+- Live checks 2026-10-04 (agent, read-only unless noted): Claude Code 2.1.289 at `/srv/agent/home/.local/bin/claude`; the
+  template pull (instance `81c371a`) switched `session-start.sh` to `zyggy memory digest`, whose `identity` (3,353 bytes) and
+  `daily` (7,940 bytes, truncated as before) are byte-identical to the shell digest captured just before (apart from
+  `generated=`); `zyggy-dream.path` enabled and active, timer **not** enabled. Finding (Assumption 9): **5 inbox files are
+  tracked** in the memory repository — harmless until the rollup deletes a closed one (≥ 7 days); a one-time
+  owner-approved `git rm --cached` of `geoffrey/geoffrey/inbox/` is proposed at the gate.
 
 ### Acceptance criteria on Central (AC-30..AC-39; from run records, the journal and git history — no owner action per run)
 
 | AC | Criterion | Evidence (date, source, excerpt) | Result |
 |----|-----------|----------------------------------|--------|
-| AC-30 | First on-demand run (the `dream` skill's command) completes, commits and pushes; journal shows the argument vector; record has cost and turns | | |
+| AC-30 | First on-demand run (the `dream` skill's command) completes, commits and pushes; journal shows the argument vector; record has cost and turns | 2026-10-04 18:26:42 UTC (agent: `zyggy dream request` as `zyggy` → `zyggy-dream.path`): run `01M442P4…` on-demand, **migration** of 32 legacy files, commit `35f5ced` `dream 2026-10-04` / `layout migrated` pushed, 20 s, 0.13 USD, Claude Code 2.1.289 accepted the flag set (no `unknown option`). 18:28:07 UTC: first **filing** run `01M442RQ…` **aborted** `edit_mismatch` in batch 1 (150 lines), nothing written, 0.50 USD, exit 5; backlog 1,709 lines. Diagnosis (read-only): no CR, no trailing whitespace, no duplicate lines; 124 body lines of the migrated files do not start with `- [` | partial — stopped at the gate, timer not armed |
 | AC-31 | Three consecutive nightly runs exit 0, each with a `dream` commit on `origin/main` | | |
 | AC-32 | A fact remembered on day N is in its category file after the run of day N+1 (ledger hash in the same commit) | | |
 | AC-33 | Per-run counts and cost; the backlog reaches 0 or a stated remainder | | |
 | AC-34 | Digest sections within their caps after the backlog | | |
 | AC-35 | A request during a run is served after it, without overlap | | |
 | AC-36 | Secret and contact-detail grep over `origin/main` contents and history: no hit | | |
-| AC-37 | Binary root-owned, not writable by `zyggy`, hash = CI `SHA256SUMS` = pin; a wrong pin exits 3 before any model call | | |
+| AC-37 | Binary root-owned, not writable by `zyggy`, hash = CI `SHA256SUMS` = pin; a wrong pin exits 3 before any model call | 2026-10-04 18:1x UTC (agent): `/opt/zyggy/0.1.2` and the binary `root:root 755`; `runuser -u zyggy -- test -w` fails; SHA-256 `0013c823…` = `SHA256SUMS` (CI 37223210310) = `instance/zyggy.json`. Wrong pin (temporary instance dir, hash of zeros): exit 3 `configuration error: version_mismatch: sha256 of the binary is not the pinned one for linux-x64`, no `runs/` directory created | pass |
 | AC-38 | Runbook section 14 covers install, upgrade, rollback, every failure mode and "undo a bad night" | 2026-10-04: section 14a–14m written (agent) | pass |
 | AC-39 | W-1..W-12 present in the founding spec | | |
 
@@ -301,6 +310,8 @@ Spec: `_specs/28-central-dream-local.md` · Plan: `_plans/28-central-dream-local
 
 | date (UTC) | trigger | outcome | batches / lines | filed / merged / dup / dropped | quarantined | cost USD | commit |
 |------------|---------|---------|-----------------|--------------------------------|-------------|----------|--------|
+| 2026-10-04 18:26 | on-demand | committed (layout migrated, 32 moves, 29 pure renames, 1 carried) | 0 / 0 | — | 0 | 0.13 | `35f5ced` |
+| 2026-10-04 18:28 | on-demand | aborted `edit_mismatch` | 1 / 150 | — | 0 | 0.50 | — |
 
 ## Repositories
 
