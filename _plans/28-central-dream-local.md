@@ -519,7 +519,7 @@ Every exception other than `OperationCanceledException` becomes `failed` with `c
 
 ## Step 10 — The run makes exactly one commit of exactly its own paths, retries a locked index, refuses a detached or mid-rebase repository, and when the push is rejected fetches, rebases its one commit once and pushes — or aborts the rebase, keeps the commit, records `pushed: false` and pushes first on the next run; never a force push (fake process runner)
 
-- [ ] Done
+- [x] Done — 2026-10-04: 13 new tests; an unpushed dream commit whose push still fails ends the run at once as `committed`, `pushed: false`, detail `push_pending` (exit 7); two Step 9 tests now assert "no add/commit/push" instead of "no git call" (the preflight reads the branch).
 
 **Scope**:
 - `src/Zyggy.Core/Git/GitClient.cs` *(modify)*:

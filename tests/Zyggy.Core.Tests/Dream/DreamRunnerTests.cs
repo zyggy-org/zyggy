@@ -175,7 +175,7 @@ public sealed partial class DreamRunnerTests : IDisposable
         record.Outcome.Should().Be("aborted");
         record.Check.Should().Be("path_refused");
         Disk().Should().Equal(before);
-        _git.Calls.Should().BeEmpty();
+        _git.Calls.Select(RecordingProcessRunner.SubCommand).Should().NotContain(["add", "commit", "push"], "only read-only preflight queries ran");
     }
 
     [Fact]
@@ -324,7 +324,7 @@ public sealed partial class DreamRunnerTests : IDisposable
         record.Outcome.Should().Be("aborted");
         record.Check.Should().Be("run_removal_limit");
         Disk().Should().Equal(before);
-        _git.Calls.Should().BeEmpty();
+        _git.Calls.Select(RecordingProcessRunner.SubCommand).Should().NotContain(["add", "commit", "push"], "only read-only preflight queries ran");
     }
 
     [Fact]

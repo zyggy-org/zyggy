@@ -99,4 +99,106 @@ public sealed class GitClientTests
         result.Succeeded.Should().BeFalse();
         result.Stderr.Should().Contain("[rejected]");
     }
+
+    [Fact]
+    public async Task AnyCommand_IndexLockThenSuccess_RetriedWithTwoSecondBackoff()
+    {
+        // Arrange
+        var clock = new FakeTimeProvider();
+        var times = new List<DateTimeOffset>();
+        _processes.Hook = _ =>
+        {
+            times.Add(clock.GetUtcNow());
+            return null;
+        };
+        var locked = RecordingProcessRunner.Fail(128, "fatal: Unable to create '/srv/memory/.git/index.lock': File exists.");
+        _processes.On("commit", locked, locked, RecordingProcessRunner.Ok());
+        var client = new GitClient(_processes, new GitClientOptions(), clock);
+
+        // Act
+        var task = client.CommitOnlyAsync(Repo, "m", ["a"], TestContext.Current.CancellationToken);
+        while (!task.IsCompleted)
+        {
+            clock.Advance(TimeSpan.FromSeconds(1));
+            await Task.Delay(1, TestContext.Current.CancellationToken);
+        }
+
+        var result = await task;
+
+        // Assert
+        result.Succeeded.Should().BeTrue();
+        times.Should().HaveCount(3);
+        (times[1] - times[0]).Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(2));
+        (times[2] - times[1]).Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task AnyCommand_IndexLockFourTimes_ReturnsGitError()
+    {
+        // Arrange
+        var clock = new FakeTimeProvider();
+        var locked = RecordingProcessRunner.Fail(128, "fatal: Unable to create '.git/index.lock': File exists.");
+        _processes.On("add", locked, locked, locked, locked, RecordingProcessRunner.Ok());
+        var client = new GitClient(_processes, new GitClientOptions(), clock);
+
+        // Act
+        var task = client.AddAsync(Repo, ["a"], TestContext.Current.CancellationToken);
+        while (!task.IsCompleted)
+        {
+            clock.Advance(TimeSpan.FromSeconds(1));
+            await Task.Delay(1, TestContext.Current.CancellationToken);
+        }
+
+        var result = await task;
+
+        // Assert
+        result.Succeeded.Should().BeFalse();
+        _processes.CallsOf("add").Should().HaveCount(4);
+    }
+
+    [Fact]
+    public async Task Rebase_UsesAutoStashOntoOriginBranch()
+    {
+        // Act
+        await Client().FetchAsync(Repo, TestContext.Current.CancellationToken);
+        await Client().RebaseAsync(Repo, "main", TestContext.Current.CancellationToken);
+        await Client().RebaseAbortAsync(Repo, TestContext.Current.CancellationToken);
+
+        // Assert
+        _processes.Calls.Select(c => string.Join(' ', c.Arguments)).Should().Equal(
+            "fetch origin", "-c rebase.autoStash=true rebase origin/main", "rebase --abort");
+    }
+
+    [Fact]
+    public async Task UnpushedCommitSubjects_ParsesRevList()
+    {
+        // Arrange
+        _processes.On("rev-list", RecordingProcessRunner.Ok("commit 1111\ndream 2026-10-03\ncommit 2222\nmanual edit\n"));
+
+        // Act
+        var subjects = await Client().UnpushedCommitSubjectsAsync(Repo, "main", TestContext.Current.CancellationToken);
+
+        // Assert
+        subjects.Should().Equal("dream 2026-10-03", "manual edit");
+        _processes.Calls.Single().Arguments.Should().Equal("rev-list", "--format=%s", "origin/main..HEAD");
+    }
+
+    [Fact]
+    public void Push_NeverForce()
+    {
+        // Assert: no git command line in the client source can force a push.
+        var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Zyggy.Core", "Git", "GitClient.cs"));
+        source.Should().NotContain("--force").And.NotContain("\"-f\"").And.NotContain("\"+");
+    }
+
+    private static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Zyggy.slnx")))
+        {
+            dir = dir.Parent;
+        }
+
+        return dir!.FullName;
+    }
 }
