@@ -951,7 +951,7 @@ Fixture bodies (`tests/fixtures/graph/`): `token-ok.json`, `token-invalid-client
 
 ## Step R6 — Central runs the D7 template: the instance carries the `actions` block and "How actions are confirmed", the runbook and 0002 describe D7, the three D6 consent files are deleted, the OneDrive grant is `write` (named SharePoint sites stay `read`), and after one `claude-remote` restart the server loads exactly the 17 tools with the ask rules, the guard and the log hook live (AC-5, AC-6)
 
-- [ ] Done *(checked by the executor when the owner reports and the evidence is in 0002)*
+- [x] Done *(checked by the executor when the owner reports and the evidence is in 0002)* — 2026-10-04: AC-6 pass (settings read on the VM; probe 16 = AC-25); AC-5 not run (fact-3 branch, OneDrive stays `read`, owner at Gate R-A).
 
 **Tag**: [agent, laptop] (instance, runbook, 0002) + [agent, VM] (pull, file deletion — authorised at Gate R-A) + [owner, browser] (Graph Explorer) + [owner, vm/azureadmin] (restart) + [owner, vm/zyggy] (probe). Runbook 13-D7a, 13-D7b.
 
