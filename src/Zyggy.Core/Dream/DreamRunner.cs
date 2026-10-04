@@ -251,8 +251,9 @@ public sealed partial class DreamRunner
                 case BatchAborted aborted:
                     spent += aborted.CostUsd ?? 0m;
                     var abortedResult = "aborted:" + DreamCheckWire.ToWire(aborted.Check);
-                    batches.Add(BatchRecord(Empty(batch), aborted.CostUsd, aborted.Turns, aborted.Duration, abortedResult));
-                    LogBatch(run.Id, batches.Count, abortedResult, batch.Lines.Count);
+                    batches.Add(BatchRecord(Empty(batch), aborted.CostUsd, aborted.Turns, aborted.Duration, abortedResult) with { Detail = aborted.Detail });
+                    var abortedDetail = aborted.Detail ?? "-";
+                    LogBatchRefused(run.Id, batches.Count, abortedResult, batch.Lines.Count, abortedDetail);
                     batchState = batchState.OnAttributableFailure(_options, batch.Lines[0].Hash);
                     if (Quarantine(ref batchState, batch, set, quarantine, quarantined))
                     {
@@ -541,6 +542,9 @@ public sealed partial class DreamRunner
 
     [LoggerMessage(Level = LogLevel.Information, Message = "dream {Run} batch {Number}: {Result} ({Lines} lines)")]
     private partial void LogBatch(string run, int number, string result, int lines);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "dream {Run} batch {Number}: {Result} ({Lines} lines): {Detail}")]
+    private partial void LogBatchRefused(string run, int number, string result, int lines, string detail);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "dream {Run} committed {Sha}")]
     private partial void LogCommitted(string run, string sha);

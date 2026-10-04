@@ -293,6 +293,46 @@ public sealed class DreamChecksTests : IDisposable
         Aborts(DreamCheck.ConcurrentEdit, Valid(), carried: new HashSet<string> { "private/people/carol.md" });
 
     [Fact]
+    public async Task CheckBatch_RemoveNearlyExistingLine_DetailNamesFileEditNearestLineAndDistanceWithoutFactText()
+    {
+        // Arrange: the old line differs from the file's line by one character.
+        var proposal = Valid().Edit("private/people/carol.md", remove: [("- [stated] 2026-09-28: Carol is my sister!", "expired")]);
+
+        // Act
+        var (outcome, _) = await RunAsync(proposal);
+
+        // Assert
+        var aborted = outcome.Should().BeOfType<BatchAborted>().Subject;
+        aborted.Check.Should().Be(DreamCheck.EditMismatch);
+        aborted.Detail.Should().Be("remove #1 in private/people/carol.md (6 lines): old has 42 chars, nearest file line 6 at distance 1; exact text in no other file");
+        aborted.Detail.Should().NotContain("Carol is my sister");
+    }
+
+    [Fact]
+    public async Task CheckBatch_EveryRefusal_HasAFactFreeDetail()
+    {
+        // Arrange: a sample of refusals whose proposals carry fact text.
+        TestProposals[] proposals =
+        [
+            Valid().Edit("private/people/carol.md", append: ["- [stated] 2026-09-29: Carol's number is +32 470 12 34 56."]),
+            Valid().Edit("business/areas/zyggy.md", append: ["- [observed] 2026-09-29 [m365-mail 2026-09-29]: token ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 x."]),
+            Valid(withL1: false).Disposition("L1", "dropped", dropReason: "transient"),
+            Valid().Edit("private/people/carol.md", append: ["- [inferred] 2026-09-29: Carol likes tea."]),
+        ];
+
+        foreach (var proposal in proposals)
+        {
+            // Act
+            var (outcome, _) = await RunAsync(proposal);
+
+            // Assert
+            var detail = outcome.Should().BeOfType<BatchAborted>().Subject.Detail;
+            detail.Should().NotBeNullOrEmpty();
+            detail.Should().NotContain("Carol").And.NotContain("ghp_").And.NotContain("470").And.NotContain("tea");
+        }
+    }
+
+    [Fact]
     public async Task CheckBatch_EarlierBatchKept_WhenLaterBatchAborts()
     {
         // Arrange

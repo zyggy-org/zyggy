@@ -3,7 +3,14 @@ using Zyggy.Core.Memory;
 namespace Zyggy.Core.Dream;
 
 /// <summary>What applying a proposal did.</summary>
-internal sealed record ApplyResult(bool EditMismatch, int FilesCreated, int FilesEdited, int CategoriesCreated);
+internal sealed record ApplyResult(bool EditMismatch, int FilesCreated, int FilesEdited, int CategoriesCreated)
+{
+    /// <summary>The first edit whose <c>old</c> line was not found (kept in memory only; the record gets a fact-free detail).</summary>
+    public EditMismatchInfo? Mismatch { get; init; }
+}
+
+/// <summary>Which edit missed: the file, <c>remove</c>/<c>replace</c>/<c>edit</c>, its 1-based index, and the old line.</summary>
+internal sealed record EditMismatchInfo(string Path, string Kind, int Index, string Old);
 
 /// <summary>
 /// Applies a filing proposal to a working set, in memory only (Appendix B "Apply"): new categories, then creates, then edits
@@ -40,11 +47,17 @@ internal static class ProposalApplier
 
         var edited = 0;
         var mismatch = false;
+        EditMismatchInfo? first = null;
         foreach (var edit in proposal.Edits)
         {
             if (Resolve(snapshot, edit.Path) is not { } path || set.Text(path) is not { } text)
             {
-                mismatch |= Resolve(snapshot, edit.Path) is not null;
+                if (Resolve(snapshot, edit.Path) is { } missing)
+                {
+                    mismatch = true;
+                    first ??= new EditMismatchInfo(missing, "edit", 1, string.Empty);
+                }
+
                 continue;
             }
 
@@ -60,17 +73,23 @@ internal static class ProposalApplier
             }
 
             var lines = file.BodyLines.ToList();
-            foreach (var remove in edit.Remove)
+            for (var i = 0; i < edit.Remove.Count; i++)
             {
-                mismatch |= !lines.Remove(remove.Old);
+                if (!lines.Remove(edit.Remove[i].Old))
+                {
+                    mismatch = true;
+                    first ??= new EditMismatchInfo(path, "remove", i + 1, edit.Remove[i].Old);
+                }
             }
 
-            foreach (var replace in edit.Replace)
+            for (var i = 0; i < edit.Replace.Count; i++)
             {
+                var replace = edit.Replace[i];
                 var at = lines.IndexOf(replace.Old);
                 if (at < 0)
                 {
                     mismatch = true;
+                    first ??= new EditMismatchInfo(path, "replace", i + 1, replace.Old);
                 }
                 else
                 {
@@ -100,7 +119,7 @@ internal static class ProposalApplier
             edited++;
         }
 
-        return new ApplyResult(mismatch, created, edited, categories);
+        return new ApplyResult(mismatch, created, edited, categories) { Mismatch = first };
     }
 
     private static readonly Dictionary<string, string> Empty = new(StringComparer.Ordinal);

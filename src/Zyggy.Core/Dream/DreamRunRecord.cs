@@ -96,7 +96,11 @@ public sealed record DreamBatchRecord(
     decimal? CostUsd,
     int? Turns,
     long DurationMs,
-    string Result);
+    string Result)
+{
+    /// <summary>Gets the fact-free detail of a refused batch (file, edit, line id, counts or pattern name), when aborted.</summary>
+    public string? Detail { get; init; }
+}
 
 /// <summary>One compression call.</summary>
 /// <param name="Path">The compressed file (a path, never its content).</param>

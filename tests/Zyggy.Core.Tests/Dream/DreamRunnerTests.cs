@@ -179,6 +179,21 @@ public sealed partial class DreamRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Run_AbortedBatch_RecordCarriesTheFactFreeDetail()
+    {
+        // Arrange
+        ObservedInbox(3);
+        _responses.Enqueue(Bad());
+
+        // Act
+        var record = await Runner().RunAsync(DreamTrigger.Manual, TestContext.Current.CancellationToken);
+
+        // Assert
+        record.Batches.Single().Detail.Should().Be("edit auto/MEMORY.md");
+        File.ReadAllText(Path.Combine(State, "dream-runs.jsonl")).Should().Contain("\"detail\":\"edit auto/MEMORY.md\"");
+    }
+
+    [Fact]
     public async Task Run_ClaudeErrorAfterAcceptedBatch_PartialWithReason()
     {
         // Arrange

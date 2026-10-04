@@ -36,7 +36,11 @@ internal sealed record BatchAccepted(DreamBatch Batch, DreamProposal Proposal, B
     : BatchOutcome;
 
 /// <summary>The proposal broke a rule; nothing of the batch was kept.</summary>
-internal sealed record BatchAborted(DreamCheck Check, decimal? CostUsd, int? Turns, TimeSpan Duration) : BatchOutcome;
+internal sealed record BatchAborted(DreamCheck Check, decimal? CostUsd, int? Turns, TimeSpan Duration) : BatchOutcome
+{
+    /// <summary>The fact-free detail of the refusal (file, line id, counts or pattern name).</summary>
+    public string? Detail { get; init; }
+}
 
 /// <summary>The model call failed; nothing of the batch was kept.</summary>
 internal sealed record BatchFailed(RunFailureReason Reason, string Detail, decimal? CostUsd, int? Turns, TimeSpan Duration) : BatchOutcome;
@@ -97,14 +101,14 @@ internal sealed class DreamFiler(IModelRunner model, DreamPrompts prompts, TimeP
 
             if (DreamProposalParser.Parse(result.StructuredOutput) is not { } proposal)
             {
-                return new BatchAborted(DreamCheck.FormatInvalid, result.CostUsd, result.NumTurns, result.Duration);
+                return new BatchAborted(DreamCheck.FormatInvalid, result.CostUsd, result.NumTurns, result.Duration) { Detail = "structured output does not match the filing schema" };
             }
 
             var candidate = set.Clone();
             var applied = ProposalApplier.Apply(proposal, snapshot, candidate, context.RunDate);
             if (DreamChecks.CheckBatch(batch, proposal, set, candidate, applied, context) is { } check)
             {
-                return new BatchAborted(check, result.CostUsd, result.NumTurns, result.Duration);
+                return new BatchAborted(check.Check, result.CostUsd, result.NumTurns, result.Duration) { Detail = check.Detail };
             }
 
             set.Adopt(candidate);
