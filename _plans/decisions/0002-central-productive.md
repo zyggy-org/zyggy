@@ -122,7 +122,7 @@ Spec: `_specs/23-m365-mail-onedrive.md` · Plan: `_plans/23-m365-mail-onedrive.m
   `autoMemoryDirectory`, `enabledMcpjsonServers`, `env`, `permissions`; 600 `zyggy`), clean tree; Central steps from 13a on.
 - Closed 2026-10-04 by the owner ("close 23 except for this [the download gap] … Rest is okay"; remaining live tests
   waived: "I made enough test and it works"). Morning brief stays off ("Close, brief stays off"): built and CI-tested,
-  unit/timer not installed — switching it on is a separate follow-up. Download-root deploy on Central pending the owner.
+  unit/timer not installed — switching it on is a separate follow-up. Download-root fix deployed and verified on Central 2026-10-04 (b81afd3; live download test passed).
 
 ### Probe findings (facts 1–8)
 
@@ -469,7 +469,7 @@ Deviations found during execution (23):
   template `835aab8` (lib `zy_m365_run_dir`/`zy_m365_download_root`; `brief.sh`, `files-backfill.sh` use it;
   `mcp-server.sh` refuses to start without it; SKILL/security rule name it with an absolute `outputPath`; suite
   290/290, CI 37199793521 green), instance `425f0f9` (both units: `ExecStartPre=+install -d …`, `ReadWritePaths` +=
-  the root; CI 37200006723 green). **Central deploy pending the owner (root)**: the agent's run-command was refused by
+  the root; CI 37200006723 green). **Deployed by the owner 2026-10-04 (first start failed 226/NAMESPACE: systemd sets up ReadWritePaths= before ExecStartPre; fixed in b81afd3 with "-/path"); verified: live download-bytes-to-file into the root, 819 bytes, 0600, removed** (originally pending the owner): the agent's run-command was refused by
   the auto-mode classifier.
 
 ## Costs
