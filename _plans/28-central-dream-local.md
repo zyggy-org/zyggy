@@ -928,7 +928,7 @@ If step 5 or 6 does not end `committed`/`partial`, **stop**: do not arm the time
 
 ## Step 18 — Three consecutive nights run, commit and push by themselves; a fact remembered on day N is in its category file after the nightly run of day N+1; the backlog shrinks to zero (or a stated remainder); requests during a nightly run are served after it without overlap; the digest stays within its caps; the secret grep is clean; the founding-spec wording is present; 0002 §28 and the roadmap record it all
 
-- [ ] Done
+- [x] Done — **carried to 33 (owner decision 2026-10-05)**: not executed here. The three-night evidence (AC-31..AC-36, AC-39 and the AC-34 re-measure) is collected by 33's Central steps (plan 33 Steps 21–22) on the .NET version; the nightly timer keeps running meanwhile. Owner, verbatim: "Before you implement I permit you to break and finish open work of preceding plans here in .Net so that we've in the end a clean slate with all finished work. In anyway the open items in other plans are all nearly finished with last test, you can test this later in the .net version."
 
 **Scope** *(agent, read-only on Central via `az vm run-command`; edits in this repo only)*:
 - Evidence collection after ≥ 3 nights:
@@ -971,10 +971,12 @@ If step 5 or 6 does not end `committed`/`partial`, **stop**: do not arm the time
 
 *Executor: STOP here. Present the results and WAIT for user approval.*
 
-- [ ] Behavioral verification: 0002 §28 table with every AC-30..AC-39 row dated and sourced (run record line, journal excerpt, commit sha); the three nightly commits; the traced day-N fact; inbox remainder; digest byte counts; secret grep output (count 0).
-- [ ] Contract review: AC-1..AC-39 → step map below all ticked; `ROADMAP.md` #28 definition of done ticked item by item; W-1..W-12 present in the founding spec.
-- [ ] ⚠️ Risk review: GDPR (no contact details, no mail bodies in `origin/main` history); work boundary intact (nothing from the employer's work laptop on Central); thresholds still adequate per OQ-6 (record any proposed tightening in 0002, no code change).
-- [ ] User approved — deliverable 28 is done
+*Closed 2026-10-05 by owner decision (quoted at Step 18). The behavioural evidence below is carried to 33's Central steps (plan 33 Steps 21–22); the boxes record the closure, not a performed check.*
+
+- [x] Behavioral verification: 0002 §28 table with every AC-30..AC-39 row dated and sourced (run record line, journal excerpt, commit sha); the three nightly commits; the traced day-N fact; inbox remainder; digest byte counts; secret grep output (count 0). — **carried to 33 (owner decision 2026-10-05)**; AC-30, AC-37, AC-38 already pass.
+- [x] Contract review: AC-1..AC-39 → step map below all ticked; `ROADMAP.md` #28 definition of done ticked item by item; W-1..W-12 present in the founding spec. — AC-1..AC-30, AC-37, AC-38 covered by Steps 1–17; AC-31..AC-36 and AC-39 **carried to 33 (owner decision 2026-10-05)**.
+- [x] ⚠️ Risk review: GDPR (no contact details, no mail bodies in `origin/main` history); work boundary intact (nothing from the employer's work laptop on Central); thresholds still adequate per OQ-6 (record any proposed tightening in 0002, no code change). — the history grep (AC-36) is **carried to 33 (owner decision 2026-10-05)**.
+- [x] User approved — deliverable 28 is done — 2026-10-05, owner: "Before you implement I permit you to break and finish open work of preceding plans here in .Net so that we've in the end a clean slate with all finished work. In anyway the open items in other plans are all nearly finished with last test, you can test this later in the .net version."
 
 ---
 

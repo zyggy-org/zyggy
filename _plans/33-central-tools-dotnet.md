@@ -2,7 +2,7 @@
 
 ## Overview
 
-After this deliverable `zyggy` has the verbs `memory remember` and `m365 check | token-test | cert-init | auth-header | mcp-server | guard | log | verify | state | facts | parse | brief | mail-backfill | files-backfill`. Each one reproduces the script it replaces in the `zyggy-core` template (`D:\source\zyggy-core\.claude\`): same arguments, exit codes, stdout/stderr texts, files and refusals. The certificate client assertion, the per-connection token, the guard before every send or move, the action log, the Draft audit and the secret-pattern refusal each become one .NET implementation, tested on both CI runners. The template keeps only thin launchers. The binary is installed on Central only after 28's third night is recorded. The plan implements `_specs/33-central-tools-dotnet.md` (approved 2026-10-05, zero Open Questions; its Decision Table, Contracts, parity table and AC-1..AC-45 are binding). Founding-spec sections: §1, §3, §6, §7, §8, §9, §10, §11, §12, §13, §14. The W33-1..W33-8 wording comes from the 33 spec; this plan never edits `_specs/00 …`.
+After this deliverable `zyggy` has the verbs `memory remember` and `m365 check | token-test | cert-init | auth-header | mcp-server | guard | log | verify | state | facts | parse | brief | mail-backfill | files-backfill`. Each one reproduces the script it replaces in the `zyggy-core` template (`D:\source\zyggy-core\.claude\`): same arguments, exit codes, stdout/stderr texts, files and refusals. The certificate client assertion, the per-connection token, the guard before every send or move, the action log, the Draft audit and the secret-pattern refusal each become one .NET implementation, tested on both CI runners. The template keeps only thin launchers. The binary is installed on Central in Step 21, once Gates A–I are approved; the wait for 28's third night is gone, because 28 was closed on 2026-10-05 by the owner's clean-slate decision (see "Where the work happens"). The Central steps also re-run, on the new binary, the live checks carried over from 02, 23, 27 and 28 (Step 23). The plan implements `_specs/33-central-tools-dotnet.md` (approved 2026-10-05, zero Open Questions; its Decision Table, Contracts, parity table and AC-1..AC-45 are binding). Founding-spec sections: §1, §3, §6, §7, §8, §9, §10, §11, §12, §13, §14. The W33-1..W33-8 wording comes from the 33 spec; this plan never edits `_specs/00 …`.
 
 > **Plan approved by the owner 2026-10-05** ("approved"), with the recommended answers to the planner's questions: (1) the stdin slash-command check on Central is run by the owner (probe script) or by the agent once `az vm run-command` is allowed — it only blocks Step 18; (2) the first release with these verbs is `v0.2.0`; (3) the labelled test fact written in Step 21 is left for the dream to file like any other fact (not undone — removing inbox lines would disturb the dream's ledger).
 
@@ -41,7 +41,7 @@ After this deliverable `zyggy` has the verbs `memory remember` and `m365 check |
 | G — Brief and backfills | 15, 16, 17 | `zyggy m365 brief`, `mail-backfill`, `files-backfill` run the model through `IModelRunner` with the D7 deny lists, resume the shell's checkpoints, stop cleanly on a signal | 🛑 after Step 17 (⚠️ shared contract `IModelRunner`) |
 | H — Prompt on the command line (**conditional**) | 18 | Only if the Central check shows a `/skill` prompt on stdin is not expanded: the three m365 runs pass the prompt as the argument, as the scripts do | 🛑 after Step 18 |
 | I — Template and instance call the verbs | 19, 20 | The template has only thin launchers, settings and skills name `zyggy` verbs, template CI drives them against a stub; the instance carries the units and a version check; runbook and 0002 are ready | 🛑 after Step 20 |
-| J — Central runs the binary | 21, 22 | After 28's third night: released, installed, pinned; the guard refuses a hidden-recipient send live; one attended brief; the owner's one live send; secret sweep clean | 🛑 after Step 21 (⚠️ first live security controls) · 🛑 after Step 22 (definition of done) |
+| J — Central runs the binary | 21, 22, 23 | Once Gates A–I are approved: released, installed, pinned; the guard refuses a hidden-recipient send live; one attended brief; the owner's one live send; secret sweep clean; the live checks carried over from 02, 23, 27 and 28 re-run on the new binary and recorded | 🛑 after Step 21 (⚠️ first live security controls) · 🛑 after Step 23 (definition of done, covers Steps 22–23) |
 
 Every step ends with PROVE = `dotnet build Zyggy.slnx` · `dotnet test Zyggy.slnx` · `dotnet format Zyggy.slnx --verify-no-changes`, all green locally (Windows). Linux is proven by CI on both runners at each gate. Steps 19–22 also need the `zyggy-core` bats/CI and instance CI.
 
@@ -51,12 +51,18 @@ Fake = behaviour through the seams (IProcessRunner, IModelRunner, ISecretStore, 
 Wire = the real edge: the built zyggy binary, real files and modes, the real ProcessRunner, tools/fake-claude, a fake markitdown,
 a fake MCP server, in-process verbs over a stubbed Graph handler.
 Gate placement: one per slice, plus one extra after Step 21 (first live security controls on Central).
+Slice J's final gate sits after Step 23 (carried-over live checks, added 2026-10-05 by the clean-slate decision).
 33 does not close a §12 phase: no Gates/P<n>_*.cs slice.
 -->
 
 ---
 
-## Where the work happens (branch choice) and the parallel run with 28
+## Where the work happens (branch choice) and the former parallel run with 28
+
+**Update 2026-10-05 (owner's clean-slate decision, `ROADMAP.md` #33 "Clean slate"):** "Before you implement I permit you to break and finish open work of preceding plans here in .Net so that we've in the end a clean slate with all finished work. In anyway the open items in other plans are all nearly finished with last test, you can test this later in the .net version." 02, 23, 27, 28 and 32 are Done; 28's final gate is ticked. Their open live checks are carried into this plan's Central steps (Step 23; the 32 ones go to 34). Consequences for this plan:
+- **Lifted:** the wait for 28's third night (old rule 4) and the "shell writers not swapped while 28's nights are measured" reason of old rule 5. The binary may be installed on Central as soon as this plan's own Gates A–I allow (Step 21).
+- **Still in force:** inbox fact lines byte-identical to today's (rule 4 below); the dream keeps reading and hashing them.
+- **Unchanged:** the branch. All work stays on `feature/33-m365-verbs` until Step 21, where the branch is merged to `main` and `v0.2.0` is tagged from `main`, once Gates A–I are approved.
 
 **Choice: a branch, not additive-on-`main`.** All 33 work lives on `feature/33-m365-verbs`, in each of the three repositories:
 
@@ -65,18 +71,18 @@ Gate placement: one per slice, plus one extra after Step 21 (first live security
 - **`zyggy-geoffrey`.** Same branch name.
 
 **Why a branch:**
-- Constraint (2) of the parallel run says a release cut for a 28 fix must not carry unfinished 33 behaviour. On `main`, any `v*` tag for a 28 fix would ship half-built m365 verbs in the binary that the dream runs every night.
-- On a branch, `main` stays exactly 28 until 28 closes.
-- The template and instance branches keep Central from pulling launchers that need a binary it does not have yet.
+- A release cut for a dream fix must not carry unfinished 33 behaviour. On `main`, any `v*` tag for a dream fix would ship half-built m365 verbs in the binary that the dream runs every night.
+- On a branch, `main` stays exactly the released dream code until Step 21.
+- The template and instance branches keep Central from pulling launchers that need a binary it does not have yet (binary before template, Executor note 2).
 
-**Rules while 28 is open** (from `ROADMAP.md` #33 "Parallel-run constraints" and spec Behaviors):
-1. **A 28 fix always goes first.** It lands on `main` (bugfix agent or a 28 plan step) and is released from `main`. The 33 branch then merges `main` in, never the other way round.
+**Rules until the merge in Step 21** (from `ROADMAP.md` #33 "Parallel-run constraints" as amended by the clean-slate decision, and spec Behaviors):
+1. **A dream fix always goes first.** It lands on `main` (bugfix agent) and is released from `main`. The 33 branch then merges `main` in, never the other way round.
 2. **Shared code changes only additively**: new optional members and new types. This covers `src/Zyggy.Core/{Processes,Models,Memory,Git,Secrets}/`, `src/Zyggy.Cli/{CliApplication,CliEnvironment,ExitCodes}.cs` and the release workflow. No 28 assertion is edited or deleted.
 3. **28's suites are checked at every gate**: `git diff main...HEAD -- tests/Zyggy.Core.Tests/{Dream,Models,Runs,Memory,Git} tests/Zyggy.Integration/{Dream,Models,Processes,Memory,Cli}` shows only added files or added test methods (AC-2).
-4. **Nothing is installed on Central and no pin changes** until 28's final gate (its Step 18, the third night recorded) is approved. Step 21 checks this first.
-5. **The shell writers on Central are not swapped while 28's nights are measured.** The template and instance branches are merged only in Step 21.
+4. **Inbox fact lines stay byte-identical** to the shell writers' (Steps 1–4 goldens); the dream hashes them into its ledger. This rule outlives the merge.
+5. **Nothing is installed on Central and no pin changes before Step 21**, and the template and instance branches are merged only there. The reason is now the install order (binary → pin → pull), no longer 28's nights.
 
-**Merge to `main`**: Step 21, after rule 4 holds. It is a merge of the branch (CI green on the PR). The tag then comes from `main`.
+**Merge to `main`**: Step 21, once Gates A–I are approved (Gate H is approved even when Step 18 was skipped, per its own text). It is a merge of the branch (CI green on the PR). The tag then comes from `main`.
 
 ---
 
@@ -105,7 +111,7 @@ Gate placement: one per slice, plus one extra after Step 21 (first live security
 
 ## Step 1 — A fact the owner states becomes byte-for-byte the same inbox line and file as `remember.sh` writes; an existing inbox file keeps every byte except its `updated:` value; a secret-shaped fact or source is refused by name, never echoed (in-process verb, temp memory tree)
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Verbs/VerbIo.cs` *(create, public sealed record)*: `VerbIo(TextReader In, TextWriter Out, TextWriter Error, bool InputRedirected)` + `static VerbIo FromConsole()`. Out and Error write UTF-8 without BOM with `\n` newlines. It is the console of every 33 verb, so in-process tests capture exact bytes.
@@ -177,7 +183,7 @@ Gate placement: one per slice, plus one extra after Step 21 (first live security
 
 ## Step 2 — `zyggy memory remember` works from the built binary with the script's exit codes 0/2/3/4, silent under `ZYGGY_HOOKS=off`, never runs git, and the CLI routes the 33 verbs to their own argument parsers while `dream` and `memory digest` behave exactly as before
 
-- [ ] Done
+- [x] Done
 
 **Scope**:
 - `src/Zyggy.Cli/RawVerbs.cs` *(create, internal static)*: `bool TryDispatch(string[] args, CliEnvironment environment, out Task<int> run)`. Raw verbs: `memory remember …` → `RememberVerb`; `m365 …` → `M365VerbHost` (registered from Step 4 on; until then `m365` falls through to System.CommandLine, which exits 2). The verb receives the remaining tokens **unchanged**, `--` included, so its own parser reproduces the script's usage texts and exit 4. Raw verbs build no generic host (AC-7).
@@ -1387,11 +1393,11 @@ No earlier step depends on this outcome. Steps 15–17 deliver the prompt on std
 
 ---
 
-## Step 21 — After 28's third night is recorded, the release is installed on Central exactly like 28's (checksum, root-owned, pinned, previous version kept), then the template and instance are pulled and the server restarted once; the agent proves the binary there: `check`, a backfill that reads the shell's checkpoint, the probe, the guard refusing a hidden-recipient send, and one `remember` from a session
+## Step 21 — Once Gates A–I are approved, the release is installed on Central exactly like 28's (checksum, root-owned, pinned, previous version kept), then the template and instance are pulled and the server restarted once; the agent proves the binary there: `check`, a backfill that reads the shell's checkpoint, the probe, the guard refusing a hidden-recipient send, and one `remember` from a session
 
 - [ ] Done
 
-**Precondition (check first):** `_plans/28-central-dream-local.md` final 🛑 HUMAN GATE "definition of done for deliverable 28" is approved (its boxes `[x]`, owner's words quoted). If not: STOP and report. Do not merge, tag or install (parallel-run rule 4). If a 28 fix is pending, it goes first.
+**Precondition (check first):** this plan's Gates A–I are approved (their boxes `[x]`). If not: STOP and report; do not merge, tag or install (rule 5). There is no wait for 28: 28 was closed on 2026-10-05 by the owner's clean-slate decision and its final gate is ticked (`ROADMAP.md` #28 Done); its remaining night checks are Step 23's C28-* items. If a dream fix is pending, it goes first (rule 1).
 
 **Scope** (agent; `az vm run-command` as root, git and `zyggy` as `runuser -u zyggy -- …`; binary transfer per 28 Executor note 1):
 1. **This repository:**
@@ -1409,6 +1415,7 @@ No earlier step depends on this outcome. Steps 15–17 deliver the prompt on std
 4. **Units:**
    - `install -m 644` the two unit files, `systemctl daemon-reload`;
    - `systemctl restart zyggy-m365-mcp.service` once;
+   - `systemctl restart claude-remote` once, after the server restart, so the remote session loads the pulled `.mcp.json` (`headersHelper` = `zyggy m365 auth-header`; the old `mcp-auth-header.sh` is gone after the pull) and the new hook launchers. Record the log line `resuming <session id>` (same id as before the restart): this is also the evidence for Step 23's VM-C2;
    - the brief unit and timer **not enabled**;
    - `systemctl show -p ExecStart` recorded.
 5. **AC-41 checks, agent-run, recorded with output excerpts (no token, no mail content):**
@@ -1420,7 +1427,7 @@ No earlier step depends on this outcome. Steps 15–17 deliver the prompt on std
      - the result's `permission_denials` names the send tool with the guard's reason `m365-guard: refused: Bcc is not allowed`;
      - `zyggy m365 check --counts` before and after shows no new Sent Items entry (a Graph read of Sent Items count by the agent through `check`, or recorded as the owner's look in Outlook if `check` cannot show it);
      - `actions.jsonl` has no new row.
-   - One `remember` from a session: a `claude -p` session asks to remember a clearly labelled test fact; `inbox/remember-<date>.md` gains the line written by `zyggy memory remember`.
+   - One `remember` from a session: a `claude -p` session asks to remember a clearly labelled test fact; `inbox/remember-<date>.md` gains the line written by `zyggy memory remember`. Record the date (day N) and the line's text: Step 23's C28-AC32 follows this fact into its category file after night N+1.
 6. **Record** 0002 section 33 rows AC-40, AC-41 with dates; commit this repo.
 
 If any of steps 3–5 fails: **stop**. Do not continue to Step 22. Roll back per runbook 14c (previous symlink, previous instance commit), record, report at the gate.
@@ -1439,6 +1446,7 @@ If any of steps 3–5 fails: **stop**. Do not continue to Step 22. Roll back per
 **VERIFY** (all recorded in 0002 §33 with dates):
 - AC-40: install inspection (`stat`, `sha256sum` = pin), unit `ExecStart`, server active.
 - AC-41: the four checks above with excerpts.
+- `claude-remote` active after its restart, log `resuming <same session id>` (kept for VM-C2).
 - CI run ids of the three repositories.
 
 **REFACTOR** *(these instructions are for the executor, not the planner)*:
@@ -1459,6 +1467,7 @@ If any of steps 3–5 fails: **stop**. Do not continue to Step 22. Roll back per
   - The backfill picked up the shell's checkpoint.
   - A request to send mail with a hidden recipient was refused by the guard, and nothing was sent.
   - A fact remembered in a session landed in the inbox.
+  - The remote session came back on the same conversation after its restart.
 - [ ] Contract review: the units, settings and pin match the spec. The brief timer is still off. The template was pulled only after the binary was installed.
 - [ ] ⚠️ Risk review:
   - The guard, the action log and the token helper are now the binary's on Central.
@@ -1475,24 +1484,25 @@ If any of steps 3–5 fails: **stop**. Do not continue to Step 22. Roll back per
 **Scope**:
 - **Attended brief (decision 2, agent-run):**
   - `systemctl start zyggy-morning-brief.service` once (the unit's own environment), or `runuser -u zyggy -- /usr/local/bin/zyggy m365 brief` with the unit's environment.
-  - Record: one "Zyggy — morning brief" Draft (possibly reply Drafts) in Drafts (`zyggy m365 check --counts` → `zyggy-drafts`), `audit ok`, the journal line, the `brief.jsonl` row.
+  - Record: one "Zyggy — morning brief" Draft (possibly reply Drafts) in Drafts (`zyggy m365 check --counts` → `zyggy-drafts`), `audit ok`, the journal line, the `brief.jsonl` row, and `systemd-analyze security zyggy-morning-brief.service` (exposure score; also C23-AC12 run 1).
   - The timer stays off; `systemctl is-enabled zyggy-morning-brief.timer` → `disabled`.
 - **Live send (decision 1, owner-run):**
-  - The executor asks the owner to send, from the phone, a short mail to the owner's own second address through Zyggy, and to allow the one permission prompt once.
-  - The agent then checks `actions.jsonl`: one new row, `status: ok`, recipients = that address, written by the new code (the row's timestamp is after the install).
+  - The executor asks the owner to send, from the phone, a short mail to the owner's own second address through Zyggy, after at least 95 minutes without any m365 use (so it also proves C23-AC27), and to allow the one permission prompt once.
+  - The agent then checks `actions.jsonl`: one new row, `status: ok`, recipients = that address, written by the new code (the row's timestamp is after the install), and exactly one prompt reported by the owner.
 - **Idle token (AC-42):** after ≥ 95 minutes without m365 use, a mail question in a session is answered without any owner action. The journal shows `zyggy-m365: token minted` from the helper.
 - **Dream on the new version (AC-40):** the next nightly `dream` record is `committed` (or `nothing_to_do`) and pushed, with the new version in its record.
-- **Secret sweep (AC-43, 23 AC-23/AC-29 scope):**
-  - memory, both checkouts, settings, units, `~/.local/state/zyggy`, journal including `-t zyggy-m365`, `~/.claude.json`, `~/.claude/debug/`, transcripts, credential paths;
+- **Secret sweep (AC-43; also carried C23-AC22 and C23-AC29):**
+  - memory, both checkouts (the whole instance tree), settings, units, `~/.local/state/zyggy` (incl. `actions.jsonl`), journal including `-t zyggy-m365`, `~/.claude.json`, `~/.claude/debug/`, transcripts, `~/.npm`, credential paths;
   - `ps -eo args` sampled during a token refresh;
   - patterns from `secret-patterns.txt` + a JWT pattern (`eyJ[A-Za-z0-9_-]+\.`) + `BEGIN .*PRIVATE KEY`;
-  - result count 0.
-- **`/doctor prompt-audit`** on Central (AC-39 C): clean.
+  - result count 0 (documented false positives listed by path and pattern, never by value);
+  - key `600`, cer `644`; `systemctl show -p LoadCredential -p InaccessiblePaths zyggy-m365-mcp.service zyggy-morning-brief.service` = the spec Contracts.
+- **`/doctor prompt-audit`** on Central (AC-39 C; also carried C23-AC23): clean with the m365 rules; `wc -l` of every file under `.claude/rules/` ≤ 200.
 - **This repository:**
   - 0002 §33 rows AC-42, AC-43, AC-45 dated;
   - "Tools on Central" row;
-  - `_plans/ROADMAP.md` #33 → Done (date, commits, CI run ids);
   - a read-only check that `_specs/00 …` contains W33-1..W33-8 (applied by the owner). If any is missing, list it at the gate. **Do not edit `_specs/00 …`.**
+  - `_plans/ROADMAP.md` #33 is set to Done in Step 23, not here.
 
 **Seams**: none (evidence on the real system).
 
@@ -1502,7 +1512,7 @@ If any of steps 3–5 fails: **stop**. Do not continue to Step 22. Roll back per
 
 **Contract impact**: none.
 
-**VERIFY**: AC-42 (brief Draft + audit ok + journal; owner's send + one `ok` row; idle answer), AC-43 (sweep count 0), AC-40 (dream on the new version), AC-39 (prompt audit), AC-45 (W33 present or listed).
+**VERIFY**: AC-42 (brief Draft + audit ok + journal + `systemd-analyze security` recorded; owner's send after ≥ 95 min idle + one prompt + one `ok` row; idle answer), AC-43 (sweep count 0; `LoadCredential`/`InaccessiblePaths` = Contracts), AC-40 (dream on the new version), AC-39 (prompt audit; every rule file ≤ 200 lines), AC-45 (W33 present or listed). These records are reused by Step 23 for C23-AC12 (run 1), C23-AC22, C23-AC23, C23-AC27 and C23-AC29.
 
 **REFACTOR** *(these instructions are for the executor, not the planner)*:
 - Analyse the produced code with `@code-analysis` and fix any new issues before proceeding to the next step.
@@ -1511,7 +1521,129 @@ If any of steps 3–5 fails: **stop**. Do not continue to Step 22. Roll back per
 
 ---
 
-## 🛑 HUMAN GATE — end of Slice J — **definition of done for deliverable 33** *(covers Step 22)*
+## Step 23 — The live checks carried over from 02, 23, 27 and 28 are re-run on the new binary and recorded: the VM soak holds on day 7, the dream files a fact the night after it was told on three nights in a row, every consent and guard check passes from the phone and on Central, the brief and backfill drills pass, and every original row points to its result
+
+- [ ] Done *(ticked when every non-conditional item below has a dated result — pass, or fail with its record — and every conditional item is either run or recorded as not run (owner decision))*
+
+**Origin**: owner's clean-slate decision of 2026-10-05 (`ROADMAP.md` #33 "Carried into 33's Central evidence"; 0001 VM soak; 0002 §§23, 27, 28). The ids are the project manager's. The 32 items go to 34, not here. "D7 form" = consent by a Claude Code permission prompt and `actions.jsonl` (the D6 terminal path no longer exists).
+
+**Who runs what** (column "Who" below):
+- **Agent, read-only**: reads on Central through `az vm run-command` (git and `zyggy` reads as `runuser -u zyggy -- …`), Azure read-only queries, and files in this repository. Nothing on Central changes.
+- **Agent-run**: the agent starts a `zyggy` verb or a `claude -p` probe on Central as `zyggy`, as in Step 21 (Assumption 11). Never a send, a move, a tenant change or a touch of the real key.
+- **Owner-run**: only the owner can do it: sends and prompts on the phone or claude.ai, the Exchange audit-log search (`Search-UnifiedAuditLog` in Exchange Online PowerShell — Cloud Shell or local pwsh, as 0002 §23 AC-4), the Entra and Microsoft 365 admin portals, spot-checking backfill lines, revoking the Graph Explorer consent, moving the real key. When Step 22 is done, the executor sends the owner **one numbered list** of every owner-run item with what to report back, not one request per item.
+- **Conditional**: needs the owner to switch the morning-brief timer on. "When the owner switches the timer on; otherwise recorded as not run (owner decision)." It never blocks the final gate.
+
+**Dates**: VM-C1 is checked on or after 2026-10-06. C28-AC31 needs three consecutive nights (they may straddle the install; the night after Step 21 also serves Step 22's AC-40). C28-AC32 needs the night after Step 21's test fact. The executor waits for these dates without stopping at a gate. If a date has not come when everything else is recorded, it reports the item with its next date at the gate.
+
+**Where results go**:
+- VM-*: the "Day 7 result" cell of the named row in `_plans/decisions/0001-transport-and-vm.md` "VM soak".
+- All other ids: one row each in a new subsection "Carried-over live checks" of 0002 section 33 (columns: Id · Who · Date · Evidence excerpt · Result · Original row). The original row's Result cell gets a pointer `→ 0002 §33 <id>, <date>, <result>`.
+- Records hold counts, ids, exit codes and metadata only. No token, key, mail subject, body or third-party address; the owner's own addresses only.
+
+**Scope** (items; "Step 21/22 record" = filled from that step's evidence, no second run):
+
+*VM soak (from 02)*
+
+| Id | Who | What is done; VERIFY | Evidence row |
+|----|-----|----------------------|--------------|
+| VM-C1 | Agent read-only; owner confirms one fact | On or after 2026-10-06: `systemctl is-active claude-remote` → `active`; a headless `claude -p` run that day exits 0 (`soak.jsonl` or the dream's run record); the owner confirms no `/login` since day 0. Pass = all three. | 0001 "Authenticated after VM reboot" |
+| VM-C2 | Agent-run (Step 21 record) | Step 21's `systemctl restart claude-remote`: log `resuming <id>` with the id in use before the restart. With the two restarts already recorded, ≥ 2 restarts in the soak window. | 0001 "Remote control resumed …" |
+| VM-C3 | Agent read-only | `soak.jsonl` lines since 2026-09-29 19:00 UTC: count with `exit 0` ≥ 7, none non-zero; count and last timestamp recorded. If the soak timer no longer runs, the dream's nightly `claude -p` records are counted too and named as such. | 0001 "Headless `claude -p` runs" |
+| VM-C4 | Agent read-only + owner-run | Agent: Cost Management forecast for the current month (`az` read-only) ≤ €60, amount and date recorded. Owner: names where the budget alert lives (scope, name, threshold), or that none exists — then the result is "fail: no alert", recorded for the owner's decision. | 0001 "Monthly cost forecast ≤ €60" |
+| VM-C5 | Agent read-only | After a backfill run and a dream night with the m365 server active: `free -m`, `swapon --show` (swap used ≤ 200 MB), `journalctl -k --since 2026-09-29` OOM-kill lines = 0. | 0001 "4 GB RAM sufficient" |
+| VM-C6 | Agent read-only | `az network nsg rule list --nsg-name central-nsg …` → 0 custom rules; `ss -tlnp` on Central → `zyggy m365 mcp-server`'s child on `127.0.0.1:47365` only. | 0001 "Nothing listens on the internet" |
+
+*Remote session (from 27)*
+
+| Id | Who | What is done; VERIFY | Evidence row |
+|----|-----|----------------------|--------------|
+| C27-1 | Owner-run | The first fresh (not resumed) remote-control session after the install is listed in claude.ai with the title `Zyggy`; the owner reports it. | 0002 §27 session-title line (AC-36) + §33 row |
+
+*Dream (from 28)*
+
+| Id | Who | What is done; VERIFY | Evidence row |
+|----|-----|----------------------|--------------|
+| C28-AC31 | Agent read-only | Three consecutive nightly run records exit 0, each with a `dream YYYY-MM-DD` commit on `origin/main` of the memory repo; run ids, dates, SHAs and binary versions recorded. | 0002 §28 AC-31 |
+| C28-AC32 | Agent read-only | Step 21's labelled test fact (day N): after night N+1, its text is in a category file on `origin/main`, and the same `dream` commit changes that category file and the ledger with the line's hash (`git show --stat <sha>`). | 0002 §28 AC-32 |
+| C28-AC33 | Agent read-only | Per-run counts and cost of every run since 2026-10-05 copied from the run records into §28 "Runs"; unconsumed inbox lines = 0, or the remainder stated with its count and date. | 0002 §28 AC-33 + "Runs" |
+| C28-AC34 | Agent read-only | After the backlog is 0 (or at the stated remainder): digest section sizes measured as on 2026-10-05 (identity / index / daily) ≤ 6,000 / 6,000 / 8,000 bytes. | 0002 §28 AC-34 |
+| C28-AC35 | Agent-run | While `zyggy-dream.service` is active (the nightly run, or an on-demand run started by a first request), `runuser -u zyggy -- zyggy dream request`. Journal: the second run starts after the first ends, trigger `on-demand`, no `locked` record, no overlap. | 0002 §28 AC-35 |
+| C28-AC36 | Agent read-only | 28 AC-36's secret and contact-detail patterns over the memory repo `origin/main` contents (`git grep`) and history (`git log -p`) → 0 hits (false positives by path only). | 0002 §28 AC-36 |
+| C28-AC39 | Agent read-only | `_specs/00 …` contains the W-1..W-12 texts of the 28 spec; missing ones listed at the gate. Never edited. | 0002 §28 AC-39 |
+
+*Tenant and application (from 23)*
+
+| Id | Who | What is done; VERIFY | Evidence row |
+|----|-----|----------------------|--------------|
+| C23-AC1 | Owner-run | From the Microsoft 365 admin centre: number of users and mailboxes, licence tier, Exchange plan; nothing changed in the tenant. | 0002 §23 Tenant facts row + AC-1 |
+| C23-AC3 | Owner-run | Entra → `zyggy-central` → Authentication: "Allow public client flows" = No. | 0002 §23 AC-3 |
+| C23-AC5 | Owner-run | The owner revokes his Graph Explorer `Sites.FullControl.All` consent and reports the date. The `zyggy-central` site grant (`read`) is untouched: agent-run `zyggy m365 check --counts` still lists the OneDrive afterwards. | 0002 §23 AC-5 |
+
+*Consent and guard (from 23, D7 form)*
+
+| Id | Who | What is done; VERIFY | Evidence row |
+|----|-----|----------------------|--------------|
+| C23-D7-AC7 | Owner-run + agent read-only | Owner, to his own second address: one send from claude.ai **allowed**, one send (phone or claude.ai) **denied**; each prompt shows recipients, subject and body. Step 22's phone send counts as the phone Allow. Agent: `actions.jsonl` +1 `ok` row per Allow, none for the Deny. | 0002 §23 D7 AC-7 |
+| C23-D7-AC8 | Owner-run + agent read-only | Owner picks "Don't ask again" on one send prompt (if offered); the next send request prompts again. Agent: no `allow` rule for a send or move tool appeared in `.claude/settings*.json` on Central. If one did, the result is fail, reported at the gate. | 0002 §23 D7 AC-8 |
+| C23-D7-AC11 | Owner-run + agent-run | Owner: one move to Archive and one soft delete (to Deleted Items) of his own mails, each prompted once. Agent: one `actions.jsonl` row each; a `claude -p` probe asking for a move to `recoverableitemsdeletions` ends with `permission_denials` naming the move tool with the guard's reason; no new row. | 0002 §23 D7 AC-11 |
+| C23-D7-AC12 | Agent-run | Step 21's Bcc probe plus five `claude -p` probes (attachment, HTML body, 5,000-character body, 11 recipients, `SaveToSentItems: false`), recipients only the owner's own addresses. Each: `permission_denials` names the send tool with the guard's specific reason; `actions.jsonl` unchanged; Sent Items count unchanged (`zyggy m365 check --counts`). | 0002 §23 D7 AC-12 |
+| C23-AC27 | Owner-run (Step 22 record) | Step 22's send after ≥ 95 min idle: one prompt, one send, one `ok` row. | 0002 §23 D7 AC-27 |
+| C23-AC28 | Owner-run + agent read-only | Owner, in a VM shell as `zyggy`, after a `token minted` journal line: renames `~/.config/zyggy/m365-app.key` away, asks a mail question at the next connection → the failure names the runbook entry "Token refresh failed"; renames it back → the next question works without a restart. Agent: journal `-t zyggy-m365` lines; key `600` with mtime unchanged afterwards; R10: `mcp-wrapper.sh` absent from both checkouts on Central and named nowhere in `.mcp.json` or settings (removed by Steps 19/21). | 0002 §23 D7 AC-28 |
+| C23-AC29 | Agent read-only (Step 22 record) | Step 22's sweep including `ps -eo args` during a token refresh: 0 hits in journals, `~/.claude.json`, debug logs, transcripts, `ps`. | 0002 §23 D7 AC-29 |
+
+*Brief and backfills (from 23)*
+
+| Id | Who | What is done; VERIFY | Evidence row |
+|----|-----|----------------------|--------------|
+| C23-AC12 | Agent-run (Step 22 record) · runs 2–5 **conditional** | Run 1 = Step 22's attended brief: journal summary line, one brief Draft, ≤ N reply Drafts, no send/move/delete, `audit ok`, `systemd-analyze security` recorded. Runs 2–5: when the owner switches the brief on; otherwise recorded as not run (owner decision). | 0002 §23 D7 AC-12 |
+| C23-AC13 | **Conditional** | Three consecutive timer runs as AC-12, one brief naming a OneDrive file edited the day before, a same-day manual start answers `already created`. When the owner switches the timer on; otherwise recorded as not run (owner decision). | 0002 §23 D7 AC-13 |
+| C23-AC14 | Owner-run + agent read-only | Owner: `Search-UnifiedAuditLog -Operations Send,Move,MoveToDeletedItems,SoftDelete,HardDelete -FreeText <app id>` from the install to the check, counts by operation. Agent: `actions.jsonl` rows by tool, status and time. Pass = every app `Send`/`Move` matches one row and vice versa, none inside a timer run (vacuous while the timer is off), no `SoftDelete`/`HardDelete`. | 0002 §23 D7 AC-14 |
+| C23-AC15 | Agent-run | Wrong key: a throwaway RSA key in a `mktemp -d` directory, `ZYGGY_M365_KEY_FILE=<it> zyggy m365 brief` outside the unit, on a day with no brief Draft yet → exit 6 `invalid_client`, no `claude` process, no Draft, no row. Then `zyggy m365 token-test` without the override → `token ok`. Expiry drill: a temporary copy of the instance configuration with `cert.expires` 10 days ahead → `zyggy m365 check` warns; in the past → exit 3. The temporary directory is deleted; the real key is never touched. | 0002 §23 D7 AC-15 |
+| C23-AC16 | Owner-run + agent-run | Owner sends a canary mail from an external account (planted instruction to mail an external address) before a brief run. Agent: one attended brief → `audit ok`, or `audit FLAGGED` naming the external address; `zyggy m365 verify` shows no Draft to it; `actions.jsonl` unchanged. Owner: the brief lists the canary as data and proposes "ignore/report". | 0002 §23 D7 AC-16 |
+| C23-AC17 | Agent-run (Step 21 record) + agent read-only | Step 21's mail backfill: SIGINT (130) and `resuming folder …` if work remained. Messages processed = folder totals from `check --counts` minus the excluded folders (± boundary). If no work remained, the interruption is recorded as "not possible: backfill already done"; resume is then proven by the shell's checkpoint read in Step 21 and by Step 17's tests. | 0002 §23 D7 AC-17 |
+| C23-AC18 | Owner-run | The owner reads ≥ 30 random lines (`shuf -n 30`, run by the owner on the VM) of the mail-backfill inbox file, or of its lines already filed by the dream, and reports "facts only" or the line numbers that are not. The agent never prints the lines. | 0002 §23 D7 AC-18 |
+| C23-AC19 | Agent-run + owner-run | Agent: `zyggy m365 files-backfill` once, SIGINT and `resuming drive …` if work remains (otherwise as C23-AC17); `zyggy m365 check --drive <the ungranted drive id of 0002 §23 AC-6>` → 403 (not granted). Owner: three OneDrive files' version histories show no new version since before the run. | 0002 §23 D7 AC-19 |
+| C23-AC21 | Agent read-only | After the runs, `git -C memory status --porcelain` shows only paths the 28 layout leaves uncommitted between dream runs (`inbox/` is untracked and does not appear); any other path is listed at the gate. | 0002 §23 D7 AC-21 |
+
+*Secrets, rules and records (from 23)*
+
+| Id | Who | What is done; VERIFY | Evidence row |
+|----|-----|----------------------|--------------|
+| C23-AC22 | Agent read-only (Step 22 record) | Step 22's sweep scope (instance tree, memory, settings, units, `~/.local/state/zyggy`, journal, `~/.npm`, transcripts): 0 hits; `LoadCredential=`/`InaccessiblePaths=` = Contracts; key `600`, cer `644`. | 0002 §23 D7 AC-22 |
+| C23-AC23 | Agent-run (Step 22 record) | Step 22's `/doctor prompt-audit` clean with the m365 rules; every rule file ≤ 200 lines. | 0002 §23 D7 AC-23 |
+| C23-AC24 | Agent (this repository) | 0002 §23 has Tenant facts (with C23-AC1), the Credentials row, MCP servers, Tools, Settings and the P0b row complete; `grep -n pending` over §23 and §33 → only conditional items. | 0002 §23 D7 AC-24 |
+| C23-ACTLOG | Agent read-only + owner (C23-AC14) | For each month with actions: sends ok, moves ok and errors counted from `actions.jsonl`; the audit-log column and "Unmatched" from C23-AC14. | 0002 §23 "Actions log" |
+| C23-TOOLS | Agent read-only | `node --version`, `npm --version` as `zyggy`; the `zyggy` row with the Step 21 version, hash and path. | 0002 "Tools on Central" |
+| C23-COSTS | Agent read-only (+ owner for sizes the binary cannot show) | Brief cost and turns from `brief.jsonl`; backfill totals from their journal counts lines; mailbox size from `check --counts` folder totals; drive size from the owner's look in the admin centre if `check` does not show it. | 0002 "Costs" (23 line) |
+
+**Close-out** (after the table is complete):
+- `_plans/ROADMAP.md` #33 → Done (date, commits, CI run ids, and a one-line summary of the carried-over results, conditional items named).
+- 0002 P0b checklist row for 33.
+- Commit this repository.
+
+**Seams**: none (evidence on the real system and in this repository).
+
+**RED**: before this step, each id above appears in 0001/0002 as "carried to 33" with no result.
+
+**GREEN**: rows filled from records, pointers added. A failing check is recorded with its evidence and reported at the gate. Its fix is a new bugfix or plan step, not part of this one.
+
+**Contract impact**: none. ⚠️ Owner-run actions touch the real mailbox (sends to the owner's own addresses, one move, one soft delete) and the real key (C23-AC28 rename and back). The agent never touches either.
+
+**VERIFY**:
+- Every non-conditional id has a dated result in its evidence row, and every original 0002 row carries its `→ 0002 §33` pointer. VM-* are in 0001's "Day 7 result" cells.
+- `grep -n "carried to 33" _plans/decisions/0001-transport-and-vm.md _plans/decisions/0002-central-productive.md` → every hit is followed by a result or pointer on the same row.
+- C23-AC13 and C23-AC12 runs 2–5 either have results or read "not run (owner decision): brief timer not switched on".
+- The records hold no token, key, mail subject, body or third-party address (agent re-reads its own added rows).
+- `_plans/ROADMAP.md` #33 reads Done.
+
+**REFACTOR** *(these instructions are for the executor, not the planner)*:
+- Analyse the produced code with `@code-analysis` and fix any new issues before proceeding to the next step.
+- Check the §9 design rules: no path building outside `BusPaths`, no `Process`/`HttpClient`/`claude`/GitHub/secret-store reference outside its seam implementation, no static mutable state, `JobRunner` never throws to the loop, log once per state change.
+- Optional: additional refactorings to improve clarity or align with patterns — only after RED-GREEN-VERIFY is complete for this step.
+
+---
+
+## 🛑 HUMAN GATE — end of Slice J — **definition of done for deliverable 33** *(covers Steps 22–23)*
 
 *Executor: STOP here. Present the results and WAIT for user approval.*
 
@@ -1521,12 +1653,20 @@ If any of steps 3–5 fails: **stop**. Do not continue to Step 22. Roll back per
   - A mail question after a long idle needed nothing from you.
   - The nightly dream keeps committing on the new version.
   - The secret sweep found nothing.
+  - The carried-over checks (Step 23):
+    - The VM soak held on day 7: still logged in, the remote session resumed, ≥ 7 headless runs, cost within budget, memory enough, nothing listening outside.
+    - The dream committed three nights in a row and filed the test fact the next night.
+    - Each consent and guard check passed: prompts from phone and claude.ai, Deny sends nothing, "Don't ask again" does not stick, six refusals before any prompt, the key drills, the audit log matching `actions.jsonl`.
+    - Your owner-run items are recorded: tenant facts, public client flows, the Graph Explorer consent revoked, the backfill spot-check, version histories.
 - [ ] Contract review:
   - Every acceptance criterion in the map below is ticked, with its source in 0002 section 33.
+  - Every carried-over id has a result in 0001/0002, with a pointer from its original row. The only exceptions are the brief-timer items, recorded as not run by your decision if the timer is still off.
   - The roadmap entry for 33 is marked done.
-  - The founding-spec wording W33-1..W33-8 is present, or the missing parts are listed for you.
+  - The founding-spec wording W33-1..W33-8 and W-1..W-12 is present, or the missing parts are listed for you.
 - [ ] ⚠️ Risk review:
   - No token, key or JWT anywhere on Central.
+  - The real key was moved only by you, and only for the drill; its mode and date are unchanged.
+  - The records hold no mail content.
   - The work boundary is unchanged: Central only, the Digiverse tenant only.
   - 34 can start on this foundation: the credential store table, the "replace the environment" option, the fact-line writer and the hygiene test rows.
 - [ ] User approved — deliverable 33 is done
@@ -1552,6 +1692,8 @@ If any of steps 3–5 fails: **stop**. Do not continue to Step 22. Roll back per
 | AC-13 | 7 | AC-28 | 3, 4 | AC-43 | 22 |
 | AC-14 | 7, 9 | AC-29 | 5, 6 | AC-44 | 20 |
 | AC-15 | 8 | AC-30 | 15, 17, (18), 22 | AC-45 | 22 |
+
+Carried-over live checks (not 33 ACs; owner's clean-slate decision 2026-10-05): VM-C1..VM-C6, C27-1, C28-AC31..AC36, C28-AC39 and the C23-* items → Step 23. Some reuse Step 21's records (VM-C2, C23-AC17, the Bcc probe of C23-D7-AC12) or Step 22's (C23-AC12 run 1, C23-AC22, C23-AC23, C23-AC27, C23-AC29).
 
 Parity table rows (spec) → steps:
 - `remember.sh` → 1, 2.
@@ -1590,14 +1732,15 @@ Parity table rows (spec) → steps:
 8. *(Gate G)* **SIGTERM/SIGINT of the brief and the backfills** is proven in-process (cancellation while fake-claude runs, no process left, run dir removed, 143/130) and by `SignalCancellation` unit tests. A binary-level signal test of a Graph-dependent verb would need a test switch in the binary, which the spec forbids. The live interruption on Central (Step 21) covers the rest. The `mcp-server` SIGTERM test is binary-level.
 9. *(Gate G)* **The model's tool calls** (state writes, facts, replied ids) are simulated in integration tests by `ActingModelRunner`, a test-only decorator over the real runner and fake-claude, as the bats `*-actions.sh` stubs did.
 10. *(Gate I)* **Tool data file names**: `.claude/skills/m365/tools/{enabled,excluded,actions,auth}.txt` + `server-version.txt`; one name per line, LF, sorted ordinal. The minimum binary version is `.claude/zyggy-min-version`.
-11. *(Gate J)* **The refusal probe and the session `remember`** are `claude -p` runs started by the agent on Central as `zyggy` in the instance checkout (spec AC-41 "agent-run"). This is the one place the agent starts `claude` itself, which 28 avoided.
+11. *(Gate J)* **The refusal probe and the session `remember`** are `claude -p` runs started by the agent on Central as `zyggy` in the instance checkout (spec AC-41 "agent-run"). Step 23's guard probes (C23-D7-AC11 `recoverableitemsdeletions`, the five further refusals of C23-D7-AC12) use the same form. These are the only places the agent starts `claude` itself, which 28 avoided. Each one asks for an action the guard refuses, so a probe never sends or moves anything.
 
 ## Notes for the executor
 
-1. **Branches.** Work on `feature/33-m365-verbs` in all three repositories. Keep a draft PR open in this repository so CI runs on both runners. Merge `main` into the branch whenever a 28 fix lands. Never merge the branch into `main` before Step 21's precondition holds.
+1. **Branches.** Work on `feature/33-m365-verbs` in all three repositories. Keep a draft PR open in this repository so CI runs on both runners. Merge `main` into the branch whenever a dream fix lands. Never merge the branch into `main` before Step 21's precondition (Gates A–I approved) holds; there is no wait for 28 any more.
 2. **Order on Central** (Step 21). Binary and pin first, then the template/instance pull, then the units and one server restart. Rollback is the reverse (runbook 14c). Never pull the template before the binary: the guard launcher would block every action with "zyggy not found", and the helper would fail every connection.
 3. **Root-run git and no hand edits.** Same as 28 note 3: `runuser -u zyggy -- git -C …`, never `git config --global` on the VM, never edit `memory/` by hand.
 4. **`az vm run-command`.** It was blocked once for the decision 7 check. If it is blocked in Step 21 or 22, that command becomes the owner's (runbook entry named); everything else stays with the agent.
 5. **Golden copies.** Byte-preserving copy and `git ls-files --eol tests/golden` → `i/-text` (28 note 5). Record the `zyggy-core` commit SHA the copies come from in `tests/golden/README.md`. Copy them before Step 19 deletes the template originals.
 6. **Do not edit** `_specs/00 …` (the owner applies W33-1..W33-8), the 33 spec's decision 7 placeholder (the main session fills it), or genome files.
 7. **Step 18 is conditional.** Read its precondition before anything else. If the decision 7 result is still pending when Gate G is approved, stop at Gate H and ask.
+8. **Step 23 (carried-over checks).** Collect the owner-run items in one numbered message after Step 22, not one by one. Dated items (VM-C1, C28-AC31, C28-AC32) are waited for without a gate. The brief-timer items are never a reason to hold the final gate: if the timer is off, they are recorded as not run (owner decision). Do not add any 32 item here; those belong to 34.
