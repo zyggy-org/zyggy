@@ -1,0 +1,6 @@
+mcp__m365__get-shared-mailbox-message
+mcp__m365__list-shared-mailbox-folder-messages
+mcp__m365__list-shared-mailbox-messages
+Bash(zyggy m365 state *)
+Bash(zyggy m365 facts *)
+Read(~/.local/state/zyggy/m365/**)

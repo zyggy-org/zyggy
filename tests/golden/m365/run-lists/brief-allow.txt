@@ -1,0 +1,18 @@
+mcp__m365__create-shared-mailbox-draft
+mcp__m365__create-shared-mailbox-reply-draft
+mcp__m365__download-bytes-to-file
+mcp__m365__get-drive-delta
+mcp__m365__get-drive-item
+mcp__m365__get-drive-root-item
+mcp__m365__get-shared-mailbox-message
+mcp__m365__get-sharepoint-site-drive-by-id
+mcp__m365__list-drive-item-versions
+mcp__m365__list-folder-files
+mcp__m365__list-shared-mailbox-folder-messages
+mcp__m365__list-shared-mailbox-messages
+mcp__m365__list-sharepoint-site-drives
+mcp__m365__search-onedrive-files
+Bash(zyggy m365 state *)
+Bash(zyggy m365 facts *)
+Bash(zyggy m365 parse *)
+Read(~/.local/state/zyggy/m365/**)

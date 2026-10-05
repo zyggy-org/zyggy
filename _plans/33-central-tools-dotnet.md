@@ -992,27 +992,27 @@ Slice J's final gate sits after Step 23 (carried-over live checks, added 2026-10
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification:
+- [x] Behavioral verification:
   - On Linux the server is started with exactly the shell's arguments and ten variables, with no token among them.
   - A stop signal from systemd reaches the server, and its exit code comes back.
   - The probe confirms the 401 and the exact tool list.
   - The headers helper prints one line on success, and on failure prints nothing on stdout and one fixed sentence on stderr, within 8 seconds.
   - The tool lists come from the data files, and the three run lists equal today's lists with each script rule replaced by its verb.
-- [ ] Contract review:
+- [x] Contract review:
   - D8 is unchanged: the token goes only to Claude Code on stdout, and the server never holds one.
   - The `ProcessSpec` option is additive. The partition lives in data files only.
-- [ ] ⚠️ Risk review:
+- [x] ⚠️ Risk review:
   - The token never appears in an argument list, a file, stderr or the journal (spy tests).
   - The process replacement (`execve`) is the one start outside the process runner.
   - The server is only accepted from `~/.local`.
   - 28's process tests are unchanged.
-- [ ] User approved — implementation may continue past this gate
+- [x] User approved — implementation may continue past this gate — 2026-10-05 owner: "approved"
 
 ---
 
 ## Step 15 — A model request can carry an explicit deny list, the result names the denied tools, and the morning brief runs its pre-flight, one model run, the result checks, the audit, one memory line and its journal line exactly as `brief.sh` (fake model, fake Graph reader)
 
-- [ ] Done
+- [x] Done
 
 **Scope**:
 - `src/Zyggy.Core/Models/ModelRunRequest.cs` *(modify, additive)*: `public IReadOnlyList<string> DisallowedTools { get; init; } = [];`.
@@ -1089,7 +1089,7 @@ Slice J's final gate sits after Step 23 (carried-over live checks, added 2026-10
 
 ## Step 16 — Both backfills loop, cap, checkpoint and resume exactly as the scripts do, read the checkpoint and watermark files the shell left on Central and continue where it stopped, and refuse to run unattended (fake model, fake Graph reader)
 
-- [ ] Done
+- [x] Done
 
 **Scope**:
 - `src/Zyggy.Core/M365/Runs/MailBackfillCheckpoint.cs`, `FilesBackfillCheckpoint.cs` *(create, internal)*: read with `JsonDocument` (unknown fields kept and written back), totals and per-folder/per-drive fields as the jq programs. Written 0600 as `.tmp` + rename. Not an object / no `folders` (`drives`) object → 3 `configuration error: <path> is not a checkpoint (zyggy m365 mail-backfill --reset starts again)`.
@@ -1165,7 +1165,7 @@ Slice J's final gate sits after Step 23 (carried-over live checks, added 2026-10
 
 ## Step 17 — The brief and both backfills run end to end through the real process runner and `tools/fake-claude`: the captured arguments carry the deny lists and the prompt arrives on stdin, a cancelled run leaves no model process and no run directory and exits 143/130, and from the binary the backfills refuse an unattended run and every model-run verb refuses a wrong pin before anything else
 
-- [ ] Done
+- [x] Done
 
 **Scope**:
 - `tools/fake-claude/scenarios/m365-brief-ok.jsonl`, `m365-brief-denials.jsonl`, `m365-mail-batch.jsonl`, `m365-mail-empty.jsonl`, `m365-files-batch.jsonl` *(create, hand-written)*: `system/init`, then a `result` whose `result` text ends with the counts line for the fixed test date (in-process tests use `FakeTimeProvider`). The denials scenario lists `permission_denials[].tool_name`. `tools/fake-claude/README.md` *(modify: one row per scenario)*.
@@ -1212,22 +1212,22 @@ Slice J's final gate sits after Step 23 (carried-over live checks, added 2026-10
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification:
+- [x] Behavioral verification:
   - A brief run through the stand-in model produces the same journal line, receipt and memory line as the shell.
   - One captured model call is shown: its deny list, and the prompt arriving on standard input.
   - A backfill picks up the shell's checkpoint and says "resuming folder …".
   - A stop in the middle of a run leaves no model process and no download folder, and the next run resumes.
   - From the binary: a wrong version pin stops all three verbs before anything is contacted.
-- [ ] Contract review:
+- [x] Contract review:
   - The three allow and deny lists equal today's, with the verb rules; the action tools are always denied.
   - The checkpoint, watermark, `brief.jsonl` and receipt files keep their shape.
   - The two additions to the model-runner contract are optional and leave the dream's argument list byte-identical.
-- [ ] ⚠️ Risk review:
+- [x] ⚠️ Risk review:
   - The shared model-runner contract changed additively only.
   - The run lists keep every send, upload and move denied.
   - Assumption 7 (64 MiB capture and a 2-hour run limit) is acknowledged.
   - The SIGTERM handling of these three verbs is proven in-process and will be proven live on Central (Assumption 8).
-- [ ] User approved — implementation may continue past this gate
+- [x] User approved — implementation may continue past this gate — 2026-10-05 owner: "approved"
 
 ---
 
@@ -1285,7 +1285,7 @@ No earlier step depends on this outcome. Steps 15–17 deliver the prompt on std
 
 ## Step 19 — The `zyggy-core` template keeps only thin launchers: the guard and log hooks call the binary and turn any failure into a block, settings and `.mcp.json` name the verbs, the tool lists are plain data files, the m365 and `remember` scripts and their bats suites are gone, and template CI proves the wiring against a `zyggy` stub — on the template branch, nothing merged
 
-- [ ] Done
+- [x] Done
 
 **Scope** (`D:\source\zyggy-core`, branch `feature/33-m365-verbs`):
 - **Create:**
@@ -1335,7 +1335,7 @@ No earlier step depends on this outcome. Steps 15–17 deliver the prompt on std
 
 ## Step 20 — The instance carries the units and settings that run the verbs and refuses a pin below the template's minimum; the runbook covers install, upgrade, rollback and every new failure mode; 0002 has a section 33 ready for evidence — on the instance branch, nothing merged, nothing on Central
 
-- [ ] Done
+- [x] Done
 
 **Scope**:
 - `D:\source\zyggy-geoffrey` (branch `feature/33-m365-verbs`):
@@ -1377,19 +1377,19 @@ No earlier step depends on this outcome. Steps 15–17 deliver the prompt on std
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification:
+- [x] Behavioral verification:
   - Template CI is green on its branch: the two hook launchers block on any failure, every documented command runs against the stub, and the remaining shell is listed with its reasons.
   - The instance branch refuses an old pin, as designed.
   - The runbook has an entry for every new failure mode.
-- [ ] Contract review:
+- [x] Contract review:
   - The settings deny every excluded tool and the seven token- and run-producing verbs, and ask for the three action tools.
   - `.mcp.json` names `zyggy m365 auth-header`.
   - The units run `/usr/local/bin/zyggy m365 …`, and the brief timer stays off.
   - The GitHub scripts are untouched.
-- [ ] ⚠️ Risk review:
+- [x] ⚠️ Risk review:
   - Mixed versions: the template now needs a minimum binary, and the instance check enforces it.
   - Nothing is merged and nothing has reached Central yet.
-- [ ] User approved — implementation may continue past this gate
+- [x] User approved — implementation may continue past this gate — 2026-10-05 owner: "Approved"
 
 ---
 

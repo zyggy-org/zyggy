@@ -40,6 +40,8 @@ internal sealed class StreamJsonReader(int maxBytes)
 
     public int PermissionDenials { get; private set; }
 
+    public IReadOnlyList<string> PermissionDenialTools { get; private set; } = [];
+
     public void Accept(string line)
     {
         ArgumentNullException.ThrowIfNull(line);
@@ -114,6 +116,9 @@ internal sealed class StreamJsonReader(int maxBytes)
             PermissionDenials = root.TryGetProperty("permission_denials", out var denials) && denials.ValueKind == JsonValueKind.Array
                 ? denials.GetArrayLength()
                 : 0;
+            PermissionDenialTools = denials.ValueKind == JsonValueKind.Array
+                ? [.. denials.EnumerateArray().Where(d => d.ValueKind == JsonValueKind.Object && d.TryGetProperty("tool_name", out var n) && n.ValueKind == JsonValueKind.String).Select(d => d.GetProperty("tool_name").GetString()!)]
+                : [];
             StructuredOutput = root.TryGetProperty("structured_output", out var structured) && structured.ValueKind != JsonValueKind.Null
                 ? structured.Clone()
                 : null;

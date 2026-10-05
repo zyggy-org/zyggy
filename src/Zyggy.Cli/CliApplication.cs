@@ -9,8 +9,16 @@ internal static class CliApplication
 {
     public static async Task<int> RunAsync(string[] args, CliEnvironment environment)
     {
-        var memory = new Command("memory", "Read the owner's memory.") { MemoryDigestCommand.Create(environment) };
-        var root = new RootCommand("Zyggy: the personal agent platform command line.") { memory, DreamCommand.Create(environment) };
+        if (RawVerbs.TryDispatch(args, environment, out var raw))
+        {
+            return await raw;
+        }
+
+        // Listed for --help only: RawVerbs runs it with its own argument parser.
+        var remember = new Command("remember", "Keep a fact the owner stated in the memory inbox (remember skill).");
+        var memory = new Command("memory", "Read the owner's memory.") { MemoryDigestCommand.Create(environment), remember };
+        var m365 = new Command("m365", "Microsoft 365 on Central: state, facts and the connector's tools (zyggy m365 <verb> ...).");
+        var root = new RootCommand("Zyggy: the personal agent platform command line.") { memory, DreamCommand.Create(environment), m365 };
         var parseResult = root.Parse(args);
         if (parseResult.Errors.Count > 0)
         {

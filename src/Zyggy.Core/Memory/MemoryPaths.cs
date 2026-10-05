@@ -68,6 +68,21 @@ public sealed partial class MemoryPaths
     /// <summary>Gets <c>.dream/pending.json</c>.</summary>
     public string Pending => Join(".dream", "pending.json");
 
+    /// <summary>Returns a file directly in <c>inbox/</c>, for example <c>remember-2026-09-30.md</c>.</summary>
+    /// <param name="fileName">The file name: no directory separator, not empty, not <c>.</c> or <c>..</c>.</param>
+    /// <returns>The absolute path.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="fileName"/> is not a plain file name.</exception>
+    public string InboxFile(string fileName)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(fileName);
+        if (fileName is "." or ".." || fileName.AsSpan().IndexOfAny(Separators) >= 0)
+        {
+            throw new ArgumentException($"'{fileName}' is not a plain file name.", nameof(fileName));
+        }
+
+        return Join("inbox", fileName);
+    }
+
     /// <summary>Returns <c>daily/YYYY-MM-DD.md</c>.</summary>
     /// <param name="date">The local date.</param>
     /// <returns>The absolute path.</returns>

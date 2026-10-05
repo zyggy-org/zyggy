@@ -11,6 +11,12 @@ public sealed record ProcessSpec(string FileName, IReadOnlyList<string> Argument
     /// <summary>Environment additions on top of the inherited environment; a <see langword="null"/> value removes the variable.</summary>
     public IReadOnlyDictionary<string, string?> Environment { get; init; } = ReadOnlyDictionary<string, string?>.Empty;
 
+    /// <summary>
+    /// Gets a value indicating whether the child's environment is exactly <see cref="Environment"/> (<see langword="null"/> values ignored)
+    /// instead of the inherited one plus additions. Default <see langword="false"/>: the 28 behaviour.
+    /// </summary>
+    public bool ReplaceEnvironment { get; init; }
+
     /// <summary>Text written to standard input as UTF-8 without a BOM, after which the stream is closed; <see langword="null"/> closes it at once.</summary>
     public string? StandardInput { get; init; }
 

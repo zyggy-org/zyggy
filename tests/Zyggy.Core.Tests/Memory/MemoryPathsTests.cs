@@ -130,4 +130,30 @@ public sealed class MemoryPathsTests
         // Assert
         act.Should().Throw<ArgumentException>();
     }
+
+    [Fact]
+    public void InboxFile_PlainName_IsInInbox()
+    {
+        // Act
+        var path = Paths.InboxFile("remember-2026-09-30.md");
+
+        // Assert
+        path.Should().Be(Path.Combine(Principal, "inbox", "remember-2026-09-30.md"));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(".")]
+    [InlineData("..")]
+    [InlineData("a/b.md")]
+    [InlineData("a\\b.md")]
+    [InlineData("../profile.md")]
+    public void InboxFile_NotAPlainName_Throws(string fileName)
+    {
+        // Act
+        var act = () => Paths.InboxFile(fileName);
+
+        // Assert
+        act.Should().Throw<ArgumentException>();
+    }
 }

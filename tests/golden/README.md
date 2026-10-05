@@ -60,3 +60,22 @@ Pasting `Zyggy.Core` output into a `.canonical` or `.sig` file is forbidden: tha
 ## `secret-patterns/` — the 27 secret patterns and their samples (deliverable 28)
 
 **Byte copies** of `zyggy-core` at `e0b8290`: `.claude/hooks/secret-patterns.txt`, `tests/fixtures/secret-samples.txt` (`name<TAB>text`; each must match exactly that pattern first) and `tests/fixtures/benign-samples.txt` (must match none). `SecretPatternsTests` applies them through `SecretPatterns`, which the dream checks use; Central reads the live file from the template (`ZYGGY_SECRET_PATTERNS`). Re-copy only from a newer `zyggy-core` commit and name it here.
+
+## `memory/remember/` — the `remember` oracle (deliverable 33)
+
+`inbox-after-remember.md` is a **byte copy** of `zyggy-core` `tests/expected/inbox-after-remember.md` at `f6010c9` (the five AC-27 variants of `remember.bats`, produced by `remember.sh` at `ZYGGY_NOW=2026-09-30T10:00:00Z`, `Europe/Brussels`). `RememberVerbTests` must reproduce it byte for byte: the dream hashes these lines into its ledger. Re-copy only from a newer `zyggy-core` commit and name it here.
+
+## `m365/` — the Microsoft 365 oracles (deliverable 33)
+
+**Byte copies** of `zyggy-core` at `5201115`, never produced by the code under test:
+
+- `m365/fixtures/**` ← `tests/fixtures/m365/**`, every file except the bats stubs `*.sh` (fact inputs, hook JSON, model results, tool lists).
+- `m365/graph/**` ← `tests/fixtures/graph/**` (the Graph and login responses the shell tests replay).
+- `m365/expected/**` ← `tests/expected/m365-*` (the shell's outputs: fact files, check output, journal lines, receipts).
+
+The `m365.bats` cases they serve were run at `ZYGGY_NOW=2026-09-30T10:00:00Z`, `Europe/Brussels`. Re-copy only from a newer `zyggy-core` commit, with a byte-preserving tool, and name the commit here.
+
+## `m365/tools/` and `m365/run-lists/` — the tool partition and the run lists (deliverable 33, Step 13)
+
+- `m365/tools/{enabled,excluded}.txt` are byte copies of `zyggy-core` `tests/fixtures/m365/{enabled,excluded}-tools.txt` at `5201115`; `actions.txt`, `auth.txt` and `server-version.txt` are written by hand from `ZY_M365_ACTION_TOOLS`, `ZY_M365_AUTH_TOOLS` and the pinned version in `m365-lib.sh`. These five files are also what the template ships as `.claude/skills/m365/tools/` (Step 19); the binary holds no copy (owner decision 8).
+- `m365/run-lists/{brief,mail-backfill,files-backfill}-{allow,deny}.txt` are derived by a shell script from those tool files with `m365-lib.sh`'s rules, each script rule replaced by its verb (`state.sh` → `Bash(zyggy m365 state *)`, `facts.sh`, `parse.sh` likewise; the common deny's `graph.sh` rule → the seven `Bash(zyggy m365 auth-header*)`, `token-test*`, `cert-init*`, `mcp-server*`, `brief*`, `mail-backfill*`, `files-backfill*` rules). The mail backfill's three read tools are taken in the enabled list's order (the binary picks them by the `list-/get-shared-mailbox-` prefix instead of a hard-coded list). Never produced by the code under test.

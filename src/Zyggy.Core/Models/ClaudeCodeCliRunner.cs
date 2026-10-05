@@ -153,5 +153,8 @@ internal sealed class ClaudeCodeCliRunner(IProcessRunner processes, IOptions<Cla
             reader.InputTokens,
             reader.OutputTokens,
             exitCode,
-            reader.PermissionDenials);
+            reader.PermissionDenials)
+        {
+            PermissionDenialTools = reader.PermissionDenialTools,
+        };
 }

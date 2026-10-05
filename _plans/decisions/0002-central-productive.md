@@ -14,6 +14,7 @@ secret-shaped sample is quoted truncated (`ghp…`).
 | 31 | Central reads the owner's GitHub account: read-only token and repository inventory | Done 2026-10-01 (final gate approved by the owner) | this file, section 31 |
 | 32 | Central clones and analyses the owner's repositories on request | Done 2026-10-02 (final gate approved by the owner; 8 pass, 2 partial, 5 not run by owner decision; O32 applied). The 7 partial/not-run rows are to be re-tested on the .NET version in 34 (owner decision 2026-10-05) | this file, section 32 |
 | 28 | Nightly dream pass on Central without the bus (nightly and on demand, in .NET) | Done 2026-10-05 by owner decision (Steps 1–17 done, 0.1.5 pinned, nightly timer running; the three-night evidence AC-31..AC-36, AC-39 carried to 33's Central steps) | this file, section 28 |
+| 33 | The Microsoft 365 tools and `remember` as `zyggy` verbs (the template keeps only thin launchers) | In progress — code done (Steps 1–17), template and instance branches ready (Steps 19–20, nothing merged); Central install and evidence pending (Steps 21–23) | this file, section 33 |
 | 29 | Telegram as Central's chat channel | Not started | |
 | 23 | Digiverse Microsoft 365 on Central: morning brief, reply Drafts, per-action-consented send/move/delete, mail and files backfills through an MCP server with an app-only certificate credential | Done 2026-10-04 (closed by the owner, live tests waived; morning brief off). Rows still "not run"/"partial" are to be re-tested on the .NET version in 33 (owner decision 2026-10-05) | this file, section 23 |
 | 30 | Social connectors on Central | Not started | |
@@ -317,6 +318,36 @@ Spec: `_specs/28-central-dream-local.md` · Plan: `_plans/28-central-dream-local
 | 2026-10-05 05:1x | on-demand (owner test) | partial `fact_not_found` (L62 filed into `business/areas/digiverse-company-car.md` without its full provenance) | 3 / 375 (2 accepted, 225) | — | 0 | 3.98 | `84fed00` |
 | 2026-10-05 06:0x | on-demand (0.1.5 check) | partial `edit_mismatch` (replace #2 in `business/areas/digiverse-insurance-pension.md`: old 318 chars, nearest line at distance 158, in no other file) | 2 / 225 (1 accepted, 75) | — | 0 | 2.33 | `7dd9f31` |
 
+## 33 — Microsoft 365 tools and `remember` as `zyggy` verbs
+
+Spec: `_specs/33-central-tools-dotnet.md` · Plan: `_plans/33-central-tools-dotnet.md` · Runbook: sections 13–14.
+
+- Owner decisions (2026-10-05): all eight analyst recommendations accepted; GitHub split into 34; clean slate — the
+  open rows of 02, 23 and 28 are re-tested here on the .NET version (plan Step 23, items `C23-*`, `C28-*`).
+- Decision 7 (prompt on stdin): a `/skill` prompt read from stdin by `claude -p` is expanded — checked on Central
+  2026-10-05 with Claude Code 2.1.289; plan Step 18 (prompt as the argument) skipped.
+- Release: pending (Step 21) — tag, CI run, `linux-x64` SHA-256, template `zyggy-core` and instance `zyggy-geoffrey`
+  commits, install time.
+- Template and instance before the install: `zyggy-core` branch `feature/33-m365-verbs` (`8dfc2a8`, `93e4279`; CI
+  37356220490 green); `zyggy-geoffrey` branch `feature/33-m365-verbs` (`46b1daf`; CI 37357542019 red only at the pin
+  check — instance pin `0.1.5` below the template's minimum `0.2.0`, by design until Step 21 raises the pin).
+
+### Acceptance criteria on Central (AC-40..AC-45)
+
+| AC | Criterion | Evidence (date, source, excerpt) | Result |
+|----|-----------|----------------------------------|--------|
+| AC-40 | Install: tagged release, `SHA256SUMS` checked, `/opt/zyggy/<version>/zyggy` root:root 0755, previous version kept, symlink switched, `instance/zyggy.json` bumped; then template and instance pulled, units reloaded, `zyggy-m365-mcp.service` restarted once | — | pending (Step 21) |
+| AC-41 | Agent-run checks on the installed binary: `zyggy m365 check`; one backfill that reads the shell's checkpoint and reports done or resumes; `zyggy m365 mcp-server --probe` = the allowlist; out-of-policy send (hidden Bcc to the owner's own address) refused by the guard, nothing sent, no `actions.jsonl` row; one `remember` from a session | — | pending (Step 21) |
+| AC-42 | Attended brief: `zyggy m365 brief` once by hand on Central (timer stays off) leaves a "Zyggy — morning brief" Draft; one real owner send from the phone | — | pending (Step 22) |
+| AC-43 | Secret sweep of Central after the install (23 AC-23/AC-29 scope) | — | pending (Step 22) |
+| AC-44 | Runbook sections 13–14 and the `remember` mentions updated verb for verb, with the m365 consequences of a missing or wrong binary and an entry per new failure mode | — | pending (Step 20 gate review) |
+| AC-45 | Founding-spec amendments W33-1..W33-8 accepted by the owner and applied by the owner to `_specs/00 …` | — | pending (owner) |
+
+### Carried-over checks (plan Step 23)
+
+Items `C23-*` (deliverable 23) and `C28-*` (deliverable 28) as listed in plan Step 23 — rows added there with their
+evidence.
+
 ## Repositories
 
 | repo | role (template/instance/memory) | owner | visibility | laptop checkout + remotes | VM clone path | remote alias | key (name, scope) |
@@ -372,6 +403,7 @@ Spec: `_specs/28-central-dream-local.md` · Plan: `_plans/28-central-dream-local
 | `node` / `npm` | pending (13e) — record carried to 33 (owner decision 2026-10-05), item C23-TOOLS | the VM's Node used by Claude Code (02) | runs the MCP server | pending (13e) — the server runs since 2026-10-03 (section 23 AC-6, AC-25) |
 | `openssl` | Ubuntu 24.04 | OS | `graph.sh` key pair and PS256 client assertion | pending (13a) |
 | `zyggy` (this repo, MIT) | 0.1.2 installed 2026-10-04, now 0.1.5 (section 28); the row's final values are recorded by 33's install, item C23-TOOLS | CI artefact `zyggy-linux-x64` of the release tag, SHA-256 pinned in `instance/zyggy.json`; `/opt/zyggy/<v>/zyggy` root:root 0755, symlink `/usr/local/bin/zyggy` | the dream pass (`zyggy-dream.service`) and the session digest (`session-start.sh` launcher) | pending (Step 17) |
+| `zyggy` for the m365 verbs (spec 33) | pending — `0.2.0` or later, at least the template's `.claude/zyggy-min-version` | as above | `zyggy m365 …` (the guard and log hooks, the MCP server unit, the headersHelper, the brief unit, the backfills) and `zyggy memory remember` | pending (33 Step 21) |
 
 ## Credentials on Central
 
