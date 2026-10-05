@@ -221,16 +221,16 @@ Slice J's final gate sits after Step 23 (carried-over live checks, added 2026-10
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: show that `zyggy memory remember` run by hand writes the same line and the same file bytes as the shell version. Show the copied oracle next to the test output, the secret refusal (stderr names the pattern, the value never appears), and `ZYGGY_HOOKS=off` staying silent. CI is green on both runners.
-- [ ] Contract review: the line format and the new-file front matter match spec AC-8/AC-9. Every exit code and usage text matches `remember.sh`, with only the usage line naming the verb. `dream` and `memory digest` still answer exactly as before.
-- [ ] ⚠️ Risk review: the dream hashes these lines, so byte identity is the safety net. 28's test folders gained files and methods only. The new public types are `VerbIo`, `RememberVerb` and `MemoryPaths.InboxFile`. The CLI change is additive and the routing table is small.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: show that `zyggy memory remember` run by hand writes the same line and the same file bytes as the shell version. Show the copied oracle next to the test output, the secret refusal (stderr names the pattern, the value never appears), and `ZYGGY_HOOKS=off` staying silent. CI is green on both runners.
+- [x] Contract review: the line format and the new-file front matter match spec AC-8/AC-9. Every exit code and usage text matches `remember.sh`, with only the usage line naming the verb. `dream` and `memory digest` still answer exactly as before.
+- [x] ⚠️ Risk review: the dream hashes these lines, so byte identity is the safety net. 28's test folders gained files and methods only. The new public types are `VerbIo`, `RememberVerb` and `MemoryPaths.InboxFile`. The CLI change is additive and the routing table is small.
+- [x] User approved — implementation may continue past this gate — 2026-10-05 owner: "approved"
 
 ---
 
 ## Step 3 — The model's named state (watermarks, cursors, replied ids) and its candidate facts are read and written exactly as `state.sh` and `facts.sh` do, files the shell wrote are read unchanged, and every refused fact is counted by reason and never echoed (in-process verbs)
 
-- [ ] Done
+- [x] Done
 
 **Scope**:
 - `src/Zyggy.Core/M365/M365Paths.cs` *(create, internal sealed)*:
@@ -309,7 +309,7 @@ Slice J's final gate sits after Step 23 (carried-over live checks, added 2026-10
 
 ## Step 4 — `zyggy m365 state` and `zyggy m365 facts` work from the built binary: the shell's state files on disk are read and advanced in place, facts read from stdin land in the inbox file, a cap stops at exit 5, and an unknown verb or option exits 4
 
-- [ ] Done
+- [x] Done
 
 **Scope**:
 - `src/Zyggy.Cli/RawVerbs.cs` *(modify)*: `m365 …` → `M365VerbHost`.
