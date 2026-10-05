@@ -113,6 +113,27 @@ public sealed class MailBackfillTests : IDisposable
         inbox["done"]!.GetValue<bool>().Should().BeFalse();
     }
 
+    [Fact]
+    public async Task Run_StoppedBySigterm_ExitCodeReadWhenTheRunStops()
+    {
+        // Arrange: the signal arrives after the run started
+        using var cancel = new CancellationTokenSource();
+        int? signal = null;
+        _run.Acts((_, _) =>
+        {
+            signal = 143;
+            cancel.Cancel();
+            throw new OperationCanceledException(cancel.Token);
+        });
+
+        // Act
+        var outcome = await new MailBackfill(_run.Session, _run.Partition, _run.Graph.Reader, _run.Model, _run.Graph.Clock)
+            .RunAsync(null, false, cancel.Token, () => signal);
+
+        // Assert
+        outcome.Exit.Should().Be(143);
+    }
+
     [Theory]
     [InlineData("""{"mail_backfill":{"budget_usd_total":0.15}}""", "budget 0.20 USD over cap 0.15")]
     [InlineData("""{"mail_backfill":{"max_facts":10}}""", "facts 10 at cap 10")]

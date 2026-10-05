@@ -37,7 +37,7 @@ internal sealed partial class BriefRun(M365Session session, M365ToolPartition pa
 
     private M365Paths Paths => session.Instance.Paths;
 
-    public async Task<RunOutcome> RunAsync(CancellationToken cancellationToken, int interruptedExit = 143)
+    public async Task<RunOutcome> RunAsync(CancellationToken cancellationToken, Func<int?>? signalExit = null)
     {
         var now = clock.GetUtcNow();
         var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, session.TimeZone).DateTime);
@@ -124,7 +124,7 @@ internal sealed partial class BriefRun(M365Session session, M365ToolPartition pa
         catch (OperationCanceledException)
         {
             RunDirectory.Remove(runDirectory);
-            return new RunOutcome(interruptedExit, _stdout, _stderr);
+            return new RunOutcome(signalExit?.Invoke() ?? 143, _stdout, _stderr);
         }
 
         RunDirectory.Remove(runDirectory);

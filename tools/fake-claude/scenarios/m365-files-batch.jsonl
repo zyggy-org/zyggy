@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","model":"fake-model-1","session_id":"fake-session-m365"}
+{"type":"result","subtype":"success","is_error":false,"duration_ms":72000,"num_turns":14,"result":"Batch read.\nfiles-backfill batch: listed 16, parsed 14, skipped 2 (type 0, size 0, path 0, parse error 2, secret pattern 0), facts 4 (0 dup, 0 refused)","session_id":"00000000-0000-0000-0000-000000000000","total_cost_usd":0.38,"permission_denials":[]}

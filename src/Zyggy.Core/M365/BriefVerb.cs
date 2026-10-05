@@ -34,7 +34,7 @@ internal sealed class BriefVerb(M365VerbContext context) : IM365Verb
 
         using var graph = setup.Session.CreateGraph(context);
         var outcome = await new BriefRun(setup.Session, setup.Partition, graph.Reader, setup.Model, context.Clock)
-            .RunAsync(cancellationToken, context.InterruptedExit()).ConfigureAwait(false);
+            .RunAsync(cancellationToken, context.SignalExit).ConfigureAwait(false);
         return await RunOutput.WriteAsync(io, outcome).ConfigureAwait(false);
     }
 }

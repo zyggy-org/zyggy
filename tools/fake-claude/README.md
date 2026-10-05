@@ -16,6 +16,11 @@ A compiled stand-in for the `claude` CLI, used by `tests/Zyggy.Integration`. It 
 | Concurrency | stateless; parallel invocations differ only by their capture path |
 | `scenarios/success-structured.jsonl` | `system/init` (`model: fake-model-1`), one `assistant` line, `result` `success` with `total_cost_usd: 0.0123`, `num_turns: 2`, `duration_ms: 1500`, `usage`, `permission_denials: []`, `structured_output: {"ok": true}` (spec 28) |
 | `scenarios/error.jsonl` | `system/init` and a `result` with `is_error: true`, `subtype: error_during_execution` (spec 28) |
+| `scenarios/m365-brief-ok.jsonl` | `system/init`, then the `result` of `tests/golden/m365/fixtures/claude-result-ok.json`: success, `total_cost_usd: 0.42`, `num_turns: 12`, text ending `brief 2026-09-30: mail 3, files 1, replies 1, suggestions 2, facts 4` (spec 33) |
+| `scenarios/m365-brief-denials.jsonl` | as `m365-brief-ok`, with `permission_denials[].tool_name` `mcp__m365__send-shared-mailbox-mail` (spec 33) |
+| `scenarios/m365-mail-batch.jsonl` | `system/init`, a success `result` ending `mail-backfill batch: messages 25, facts 4 (0 dup, 0 refused)`, `total_cost_usd: 0.42`, `num_turns: 9` (spec 33) |
+| `scenarios/m365-mail-empty.jsonl` | `system/init`, a success `result` `mail-backfill batch: messages 0, facts 0 (0 dup, 0 refused)`, `total_cost_usd: 0.03`, `num_turns: 2` (spec 33) |
+| `scenarios/m365-files-batch.jsonl` | `system/init`, a success `result` ending `files-backfill batch: listed 16, parsed 14, skipped 2 (type 0, size 0, path 0, parse error 2, secret pattern 0), facts 4 (0 dup, 0 refused)`, `total_cost_usd: 0.38`, `num_turns: 14` (spec 33) |
 | `scenarios/done.jsonl` | Three JSON lines (`system`/`init`, `assistant` with a `REPORT` section, `result` with `cost_usd`, `duration_ms`, `num_turns`, `is_error: false`), LF endings, final LF |
 
 Test-side helper: `tests/Zyggy.Integration/Infrastructure/FakeClaude.cs` (`ExecutablePath`, `ScenarioDirectory`, `ReadCapture`).

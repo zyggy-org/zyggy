@@ -13,7 +13,7 @@ internal sealed class MailBackfillVerb(M365VerbContext context) : IM365Verb
     public Task<int> RunAsync(IReadOnlyList<string> args, VerbIo io, CancellationToken cancellationToken) =>
         BackfillVerb.RunAsync(context, io, args, "mail-backfill", "--folder", async (setup, graph, item, reset) =>
             await new MailBackfill(setup.Session, setup.Partition, graph.Reader, setup.Model, context.Clock)
-                .RunAsync(item, reset, cancellationToken, context.SignalExit?.Invoke() ?? 130).ConfigureAwait(false));
+                .RunAsync(item, reset, cancellationToken, context.SignalExit).ConfigureAwait(false));
 }
 
 /// <summary>
@@ -26,7 +26,7 @@ internal sealed class FilesBackfillVerb(M365VerbContext context) : IM365Verb
     public Task<int> RunAsync(IReadOnlyList<string> args, VerbIo io, CancellationToken cancellationToken) =>
         BackfillVerb.RunAsync(context, io, args, "files-backfill", "--drive", async (setup, graph, item, reset) =>
             await new FilesBackfill(setup.Session, setup.Partition, graph.Reader, setup.Model, context.Clock)
-                .RunAsync(item, reset, cancellationToken, context.SignalExit?.Invoke() ?? 130).ConfigureAwait(false));
+                .RunAsync(item, reset, cancellationToken, context.SignalExit).ConfigureAwait(false));
 }
 
 /// <summary>The shared shape of the two backfill verbs: the unattended refusal, the arguments, the pre-flight, the run.</summary>

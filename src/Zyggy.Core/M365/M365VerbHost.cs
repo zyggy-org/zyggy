@@ -21,10 +21,8 @@ internal sealed record M365VerbContext(
     /// <summary>Gets a value indicating whether the model-run verbs check the binary pin (tests in process have no pinned binary).</summary>
     public bool CheckBinaryPin { get; init; } = true;
 
-    /// <summary>Gets the exit code a stop signal recorded (143 SIGTERM, 130 SIGINT); 143 when none did.</summary>
-    public Func<int>? SignalExit { get; init; }
-
-    public int InterruptedExit() => SignalExit?.Invoke() ?? 143;
+    /// <summary>Gets the exit code a stop signal recorded (143 SIGTERM, 130 SIGINT), read when the run stops; <see langword="null"/> when none did.</summary>
+    public Func<int?>? SignalExit { get; init; }
 }
 
 /// <summary>One <c>zyggy m365 &lt;verb&gt;</c>: the template script it replaces, with that script's arguments, texts and exit codes.</summary>
@@ -41,7 +39,11 @@ public sealed class M365VerbHost
 {
     private const string Usage = " (usage: zyggy m365 <verb> …)";
 
+    // The long model runs finish their cleanup on SIGTERM/SIGINT, as the scripts' traps did; every other verb keeps the default end.
+    private static readonly HashSet<string> SignalVerbs = new(["brief", "mail-backfill", "files-backfill"], StringComparer.Ordinal);
+
     private readonly M365VerbContext _context;
+    private readonly bool _handleSignals;
     private readonly Dictionary<string, Func<M365VerbContext, IM365Verb>> _verbs = new(StringComparer.Ordinal)
     {
         ["state"] = context => new StateVerb(context),
@@ -65,22 +67,30 @@ public sealed class M365VerbHost
     public M365VerbHost(IReadOnlyDictionary<string, string?> environment)
         : this(environment, TimeProvider.System, TimeZoneInfo.FindSystemTimeZoneById, new ProcessRunner(TimeProvider.System))
     {
+        _handleSignals = true;
     }
 
-    // Tests: a fake clock, a process runner, the stubbed Graph handler, and a zone lookup (IANA ids need ICU off Linux, and the build is invariant-globalization).
+    // Tests: a fake clock, a process runner, the stubbed Graph handler, and a zone lookup (IANA ids need ICU off Linux, and the build is invariant-globalization);
+    // in process there is no pinned binary, and the model runner may be a decorator over the real one.
     internal M365VerbHost(
         IReadOnlyDictionary<string, string?> environment,
         TimeProvider clock,
         Func<string, TimeZoneInfo> findTimeZone,
         IProcessRunner runner,
         HttpMessageHandler? graphHandler = null,
-        bool checkKeyOwnership = true)
+        bool checkKeyOwnership = true,
+        Func<string, Models.IModelRunner>? modelRunnerFactory = null,
+        bool checkBinaryPin = true)
     {
         ArgumentNullException.ThrowIfNull(environment);
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(findTimeZone);
         ArgumentNullException.ThrowIfNull(runner);
-        _context = new M365VerbContext(environment, clock, findTimeZone, runner, graphHandler, checkKeyOwnership);
+        _context = new M365VerbContext(environment, clock, findTimeZone, runner, graphHandler, checkKeyOwnership)
+        {
+            ModelRunnerFactory = modelRunnerFactory,
+            CheckBinaryPin = checkBinaryPin,
+        };
     }
 
     /// <summary>Runs <c>m365 &lt;verb&gt; …</c>.</summary>
@@ -105,6 +115,13 @@ public sealed class M365VerbHost
             return 4;
         }
 
-        return await create(_context).RunAsync(args.Skip(1).ToList(), io, cancellationToken).ConfigureAwait(false);
+        if (!_handleSignals || !SignalVerbs.Contains(args[0]))
+        {
+            return await create(_context).RunAsync(args.Skip(1).ToList(), io, cancellationToken).ConfigureAwait(false);
+        }
+
+        using var signals = new SignalCancellation(cancellationToken);
+        return await create(_context with { SignalExit = () => signals.ExitCode })
+            .RunAsync(args.Skip(1).ToList(), io, signals.Token).ConfigureAwait(false);
     }
 }

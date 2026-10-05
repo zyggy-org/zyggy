@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Time.Testing;
 
 using Zyggy.Core.M365;
+using Zyggy.Core.Models;
 using Zyggy.Core.Processes;
 using Zyggy.Core.Tests.Infrastructure;
 
@@ -14,7 +15,13 @@ namespace Zyggy.Integration.Infrastructure;
 internal static class M365InProcess
 {
     public static async Task<(int Exit, VerbConsole Console)> RunAsync(
-        IReadOnlyDictionary<string, string?> environment, StubGraphHandler graph, string[] args, FakeTimeProvider? clock = null, string? stdin = null)
+        IReadOnlyDictionary<string, string?> environment,
+        StubGraphHandler graph,
+        string[] args,
+        FakeTimeProvider? clock = null,
+        string? stdin = null,
+        Func<string, IModelRunner>? model = null,
+        CancellationToken? cancellationToken = null)
     {
         var console = new VerbConsole(stdin);
         var host = new M365VerbHost(
@@ -23,8 +30,10 @@ internal static class M365InProcess
             FindTimeZone,
             new ProcessRunner(TimeProvider.System),
             graph,
-            checkKeyOwnership: OperatingSystem.IsLinux());
-        var exit = await host.RunAsync(args, console.Io, CancellationToken.None);
+            checkKeyOwnership: OperatingSystem.IsLinux(),
+            modelRunnerFactory: model,
+            checkBinaryPin: false);
+        var exit = await host.RunAsync(args, console.Io, cancellationToken ?? CancellationToken.None);
         return (exit, console);
     }
 

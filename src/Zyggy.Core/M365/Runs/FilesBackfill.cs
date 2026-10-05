@@ -31,7 +31,7 @@ internal sealed partial class FilesBackfill(M365Session session, M365ToolPartiti
 
     private M365Paths Paths => session.Instance.Paths;
 
-    public async Task<RunOutcome> RunAsync(string? driveArgument, bool reset, CancellationToken cancellationToken, int interruptedExit = 130)
+    public async Task<RunOutcome> RunAsync(string? driveArgument, bool reset, CancellationToken cancellationToken, Func<int?>? signalExit = null)
     {
         var config = session.Configuration;
         var block = config.Root.GetProperty("files_backfill");
@@ -269,7 +269,7 @@ internal sealed partial class FilesBackfill(M365Session session, M365ToolPartiti
                 catch (OperationCanceledException)
                 {
                     RunDirectory.Remove(runDirectory);
-                    return new RunOutcome(interruptedExit, _stdout, _stderr);
+                    return new RunOutcome(signalExit?.Invoke() ?? 130, _stdout, _stderr);
                 }
 
                 RunDirectory.Remove(runDirectory);

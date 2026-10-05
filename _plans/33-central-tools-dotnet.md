@@ -1165,7 +1165,7 @@ Slice J's final gate sits after Step 23 (carried-over live checks, added 2026-10
 
 ## Step 17 — The brief and both backfills run end to end through the real process runner and `tools/fake-claude`: the captured arguments carry the deny lists and the prompt arrives on stdin, a cancelled run leaves no model process and no run directory and exits 143/130, and from the binary the backfills refuse an unattended run and every model-run verb refuses a wrong pin before anything else
 
-- [ ] Done
+- [x] Done
 
 **Scope**:
 - `tools/fake-claude/scenarios/m365-brief-ok.jsonl`, `m365-brief-denials.jsonl`, `m365-mail-batch.jsonl`, `m365-mail-empty.jsonl`, `m365-files-batch.jsonl` *(create, hand-written)*: `system/init`, then a `result` whose `result` text ends with the counts line for the fixed test date (in-process tests use `FakeTimeProvider`). The denials scenario lists `permission_denials[].tool_name`. `tools/fake-claude/README.md` *(modify: one row per scenario)*.

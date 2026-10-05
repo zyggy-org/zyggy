@@ -26,7 +26,7 @@ internal sealed partial class MailBackfill(M365Session session, M365ToolPartitio
 
     private M365Paths Paths => session.Instance.Paths;
 
-    public async Task<RunOutcome> RunAsync(string? folderArgument, bool reset, CancellationToken cancellationToken, int interruptedExit = 130)
+    public async Task<RunOutcome> RunAsync(string? folderArgument, bool reset, CancellationToken cancellationToken, Func<int?>? signalExit = null)
     {
         var block = session.Configuration.Root.GetProperty("mail_backfill");
         var batch = (long)block.GetProperty("batch_messages").GetDouble();
@@ -170,7 +170,7 @@ internal sealed partial class MailBackfill(M365Session session, M365ToolPartitio
                 }
                 catch (OperationCanceledException)
                 {
-                    return new RunOutcome(interruptedExit, _stdout, _stderr);
+                    return new RunOutcome(signalExit?.Invoke() ?? 130, _stdout, _stderr);
                 }
 
                 if (BackfillResult.NoResult(result))
