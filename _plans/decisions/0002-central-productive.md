@@ -287,7 +287,7 @@ Spec: `_specs/28-central-dream-local.md` · Plan: `_plans/28-central-dream-local
 - Live checks 2026-10-04 (agent, read-only unless noted): Claude Code 2.1.289 at `/srv/agent/home/.local/bin/claude`; the
   template pull (instance `81c371a`) switched `session-start.sh` to `zyggy memory digest`, whose `identity` (3,353 bytes) and
   `daily` (7,940 bytes, truncated as before) are byte-identical to the shell digest captured just before (apart from
-  `generated=`); `zyggy-dream.path` enabled and active, timer **not** enabled. Finding (Assumption 9): **5 inbox files are
+  `generated=`); `zyggy-dream.path` enabled and active; `zyggy-dream.timer` enabled 2026-10-05 after the first committed filing run (next: 2026-10-06 01:00 UTC = 03:00 Europe/Brussels). Inbox untracked 2026-10-04 (memory `54b793a`, owner-approved, files kept on disk). Binary upgraded 0.1.2 → 0.1.3 → 0.1.4 (pins `8843ca3`, `0915ce0`); previous versions kept under `/opt/zyggy/`. Finding (Assumption 9): **5 inbox files are
   tracked** in the memory repository — harmless until the rollup deletes a closed one (≥ 7 days); a one-time
   owner-approved `git rm --cached` of `geoffrey/geoffrey/inbox/` is proposed at the gate.
 
@@ -295,11 +295,11 @@ Spec: `_specs/28-central-dream-local.md` · Plan: `_plans/28-central-dream-local
 
 | AC | Criterion | Evidence (date, source, excerpt) | Result |
 |----|-----------|----------------------------------|--------|
-| AC-30 | First on-demand run (the `dream` skill's command) completes, commits and pushes; journal shows the argument vector; record has cost and turns | 2026-10-04 18:26:42 UTC (agent: `zyggy dream request` as `zyggy` → `zyggy-dream.path`): run `01M442P4…` on-demand, **migration** of 32 legacy files, commit `35f5ced` `dream 2026-10-04` / `layout migrated` pushed, 20 s, 0.13 USD, Claude Code 2.1.289 accepted the flag set (no `unknown option`). 18:28:07 UTC: first **filing** run `01M442RQ…` **aborted** `edit_mismatch` in batch 1 (150 lines), nothing written, 0.50 USD, exit 5; backlog 1,709 lines. Diagnosis (read-only): no CR, no trailing whitespace, no duplicate lines; 124 body lines of the migrated files do not start with `- [` | partial — stopped at the gate, timer not armed |
+| AC-30 | First on-demand run (the `dream` skill's command) completes, commits and pushes; journal shows the argument vector; record has cost and turns | 2026-10-04 18:26:42 UTC (agent: `zyggy dream request` as `zyggy` → `zyggy-dream.path`): run `01M442P4…` on-demand, **migration** of 32 legacy files, commit `35f5ced` `dream 2026-10-04` / `layout migrated` pushed, 20 s, 0.13 USD, Claude Code 2.1.289 accepted the flag set (no `unknown option`). 18:28:07 UTC: first **filing** run `01M442RQ…` **aborted** `edit_mismatch` in batch 1 (150 lines), nothing written, 0.50 USD, exit 5; backlog 1,709 lines. Diagnosis (read-only): no CR, no trailing whitespace, no duplicate lines; 124 body lines of the migrated files do not start with `- [` 2026-10-04/05 follow-up: 0.1.3 added a fact-free detail; its detail `unknown` showed the cause — 15 migrated files have unquoted `description: a: b` front matter (27 shell tools) that strict YAML refused. 0.1.4 reads it as key/value lines. 2026-10-05 04:4x UTC: filing run `01M455XM…` **partial** — batches 1–3 accepted (337 lines: filed 33, duplicate 132, dropped 172), batch 4 refused `slug_duplicate` (`create business/areas/digiverse.md`); commit `7697451` pushed, 2.74 USD; backlog 1,372 lines | pass (on-demand run committed and pushed; nightly timer armed after it) |
 | AC-31 | Three consecutive nightly runs exit 0, each with a `dream` commit on `origin/main` | | |
 | AC-32 | A fact remembered on day N is in its category file after the run of day N+1 (ledger hash in the same commit) | | |
 | AC-33 | Per-run counts and cost; the backlog reaches 0 or a stated remainder | | |
-| AC-34 | Digest sections within their caps after the backlog | | |
+| AC-34 | Digest sections within their caps after the backlog | 2026-10-05 (after the first filing run, backlog not yet done): identity 3,439, index 5,987, daily 7,772 bytes (caps 6,000 / 6,000 / 8,000) | partial (re-measured after the backlog, Step 18) |
 | AC-35 | A request during a run is served after it, without overlap | | |
 | AC-36 | Secret and contact-detail grep over `origin/main` contents and history: no hit | | |
 | AC-37 | Binary root-owned, not writable by `zyggy`, hash = CI `SHA256SUMS` = pin; a wrong pin exits 3 before any model call | 2026-10-04 18:1x UTC (agent): `/opt/zyggy/0.1.2` and the binary `root:root 755`; `runuser -u zyggy -- test -w` fails; SHA-256 `0013c823…` = `SHA256SUMS` (CI 37223210310) = `instance/zyggy.json`. Wrong pin (temporary instance dir, hash of zeros): exit 3 `configuration error: version_mismatch: sha256 of the binary is not the pinned one for linux-x64`, no `runs/` directory created | pass |
@@ -311,7 +311,9 @@ Spec: `_specs/28-central-dream-local.md` · Plan: `_plans/28-central-dream-local
 | date (UTC) | trigger | outcome | batches / lines | filed / merged / dup / dropped | quarantined | cost USD | commit |
 |------------|---------|---------|-----------------|--------------------------------|-------------|----------|--------|
 | 2026-10-04 18:26 | on-demand | committed (layout migrated, 32 moves, 29 pure renames, 1 carried) | 0 / 0 | — | 0 | 0.13 | `35f5ced` |
-| 2026-10-04 18:28 | on-demand | aborted `edit_mismatch` | 1 / 150 | — | 0 | 0.50 | — |
+| 2026-10-04 18:28 | on-demand | aborted `edit_mismatch` (0.1.2) | 1 / 150 | — | 0 | 0.50 | — |
+| 2026-10-04 20:38 | on-demand | aborted `edit_mismatch`, detail `unknown` (0.1.3) → unreadable front matter | 1 / 75 | — | 0 | 0.39 | — |
+| 2026-10-05 04:4x | on-demand | partial `slug_duplicate` (0.1.4) | 4 / 487 (3 accepted, 337) | 33 / 0 / 132 / 172 | 0 | 2.74 | `7697451` |
 
 ## Repositories
 

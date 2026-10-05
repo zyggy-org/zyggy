@@ -866,7 +866,7 @@ Every exception other than `OperationCanceledException` becomes `failed` with `c
 
 ## Step 17 — On Central the pinned binary is installed root-owned, the units are enabled, the first on-demand run migrates the layout and the second files the first batch, each committed and pushed by itself; a wrong pin exits 3 before any model call; the new digest serves sessions; the nightly timer is armed — all done by the agent, no owner action per run
 
-- [ ] Done
+- [x] Done — 2026-10-05: installed 0.1.2, then 0.1.3 (fact-free refusal detail) and 0.1.4 (front matter written unquoted by the 27 tools); migration `35f5ced`; first filing run partial `7697451` pushed; wrong pin exit 3; digest byte-identical to the shell and within caps; inbox untracked (`54b793a`); timer armed. Evidence in 0002 §28.
 
 **Scope** *(agent via `az vm run-command` as root; git and `zyggy` as `runuser -u zyggy -- …`; the binary reaches `/tmp` by `scp` over Tailscale from the laptop, Executor note 1)*:
 1. Read-only pre-checks:
