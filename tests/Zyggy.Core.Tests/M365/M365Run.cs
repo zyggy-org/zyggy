@@ -10,7 +10,7 @@ internal static class M365Run
         IReadOnlyDictionary<string, string?> environment, TimeProvider clock, string[] args, string? stdin = null)
     {
         var console = new VerbConsole(stdin);
-        var exit = await new M365VerbHost(environment, clock, FindTimeZone).RunAsync(args, console.Io, CancellationToken.None);
+        var exit = await new M365VerbHost(environment, clock, FindTimeZone, new RecordingProcessRunner()).RunAsync(args, console.Io, CancellationToken.None);
         return (exit, console);
     }
 

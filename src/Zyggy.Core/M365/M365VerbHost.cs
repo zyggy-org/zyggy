@@ -1,9 +1,11 @@
+using Zyggy.Core.Processes;
 using Zyggy.Core.Verbs;
 
 namespace Zyggy.Core.M365;
 
 /// <summary>What every <c>zyggy m365</c> verb is given: the environment, the clock and the time-zone lookup.</summary>
-internal sealed record M365VerbContext(IReadOnlyDictionary<string, string?> Environment, TimeProvider Clock, Func<string, TimeZoneInfo> FindTimeZone);
+internal sealed record M365VerbContext(
+    IReadOnlyDictionary<string, string?> Environment, TimeProvider Clock, Func<string, TimeZoneInfo> FindTimeZone, IProcessRunner Runner);
 
 /// <summary>One <c>zyggy m365 &lt;verb&gt;</c>: the template script it replaces, with that script's arguments, texts and exit codes.</summary>
 internal interface IM365Verb
@@ -24,22 +26,25 @@ public sealed class M365VerbHost
     {
         ["state"] = context => new StateVerb(context),
         ["facts"] = context => new FactsVerb(context),
+        ["parse"] = context => new ParseVerb(context),
     };
 
     /// <summary>Creates the host over the process environment and the system clock.</summary>
     /// <param name="environment">The process environment.</param>
     public M365VerbHost(IReadOnlyDictionary<string, string?> environment)
-        : this(environment, TimeProvider.System, TimeZoneInfo.FindSystemTimeZoneById)
+        : this(environment, TimeProvider.System, TimeZoneInfo.FindSystemTimeZoneById, new ProcessRunner(TimeProvider.System))
     {
     }
 
-    // Tests: a fake clock, and a zone lookup (IANA ids need ICU off Linux, and the build is invariant-globalization).
-    internal M365VerbHost(IReadOnlyDictionary<string, string?> environment, TimeProvider clock, Func<string, TimeZoneInfo> findTimeZone)
+    // Tests: a fake clock, a process runner, and a zone lookup (IANA ids need ICU off Linux, and the build is invariant-globalization).
+    internal M365VerbHost(
+        IReadOnlyDictionary<string, string?> environment, TimeProvider clock, Func<string, TimeZoneInfo> findTimeZone, IProcessRunner runner)
     {
         ArgumentNullException.ThrowIfNull(environment);
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(findTimeZone);
-        _context = new M365VerbContext(environment, clock, findTimeZone);
+        ArgumentNullException.ThrowIfNull(runner);
+        _context = new M365VerbContext(environment, clock, findTimeZone, runner);
     }
 
     /// <summary>Runs <c>m365 &lt;verb&gt; …</c>.</summary>
