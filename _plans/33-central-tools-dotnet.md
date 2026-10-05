@@ -1212,22 +1212,22 @@ Slice J's final gate sits after Step 23 (carried-over live checks, added 2026-10
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification:
+- [x] Behavioral verification:
   - A brief run through the stand-in model produces the same journal line, receipt and memory line as the shell.
   - One captured model call is shown: its deny list, and the prompt arriving on standard input.
   - A backfill picks up the shell's checkpoint and says "resuming folder …".
   - A stop in the middle of a run leaves no model process and no download folder, and the next run resumes.
   - From the binary: a wrong version pin stops all three verbs before anything is contacted.
-- [ ] Contract review:
+- [x] Contract review:
   - The three allow and deny lists equal today's, with the verb rules; the action tools are always denied.
   - The checkpoint, watermark, `brief.jsonl` and receipt files keep their shape.
   - The two additions to the model-runner contract are optional and leave the dream's argument list byte-identical.
-- [ ] ⚠️ Risk review:
+- [x] ⚠️ Risk review:
   - The shared model-runner contract changed additively only.
   - The run lists keep every send, upload and move denied.
   - Assumption 7 (64 MiB capture and a 2-hour run limit) is acknowledged.
   - The SIGTERM handling of these three verbs is proven in-process and will be proven live on Central (Assumption 8).
-- [ ] User approved — implementation may continue past this gate
+- [x] User approved — implementation may continue past this gate — 2026-10-05 owner: "approved"
 
 ---
 
