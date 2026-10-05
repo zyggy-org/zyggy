@@ -64,3 +64,13 @@ Pasting `Zyggy.Core` output into a `.canonical` or `.sig` file is forbidden: tha
 ## `memory/remember/` — the `remember` oracle (deliverable 33)
 
 `inbox-after-remember.md` is a **byte copy** of `zyggy-core` `tests/expected/inbox-after-remember.md` at `f6010c9` (the five AC-27 variants of `remember.bats`, produced by `remember.sh` at `ZYGGY_NOW=2026-09-30T10:00:00Z`, `Europe/Brussels`). `RememberVerbTests` must reproduce it byte for byte: the dream hashes these lines into its ledger. Re-copy only from a newer `zyggy-core` commit and name it here.
+
+## `m365/` — the Microsoft 365 oracles (deliverable 33)
+
+**Byte copies** of `zyggy-core` at `5201115`, never produced by the code under test:
+
+- `m365/fixtures/**` ← `tests/fixtures/m365/**`, every file except the bats stubs `*.sh` (fact inputs, hook JSON, model results, tool lists).
+- `m365/graph/**` ← `tests/fixtures/graph/**` (the Graph and login responses the shell tests replay).
+- `m365/expected/**` ← `tests/expected/m365-*` (the shell's outputs: fact files, check output, journal lines, receipts).
+
+The `m365.bats` cases they serve were run at `ZYGGY_NOW=2026-09-30T10:00:00Z`, `Europe/Brussels`. Re-copy only from a newer `zyggy-core` commit, with a byte-preserving tool, and name the commit here.
