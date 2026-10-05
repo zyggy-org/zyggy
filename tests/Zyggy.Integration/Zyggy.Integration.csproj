@@ -16,6 +16,7 @@
     <Compile Include="../Zyggy.Core.Tests/Infrastructure/Golden.cs" Link="Infrastructure/Golden.cs" />
     <Compile Include="../Zyggy.Core.Tests/Infrastructure/StubGraphHandler.cs" Link="Infrastructure/StubGraphHandler.cs" />
     <Compile Include="../Zyggy.Core.Tests/Infrastructure/TestCertificates.cs" Link="Infrastructure/TestCertificates.cs" />
+    <Compile Include="../Zyggy.Core.Tests/Infrastructure/VerbConsole.cs" Link="Infrastructure/VerbConsole.cs" />
   </ItemGroup>
 
 </Project>

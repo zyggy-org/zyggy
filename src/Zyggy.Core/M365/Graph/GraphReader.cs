@@ -18,6 +18,9 @@ internal interface IGraphReader
     /// <summary>Gets where the key came from, once a read has minted.</summary>
     CredentialSource KeySource { get; }
 
+    /// <summary>Mints the first token (<c>mint_token</c> before any read); <see cref="KeySource"/> is set even when minting fails.</summary>
+    Task<GraphFailure?> SignInAsync(CancellationToken cancellationToken);
+
     Task<GraphRead<IReadOnlyList<MailFolder>>> MailFoldersAsync(CancellationToken cancellationToken);
 
     Task<GraphRead<IReadOnlyList<GraphDrive>>> DrivesAsync(CancellationToken cancellationToken);
@@ -55,6 +58,8 @@ internal sealed partial class GraphReader(GraphTokenClient tokens, GraphHttp htt
     public CredentialSource KeySource { get; private set; }
 
     private string Mailbox => $"{GraphEndpoints.Graph}/users/{configuration.Mailbox}";
+
+    public Task<GraphFailure?> SignInAsync(CancellationToken cancellationToken) => MintAsync(cancellationToken);
 
     public async Task<GraphRead<IReadOnlyList<MailFolder>>> MailFoldersAsync(CancellationToken cancellationToken)
     {
