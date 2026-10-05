@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 
 using Zyggy.Core.Memory;
 using Zyggy.Core.Processes;
+using Zyggy.Core.Verbs;
 
 namespace Zyggy.Core.M365;
 
@@ -52,7 +53,7 @@ internal sealed partial class DocumentParser(
         }
 
         var runLexical = Path.TrimEndingDirectorySeparator(Path.GetFullPath(request.RunDirectory, request.WorkingDirectory));
-        var runReal = RealPath(runLexical);
+        var runReal = PathResolution.RealPath(runLexical);
         var pathLexical = Path.GetFullPath(request.Input, request.WorkingDirectory);
         if (!IsUnder(pathLexical, runLexical))
         {
@@ -65,7 +66,7 @@ internal sealed partial class DocumentParser(
             return Done(5, stderr, "refused: not in the run directory");
         }
 
-        var pathReal = RealPath(pathLexical);
+        var pathReal = PathResolution.RealPath(pathLexical);
         if (!IsUnder(pathReal, runReal))
         {
             return Done(5, stderr, "refused: not in the run directory");
@@ -250,24 +251,6 @@ internal sealed partial class DocumentParser(
 
     private static bool IsUnder(string path, string directory) =>
         path.StartsWith(directory + Path.DirectorySeparatorChar, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
-
-    // realpath -m: every existing component's links followed, missing components kept as written.
-    private static string RealPath(string fullPath)
-    {
-        var root = Path.GetPathRoot(fullPath)!;
-        var current = root;
-        foreach (var segment in fullPath[root.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
-        {
-            current = Path.Join(current, segment);
-            var info = new FileInfo(current);
-            if (info.LinkTarget is not null && info.ResolveLinkTarget(returnFinalTarget: true) is { } target)
-            {
-                current = RealPath(Path.GetFullPath(target.FullName));
-            }
-        }
-
-        return current;
-    }
 
     private static void DeleteQuietly(string path)
     {

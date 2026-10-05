@@ -1,0 +1,3 @@
+mcp__m365__download-bytes-to-file
+Bash(zyggy m365 facts *)
+Bash(zyggy m365 parse *)

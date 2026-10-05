@@ -47,6 +47,12 @@ internal sealed class TokenResult
 /// store, a certificate client assertion, one form POST to the tenant's token endpoint with no secret. The key buffer is cleared after
 /// use; the token is held only in the returned <see cref="TokenResult"/>.
 /// </summary>
+/// <summary>Mints an app-only token (the headers helper's seam; <see cref="GraphTokenClient"/> is the implementation).</summary>
+internal interface ITokenSource
+{
+    Task<TokenResult> MintAsync(TokenRequest request, CancellationToken cancellationToken);
+}
+
 internal sealed class GraphTokenClient(
     ICredentialReader store,
     TenantId tenant,
@@ -54,7 +60,7 @@ internal sealed class GraphTokenClient(
     string certificateFile,
     GraphHttp http,
     TimeProvider clock,
-    Func<Guid>? newJti = null)
+    Func<Guid>? newJti = null) : ITokenSource
 {
     public async Task<TokenResult> MintAsync(TokenRequest request, CancellationToken cancellationToken)
     {

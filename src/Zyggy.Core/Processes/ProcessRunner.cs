@@ -70,7 +70,7 @@ internal sealed class ProcessRunner(TimeProvider clock) : IProcessRunner
             clock.GetElapsedTime(started));
     }
 
-    private static ProcessStartInfo StartInfo(ProcessSpec spec)
+    internal static ProcessStartInfo StartInfo(ProcessSpec spec)
     {
         var info = new ProcessStartInfo(spec.FileName)
         {
@@ -87,6 +87,11 @@ internal sealed class ProcessRunner(TimeProvider clock) : IProcessRunner
         foreach (var argument in spec.Arguments)
         {
             info.ArgumentList.Add(argument);
+        }
+
+        if (spec.ReplaceEnvironment)
+        {
+            info.Environment.Clear();
         }
 
         foreach (var (name, value) in spec.Environment)
