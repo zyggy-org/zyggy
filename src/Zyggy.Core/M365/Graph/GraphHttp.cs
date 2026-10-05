@@ -21,20 +21,22 @@ internal sealed class GraphHttp : IDisposable
     public const int Retries = 5;
 
     private readonly HttpClient _client;
-    private readonly TimeProvider _clock;
     private readonly SecretPatterns _patterns;
+    private readonly Func<TimeSpan, CancellationToken, Task> _delay;
 
     public GraphHttp(TimeProvider clock, SecretPatterns patterns)
         : this(new SocketsHttpHandler { AllowAutoRedirect = false, UseProxy = false }, clock, patterns, disposeHandler: true)
     {
     }
 
-    internal GraphHttp(HttpMessageHandler handler, TimeProvider clock, SecretPatterns patterns, bool disposeHandler = false)
+    // Tests: the stubbed handler, and a delay that records the waits instead of sleeping.
+    internal GraphHttp(
+        HttpMessageHandler handler, TimeProvider clock, SecretPatterns patterns, bool disposeHandler = false, Func<TimeSpan, CancellationToken, Task>? delay = null)
     {
         ArgumentNullException.ThrowIfNull(handler);
         _client = new HttpClient(handler, disposeHandler) { Timeout = TimeSpan.FromSeconds(60) };
-        _clock = clock;
         _patterns = patterns;
+        _delay = delay ?? ((wait, token) => Task.Delay(wait, clock, token));
     }
 
     /// <summary>Sends the request <paramref name="build"/> makes (once per attempt) with the shell's retry rules.</summary>
@@ -86,7 +88,7 @@ internal sealed class GraphHttp : IDisposable
                 var wait = retryAfter is { } seconds && seconds >= TimeSpan.Zero ? seconds : TimeSpan.FromSeconds(1 << attempt);
                 if (wait > TimeSpan.Zero)
                 {
-                    await Task.Delay(wait, _clock, cancellationToken).ConfigureAwait(false);
+                    await _delay(wait, cancellationToken).ConfigureAwait(false);
                 }
 
                 continue;

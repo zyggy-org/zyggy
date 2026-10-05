@@ -37,6 +37,64 @@ public sealed partial class SourceHygieneTests
         offenders.Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData("login.microsoftonline.com", "src/Zyggy.Core/M365/Graph/GraphEndpoints.cs")]
+    [InlineData("graph.microsoft.com", "src/Zyggy.Core/M365/Graph/GraphEndpoints.cs")]
+    public void Src_ServiceLiteral_OnlyInItsAdapter(string literal, string allowed)
+    {
+        // Act
+        var holders = SourceFiles().Where(f => File.ReadAllText(f).Contains(literal, StringComparison.OrdinalIgnoreCase))
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .ToList();
+
+        // Assert
+        holders.Should().Equal(allowed);
+    }
+
+    [Fact]
+    public void Src_ContainsNoMailboxSiteOrAccountLiteral()
+    {
+        // Act
+        var offenders = SourceFiles().Where(f =>
+        {
+            var text = File.ReadAllText(f);
+            return MailAddress().IsMatch(text) || text.Contains("sharepoint.com", StringComparison.OrdinalIgnoreCase) || GuidLiteral().IsMatch(text);
+        }).Select(Path.GetFileName).ToList();
+
+        // Assert
+        offenders.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Tests_NeverResolveRealExternalPrograms()
+    {
+        // Arrange: a ProcessSpec or ProcessStartInfo built with a bare program name would find the real one on PATH
+        var tests = Directory.EnumerateFiles(Path.Combine(RepoRoot(), "tests"), "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal));
+
+        // Act
+        var offenders = tests.Where(f => BareProgram().IsMatch(File.ReadAllText(f))).Select(Path.GetFileName).ToList();
+
+        // Assert
+        offenders.Should().BeEmpty();
+    }
+
+    private static List<string> SourceFiles() =>
+        Directory.EnumerateFiles(Path.Combine(RepoRoot(), "src"), "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .ToList();
+
     [GeneratedRegex(@"\bDefault(Tenant|User|Principal)\b")]
     private static partial Regex DefaultTenant();
+
+    [GeneratedRegex(@"""[^""\s]*[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z]{2,}[^""\s]*""")]
+    private static partial Regex MailAddress();
+
+    [GeneratedRegex(@"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")]
+    private static partial Regex GuidLiteral();
+
+    [GeneratedRegex(@"new (ProcessSpec|ProcessStartInfo)\(\s*""(claude|markitdown|ms-365-mcp-server)""")]
+    private static partial Regex BareProgram();
 }
