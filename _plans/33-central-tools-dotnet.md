@@ -675,30 +675,30 @@ Slice J's final gate sits after Step 23 (carried-over live checks, added 2026-10
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification:
+- [x] Behavioral verification:
   - `zyggy m365 check` output matches the shell oracle.
   - `token-test` reports a size and an expiry, and the token text appears nowhere in either output stream.
   - `cert-init` on Linux creates the key at 0600 in a 0700 folder and refuses to overwrite an existing key.
   - Every refusal of the key file (wrong mode, wrong owner, empty, no header, wrong tenant) gives the shell's message.
   - The retry tests show the waits the shell used.
-- [ ] Contract review:
+- [x] Contract review:
   - The assertion header, claims and signature match `graph.sh`.
   - The token request has no secret.
   - Only the two Microsoft hosts are ever contacted, never `/me`, GET only besides the token POST, redirects not followed.
   - The exit codes are 0/3/4/5/6. `token` became `token-test`.
-- [ ] ⚠️ Risk review:
+- [x] ⚠️ Risk review:
   - The key is read only through the secret store, never cached or logged, and its buffer is cleared.
   - `cert-init` is the one place that writes a key, outside the store, as the spec intends.
   - The source-hygiene test keeps the Microsoft hosts in one file.
   - The P/Invoke used for the owner check (Assumption 5) is reviewed.
   - No new package.
-- [ ] User approved — implementation may continue past this gate
+- [x] User approved — implementation may continue past this gate — 2026-10-05 owner: "approved"
 
 ---
 
 ## Step 10 — Every send, upload or move outside the instance policy is refused with the shell's exact deny line before Claude Code can prompt, a clean call produces no output, the guard never allows or asks, and each action call becomes one body-free log row with its status (fake Graph reader)
 
-- [ ] Done
+- [x] Done
 
 **Scope**:
 - `src/Zyggy.Core/M365/Guard/GuardPolicy.cs` *(create, internal sealed)*: `EvaluateAsync(JsonElement hookInput, M365Configuration, IGraphReader, CancellationToken) → GuardDecision`, where `GuardDecision = Pass | Deny(string reason) | Fail(string message)`. Port of `m365-guard.sh`:
@@ -753,7 +753,7 @@ Slice J's final gate sits after Step 23 (carried-over live checks, added 2026-10
 
 ## Step 11 — `zyggy m365 guard` and `zyggy m365 log` work as Claude Code hooks: the binary refuses an out-of-policy send with the deny line, stays silent for a clean one, fails closed with exit 2 and one stderr line on any problem of its own, answers a non-action tool quickly, and appends one row per action even with two writers at once
 
-- [ ] Done
+- [x] Done
 
 **Scope**:
 - `src/Zyggy.Core/M365/GuardVerb.cs`, `LogVerb.cs` *(create, internal sealed)*:
@@ -801,7 +801,7 @@ Slice J's final gate sits after Step 23 (carried-over live checks, added 2026-10
 
 ## Step 12 — The Drafts the brief left in the window are audited exactly as `verify.sh` audits them: kinds, allowed recipients, URL, e-mail and secret flags, one brief, the Draft cap, and a receipt without body text; a Graph failure writes no receipt
 
-- [ ] Done
+- [x] Done
 
 **Scope**:
 - `src/Zyggy.Core/M365/Audit/DraftAudit.cs` *(create, internal sealed)*: `AuditAsync(DateOnly date, DateTimeOffset windowStart, CancellationToken) → AuditOutcome(int Exit, string StdoutLine, string? Error)`. Port of `verify.sh`:
