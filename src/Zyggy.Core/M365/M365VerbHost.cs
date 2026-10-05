@@ -38,6 +38,8 @@ public sealed class M365VerbHost
         ["check"] = context => new CheckVerb(context),
         ["token-test"] = context => new TokenTestVerb(context),
         ["cert-init"] = context => new CertInitVerb(context),
+        ["guard"] = context => new GuardVerb(context),
+        ["log"] = context => new LogVerb(context),
     };
 
     /// <summary>Creates the host over the process environment and the system clock.</summary>

@@ -15,7 +15,11 @@ public sealed class M365InstanceFixture : IDisposable
     {
         Directory.CreateDirectory(Path.Combine(Checkout, ".claude", "hooks"));
         Directory.CreateDirectory(InstanceDirectory);
-        File.Copy(Golden("m365", "fixtures", "m365.json"), Path.Combine(InstanceDirectory, "m365.json"));
+        // The binary resolves IANA ids only on Linux (invariant globalization): elsewhere the fixture's zone is UTC.
+        var config = File.ReadAllText(Golden("m365", "fixtures", "m365.json"));
+        File.WriteAllText(
+            Path.Combine(InstanceDirectory, "m365.json"),
+            OperatingSystem.IsLinux() ? config : config.Replace("\"Europe/Brussels\"", "\"UTC\"", StringComparison.Ordinal));
         File.Copy(Golden("secret-patterns", "secret-patterns.txt"), Path.Combine(Checkout, ".claude", "hooks", "secret-patterns.txt"));
         Directory.CreateDirectory(Path.Combine(MemoryRoot, "acme", "alice"));
         Directory.CreateDirectory(UserBin);
