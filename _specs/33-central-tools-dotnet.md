@@ -407,7 +407,7 @@ All eight Open Questions were **decided by the owner on 2026-10-05** (verbatim: 
 5. **Exit codes — (a).** Each script's codes kept for its verb (usage 4, `remember` refusal 2) (Contracts, AC-6).
 6. **Drop `gh` — (a).** The binary calls the GitHub API itself; lands in 34 (W33-3 follows it).
 7. **Slash commands on stdin — (a) with (b) as the accepted fallback.** Check on Central, then fall back to the command-line argument for those runs (`/morning-brief`, `/mail-backfill`, `/files-backfill`) if a `/skill` prompt on stdin does not expand; 28's stdin rule stays for every other run.
-   **[PLACEHOLDER — decision 7 check result]** Result of the stdin slash-command check on Central: _pending — the main session replaces this sentence with "expanded (stdin kept, no command-line switch)" or "not expanded (command-line fallback for the three m365 runs)", plus the date and the Claude Code version checked._
+   **Decision 7 check result (2026-10-05):** expanded (stdin kept, no command-line switch). Checked on Central with Claude Code 2.1.289 as the `zyggy` user: a project skill with `disable-model-invocation: true` was started by `printf '/probe alpha' | claude -p --output-format json --no-session-persistence` and by the same command as an argument; both returned `"result":"PROBE-OK-7341"`, `is_error: false`. Throw-away directory removed. Plan Step 18 is skipped.
 8. **Tool allow/deny lists — (a).** Plain data files in the template, read by the binary at run time and checked by the template tests; no copy in the binary (AC-27).
 
 ## Open Questions

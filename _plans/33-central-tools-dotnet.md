@@ -1233,7 +1233,7 @@ Slice J's final gate sits after Step 23 (carried-over live checks, added 2026-10
 
 ## Step 18 — **CONDITIONAL** — The three m365 runs pass their `/skill` prompt as the command-line argument, exactly as the scripts do, because the Central check showed that print mode does not expand a `/skill` command read from stdin; every other model run (the dream) keeps the prompt on stdin
 
-- [ ] Done *(or: Skipped — record "expanded (stdin kept, no command-line switch)", the date and the Claude Code version from the spec's Decisions log here)*
+- [x] Skipped — expanded (stdin kept, no command-line switch); checked on Central 2026-10-05, Claude Code 2.1.289 (spec Decisions log, decision 7). Gate H is presented together with Gate I.
 
 **Precondition (read first, before anything else in this step):** open `_specs/33-central-tools-dotnet.md`, Decisions log item 7.
 - **The placeholder sentence is still there (no result yet)**: STOP. Report at Gate H that the check has not run. Do not guess, and do not start Step 19.
