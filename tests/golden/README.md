@@ -60,3 +60,7 @@ Pasting `Zyggy.Core` output into a `.canonical` or `.sig` file is forbidden: tha
 ## `secret-patterns/` — the 27 secret patterns and their samples (deliverable 28)
 
 **Byte copies** of `zyggy-core` at `e0b8290`: `.claude/hooks/secret-patterns.txt`, `tests/fixtures/secret-samples.txt` (`name<TAB>text`; each must match exactly that pattern first) and `tests/fixtures/benign-samples.txt` (must match none). `SecretPatternsTests` applies them through `SecretPatterns`, which the dream checks use; Central reads the live file from the template (`ZYGGY_SECRET_PATTERNS`). Re-copy only from a newer `zyggy-core` commit and name it here.
+
+## `memory/remember/` — the `remember` oracle (deliverable 33)
+
+`inbox-after-remember.md` is a **byte copy** of `zyggy-core` `tests/expected/inbox-after-remember.md` at `f6010c9` (the five AC-27 variants of `remember.bats`, produced by `remember.sh` at `ZYGGY_NOW=2026-09-30T10:00:00Z`, `Europe/Brussels`). `RememberVerbTests` must reproduce it byte for byte: the dream hashes these lines into its ledger. Re-copy only from a newer `zyggy-core` commit and name it here.

@@ -60,14 +60,16 @@ internal static partial class MemoryFileWriter
         return text.ToString();
     }
 
-    public static void WriteAtomically(string path, string text)
+    public static void WriteAtomically(string path, string text) => WriteAtomically(path, Utf8NoBom.GetBytes(text));
+
+    public static void WriteAtomically(string path, byte[] bytes)
     {
         var directory = Path.GetDirectoryName(path) ?? throw new ArgumentException("The path has no directory.", nameof(path));
         Directory.CreateDirectory(directory);
         var temp = path + ".zyggy-tmp-" + Ulid.NewUlid();
         try
         {
-            File.WriteAllBytes(temp, Utf8NoBom.GetBytes(text));
+            File.WriteAllBytes(temp, bytes);
             File.Move(temp, path, overwrite: true);
         }
         finally
