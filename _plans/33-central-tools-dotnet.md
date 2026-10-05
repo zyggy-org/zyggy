@@ -1395,7 +1395,7 @@ No earlier step depends on this outcome. Steps 15–17 deliver the prompt on std
 
 ## Step 21 — Once Gates A–I are approved, the release is installed on Central exactly like 28's (checksum, root-owned, pinned, previous version kept), then the template and instance are pulled and the server restarted once; the agent proves the binary there: `check`, a backfill that reads the shell's checkpoint, the probe, the guard refusing a hidden-recipient send, and one `remember` from a session
 
-- [ ] Done
+- [x] Done
 
 **Precondition (check first):** this plan's Gates A–I are approved (their boxes `[x]`). If not: STOP and report; do not merge, tag or install (rule 5). There is no wait for 28: 28 was closed on 2026-10-05 by the owner's clean-slate decision and its final gate is ticked (`ROADMAP.md` #28 Done); its remaining night checks are Step 23's C28-* items. If a dream fix is pending, it goes first (rule 1).
 
