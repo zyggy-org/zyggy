@@ -41,6 +41,8 @@ public sealed class M365VerbHost
         ["guard"] = context => new GuardVerb(context),
         ["log"] = context => new LogVerb(context),
         ["verify"] = context => new VerifyVerb(context),
+        ["mcp-server"] = context => new McpServerVerb(context),
+        ["auth-header"] = context => new AuthHeaderVerb(context),
     };
 
     /// <summary>Creates the host over the process environment and the system clock.</summary>

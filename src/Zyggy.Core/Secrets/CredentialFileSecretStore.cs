@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -123,7 +123,7 @@ internal sealed partial class CredentialFileSecretStore : ISecretStore, ICredent
                 return Refuse($"key: {path} must be mode 0600 (is {Convert.ToString(mode, 8)})");
             }
 
-            if (Owner(path) is not { } uid || uid != GetEffectiveUserId())
+            if (Processes.UnixNative.Owner(path) is not { } uid || uid != Processes.UnixNative.EffectiveUserId())
             {
                 return Refuse($"key: {path} must be owned by {Environment.UserName}");
             }
@@ -166,30 +166,6 @@ internal sealed partial class CredentialFileSecretStore : ISecretStore, ICredent
     private static bool Exists(string path) => File.Exists(path) || Directory.Exists(path) || new FileInfo(path).LinkTarget is not null;
 
     private static CredentialRead Refuse(string message) => new(null, CredentialSource.None, null, message);
-
-    // The owner uid from lstat(2); .NET has no public API for it (plan 33 Assumption 5). x86-64 and aarch64 glibc layouts.
-    private static uint? Owner(string path)
-    {
-        var buffer = new byte[256];
-        if (LStat(path, buffer) != 0)
-        {
-            return null;
-        }
-
-        var offset = RuntimeInformation.OSArchitecture switch
-        {
-            Architecture.X64 => 28,
-            Architecture.Arm64 => 24,
-            _ => -1,
-        };
-        return offset < 0 ? null : BitConverter.ToUInt32(buffer, offset);
-    }
-
-    [LibraryImport("libc", EntryPoint = "lstat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
-    private static partial int LStat(string path, byte[] buffer);
-
-    [LibraryImport("libc", EntryPoint = "geteuid")]
-    private static partial uint GetEffectiveUserId();
 
     [GeneratedRegex(@"\A-----BEGIN (RSA |EC )?PRIVATE KEY-----\z", RegexOptions.CultureInvariant)]
     private static partial Regex PemHeader();
