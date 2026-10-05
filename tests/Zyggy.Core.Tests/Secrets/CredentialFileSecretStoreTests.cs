@@ -246,8 +246,11 @@ public sealed class CredentialFileSecretStoreTests : IDisposable
     [InlineData(false, "644", false)]
     [InlineData(false, "400", false)]
     [InlineData(false, "640", false)]
+    [InlineData(false, "440", false)]
     [InlineData(true, "400", true)]
+    [InlineData(true, "440", true)]
     [InlineData(true, "600", true)]
+    [InlineData(true, "640", false)]
     [InlineData(true, "644", false)]
     [SupportedOSPlatform("linux")]
     public async Task Read_OnLinux_Mode(bool credentialsDirectory, string mode, bool accepted)

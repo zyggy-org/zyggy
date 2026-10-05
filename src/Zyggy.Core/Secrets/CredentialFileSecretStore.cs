@@ -17,7 +17,7 @@ internal interface ICredentialReader
 
 /// <summary>
 /// The read-only <see cref="ISecretStore"/> over Central's credential files (spec 33 AC-4), for one tenant — the configured
-/// principal's. <c>m365-app-key</c> is <c>$CREDENTIALS_DIRECTORY/m365-app-key</c> (0600 or 0400) else the key file (0600);
+/// principal's. <c>m365-app-key</c> is <c>$CREDENTIALS_DIRECTORY/m365-app-key</c> (0600, 0400 or 0440) else the key file (0600);
 /// <c>m365-app-key/new</c> is <c>&lt;key file&gt;.new</c>. The checks and texts are <c>zy_m365_read_key</c>'s: a regular file, the
 /// mode, owned by this user, not empty, a PEM private-key header. Never caches, never logs, never puts a byte in a message.
 /// Writing is <c>cert-init</c>'s alone.
@@ -117,7 +117,8 @@ internal sealed partial class CredentialFileSecretStore : ISecretStore, ICredent
         if (_checkOwnership && OperatingSystem.IsLinux())
         {
             var mode = (int)File.GetUnixFileMode(path) & 0x1FF;
-            var accepted = mode == 0x180 || (mode == 0x100 && source == CredentialSource.CredentialsDirectory);
+            // systemd's LoadCredential copy is read-only: 0400, or 0440 (group = the unit's group) on newer systemd.
+            var accepted = mode == 0x180 || (source == CredentialSource.CredentialsDirectory && mode is 0x100 or 0x120);
             if (!accepted)
             {
                 return Refuse($"key: {path} must be mode 0600 (is {Convert.ToString(mode, 8)})");

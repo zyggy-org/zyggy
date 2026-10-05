@@ -6,7 +6,7 @@ internal enum CredentialSource
     /// <summary>Not found or refused.</summary>
     None,
 
-    /// <summary>systemd's <c>$CREDENTIALS_DIRECTORY</c> (<c>LoadCredential=</c>); 0600 or 0400.</summary>
+    /// <summary>systemd's <c>$CREDENTIALS_DIRECTORY</c> (<c>LoadCredential=</c>); 0600, 0400 or 0440.</summary>
     CredentialsDirectory,
 
     /// <summary>The key file under the user's configuration directory; 0600.</summary>
