@@ -40,7 +40,12 @@ public sealed class M365InstanceFixture : IDisposable
 
     public static string Golden(params string[] parts) => Path.Combine([AppContext.BaseDirectory, "golden", .. parts]);
 
-    /// <summary>The variables for <see cref="ZyggyCli"/>: the principal, the instance, <c>HOME</c>, the state and run directories.</summary>
+    /// <summary>
+    /// The variables for <see cref="ZyggyCli"/>: the principal, the instance, <c>HOME</c>, the state and run directories. Every variable
+    /// that can place the key, the certificate or a credential is set inside the fixture or removed — a CI runner's own
+    /// <c>XDG_CONFIG_HOME</c> or <c>CREDENTIALS_DIRECTORY</c> must never reach a test (a key found there would let a binary test mint
+    /// against the real login host).
+    /// </summary>
     public Dictionary<string, string?> Env() => new()
     {
         ["ZYGGY_MEMORY_ROOT"] = MemoryRoot,
@@ -51,6 +56,9 @@ public sealed class M365InstanceFixture : IDisposable
         ["ZYGGY_STATE_DIR"] = StateDirectory,
         ["ZYGGY_M365_RUN_DIR"] = RunDirectory,
         ["HOME"] = Home,
+        ["XDG_CONFIG_HOME"] = Path.Combine(Home, ".config"),
+        ["XDG_STATE_HOME"] = Path.Combine(Home, ".local", "state"),
+        ["CREDENTIALS_DIRECTORY"] = null,
     };
 
     /// <summary>Writes an executable script (mode 0755) and returns its path.</summary>
