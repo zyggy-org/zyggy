@@ -992,27 +992,27 @@ Slice J's final gate sits after Step 23 (carried-over live checks, added 2026-10
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification:
+- [x] Behavioral verification:
   - On Linux the server is started with exactly the shell's arguments and ten variables, with no token among them.
   - A stop signal from systemd reaches the server, and its exit code comes back.
   - The probe confirms the 401 and the exact tool list.
   - The headers helper prints one line on success, and on failure prints nothing on stdout and one fixed sentence on stderr, within 8 seconds.
   - The tool lists come from the data files, and the three run lists equal today's lists with each script rule replaced by its verb.
-- [ ] Contract review:
+- [x] Contract review:
   - D8 is unchanged: the token goes only to Claude Code on stdout, and the server never holds one.
   - The `ProcessSpec` option is additive. The partition lives in data files only.
-- [ ] ⚠️ Risk review:
+- [x] ⚠️ Risk review:
   - The token never appears in an argument list, a file, stderr or the journal (spy tests).
   - The process replacement (`execve`) is the one start outside the process runner.
   - The server is only accepted from `~/.local`.
   - 28's process tests are unchanged.
-- [ ] User approved — implementation may continue past this gate
+- [x] User approved — implementation may continue past this gate — 2026-10-05 owner: "approved"
 
 ---
 
 ## Step 15 — A model request can carry an explicit deny list, the result names the denied tools, and the morning brief runs its pre-flight, one model run, the result checks, the audit, one memory line and its journal line exactly as `brief.sh` (fake model, fake Graph reader)
 
-- [ ] Done
+- [x] Done
 
 **Scope**:
 - `src/Zyggy.Core/Models/ModelRunRequest.cs` *(modify, additive)*: `public IReadOnlyList<string> DisallowedTools { get; init; } = [];`.
@@ -1089,7 +1089,7 @@ Slice J's final gate sits after Step 23 (carried-over live checks, added 2026-10
 
 ## Step 16 — Both backfills loop, cap, checkpoint and resume exactly as the scripts do, read the checkpoint and watermark files the shell left on Central and continue where it stopped, and refuse to run unattended (fake model, fake Graph reader)
 
-- [ ] Done
+- [x] Done
 
 **Scope**:
 - `src/Zyggy.Core/M365/Runs/MailBackfillCheckpoint.cs`, `FilesBackfillCheckpoint.cs` *(create, internal)*: read with `JsonDocument` (unknown fields kept and written back), totals and per-folder/per-drive fields as the jq programs. Written 0600 as `.tmp` + rename. Not an object / no `folders` (`drives`) object → 3 `configuration error: <path> is not a checkpoint (zyggy m365 mail-backfill --reset starts again)`.

@@ -56,6 +56,8 @@ public sealed class M365VerbHost
         ["mcp-server"] = context => new McpServerVerb(context),
         ["auth-header"] = context => new AuthHeaderVerb(context),
         ["brief"] = context => new BriefVerb(context),
+        ["mail-backfill"] = context => new MailBackfillVerb(context),
+        ["files-backfill"] = context => new FilesBackfillVerb(context),
     };
 
     /// <summary>Creates the host over the process environment and the system clock.</summary>
