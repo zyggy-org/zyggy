@@ -1460,7 +1460,7 @@ If any of steps 3–5 fails: **stop**. Do not continue to Step 22. Roll back per
 
 *Executor: STOP here. Present the results and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification:
+- [x] Behavioral verification:
   - Central runs the new version; the old one is kept for rollback.
   - The Microsoft 365 server was started by the binary and offers exactly the allowed tools.
   - `check` works.
@@ -1468,12 +1468,12 @@ If any of steps 3–5 fails: **stop**. Do not continue to Step 22. Roll back per
   - A request to send mail with a hidden recipient was refused by the guard, and nothing was sent.
   - A fact remembered in a session landed in the inbox.
   - The remote session came back on the same conversation after its restart.
-- [ ] Contract review: the units, settings and pin match the spec. The brief timer is still off. The template was pulled only after the binary was installed.
-- [ ] ⚠️ Risk review:
+- [x] Contract review: the units, settings and pin match the spec. The brief timer is still off. The template was pulled only after the binary was installed.
+- [x] ⚠️ Risk review:
   - The guard, the action log and the token helper are now the binary's on Central.
   - Rollback is the previous symlink plus the previous instance commit.
   - Nothing secret appeared in the recorded output.
-- [ ] User approved — implementation may continue past this gate
+- [x] User approved — implementation may continue past this gate — 2026-10-05 owner: "Approved"
 
 ---
 
