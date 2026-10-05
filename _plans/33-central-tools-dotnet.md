@@ -850,28 +850,28 @@ Slice J's final gate sits after Step 23 (carried-over live checks, added 2026-10
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification:
+- [x] Behavioral verification:
   - Every case of the shell guard's table (send, upload, move, action disabled) gets the same answer from the binary: refused with the same sentence, or silent.
   - Any problem of the guard's own ends in exit 2 with one line, never in silence.
   - A send with a hidden recipient (Bcc) is refused.
   - Two log writers at once never mix their rows.
   - The Draft audit flags the same Drafts as the shell and writes the same receipt.
-- [ ] Contract review:
+- [x] Contract review:
   - The deny line is byte-exact; the guard never allows and never asks.
   - It makes at most two Graph reads, and reads only.
   - The log row and the receipt hold no mail body and no file content.
   - The exit codes are 0/2 for the hooks and 0/3/4/5/6 for `verify`.
-- [ ] ⚠️ Risk review:
+- [x] ⚠️ Risk review:
   - These are the controls that keep the model from sending or moving mail outside the policy. Nothing was softened.
   - Fail-closed is proven on the real binary.
   - No token, body or content appears in any output (spy test).
-- [ ] User approved — implementation may continue past this gate
+- [x] User approved — implementation may continue past this gate — 2026-10-05 owner: "approved"
 
 ---
 
 ## Step 13 — A process can be started with exactly the variables given and nothing inherited; the tool lists come from the template's data files and give today's allow and deny lists with each script rule replaced by its verb; the server launch is planned with exactly its argv and ten variables; the headers helper retries once inside 8 seconds and never lets the token out except as its one stdout line (fakes)
 
-- [ ] Done
+- [x] Done
 
 **Scope**:
 - `src/Zyggy.Core/Processes/ProcessSpec.cs` *(modify, additive)*: `public bool ReplaceEnvironment { get; init; }` (default `false`: inherit + additions, unchanged). When `true`, the child's environment is exactly `Environment` (`null` values ignored).
@@ -939,7 +939,7 @@ Slice J's final gate sits after Step 23 (carried-over live checks, added 2026-10
 
 ## Step 14 — On Linux `zyggy m365 mcp-server` becomes the (fake) server with exactly its argv and ten variables and no token, SIGTERM reaches it and its exit code is returned; `--probe` checks a running (fake) server's 401 and its tool list against the allowlist; `auth-header` prints one line or fails with the one stderr line
 
-- [ ] Done
+- [x] Done
 
 **Scope**:
 - `src/Zyggy.Core/Processes/IProcessReplacer.cs` *(create, internal interface)*, `PosixProcessReplacer.cs` *(create, internal sealed)*: `Exec(string path, IReadOnlyList<string> argv, IReadOnlyDictionary<string,string> environment)` through `execve` (`[LibraryImport("libc", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]`). Returns only on failure (→ exit 3 `cannot start <path>: <errno text>`). Windows → 3 `not supported on this platform`. It is the one process start outside `IProcessRunner` (spec Contracts). `src/Zyggy.Core/Zyggy.Core.csproj` *(modify: `AllowUnsafeBlocks` only if the generator requires it; Assumption 6)*.
