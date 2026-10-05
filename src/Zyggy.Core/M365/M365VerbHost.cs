@@ -13,7 +13,19 @@ internal sealed record M365VerbContext(
     Func<string, TimeZoneInfo> FindTimeZone,
     IProcessRunner Runner,
     HttpMessageHandler? GraphHandler = null,
-    bool CheckKeyOwnership = true);
+    bool CheckKeyOwnership = true)
+{
+    /// <summary>Gets the model runner for a resolved <c>claude</c> path (tests: a fake or a decorator); <see langword="null"/> is the real runner.</summary>
+    public Func<string, Models.IModelRunner>? ModelRunnerFactory { get; init; }
+
+    /// <summary>Gets a value indicating whether the model-run verbs check the binary pin (tests in process have no pinned binary).</summary>
+    public bool CheckBinaryPin { get; init; } = true;
+
+    /// <summary>Gets the exit code a stop signal recorded (143 SIGTERM, 130 SIGINT); 143 when none did.</summary>
+    public Func<int>? SignalExit { get; init; }
+
+    public int InterruptedExit() => SignalExit?.Invoke() ?? 143;
+}
 
 /// <summary>One <c>zyggy m365 &lt;verb&gt;</c>: the template script it replaces, with that script's arguments, texts and exit codes.</summary>
 internal interface IM365Verb
@@ -43,6 +55,7 @@ public sealed class M365VerbHost
         ["verify"] = context => new VerifyVerb(context),
         ["mcp-server"] = context => new McpServerVerb(context),
         ["auth-header"] = context => new AuthHeaderVerb(context),
+        ["brief"] = context => new BriefVerb(context),
     };
 
     /// <summary>Creates the host over the process environment and the system clock.</summary>

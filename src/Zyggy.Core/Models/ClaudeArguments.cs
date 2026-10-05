@@ -42,6 +42,14 @@ internal static class ClaudeArguments
             args.Add(JoinValues(request.AllowedTools, nameof(request.AllowedTools)));
         }
 
+        var noMcp = request.Isolation.HasFlag(ModelSessionIsolation.NoMcp);
+        if (request.DisallowedTools.Count > 0)
+        {
+            // One list: with NoMcp, mcp__* leads it (never two --disallowedTools flags).
+            args.Add("--disallowedTools");
+            args.Add((noMcp ? "mcp__*," : string.Empty) + JoinValues(request.DisallowedTools, nameof(request.DisallowedTools)));
+        }
+
         foreach (var directory in request.AdditionalDirectories)
         {
             args.Add("--add-dir");
@@ -66,9 +74,9 @@ internal static class ClaudeArguments
             args.Add(system);
         }
 
-        if (request.Isolation.HasFlag(ModelSessionIsolation.NoMcp))
+        if (noMcp)
         {
-            args.AddRange(["--strict-mcp-config", "--disallowedTools", "mcp__*"]);
+            args.AddRange(request.DisallowedTools.Count > 0 ? ["--strict-mcp-config"] : ["--strict-mcp-config", "--disallowedTools", "mcp__*"]);
         }
 
         if (Settings(request.Isolation) is { } settings)

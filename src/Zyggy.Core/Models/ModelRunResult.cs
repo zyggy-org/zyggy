@@ -31,4 +31,8 @@ public sealed record ModelRunResult(
     long? InputTokens,
     long? OutputTokens,
     int? ExitCode,
-    int PermissionDenials);
+    int PermissionDenials)
+{
+    /// <summary>Gets the names of the denied tools (<c>permission_denials[].tool_name</c>), in the order reported.</summary>
+    public IReadOnlyList<string> PermissionDenialTools { get; init; } = [];
+}

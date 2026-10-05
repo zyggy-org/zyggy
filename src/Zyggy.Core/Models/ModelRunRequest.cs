@@ -20,6 +20,9 @@ public sealed record ModelRunRequest(string Prompt, string WorkingDirectory, Tim
     /// <summary>Tool approval rules (<c>--allowedTools</c>).</summary>
     public IReadOnlyList<string> AllowedTools { get; init; } = [];
 
+    /// <summary>Gets the tools denied by name (<c>--disallowedTools</c>, one flag); empty for none — the 28 argument list unchanged.</summary>
+    public IReadOnlyList<string> DisallowedTools { get; init; } = [];
+
     /// <summary>Extra directories the session may read (<c>--add-dir</c>).</summary>
     public IReadOnlyList<string> AdditionalDirectories { get; init; } = [];
 
