@@ -467,16 +467,16 @@ Slice J's final gate sits after Step 23 (carried-over live checks, added 2026-10
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: every misconfiguration of `instance/m365.json` from the shell suite gets the same first message before anything else happens. A document parsed on Linux returns bounded text with secret-shaped lines replaced, and the downloaded file is gone afterwards. A file outside the run directory is refused and left untouched. CI is green on ubuntu, where the Linux-only cases run.
-- [ ] Contract review: the configuration rules and messages match `m365-lib.sh`. The parse types, caps, messages and exit codes match `parse.sh`. The memory cap is now applied with `prlimit` (accepted deviation 3).
-- [ ] ⚠️ Risk review: no document text is logged or kept. Symlinks inside the run directory are removed without touching their target.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: every misconfiguration of `instance/m365.json` from the shell suite gets the same first message before anything else happens. A document parsed on Linux returns bounded text with secret-shaped lines replaced, and the downloaded file is gone afterwards. A file outside the run directory is refused and left untouched. CI is green on ubuntu, where the Linux-only cases run.
+- [x] Contract review: the configuration rules and messages match `m365-lib.sh`. The parse types, caps, messages and exit codes match `parse.sh`. The memory cap is now applied with `prlimit` (accepted deviation 3).
+- [x] ⚠️ Risk review: no document text is logged or kept. Symlinks inside the run directory are removed without touching their target.
+- [x] User approved — implementation may continue past this gate — 2026-10-05 owner: "approved"
 
 ---
 
 ## Step 7 — The application key is read only through the secret store, with the shell's location order and checks (mode, owner, header, tenant); a certificate client assertion is built and signed exactly as `graph.sh` builds it; a token request is one POST with no secret, and every auth failure gets the shell's message (stubbed login host)
 
-- [ ] Done
+- [x] Done
 
 **Scope**:
 - `src/Zyggy.Core/Secrets/CredentialFileSecretStore.cs` *(create, internal sealed : ISecretStore)*:
@@ -553,7 +553,7 @@ Slice J's final gate sits after Step 23 (carried-over live checks, added 2026-10
 
 ## Step 8 — Graph is read only on the contracted hosts and paths with the shell's retry, re-mint and refusal rules, and the seven read operations return what `graph.sh` returned for the same fixture responses; a source-hygiene test keeps every Graph host and every `claude` reference in its one file (stubbed Graph)
 
-- [ ] Done
+- [x] Done
 
 **Scope**:
 - `src/Zyggy.Core/M365/Graph/IGraphReader.cs` *(create, internal interface)*: `MailFoldersAsync`, `DrivesAsync`, `DriveFilesAsync(string driveId)`, `DraftsSinceAsync(DateTimeOffset)`, `MessageSenderAsync(string id)`, `ItemExistsAsync(drive, parent, name)`, `ItemKindAsync(drive, item)`, plus `RawGetAsync(path, tolerated)` for `check`. Results are records (`MailFolder(Id, DisplayName, WellKnownName, TotalItemCount, Excluded)`, `Drive(Id, Name, Site)`, `DriveFile(Id, Path, Size, Modified)`, `DraftMessage(…)`, `MessageSender(From, ReplyTo, ConversationId)`, `ItemPresence {Exists, Absent}`, `ItemKind {Folder, File, Absent}`).
@@ -616,7 +616,7 @@ Slice J's final gate sits after Step 23 (carried-over live checks, added 2026-10
 
 ## Step 9 — `zyggy m365 check`, `token-test` and `cert-init` work end to end: `check` prints the shell's status lines, another mailbox being readable is reported and refused, `token-test` reports size and expiry but never the token, and `cert-init` creates, refuses, rotates and commits key pairs on disk with the shell's modes
 
-- [ ] Done
+- [x] Done
 
 **Scope**:
 - `src/Zyggy.Core/M365/CheckVerb.cs`, `TokenTestVerb.cs` *(create, internal sealed)*:
