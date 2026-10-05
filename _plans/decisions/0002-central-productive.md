@@ -314,6 +314,7 @@ Spec: `_specs/28-central-dream-local.md` · Plan: `_plans/28-central-dream-local
 | 2026-10-04 18:28 | on-demand | aborted `edit_mismatch` (0.1.2) | 1 / 150 | — | 0 | 0.50 | — |
 | 2026-10-04 20:38 | on-demand | aborted `edit_mismatch`, detail `unknown` (0.1.3) → unreadable front matter | 1 / 75 | — | 0 | 0.39 | — |
 | 2026-10-05 04:4x | on-demand | partial `slug_duplicate` (0.1.4) | 4 / 487 (3 accepted, 337) | 33 / 0 / 132 / 172 | 0 | 2.74 | `7697451` |
+| 2026-10-05 05:1x | on-demand (owner test) | partial `fact_not_found` (L62 filed into `business/areas/digiverse-company-car.md` without its full provenance) | 3 / 375 (2 accepted, 225) | — | 0 | 3.98 | `84fed00` |
 
 ## Repositories
 
