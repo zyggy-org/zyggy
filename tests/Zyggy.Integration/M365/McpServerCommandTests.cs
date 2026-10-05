@@ -36,14 +36,15 @@ public sealed class McpServerCommandTests : IDisposable
     private Task<ZyggyRun> McpServer(Dictionary<string, string?>? env = null, params string[] args) =>
         ZyggyCli.RunAsync(["m365", "mcp-server", .. args], env ?? _fixture.Env(), null, _fixture.Root, TestContext.Current.CancellationToken);
 
-    // The fake server logs its argv, its variable names and whether any variable holds a bearer token, then exits 0.
+    // The fake server logs its argv, the names of the variables it was started with (/proc/$$/environ: before sh adds PWD) and whether any holds a
+    // bearer token, then exits 0.
     [SupportedOSPlatform("linux")]
     private void InstallLoggingServer() => M365InstanceFixture.WriteScript(Server, $$"""
         #!/bin/sh
         printf 'argv=%s\n' "$*" > '{{Log}}'
-        env | cut -d= -f1 | sort | tr '\n' ' ' | sed 's/^/names=/' >> '{{Log}}'
+        tr '\0' '\n' < /proc/$$/environ | cut -d= -f1 | sort | tr '\n' ' ' | sed 's/^/names=/' >> '{{Log}}'
         printf '\n' >> '{{Log}}'
-        if env | grep -q 'eyJ'; then echo token=present >> '{{Log}}'; else echo token=absent >> '{{Log}}'; fi
+        if tr '\0' '\n' < /proc/$$/environ | grep -q 'eyJ'; then echo token=present >> '{{Log}}'; else echo token=absent >> '{{Log}}'; fi
         exit 0
         """);
 
