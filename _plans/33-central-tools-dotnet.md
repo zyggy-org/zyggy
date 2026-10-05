@@ -1285,7 +1285,7 @@ No earlier step depends on this outcome. Steps 15–17 deliver the prompt on std
 
 ## Step 19 — The `zyggy-core` template keeps only thin launchers: the guard and log hooks call the binary and turn any failure into a block, settings and `.mcp.json` name the verbs, the tool lists are plain data files, the m365 and `remember` scripts and their bats suites are gone, and template CI proves the wiring against a `zyggy` stub — on the template branch, nothing merged
 
-- [ ] Done
+- [x] Done
 
 **Scope** (`D:\source\zyggy-core`, branch `feature/33-m365-verbs`):
 - **Create:**
@@ -1335,7 +1335,7 @@ No earlier step depends on this outcome. Steps 15–17 deliver the prompt on std
 
 ## Step 20 — The instance carries the units and settings that run the verbs and refuses a pin below the template's minimum; the runbook covers install, upgrade, rollback and every new failure mode; 0002 has a section 33 ready for evidence — on the instance branch, nothing merged, nothing on Central
 
-- [ ] Done
+- [x] Done
 
 **Scope**:
 - `D:\source\zyggy-geoffrey` (branch `feature/33-m365-verbs`):
