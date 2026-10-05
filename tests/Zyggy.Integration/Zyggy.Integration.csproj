@@ -12,6 +12,10 @@
     <None Include="../golden/**" CopyToOutputDirectory="PreserveNewest" LinkBase="golden" />
     <None Include="Fixtures/**" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../Zyggy.Core.Tests/Infrastructure/TestKeys.cs" Link="Infrastructure/TestKeys.cs" />
+    <!-- Deliverable 33: the stubbed login host and Graph, and the per-test key pairs. -->
+    <Compile Include="../Zyggy.Core.Tests/Infrastructure/Golden.cs" Link="Infrastructure/Golden.cs" />
+    <Compile Include="../Zyggy.Core.Tests/Infrastructure/StubGraphHandler.cs" Link="Infrastructure/StubGraphHandler.cs" />
+    <Compile Include="../Zyggy.Core.Tests/Infrastructure/TestCertificates.cs" Link="Infrastructure/TestCertificates.cs" />
   </ItemGroup>
 
 </Project>
