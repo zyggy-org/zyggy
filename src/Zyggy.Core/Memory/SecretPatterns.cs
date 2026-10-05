@@ -88,6 +88,27 @@ internal sealed partial class SecretPatterns
         return false;
     }
 
+    /// <summary>
+    /// <c>zy_secret_match</c> over a text of several lines (<c>grep</c> per line): the first pattern, in file order, that matches any line.
+    /// </summary>
+    public bool TryMatchAnyLine(string text, out string name)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        var lines = text.Split('\n');
+        foreach (var (patternName, pattern, flags) in _patterns)
+        {
+            var single = new SecretPatterns([(patternName, pattern, flags)]);
+            if (lines.Any(line => single.TryMatch(line, out _)))
+            {
+                name = patternName;
+                return true;
+            }
+        }
+
+        name = string.Empty;
+        return false;
+    }
+
     // sed ':a; s/(x) (y)/\1\2/; ta' — repeat until nothing changes.
     private static string Collapse(string text, Regex join)
     {
