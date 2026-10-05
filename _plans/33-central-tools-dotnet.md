@@ -349,16 +349,16 @@ Slice J's final gate sits after Step 23 (carried-over live checks, added 2026-10
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: the shell's own state files are read and updated by the binary without any conversion. A run of `zyggy m365 facts` on the brief fixture produces the same inbox file as the shell oracle. The refusal counts line names reasons but never the refused text. CI is green.
-- [ ] Contract review: the state file names, value grammars and 0600/0700 modes match `state.sh`. The facts rules, including the shell's phone rule (not the dream's), and the 240-character cut match `facts.sh`. The exit codes are 0/3/4/5.
-- [ ] ⚠️ Risk review: these files are read by the skills, the backfills and the dream; nothing changed shape. 28's suites are unchanged.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: the shell's own state files are read and updated by the binary without any conversion. A run of `zyggy m365 facts` on the brief fixture produces the same inbox file as the shell oracle. The refusal counts line names reasons but never the refused text. CI is green.
+- [x] Contract review: the state file names, value grammars and 0600/0700 modes match `state.sh`. The facts rules, including the shell's phone rule (not the dream's), and the 240-character cut match `facts.sh`. The exit codes are 0/3/4/5.
+- [x] ⚠️ Risk review: these files are read by the skills, the backfills and the dream; nothing changed shape. 28's suites are unchanged.
+- [x] User approved — implementation may continue past this gate — 2026-10-05 owner: "approved"
 
 ---
 
 ## Step 5 — `instance/m365.json` is refused with the shell's first message for every misconfiguration before anything else happens, the certificate expiry warns or stops as today, and a downloaded document becomes bounded, secret-checked text with the input always deleted and anything outside the run directory left alone (fake process runner)
 
-- [ ] Done
+- [x] Done
 
 **Scope**:
 - `src/Zyggy.Core/M365/M365Environment.cs` *(create, internal sealed record)*:
@@ -429,7 +429,7 @@ Slice J's final gate sits after Step 23 (carried-over live checks, added 2026-10
 
 ## Step 6 — `zyggy m365 parse` runs a fake MarkItDown under a real `prlimit` on Linux, prints the bounded text and deletes the input; a bad configuration exits 3 before anything runs
 
-- [ ] Done
+- [x] Done
 
 **Scope**:
 - `tests/Zyggy.Integration/M365/ParseCommandTests.cs` *(create)*.
