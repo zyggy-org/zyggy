@@ -919,10 +919,10 @@ If step 5 or 6 does not end `committed`/`partial`, **stop**: do not arm the time
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step. The timer keeps running during the wait; this gate does not need the owner to act per run.*
 
-- [ ] Behavioral verification: the two on-demand run records, their commits on `origin/main` (subjects, bodies, `--stat`), the journal excerpt with the argument vector, the wrong-pin exit 3, digest byte counts, `list-timers` output; template and instance CI run ids.
-- [ ] Contract review: units against the spec table (no `LoadCredential=`, `ZYGGY_HOOKS=off`, `TimeoutStartSec`); pin file shape; runbook section 14 complete (AC-38); the `dream` skill text and its two allow rules.
-- [ ] ⚠️ Risk review: binary root-owned and out of the `zyggy` user's write reach; hash = CI `SHA256SUMS` = pin; the RIZIV/NIHDI files migrated under `business/` (OQ-2); no secret in the first commits (quick grep); the Claude Code flags accepted by 2.1.289 (no `unknown option` in the journal).
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: the two on-demand run records, their commits on `origin/main` (subjects, bodies, `--stat`), the journal excerpt with the argument vector, the wrong-pin exit 3, digest byte counts, `list-timers` output; template and instance CI run ids.
+- [x] Contract review: units against the spec table (no `LoadCredential=`, `ZYGGY_HOOKS=off`, `TimeoutStartSec`); pin file shape; runbook section 14 complete (AC-38); the `dream` skill text and its two allow rules.
+- [x] ⚠️ Risk review: binary root-owned and out of the `zyggy` user's write reach; hash = CI `SHA256SUMS` = pin; the RIZIV/NIHDI files migrated under `business/` (OQ-2); no secret in the first commits (quick grep); the Claude Code flags accepted by 2.1.289 (no `unknown option` in the journal).
+- [x] User approved — implementation may continue past this gate — 2026-10-05 owner: "Yes" (Step 18 after the third night)
 
 ---
 
