@@ -1377,19 +1377,19 @@ No earlier step depends on this outcome. Steps 15–17 deliver the prompt on std
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification:
+- [x] Behavioral verification:
   - Template CI is green on its branch: the two hook launchers block on any failure, every documented command runs against the stub, and the remaining shell is listed with its reasons.
   - The instance branch refuses an old pin, as designed.
   - The runbook has an entry for every new failure mode.
-- [ ] Contract review:
+- [x] Contract review:
   - The settings deny every excluded tool and the seven token- and run-producing verbs, and ask for the three action tools.
   - `.mcp.json` names `zyggy m365 auth-header`.
   - The units run `/usr/local/bin/zyggy m365 …`, and the brief timer stays off.
   - The GitHub scripts are untouched.
-- [ ] ⚠️ Risk review:
+- [x] ⚠️ Risk review:
   - Mixed versions: the template now needs a minimum binary, and the instance check enforces it.
   - Nothing is merged and nothing has reached Central yet.
-- [ ] User approved — implementation may continue past this gate
+- [x] User approved — implementation may continue past this gate — 2026-10-05 owner: "Approved"
 
 ---
 
