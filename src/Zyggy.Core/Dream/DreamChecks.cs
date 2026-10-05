@@ -215,7 +215,7 @@ internal static partial class DreamChecks
                 return Fail(DreamCheck.FactNotFound, $"{disposition.Line} {disposition.Outcome} into missing {Safe(disposition.Target)}");
             }
 
-            if (!HoldsProvenance(batch.Find(disposition.Line)!, text))
+            if (!ProvenanceSatisfied(batch.Find(disposition.Line)!, text))
             {
                 return Fail(DreamCheck.FactNotFound, $"{disposition.Line} {disposition.Outcome}: {Safe(target.RelativePath!)} lacks its provenance");
             }
@@ -359,8 +359,9 @@ internal static partial class DreamChecks
         return !File.Exists(full) || MemorySnapshot.Hash(File.ReadAllBytes(full)) != file.Sha256;
     }
 
-    // Appendix B "Provenance token of a source line".
-    private static bool HoldsProvenance(DreamBatchLine source, string targetText)
+    // Appendix B "Provenance token of a source line". A backfill token is long ("m365-mail D <subject>", "m365-file <path> D"); a
+    // merged line must stay within 400 characters, so a target token with the same "<source> <date>" satisfies it.
+    internal static bool ProvenanceSatisfied(DreamBatchLine source, string targetText)
     {
         var lines = FactLines(targetText).Select(MemoryLine.Parse).ToList();
         var parsed = MemoryLine.Parse(source.Text);
@@ -376,11 +377,28 @@ internal static partial class DreamChecks
 
         if (parsed.Tag == MemoryTag.Observed && parsed.Provenance.Count > 0)
         {
-            return parsed.Provenance.All(token => lines.Any(l => l.Provenance.Contains(token)));
+            return parsed.Provenance.All(token => lines.Any(l => l.Provenance.Any(t => t == token || (TokenKey(t) is { } key && key == TokenKey(token)))));
         }
 
         return true;
     }
+
+    // "<source> <date>" of a provenance token: the first word and the date that follows it, or the token's last word when that is
+    // the date (the files backfill puts the drive path in between); null when the token carries no date.
+    private static string? TokenKey(string token)
+    {
+        var words = token.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length < 2)
+        {
+            return null;
+        }
+
+        var date = IsIsoDate(words[1]) ? words[1] : IsIsoDate(words[^1]) ? words[^1] : null;
+        return date is null ? null : words[0] + " " + date;
+    }
+
+    private static bool IsIsoDate(string text) =>
+        DateOnly.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _);
 
     private static string Iso(DateOnly date) => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
