@@ -701,10 +701,10 @@ Slice H has two (first live run, definition of done).
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: show the synthetic insurer statement before and after `zyggy m365 parse`. The IBAN is replaced inside its line, the amount line is kept, and a line that also holds another secret is withheld whole. Show that `attachment_parse: false` reaches the skill as `attachments=off`. The Linux tests in the container are green.
-- [ ] Contract review: `secret-patterns.txt` is unchanged; only the IBAN and card-number patterns (the ones with the `nospace` flags) are redacted in place. The `parse` exit codes are unchanged; its summary line may add `, <r> redacted`.
-- [ ] ⚠️ Risk review: no printed line matches any pattern — proven over every shared secret sample. The change also applies to the backfills' parsing; their facts still pass the fact checks. The PDF route on Central depends on the A2 result (Branch decisions).
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: show the synthetic insurer statement before and after `zyggy m365 parse`. The IBAN is replaced inside its line, the amount line is kept, and a line that also holds another secret is withheld whole. Show that `attachment_parse: false` reaches the skill as `attachments=off`. The Linux tests in the container are green.
+- [x] Contract review: `secret-patterns.txt` is unchanged; only the IBAN and card-number patterns (the ones with the `nospace` flags) are redacted in place. The `parse` exit codes are unchanged; its summary line may add `, <r> redacted`.
+- [x] ⚠️ Risk review: no printed line matches any pattern — proven over every shared secret sample. The change also applies to the backfills' parsing; their facts still pass the fact checks. The PDF route on Central depends on the A2 result (Branch decisions).
+- [x] User approved — implementation may continue past this gate (owner, 2026-10-06: "approved")
 
 ---
 
