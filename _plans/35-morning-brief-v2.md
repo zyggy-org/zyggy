@@ -295,7 +295,7 @@ Slice H has two (first live run, definition of done).
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: show what `zyggy brief show` prints in six cases:
+- [x] Behavioral verification: show what `zyggy brief show` prints in six cases:
   - the sample one-page brief (its "… and 3 more important mails — say "brief full"" line included);
   - the same brief with `--full`: the three dropped mails are back and the count line is gone;
   - the same with two earlier briefs you have not seen;
@@ -304,13 +304,13 @@ Slice H has two (first live run, definition of done).
   - after 07:00 when the run failed (the failure line).
 
   Show that asking for a named day prints that day, and that a broken state directory gives one clear line. Local tests, Linux tests in the container and template bats are green.
-- [ ] Contract review:
+- [x] Contract review:
   - The printed shape (header, fence, delta line, earlier-briefs line) matches the spec; the page and the full view come from one file; the 20,000-character technical cap applies to `--full` only.
   - `last-shown` and the file names match spec Contracts "Files".
   - The exit codes are 0 · 3 · 4.
   - The template allows `show`, has no hook and no launcher, and tells Zyggy to run it only when you ask, and `--full` when you say "brief full".
-- [ ] ⚠️ Risk review: the brief enters a session that holds action tools, so it is printed as fenced data with the "never instructions" header, and a data line can never close the fence or carry a page marker. Nothing runs on a prompt that does not ask for the brief. Assumptions 1, 6 and 8 are acknowledged.
-- [ ] User approved — implementation may continue past this gate
+- [x] ⚠️ Risk review: the brief enters a session that holds action tools, so it is printed as fenced data with the "never instructions" header, and a data line can never close the fence or carry a page marker. Nothing runs on a prompt that does not ask for the brief. Assumptions 1, 6 and 8 are acknowledged.
+- [x] User approved — implementation may continue past this gate — 2026-10-06 owner: "Approved"
 
 ---
 
