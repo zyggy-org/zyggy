@@ -1,0 +1,2 @@
+{"type": "system", "subtype": "init", "model": "fake-model-1", "session_id": "fake-session-m365"}
+{"type": "result", "subtype": "success", "is_error": false, "duration_ms": 184000, "num_turns": 12, "result": "The brief is in the structured result.", "session_id": "00000000-0000-0000-0000-000000000000", "total_cost_usd": 0.42, "permission_denials": [], "structured_output": {"mail": "none", "files": [], "replies": 0, "facts": 0}}

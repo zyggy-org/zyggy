@@ -106,3 +106,14 @@ the brief and its item list hand-derived from spec 35's Contracts ("Rendered bri
 AC-64..AC-66, the Z numbering AC-17) for the pre-pass scenario in `tests/Zyggy.Core.Tests/Brief/BriefScenario.cs` (an eleventh mail the
 model omitted, one discard item; Europe/Brussels +02:00). The 40- and 80-mail cases are generated in the tests and checked structurally
 (caps, shortening order, markers, no urgent line dropped), not against a golden. Never produced by the code under test.
+
+## `m365/fixtures/mail-output-ok.json`, `m365/expected/{journal-weekday.txt,brief-jsonl-weekday.json}`, `m365/graph/brief/{message-reply-d12,message-in-inbox-m13,inbox-since-80}.json` — the brief run (deliverable 35, Steps 6–7)
+
+`mail-output-ok.json` is the mail run's answer for the stub's Inbox m10..m13 as the fake model gives it (m10 urgent with an amount and a
+`pay` item, m11 answered, m12 a `send` of the reply Draft d12, m13 a `move` to Archive, one file tied to m12), hand-written in the
+schema. `journal-weekday.txt` and `brief-jsonl-weekday.json` are the journal line and the `brief.jsonl` row that run produces on
+2026-10-06 08:30Z; the row's fields follow spec 35's Contracts (`mode`, `z`, `you`, `ideas`, `z_dropped`, the `ideas_*` fields,
+`counts`, `page_exceeded`). `message-reply-d12.json` and `message-in-inbox-m13.json` are the Graph answers for the two Z targets'
+locations (routes appended to `routes.tsv`). `inbox-since-80.json` holds 80 Inbox mails m20..m99 for the page-cap case (five urgent,
+sixty important, fifteen other as the fake classes them in `tools/fake-claude/scenarios/m365-brief-mail-80.jsonl`); it is used through
+a per-test route override, never by default.
