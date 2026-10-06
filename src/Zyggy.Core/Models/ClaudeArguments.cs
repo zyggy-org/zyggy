@@ -90,6 +90,16 @@ internal static class ClaudeArguments
             args.Add("--disable-slash-commands");
         }
 
+        if (request.McpConfig is { } mcpConfig)
+        {
+            if (noMcp)
+            {
+                throw new ArgumentException("An MCP configuration contradicts NoMcp.", nameof(request));
+            }
+
+            args.AddRange(["--strict-mcp-config", "--mcp-config", Value(mcpConfig, nameof(request.McpConfig))]);
+        }
+
         return args;
     }
 

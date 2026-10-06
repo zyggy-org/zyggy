@@ -93,6 +93,19 @@ public sealed class M365RunRequestTests : IDisposable
         });
     }
 
+    [Theory]
+    [InlineData("Brief")]
+    [InlineData("MailBackfill")]
+    [InlineData("FilesBackfill")]
+    public void For_McpConfigIsTheCheckoutsMcpJson(string kind)
+    {
+        // Act
+        var request = M365RunRequest.For(Enum.Parse<M365RunKind>(kind), "/x", _instance, _configuration, _partition, null);
+
+        // Assert
+        request.McpConfig.Should().Be(Path.Join(_instance.Checkout, ".mcp.json"));
+    }
+
     [Fact]
     public void For_WorkingDirectoryIsCheckoutCapsAndLimits()
     {

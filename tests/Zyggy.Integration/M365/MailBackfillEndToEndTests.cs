@@ -88,6 +88,7 @@ public sealed class MailBackfillEndToEndTests : IDisposable
             "--allowedTools", string.Join(',', Lines("mail-backfill-allow.txt")),
             "--disallowedTools", string.Join(',', Lines("mail-backfill-deny.txt")),
             "--model", "sonnet",
+            "--strict-mcp-config", "--mcp-config", Path.Join(_run.Fixture.Checkout, ".mcp.json"),
         ];
 
         // Act

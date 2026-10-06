@@ -56,6 +56,7 @@ public sealed class BriefEndToEndTests : IDisposable
             "--no-session-persistence", "--max-turns", "40", "--max-budget-usd", "3.0",
             "--allowedTools", string.Join(',', Lines("brief-allow.txt")),
             "--disallowedTools", string.Join(',', Lines("brief-deny.txt")),
+            "--strict-mcp-config", "--mcp-config", Path.Join(_run.Fixture.Checkout, ".mcp.json"),
         ];
 
         // Act
