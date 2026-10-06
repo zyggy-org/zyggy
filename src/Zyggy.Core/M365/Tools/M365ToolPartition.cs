@@ -53,7 +53,7 @@ internal sealed class M365ToolPartition
     public IReadOnlyList<string> BriefAllow => [.. Enabled.Where(t => !Actions.Contains(t)).Select(t => Prefix + t), State, Facts, Parse, StateRead];
 
     /// <summary>Gets the brief's deny list: every excluded tool, the enabled action tools, the common deny list.</summary>
-    public IReadOnlyList<string> BriefDeny => [.. Excluded.Select(t => Prefix + t), .. Enabled.Where(Actions.Contains).Select(t => Prefix + t), .. CommonDeny];
+    public IReadOnlyList<string> BriefDeny => [.. Excluded.Select(t => Prefix + t), .. Enabled.Where(Actions.Contains).Select(t => Prefix + t), .. CommonDeny, "Bash(zyggy brief *)", "Bash(zyggy memory *)"];
 
     /// <summary>Gets the mail backfill's allow list: the shared-mailbox read tools, state, facts, reads of the state dir.</summary>
     public IReadOnlyList<string> MailBackfillAllow => [.. Enabled.Where(IsMailRead).Select(t => Prefix + t), State, Facts, StateRead];

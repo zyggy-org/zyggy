@@ -30,3 +30,5 @@ GET	/users/alice@acme\.example/messages/d5\?\$select=id,parentFolderId	200	brief
 GET	/users/alice@acme\.example/messages/d6\?\$select=id,parentFolderId	200	brief/message-in-drafts-unanswered.json	-
 GET	/users/alice@acme\.example/messages/d4\?\$select=id,parentFolderId	200	brief/message-in-inbox.json	-
 GET	/users/alice@acme\.example/messages/d7\?\$select=id,parentFolderId	404	graph-not-found.json	-
+GET	/users/alice@acme\.example/messages/d12\?\$select=id,parentFolderId	200	brief/message-reply-d12.json	-
+GET	/users/alice@acme\.example/messages/m13\?\$select=id,parentFolderId	200	brief/message-in-inbox-m13.json	-

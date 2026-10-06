@@ -101,6 +101,18 @@ public sealed class M365ToolPartitionTests : IDisposable
     }
 
     [Fact]
+    public void BriefDeny_EndsWithTheBriefAndMemoryVerbs()
+    {
+        // Arrange
+        var partition = Load();
+
+        // Assert
+        partition.BriefDeny.TakeLast(2).Should().Equal("Bash(zyggy brief *)", "Bash(zyggy memory *)");
+        partition.MailBackfillDeny.Should().NotContain("Bash(zyggy brief *)");
+        partition.FilesBackfillDeny.Should().NotContain("Bash(zyggy brief *)");
+    }
+
+    [Fact]
     public void EnabledToolsRegex_AnchoredEqualsShell()
     {
         // Assert: ZY_M365_ENABLED_TOOLS of m365-lib.sh, copied by hand

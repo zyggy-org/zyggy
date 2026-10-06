@@ -8,7 +8,19 @@ using Zyggy.Core.Memory;
 namespace Zyggy.Core.M365.Audit;
 
 /// <summary>The verdict line (<c>audit ok</c> or <c>audit FLAGGED: …</c>) and exit code, or the Graph/identity failure (no receipt).</summary>
-internal sealed record AuditOutcome(int Exit, string? StdoutLine, string? Error);
+internal sealed record AuditOutcome(int Exit, string? StdoutLine, string? Error)
+{
+    /// <summary>Gets the reasons of a flagged verdict, in order (empty when ok or failed).</summary>
+    public IReadOnlyList<string> Reasons =>
+        StdoutLine is { } line && line.StartsWith("audit FLAGGED: ", StringComparison.Ordinal) ? line["audit FLAGGED: ".Length..].Split("; ") : [];
+}
+
+/// <summary>33's rule (one brief Draft expected) or 35's (none; the brief is shown in the session).</summary>
+internal enum AuditMode
+{
+    Draft33,
+    Session,
+}
 
 /// <summary>
 /// The post-run audit of the brief's Drafts — <c>verify.sh</c> (spec 23 AC-39, spec 33 AC-23): every Draft created in the window,
@@ -24,8 +36,17 @@ internal sealed partial class DraftAudit(IGraphReader reader, M365State state, M
 
     private static readonly JsonWriterOptions Pretty = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, Indented = true, NewLine = "\n" };
 
-    public async Task<AuditOutcome> AuditAsync(DateOnly date, string windowIso, CancellationToken cancellationToken)
+    public Task<AuditOutcome> AuditAsync(DateOnly date, string windowIso, CancellationToken cancellationToken) =>
+        AuditAsync(date, windowIso, AuditMode.Draft33, new HashSet<string>(StringComparer.Ordinal), [], cancellationToken);
+
+    /// <summary>
+    /// Spec 35 AC-20: the session mode — no brief Draft is expected (one is a violation), the cap is <c>reply_cap</c>, a reply Draft to a
+    /// mail the owner already answered is a violation, and the validator's violations join the verdict.
+    /// </summary>
+    public async Task<AuditOutcome> AuditAsync(DateOnly date, string windowIso, AuditMode mode, IReadOnlySet<string> answeredConversations, IReadOnlyList<string> violations, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(answeredConversations);
+        ArgumentNullException.ThrowIfNull(violations);
         var dateText = date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
 
         // 3. What Graph holds: the Drafts of the window, the replied-to messages.
@@ -81,19 +102,42 @@ internal sealed partial class DraftAudit(IGraphReader reader, M365State state, M
             }
         }
 
-        if (briefs == 0)
+        if (mode == AuditMode.Session)
         {
-            reasons.Add("no brief draft");
-        }
-        else if (briefs > 1)
-        {
-            reasons.Add($"{briefs} brief drafts");
-        }
+            if (briefs > 0)
+            {
+                reasons.Add($"{briefs} brief draft{(briefs == 1 ? string.Empty : "s")} (the brief is shown in the session)");
+            }
 
-        var cap = ReplyCap() + 1;
-        if (records.Count > cap)
+            foreach (var record in records.Where(r => r.Kind == "reply" && r.Conversation.Length > 0 && answeredConversations.Contains(r.Conversation)))
+            {
+                reasons.Add($"reply draft \"{record.Subject}\" answers a mail the owner already answered");
+            }
+
+            var replyCap = ReplyCap();
+            if (records.Count > replyCap)
+            {
+                reasons.Add($"{records.Count} drafts > reply_cap {replyCap}");
+            }
+
+            reasons.AddRange(violations);
+        }
+        else
         {
-            reasons.Add($"{records.Count} drafts > cap {cap} (one brief + reply_cap {cap - 1})");
+            if (briefs == 0)
+            {
+                reasons.Add("no brief draft");
+            }
+            else if (briefs > 1)
+            {
+                reasons.Add($"{briefs} brief drafts");
+            }
+
+            var cap = ReplyCap() + 1;
+            if (records.Count > cap)
+            {
+                reasons.Add($"{records.Count} drafts > cap {cap} (one brief + reply_cap {cap - 1})");
+            }
         }
 
         // 5. The receipt and the verdict.
@@ -118,7 +162,7 @@ internal sealed partial class DraftAudit(IGraphReader reader, M365State state, M
             : outside.Length == 0 ? string.Empty
             : kind == "brief" ? $"brief draft has recipients other than the owner ({outside})"
             : $"draft \"{subject}\" to {outside} not allowed";
-        return new DraftRecord(message.TryGetProperty("id", out var id) ? id.Clone() : default, kind, subject, recipients, reason);
+        return new DraftRecord(message.TryGetProperty("id", out var id) ? id.Clone() : default, kind, subject, recipients, reason, conversation);
     }
 
     // .body.content // .bodyPreview // "", above Outlook's quote separator for a reply (CR removed).
@@ -241,5 +285,5 @@ internal sealed partial class DraftAudit(IGraphReader reader, M365State state, M
     [GeneratedRegex("\\A(_{8,}|-{3,} ?Original Message ?-{3,})\\s*\\z", RegexOptions.CultureInvariant)]
     private static partial Regex QuoteSeparator();
 
-    private sealed record DraftRecord(JsonElement Id, string Kind, string Subject, List<string> Recipients, string Reason);
+    private sealed record DraftRecord(JsonElement Id, string Kind, string Subject, List<string> Recipients, string Reason, string Conversation);
 }

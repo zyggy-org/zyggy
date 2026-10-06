@@ -465,7 +465,7 @@ Slice H has two (first live run, definition of done).
 
 ## Step 6 — `zyggy m365 brief` on a weekday runs in the spec's order: no brief Draft, the mail run with structured output and no memory access, the audit without a brief Draft, the binary sets the watermark, writes the item list then the brief file, prunes old files and writes one journal line; a second run says "already created"; a configuration with `brief.delivery` is refused (fake model, stubbed Graph)
 
-- [ ] Done
+- [x] Done — 2026-10-06 (executor note: `BriefRun` rewritten to the session contract; `DraftAudit` gained `AuditMode.Session` (no brief Draft expected, cap = `reply_cap`, a reply to an answered conversation and the validator's violations join the verdict); `M365Configuration` validates the 35 keys and refuses `brief.delivery`; the brief request has the schema, `NoAutoMemory`, 30 min, `Read(<run-dir>/**)` allowed and `Read(//<checkout>/memory/**)`, `Bash(zyggy brief *)`, `Bash(zyggy memory *)` denied; goldens `journal-weekday.txt`, `brief-jsonl-weekday.json`, fixture `mail-output-ok.json`. Deviation: 33's three `BriefEndToEndTests` brief cases are red until Step 7 rewrites them (the fake answers no structured output); unit suite and format green)
 
 **Scope**:
 - `src/Zyggy.Core/M365/M365Configuration.cs` *(modify)*:

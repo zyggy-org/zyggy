@@ -8,6 +8,13 @@ internal sealed record BriefSettings(TimeOnly ExpectBy, int KeepDays, IReadOnlyL
 {
     public static BriefSettings Defaults { get; } = new(new TimeOnly(7, 0), 14, [DayOfWeek.Saturday, DayOfWeek.Sunday]);
 
+    /// <summary>The settings of a fully loaded configuration (the brief run); <see cref="Load"/> is the light reader of <c>show</c>.</summary>
+    public static BriefSettings From(M365.M365Configuration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        return new BriefSettings(configuration.ExpectBy, configuration.BriefKeepDays, configuration.WeekendDays);
+    }
+
     /// <summary>
     /// Loads the <c>brief</c> block of <c>&lt;ZYGGY_INSTANCE_DIR&gt;/m365.json</c> (or <c>ZYGGY_M365_CONFIG</c>). The defaults apply when the
     /// variable, the file, the block or a key is absent; the identity part of the file is never read or validated, so an identity problem

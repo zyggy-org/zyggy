@@ -25,6 +25,15 @@ internal sealed partial class BriefPaths
         Directory = Path.Join(Get("ZYGGY_STATE_DIR") ?? Path.Join(home, ".local", "state", "zyggy"), "brief");
     }
 
+    private BriefPaths(string directory) => Directory = directory;
+
+    /// <summary>The brief directory next to the m365 one (<c>&lt;state&gt;/brief</c> beside <c>&lt;state&gt;/m365</c>), for the brief run.</summary>
+    public static BriefPaths Beside(M365.M365Paths m365)
+    {
+        ArgumentNullException.ThrowIfNull(m365);
+        return new BriefPaths(Path.Join(Path.GetDirectoryName(m365.StateDirectory), "brief"));
+    }
+
     /// <summary>Gets the brief state directory, 0700 on Linux.</summary>
     public string Directory { get; }
 

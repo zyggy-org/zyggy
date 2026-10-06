@@ -50,7 +50,15 @@ internal static class M365RunRequest
         }
 
         var model = block.TryGetProperty("model", out var m) && m.ValueKind == JsonValueKind.String && m.GetString()!.Length > 0 ? m.GetString() : null;
-        return new ModelRunRequest(prompt, instance.Checkout, TimeSpan.FromMinutes(120))
+        var brief = kind == M365RunKind.Brief;
+        if (brief)
+        {
+            // Spec 35 AC-45/AC-46: the mail run reads its run directory, never memory; it gets no auto memory and answers in the schema.
+            allow = runDirectory is null ? allow : [.. allow, $"Read({runDirectory}/**)"];
+            deny = [.. deny, $"Read(//{Path.Join(instance.Checkout, "memory").Replace('\\', '/')}/**)"];
+        }
+
+        return new ModelRunRequest(prompt, instance.Checkout, TimeSpan.FromMinutes(brief ? 30 : 120))
         {
             AllowedTools = allow,
             DisallowedTools = deny,
@@ -58,7 +66,8 @@ internal static class M365RunRequest
             MaxBudgetUsd = decimal.Parse(block.GetProperty(budgetKey).GetRawText(), NumberStyles.Float, CultureInfo.InvariantCulture),
             Model = model,
             Environment = environment,
-            Isolation = ModelSessionIsolation.None,
+            Isolation = brief ? ModelSessionIsolation.NoAutoMemory : ModelSessionIsolation.None,
+            JsonSchema = brief ? new Brief.BriefPrompts().MailSchema : null,
             McpConfig = Path.Join(instance.Checkout, ".mcp.json"),
             MaxCaptureBytes = 64 * 1024 * 1024,
         };

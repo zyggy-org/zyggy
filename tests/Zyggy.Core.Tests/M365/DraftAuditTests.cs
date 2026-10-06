@@ -125,6 +125,55 @@ public sealed class DraftAuditTests : IDisposable
         File.ReadAllText(Receipt).Should().NotContain("0961");
     }
 
+    public static TheoryData<string, string[], string[]> SessionCases() => new()
+    {
+        { "audit ok", [ReplyOk()], [] },
+        { "audit ok", [], [] },
+        { "audit FLAGGED: 1 brief draft (the brief is shown in the session)", [BriefOk(), ReplyOk()], [] },
+        { "audit FLAGGED: 2 brief drafts (the brief is shown in the session)", [BriefOk(), Draft("d9", "Zyggy — morning brief 2026-09-30", "c9", "Again.", "alice@acme.example")], [] },
+        { "audit FLAGGED: reply draft \"RE: Invoice 2026-41\" answers a mail the owner already answered", [ReplyOk()], ["c1"] },
+        {
+            "audit FLAGGED: 4 drafts > reply_cap 3",
+            [ReplyOk(), Draft("d2", "RE: Invoice 2026-41", "c1", "Second.", "carol@example.org"), Draft("d3", "RE: Invoice 2026-41", "c1", "Third.", "carol@example.org"), Draft("d4", "RE: Invoice 2026-41", "c1", "Fourth.", "carol@example.org")],
+            []
+        },
+        { "audit FLAGGED: draft \"RE: Invoice 2026-41\" contains a URL", [Draft("d1", "RE: Invoice 2026-41", "c1", "See www.example.org for the terms.", "carol@example.org")], [] },
+    };
+
+    [Theory]
+    [MemberData(nameof(SessionCases))]
+    public async Task Audit_SessionCases(string expected, string[] drafts, string[] answered)
+    {
+        // Arrange: spec 35 AC-20 — no brief Draft expected, cap = reply_cap, an answered conversation may not get a reply Draft
+        Replied("m1");
+        _graph.Stub.Once("GET", DraftsRoute, 200, "{\"value\":[" + string.Join(',', drafts) + "]}");
+
+        // Act
+        var outcome = await Audit().AuditAsync(Date, Window, AuditMode.Session, answered.ToHashSet(StringComparer.Ordinal), [], CancellationToken.None);
+
+        // Assert
+        outcome.StdoutLine.Should().Be(expected);
+        outcome.Exit.Should().Be(expected == "audit ok" ? 0 : 5);
+        JsonDocument.Parse(File.ReadAllText(Receipt)).RootElement.GetProperty("audit").GetString().Should().Be(expected == "audit ok" ? "ok" : "flagged");
+    }
+
+    [Fact]
+    public async Task Audit_SessionViolations_JoinTheVerdictAfterTheDraftReasons()
+    {
+        // Arrange
+        Replied("m1");
+        _graph.Stub.Once("GET", DraftsRoute, 200, "{\"value\":[" + BriefOk() + "]}");
+
+        // Act
+        var outcome = await Audit().AuditAsync(Date, Window, AuditMode.Session, new HashSet<string>(StringComparer.Ordinal), ["link withheld in summary of m09", "send for m04 dropped: its draft is not a reply in Drafts"], CancellationToken.None);
+
+        // Assert
+        outcome.Exit.Should().Be(5);
+        outcome.StdoutLine.Should().Be("audit FLAGGED: 1 brief draft (the brief is shown in the session); link withheld in summary of m09; send for m04 dropped: its draft is not a reply in Drafts");
+        outcome.Reasons.Should().HaveCount(3);
+        JsonDocument.Parse(File.ReadAllText(Receipt)).RootElement.GetProperty("reasons").GetArrayLength().Should().Be(3);
+    }
+
     [Fact]
     public async Task Audit_RepliedIdNotFound_SkippedKeptInReceipt()
     {
