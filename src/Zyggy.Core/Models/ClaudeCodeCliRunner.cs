@@ -32,7 +32,8 @@ internal sealed class ClaudeCodeCliRunner(IProcessRunner processes, IOptions<Cla
         var path = options.Value.Path;
         var reader = new StreamJsonReader(request.MaxCaptureBytes);
         var environment = request.Environment.ToDictionary(kv => kv.Key, kv => (string?)kv.Value);
-        environment["CREDENTIALS_DIRECTORY"] = null;
+        // No credential reaches a model run unless the request names it (the m365 runs: the headersHelper reads the unit's key copy, D8).
+        environment.TryAdd("CREDENTIALS_DIRECTORY", null);
         var spec = new ProcessSpec(path, ClaudeArguments.Build(request), request.WorkingDirectory)
         {
             Environment = environment,

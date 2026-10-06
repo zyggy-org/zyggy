@@ -75,6 +75,20 @@ public sealed class ClaudeCodeCliRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_RequestNamesCredentialsDirectory_PassedThrough()
+    {
+        // Arrange: the m365 runs pass it on purpose — Claude Code's headersHelper reads the unit's key copy (D8)
+        Script(Exited(), StreamLines.Result());
+        var request = Request() with { Environment = new Dictionary<string, string> { ["CREDENTIALS_DIRECTORY"] = "/run/credentials/unit" } };
+
+        // Act
+        await Runner().RunAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert
+        _captured!.Environment.Should().Contain("CREDENTIALS_DIRECTORY", "/run/credentials/unit");
+    }
+
+    [Fact]
     public async Task RunAsync_SuccessWithSchema_ReturnsSucceededWithStructuredOutput()
     {
         // Arrange

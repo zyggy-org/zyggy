@@ -19,8 +19,8 @@ internal sealed record RunOutcome(int Exit, IReadOnlyList<string> StdoutLines, I
 
 /// <summary>
 /// The model request of an m365 run (spec 33 Contracts): the prompt on stdin (decision 7), the checkout as working directory, the run's
-/// allow and deny lists from the tool partition, its caps and model from <c>instance/m365.json</c>, <c>ZYGGY_HOOKS=off</c> and the run
-/// directory as the only additions to the environment, a 2-hour limit and a 64 MiB capture (Assumption 7).
+/// allow and deny lists from the tool partition, its caps and model from <c>instance/m365.json</c>, <c>ZYGGY_HOOKS=off</c>, the run
+/// directory and the unit's <c>CREDENTIALS_DIRECTORY</c> (for the headersHelper) as the only additions to the environment, a 2-hour limit and a 64 MiB capture (Assumption 7).
 /// </summary>
 internal static class M365RunRequest
 {
@@ -40,6 +40,12 @@ internal static class M365RunRequest
         if (runDirectory is not null)
         {
             environment["ZYGGY_M365_RUN_DIR"] = runDirectory;
+        }
+
+        // Claude Code's headersHelper (`zyggy m365 auth-header`) mints the token from the unit's key copy (D8), as the shell's run did.
+        if (instance.Paths.CredentialsDirectory is { } credentials)
+        {
+            environment["CREDENTIALS_DIRECTORY"] = credentials;
         }
 
         var model = block.TryGetProperty("model", out var m) && m.ValueKind == JsonValueKind.String && m.GetString()!.Length > 0 ? m.GetString() : null;

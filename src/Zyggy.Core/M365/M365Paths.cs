@@ -20,6 +20,7 @@ internal sealed partial class M365Paths
         var config = Path.Join(Get("XDG_CONFIG_HOME") ?? Path.Join(home, ".config"), "zyggy");
         KeyFile = Get("ZYGGY_M365_KEY_FILE") ?? Path.Join(config, "m365-app.key");
         CertificateFile = Get("ZYGGY_M365_CER_FILE") ?? Path.Join(config, "m365-app.cer");
+        CredentialsDirectory = Get("CREDENTIALS_DIRECTORY");
     }
 
     /// <summary>Gets the state directory, 0700 on Linux.</summary>
@@ -33,6 +34,9 @@ internal sealed partial class M365Paths
 
     /// <summary>Gets the application's certificate file.</summary>
     public string CertificateFile { get; }
+
+    /// <summary>Gets systemd's <c>$CREDENTIALS_DIRECTORY</c> of the unit (<c>LoadCredential=</c>), or <see langword="null"/> outside one.</summary>
+    public string? CredentialsDirectory { get; }
 
     /// <summary>Returns a state file; only the shell's file name shapes are accepted.</summary>
     /// <exception cref="ArgumentException">Thrown for any other name.</exception>
