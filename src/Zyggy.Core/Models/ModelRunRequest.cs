@@ -41,6 +41,12 @@ public sealed record ModelRunRequest(string Prompt, string WorkingDirectory, Tim
     /// <summary>What the session is cut off from (MCP servers, hooks, auto memory, slash commands).</summary>
     public ModelSessionIsolation Isolation { get; init; } = ModelSessionIsolation.None;
 
+    /// <summary>
+    /// An MCP configuration file loaded with <c>--strict-mcp-config --mcp-config</c> instead of the project's own servers (the m365 runs:
+    /// a project-scope headersHelper does not get <c>CREDENTIALS_DIRECTORY</c>); <see langword="null"/> leaves the argument list as before.
+    /// </summary>
+    public string? McpConfig { get; init; }
+
     /// <summary>Environment additions for the model process, for example <c>ZYGGY_HOOKS=off</c>.</summary>
     public IReadOnlyDictionary<string, string> Environment { get; init; } = ReadOnlyDictionary<string, string>.Empty;
 
