@@ -2,12 +2,16 @@
 # Needs no repository secret: the implicit GITHUB_TOKEN is used only by the artefact upload.
 name: ci
 
+# Kept within the free private-repository Actions allowance (owner, 2026-10-06): a docs-only change runs nothing (tags
+# always build), and a pull request runs only the Linux job; main and release tags run both runners.
 on:
   push:
     branches: [main]
     # A release tag builds the artefacts Central installs: MinVer then versions them from the tag (spec 28, runbook 14a).
     tags: ['v*']
+    paths-ignore: ['_plans/**', '_specs/**', 'runbooks/**', 'evolution/**', 'memory/**', '**/*.md']
   pull_request:
+    paths-ignore: ['_plans/**', '_specs/**', 'runbooks/**', 'evolution/**', 'memory/**', '**/*.md']
 
 permissions:
   contents: read
@@ -22,16 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
-        include:
-          - os: windows-latest
-            rid: win-x64
-            exe: zyggy.exe
-            os-facts: _OnWindows
-          - os: ubuntu-latest
-            rid: linux-x64
-            exe: zyggy
-            os-facts: _OnLinux
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"ubuntu-latest","rid":"linux-x64","exe":"zyggy","os-facts":"_OnLinux"}]' || '[{"os":"windows-latest","rid":"win-x64","exe":"zyggy.exe","os-facts":"_OnWindows"},{"os":"ubuntu-latest","rid":"linux-x64","exe":"zyggy","os-facts":"_OnLinux"}]') }}
     steps:
       - uses: actions/checkout@v7
         with:
