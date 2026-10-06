@@ -143,6 +143,25 @@ public sealed partial class BriefEndToEndTests : IDisposable
     }
 
     [Fact]
+    public async Task Brief_AttachmentParseFalse_StdinAttachmentsOff()
+    {
+        // Arrange: spec 35 AC-29 — an instance that turns attachment parsing off
+        var path = Path.Combine(_run.Fixture.InstanceDirectory, "m365.json");
+        var config = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+        config["brief"]!["attachment_parse"] = false;
+        File.WriteAllText(path, config.ToJsonString());
+        var model = _run.Model(_ => "m365-brief-mail-ok");
+
+        // Act
+        var (exit, console) = await BriefAsync(model, TestContext.Current.CancellationToken);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr + console.Stdout);
+        var stdin = Encoding.UTF8.GetString(File.ReadAllBytes(model.StdinCapture(0)));
+        stdin.Should().StartWith("/morning-brief alice@acme.example AQMkInbox0001 attachments=off b!onedrive0001 ");
+    }
+
+    [Fact]
     public async Task Brief_MailJsonPresentDuringRun0600()
     {
         // Arrange: the acting runner reads mail.json right after the fake ran, before the binary removes the run directory

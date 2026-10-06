@@ -671,7 +671,7 @@ Slice H has two (first live run, definition of done).
 
 ## Step 9 — On Linux `zyggy m365 parse` prints the insurer statement with the IBAN redacted inside its line through a real `prlimit` and a fake MarkItDown, and a brief run with `attachment_parse` false tells the skill `attachments=off`
 
-- [ ] Done
+- [x] Done — 2026-10-06 (executor note: Linux rows green in the `mcr.microsoft.com/dotnet/sdk:10.0` container through the real `prlimit` (20 passed, the Windows-only refusal skipped); `Brief_AttachmentParseFalse_StdinAttachmentsOff` passed from its first run — Step 6 already passes `attachments=<on|off>` — so its RED was not observable)
 
 **Scope**:
 - `tests/Zyggy.Integration/M365/ParseCommandTests.cs` *(modify)*: a fake `markitdown` script printing `insurer-statement.txt`.

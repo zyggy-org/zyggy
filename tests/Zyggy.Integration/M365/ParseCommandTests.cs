@@ -29,6 +29,8 @@ public sealed class ParseCommandTests : IDisposable
         var fixtures = Path.Combine(directory, "fixtures");
         Directory.CreateDirectory(fixtures);
         File.Copy(M365InstanceFixture.Golden("m365", "fixtures", "parsed-report.docx.txt"), Path.Combine(fixtures, "parsed-report.docx.txt"));
+        File.Copy(M365InstanceFixture.Golden("m365", "parse", "insurer-statement.txt"), Path.Combine(fixtures, "parsed-insurer-statement.pdf.txt"));
+        File.WriteAllText(Path.Combine(fixtures, "parsed-mixed.pdf.txt"), "Pay to BE71 0961 2345 6769 with key AKIAABCDEFGHIJKLMNOP\nThank you.\n");
         M365InstanceFixture.WriteScript(Path.Combine(directory, "markitdown"), """
             #!/bin/sh
             here="$(cd "$(dirname "$0")" && pwd)"
@@ -74,6 +76,44 @@ public sealed class ParseCommandTests : IDisposable
         run.Stderr.Should().Be("parse: report.docx 29 lines, 1 withheld\n");
         File.Exists(input).Should().BeFalse();
         File.ReadAllLines(Path.Combine(bin, "markitdown.log")).Should().Equal($"argv={input}");
+    }
+
+    [Fact(SkipUnless = nameof(IsLinux), Skip = "MarkItDown under prlimit: Linux only")]
+    [SupportedOSPlatform("linux")]
+    public async Task Parse_OnLinux_InsurerStatement_IbanRedactedLineKeptInputDeleted()
+    {
+        // Arrange: spec 35 AC-30 through the real prlimit
+        var bin = Path.Combine(_fixture.Root, "bin");
+        InstallMarkitdown(bin);
+        var input = Input("insurer-statement.pdf");
+
+        // Act
+        var run = await Parse(EnvWithPath(bin), input);
+
+        // Assert
+        run.ExitCode.Should().Be(0, run.Stderr);
+        run.Stdout.Should().Be(Encoding.UTF8.GetString(File.ReadAllBytes(M365InstanceFixture.Golden("m365", "parse", "insurer-statement.expected.txt"))));
+        run.Stdout.Should().Contain("Direct debit from IBAN [redacted: iban] on the 5th of each month").And.Contain("Amount due: 0.00 EUR");
+        run.Stderr.Should().Be("parse: insurer-statement.pdf 8 lines, 1 withheld, 2 redacted\n");
+        File.Exists(input).Should().BeFalse();
+    }
+
+    [Fact(SkipUnless = nameof(IsLinux), Skip = "MarkItDown under prlimit: Linux only")]
+    [SupportedOSPlatform("linux")]
+    public async Task Parse_OnLinux_IbanPlusOtherSecret_LineWithheld()
+    {
+        // Arrange
+        var bin = Path.Combine(_fixture.Root, "bin");
+        InstallMarkitdown(bin);
+        var input = Input("mixed.pdf");
+
+        // Act
+        var run = await Parse(EnvWithPath(bin), input);
+
+        // Assert
+        run.ExitCode.Should().Be(0, run.Stderr);
+        run.Stdout.Should().Be("[line withheld: matches secret pattern aws-access-key]\nThank you.\n");
+        run.Stderr.Should().Be("parse: mixed.pdf 1 lines, 1 withheld\n");
     }
 
     [Fact(SkipUnless = nameof(IsLinux), Skip = "MarkItDown under prlimit: Linux only")]
