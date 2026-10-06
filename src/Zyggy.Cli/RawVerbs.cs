@@ -1,3 +1,4 @@
+using Zyggy.Core.Brief;
 using Zyggy.Core.M365;
 using Zyggy.Core.Memory;
 using Zyggy.Core.Verbs;
@@ -5,7 +6,7 @@ using Zyggy.Core.Verbs;
 namespace Zyggy.Cli;
 
 /// <summary>
-/// The verbs that replace template scripts (spec 33): <c>memory remember</c> and <c>m365 …</c>. They take their arguments unchanged, <c>--</c> included, so their own parsers
+/// The verbs that replace template scripts (spec 33): <c>memory remember</c> and <c>m365 …</c>; and the morning brief's <c>brief …</c> (spec 35). They take their arguments unchanged, <c>--</c> included, so their own parsers
 /// keep the scripts' usage texts and exit codes; System.CommandLine never parses them. They build no host.
 /// </summary>
 internal static class RawVerbs
@@ -21,6 +22,12 @@ internal static class RawVerbs
         if (args is ["m365", .. var m365])
         {
             run = new M365VerbHost(environment.Variables).RunAsync(m365, VerbIo.FromConsole(), CancellationToken.None);
+            return true;
+        }
+
+        if (args is ["brief", .. var brief])
+        {
+            run = new BriefVerbHost(environment.Variables).RunAsync(brief, VerbIo.FromConsole(), CancellationToken.None);
             return true;
         }
 

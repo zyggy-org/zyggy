@@ -1,7 +1,6 @@
 using System.Runtime.Versioning;
 using System.Text;
 
-
 namespace Zyggy.Core.Tests.Brief;
 
 public sealed class BriefStoreTests : IDisposable

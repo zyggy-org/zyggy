@@ -241,7 +241,7 @@ Slice H has two (first live run, definition of done).
 
 ## Step 3 — `zyggy brief show` works from the built binary as the session's Bash tool calls it, and the template allows it and tells Zyggy to run it only when the owner asks for the brief — no hook, no launcher
 
-- [ ] Done
+- [x] Done — 2026-10-06
 
 **Scope**:
 - `src/Zyggy.Core/Brief/BriefVerbHost.cs` *(create, public sealed)*: mirrors `M365VerbHost`. A public constructor over the process environment and an internal test constructor (clock, zone lookup, Graph handler, model-runner factory). It dispatches `show` (and from Step 13 `items`, `idea`). An unknown verb → exit 4 `brief: unknown verb '<v>' (usage: zyggy brief <show|items|idea> …)`.
