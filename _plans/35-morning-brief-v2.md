@@ -604,8 +604,8 @@ Slice H has two (first live run, definition of done).
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: show a sample one-page brief as you would read it, with its item list next to it: urgent mails first with a `!`, then the important ones, then "12 other mails, none needing you → Z7". Show the same morning with 80 mails: the page stays within 40 lines and 3,500 characters, says "… and 23 more important mails — say "brief full"", and `brief full` shows them all. Show a morning where urgent mails alone overflow the page: nothing is dropped and the journal line says "page exceeded". Show how a mail you already answered from Outlook reads `→ nothing (answered 09:12)`, how an old reply draft becomes "discard the reply draft …", and how a €0.00 statement reads "nothing to pay". Show the captured model call (structured answer with a class per mail, no auto memory, memory and `zyggy brief` denied), and that a broken answer from the model leaves no file and does not move the watermark. Show that a second run the same day says "already created".
-- [ ] Contract review:
+- [x] Behavioral verification: show a sample one-page brief as you would read it, with its item list next to it: urgent mails first with a `!`, then the important ones, then "12 other mails, none needing you → Z7". Show the same morning with 80 mails: the page stays within 40 lines and 3,500 characters, says "… and 23 more important mails — say "brief full"", and `brief full` shows them all. Show a morning where urgent mails alone overflow the page: nothing is dropped and the journal line says "page exceeded". Show how a mail you already answered from Outlook reads `→ nothing (answered 09:12)`, how an old reply draft becomes "discard the reply draft …", and how a €0.00 statement reads "nothing to pay". Show the captured model call (structured answer with a class per mail, no auto memory, memory and `zyggy brief` denied), and that a broken answer from the model leaves no file and does not move the watermark. Show that a second run the same day says "already created".
+- [x] Contract review:
   - The brief text follows the spec's "Rendered brief" format: one list per action, every mail line ends in Z, you or nothing, names only, no address; only urgent and important mails have a line; the files shown are tied to one of them or changed by someone else.
   - The classes: the model judges, but a due date always makes a mail urgent, an answered mail is never urgent, a mail with an action is never "other", and a mail the model forgot is treated as important.
   - Z numbers come from the binary: urgent first, then important, then discard items, then the one "file the other mails" item, capped.
@@ -614,14 +614,14 @@ Slice H has two (first live run, definition of done).
   - Exit codes are unchanged.
   - `brief.delivery` is refused.
   - The skill no longer creates a brief Draft or moves the watermark.
-- [ ] ⚠️ Risk review:
+- [x] ⚠️ Risk review:
   - The mail run can no longer read memory (no auto memory, memory reads denied).
   - The action tools stay denied.
   - The audit now expects zero brief Drafts.
   - A dropped urgent mail: the cap never drops an urgent line or an urgent action (property-tested over random briefs), nothing is filed unseen, and "other" mails are only ever filed by the one move you confirm.
   - The 33 backfill tests are unchanged.
   - Assumptions 3–5, 8 and 9 (the first sent time, subject and name checked like model text, the `attachments=` argument, the page-marker grammar, the journal token) are acknowledged.
-- [ ] User approved — implementation may continue past this gate
+- [x] User approved — implementation may continue past this gate (owner, 2026-10-06: "Approved"; the busy-day shortening order kept as specified)
 
 ---
 
