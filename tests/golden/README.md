@@ -79,3 +79,11 @@ The `m365.bats` cases they serve were run at `ZYGGY_NOW=2026-09-30T10:00:00Z`, `
 
 - `m365/tools/{enabled,excluded}.txt` are byte copies of `zyggy-core` `tests/fixtures/m365/{enabled,excluded}-tools.txt` at `5201115`; `actions.txt`, `auth.txt` and `server-version.txt` are written by hand from `ZY_M365_ACTION_TOOLS`, `ZY_M365_AUTH_TOOLS` and the pinned version in `m365-lib.sh`. These five files are also what the template ships as `.claude/skills/m365/tools/` (Step 19); the binary holds no copy (owner decision 8).
 - `m365/run-lists/{brief,mail-backfill,files-backfill}-{allow,deny}.txt` are derived by a shell script from those tool files with `m365-lib.sh`'s rules, each script rule replaced by its verb (`state.sh` → `Bash(zyggy m365 state *)`, `facts.sh`, `parse.sh` likewise; the common deny's `graph.sh` rule → the seven `Bash(zyggy m365 auth-header*)`, `token-test*`, `cert-init*`, `mcp-server*`, `brief*`, `mail-backfill*`, `files-backfill*` rules). The mail backfill's three read tools are taken in the enabled list's order (the binary picks them by the `list-/get-shared-mailbox-` prefix instead of a hard-coded list). Never produced by the code under test.
+
+## `brief/` — the printed brief (deliverable 35, Step 2)
+
+Hand-derived from spec 35's Contracts ("Rendered brief", the page markers, AC-12, AC-56..AC-58, AC-67), never produced by the code under test:
+
+- `brief-weekday.md` is a complete brief file as the renderer writes it (fictional people, `*.example` names), with the two page markers: a line the page cap dropped carries the prefix `<!--page:drop-->`, a "… and <n> more" count line the prefix `<!--page:count-->`.
+- `show-weekday.txt` is the exact stdout of `zyggy brief show` for it on 2026-10-06 (page view: dropped lines removed, count prefixes stripped; the sidecar's `generated` 2026-10-06T04:31:00Z; the watermark 2026-10-05T04:30:00Z); `show-weekday-full.txt` the stdout of `show --full` (count lines removed, dropped lines kept).
+- `show-failure.txt` (no brief, 07:00 or later, a failed `brief.jsonl` row and two earlier briefs not shown) and `show-not-ready.txt` (no brief, before 07:00).

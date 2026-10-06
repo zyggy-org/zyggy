@@ -1,0 +1,2 @@
+exit 6: claude run failed (error_during_execution) — runbook 13 "Model run failed"
+2 earlier briefs not shown (2026-10-03, 2026-10-04) — say "show <date>"
