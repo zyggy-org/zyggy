@@ -274,6 +274,35 @@ public sealed class CredentialFileSecretStoreTests : IDisposable
         }
     }
 
+    [Theory(SkipUnless = nameof(IsLinux), Skip = "Unix owner: Linux only")]
+    [InlineData(true, 1000u, true)]
+    [InlineData(true, 0u, true)]
+    [InlineData(true, 1001u, false)]
+    [InlineData(false, 1000u, true)]
+    [InlineData(false, 0u, false)]
+    [SupportedOSPlatform("linux")]
+    public async Task Read_OnLinux_Owner_CredentialCopyMayBeRoot(bool credentialsDirectory, uint owner, bool accepted)
+    {
+        // Arrange: systemd's LoadCredential copy is root:<unit group> 0440; the key file stays the service user's
+        var path = credentialsDirectory ? Path.Combine(CredentialsDirectory, "m365-app-key") : KeyFile;
+        File.WriteAllText(path, Pem);
+        File.SetUnixFileMode(path, credentialsDirectory ? (UnixFileMode)Convert.ToInt32("440", 8) : (UnixFileMode)Convert.ToInt32("600", 8));
+        var store = new CredentialFileSecretStore(Acme, Env(credentialsDirectory), KeyFile, checkOwnership: true, ownerOf: _ => owner, effectiveUser: () => 1000u);
+
+        // Act
+        var read = await store.ReadAsync(Acme, AppKey, CancellationToken.None);
+
+        // Assert
+        if (accepted)
+        {
+            read.Refusal.Should().BeNull();
+        }
+        else
+        {
+            read.Refusal.Should().StartWith($"key: {path} must be owned by ");
+        }
+    }
+
     [Fact(SkipUnless = nameof(IsLinux), Skip = "Unix owner: Linux only")]
     [SupportedOSPlatform("linux")]
     public async Task Read_OnLinux_OwnedByThisUser_Accepted()

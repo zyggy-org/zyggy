@@ -17,7 +17,7 @@ internal interface ICredentialReader
 
 /// <summary>
 /// The read-only <see cref="ISecretStore"/> over Central's credential files (spec 33 AC-4), for one tenant — the configured
-/// principal's. <c>m365-app-key</c> is <c>$CREDENTIALS_DIRECTORY/m365-app-key</c> (0600, 0400 or 0440) else the key file (0600);
+/// principal's. <c>m365-app-key</c> is <c>$CREDENTIALS_DIRECTORY/m365-app-key</c> (0600, 0400 or 0440; owned by this user or by root) else the key file (0600);
 /// <c>m365-app-key/new</c> is <c>&lt;key file&gt;.new</c>. The checks and texts are <c>zy_m365_read_key</c>'s: a regular file, the
 /// mode, owned by this user, not empty, a PEM private-key header. Never caches, never logs, never puts a byte in a message.
 /// Writing is <c>cert-init</c>'s alone.
@@ -31,14 +31,22 @@ internal sealed partial class CredentialFileSecretStore : ISecretStore, ICredent
     private readonly string? _credentialsDirectory;
     private readonly string _keyFile;
     private readonly bool _checkOwnership;
+    private readonly Func<string, uint?> _ownerOf;
+    private readonly Func<uint> _effectiveUser;
 
     public CredentialFileSecretStore(TenantId tenant, IReadOnlyDictionary<string, string?> environment, string keyFile)
         : this(tenant, environment, keyFile, checkOwnership: true)
     {
     }
 
-    // Tests on Windows: no Unix mode or owner to check.
-    internal CredentialFileSecretStore(TenantId tenant, IReadOnlyDictionary<string, string?> environment, string keyFile, bool checkOwnership)
+    // Tests on Windows: no Unix mode or owner to check; on Linux the owner lookup and the effective user may be given.
+    internal CredentialFileSecretStore(
+        TenantId tenant,
+        IReadOnlyDictionary<string, string?> environment,
+        string keyFile,
+        bool checkOwnership,
+        Func<string, uint?>? ownerOf = null,
+        Func<uint>? effectiveUser = null)
     {
         ArgumentNullException.ThrowIfNull(tenant);
         ArgumentNullException.ThrowIfNull(environment);
@@ -47,6 +55,8 @@ internal sealed partial class CredentialFileSecretStore : ISecretStore, ICredent
         _credentialsDirectory = environment.TryGetValue("CREDENTIALS_DIRECTORY", out var directory) && !string.IsNullOrEmpty(directory) ? directory : null;
         _keyFile = keyFile;
         _checkOwnership = checkOwnership;
+        _ownerOf = ownerOf ?? Processes.UnixNative.Owner;
+        _effectiveUser = effectiveUser ?? Processes.UnixNative.EffectiveUserId;
     }
 
     public async Task<ReadOnlyMemory<byte>?> GetAsync(TenantId tenant, SecretName name, CancellationToken cancellationToken)
@@ -124,7 +134,9 @@ internal sealed partial class CredentialFileSecretStore : ISecretStore, ICredent
                 return Refuse($"key: {path} must be mode 0600 (is {Convert.ToString(mode, 8)})");
             }
 
-            if (Processes.UnixNative.Owner(path) is not { } uid || uid != Processes.UnixNative.EffectiveUserId())
+            // The LoadCredential copy is root's (group = the unit's group, hence 0440); the key file is the service user's.
+            var owned = _ownerOf(path) is { } uid && (uid == _effectiveUser() || (uid == 0 && source == CredentialSource.CredentialsDirectory));
+            if (!owned)
             {
                 return Refuse($"key: {path} must be owned by {Environment.UserName}");
             }
