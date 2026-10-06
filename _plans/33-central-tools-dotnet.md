@@ -1276,10 +1276,10 @@ No earlier step depends on this outcome. Steps 15–17 deliver the prompt on std
 
 *Executor: STOP here. Present the check result and, if Step 18 ran, its results; WAIT for user approval. If Step 18 was skipped, present this gate together with Gate I's material and let the owner approve both at once.*
 
-- [ ] Behavioral verification: the result of the Central check, with its date and Claude Code version. Either the prompt stays on standard input with no change, or the three Microsoft 365 runs now pass it as the command-line argument while the dream still uses standard input (captured arguments shown).
-- [ ] Contract review: only the three m365 runs are affected. The dream's argument list is byte-identical to before.
-- [ ] ⚠️ Risk review: under the fallback, the prompt (ids and file paths) is visible to processes of the same user on Central, exactly as with the scripts today. Nothing else is exposed.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification — closed by owner decision 2026-10-06 ("Close 33 now"); Step 18 was skipped: decision 7 confirmed stdin `/skill` expansion on Central (Claude Code 2.1.289, 2026-10-05): the result of the Central check, with its date and Claude Code version. Either the prompt stays on standard input with no change, or the three Microsoft 365 runs now pass it as the command-line argument while the dream still uses standard input (captured arguments shown).
+- [x] Contract review (nothing changed: Step 18 skipped): only the three m365 runs are affected. The dream's argument list is byte-identical to before.
+- [x] ⚠️ Risk review (not applicable: the fallback was not used): under the fallback, the prompt (ids and file paths) is visible to processes of the same user on Central, exactly as with the scripts today. Nothing else is exposed.
+- [x] User approved — implementation may continue past this gate — closed by owner decision 2026-10-06 ("Close 33 now"); Step 18 was skipped: decision 7 confirmed stdin `/skill` expansion on Central (Claude Code 2.1.289, 2026-10-05)
 
 ---
 
@@ -1479,7 +1479,7 @@ If any of steps 3–5 fails: **stop**. Do not continue to Step 22. Roll back per
 
 ## Step 22 — The morning brief runs once by hand on the new binary and leaves its Draft with a clean audit; the owner's one real send from the phone asks once and is logged by the new code; a mail question after a long idle needs no owner action; the nightly dream still commits on the new version; the secret sweep is clean; 0002, the roadmap and the founding-spec wording are checked
 
-- [ ] Done
+- [x] Done — 2026-10-06: evidence recorded in 0002 §33 (brief on 0.2.4 with `audit ok`; the owner's two sends with one prompt each; idle refresh needed no owner action; secret sweep clean; prompt audit fixed). The first nightly dream on the new binary (AC-40) is carried to plan 35 Step 17 (owner decision 2026-10-06).
 
 **Scope**:
 - **Attended brief (decision 2, agent-run):**
@@ -1524,6 +1524,7 @@ If any of steps 3–5 fails: **stop**. Do not continue to Step 22. Roll back per
 ## Step 23 — The live checks carried over from 02, 23, 27 and 28 are re-run on the new binary and recorded: the VM soak holds on day 7, the dream files a fact the night after it was told on three nights in a row, every consent and guard check passes from the phone and on Central, the brief and backfill drills pass, and every original row points to its result
 
 - [ ] Done *(ticked when every non-conditional item below has a dated result — pass, or fail with its record — and every conditional item is either run or recorded as not run (owner decision))*
+- **Not run — carried to plan 35 Step 17 (owner decision 2026-10-06).** Plan 33 was closed by the owner's decision "Close 33 now"; every item below is now a "Carried from 33" check in `_plans/35-morning-brief-v2.md` Step 17. The item list is kept here as the source.
 
 **Origin**: owner's clean-slate decision of 2026-10-05 (`ROADMAP.md` #33 "Carried into 33's Central evidence"; 0001 VM soak; 0002 §§23, 27, 28). The ids are the project manager's. The 32 items go to 34, not here. "D7 form" = consent by a Claude Code permission prompt and `actions.jsonl` (the D6 terminal path no longer exists).
 
@@ -1647,7 +1648,7 @@ If any of steps 3–5 fails: **stop**. Do not continue to Step 22. Roll back per
 
 *Executor: STOP here. Present the results and WAIT for user approval.*
 
-- [ ] Behavioral verification:
+- [x] Closed by owner decision 2026-10-06 ("Close 33 now"); open items carried to 35 Step 17. Behavioral verification:
   - The morning brief ran once on the new binary and left its Draft with a clean audit.
   - Your one real send asked once and was logged by the new code.
   - A mail question after a long idle needed nothing from you.
@@ -1658,18 +1659,18 @@ If any of steps 3–5 fails: **stop**. Do not continue to Step 22. Roll back per
     - The dream committed three nights in a row and filed the test fact the next night.
     - Each consent and guard check passed: prompts from phone and claude.ai, Deny sends nothing, "Don't ask again" does not stick, six refusals before any prompt, the key drills, the audit log matching `actions.jsonl`.
     - Your owner-run items are recorded: tenant facts, public client flows, the Graph Explorer consent revoked, the backfill spot-check, version histories.
-- [ ] Contract review:
+- [x] Closed by owner decision 2026-10-06; open items carried to 35 Step 17. Contract review:
   - Every acceptance criterion in the map below is ticked, with its source in 0002 section 33.
   - Every carried-over id has a result in 0001/0002, with a pointer from its original row. The only exceptions are the brief-timer items, recorded as not run by your decision if the timer is still off.
   - The roadmap entry for 33 is marked done.
   - The founding-spec wording W33-1..W33-8 and W-1..W-12 is present, or the missing parts are listed for you.
-- [ ] ⚠️ Risk review:
+- [x] Closed by owner decision 2026-10-06; open items carried to 35 Step 17. ⚠️ Risk review:
   - No token, key or JWT anywhere on Central.
   - The real key was moved only by you, and only for the drill; its mode and date are unchanged.
   - The records hold no mail content.
   - The work boundary is unchanged: Central only, the Digiverse tenant only.
   - 34 can start on this foundation: the credential store table, the "replace the environment" option, the fact-line writer and the hygiene test rows.
-- [ ] User approved — deliverable 33 is done
+- [x] User approved — deliverable 33 is done — closed by owner decision 2026-10-06 ("Close 33 now"); open items carried to 35 Step 17
 
 ---
 

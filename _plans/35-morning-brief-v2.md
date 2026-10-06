@@ -1,5 +1,7 @@
 # Plan: 35 — Morning brief v2 — The morning brief appears in the owner's Zyggy session at his first message of the day, with mail lines that each end in one decision, one numbered "I can do" list ("do Z1, Z3"), one "Only you" list, no reply drafted to a mail already answered, invoice amounts read from the PDF, and up to three long-run suggestions drawn read-only from memory
 
+> **Plan approved by the owner 2026-10-06**, together with: 33 closed by owner decision (its open items carried to Step 17), Assumption 2 confirmed, Notes for the executor 4 accepted.
+
 ## Overview
 
 After this deliverable the 06:30 brief run writes no Draft. It runs two model runs. The **mail run** (no memory access) returns structured data. The binary checks that data, numbers the Z items and writes `~/.local/state/zyggy/brief/brief-<date>.md` and its item list `brief-<date>.json`. The **ideas run** (memory read-only, no mail, no tools that act) adds at most three "For the long run" suggestions. A `UserPromptSubmit` hook (`brief-inject.sh` → `zyggy brief inject`) shows the brief once, at the owner's first prompt in the remote-control session. `zyggy brief show | items | idea` let the session show the brief again, resolve "do Z1, Z3" from the item list, and record the owner's answer to a suggestion. Every action still goes through the unchanged guard → permission prompt → log path.
@@ -18,8 +20,8 @@ The plan implements `_specs/35-morning-brief-v2.md`. That spec was approved by t
 **Phase**: 35 serves P0b but does not close a §12 phase (29 and 30 are not started), so there is no `Gates/P<n>_*.cs` slice. The last 🛑 HUMAN GATE is the definition-of-done check against `ROADMAP.md` #35 and AC-1..AC-55.
 
 **Preconditions:**
-- **Step 1** (the Central probe) may run once this plan is approved and 33's Step 22 is done. It changes nothing that 33 still measures.
-- **Steps 2 onward** wait until 33 is Done (its final gate ticked; `ROADMAP.md` #35 "building starts once 33 is Done").
+- **Step 1** (the Central probe) may run now: this plan is approved and 33's Step 22 is done (both 2026-10-06). It changes nothing that 33 still measures.
+- **Steps 2 onward** no longer wait: 33 is Done by owner decision 2026-10-06 ("Close 33 now"; its final gate ticked, its open items carried to Step 17 below).
 
 **What this plan deliberately is not** (spec Defer and Out of Scope):
 - No brief Draft and no `brief.delivery` key: a present key is a configuration error (OQ-1). There is no `zyggy brief write` verb.
@@ -134,7 +136,7 @@ Slice H has two (first live run, definition of done).
 
 - [ ] Done
 
-**Precondition**: 33 is Done (its final gate ticked).
+**Precondition**: 33 is Done (its final gate ticked) — met: Done by owner decision 2026-10-06.
 
 **Scope**:
 - `src/Zyggy.Core/Brief/BriefPaths.cs` *(create, internal sealed)*: the only builder of brief paths.
@@ -1064,7 +1066,7 @@ If any of 2–5 fails: **stop**. Roll back per runbook 14c / "Return to the Draf
 
 ## Step 17 — Five attended runs pass on Central, with the owner's review of each brief and its suggestions; "do Z1, Z3" acts with one prompt per item and skips a moved mail; the owner's acceptance 1–9 are recorded; the measured caps are committed; the sweep is clean; the timer is enabled only on the owner's go
 
-- [ ] Done *(ticked when runs 1–5 and every owner acceptance item have a dated result — pass, or fail with its record)*
+- [ ] Done *(ticked when runs 1–5, every owner acceptance item and every "Carried from 33" item have a dated result — pass, or fail with its record; conditional items may read "not run (owner decision)")*
 
 **Scope** (agent-run runs, owner review; the owner-run items collected in **one** numbered message after run 2, not one by one):
 - **Runs 2–5** (one per morning; run 1 = Step 16): `systemctl start zyggy-morning-brief.service`.
@@ -1090,6 +1092,49 @@ If any of 2–5 fails: **stop**. Roll back per runbook 14c / "Return to the Draf
   - `_specs/00 …` contains W35-1..W35-8 (applied by the owner); missing ones are listed, never edited.
   - `systemctl is-enabled zyggy-morning-brief.timer` → still not enabled until the owner's go.
 - **Timer, on the owner's go only** (his own words, recorded): install and enable `zyggy-morning-brief.timer` per runbook 13g; `systemctl list-timers` → next 06:30 Europe/Brussels. Without the go: recorded as "not enabled (owner decision)"; this never holds the final gate.
+- **Carried from 33** (owner decision 2026-10-06, "Close 33 now"). Full definitions, "Who" and evidence rows are in `_plans/33-central-tools-dotnet.md` Step 23; results go where that step says (VM-* in 0001 "Day 7 result" cells; all others in 0002 §33 "Carried-over live checks", with a `→ 0002 §33 <id>, <date>, <result>` pointer from the original row). Owner-run items join this step's one numbered message. Conditional brief-timer items never hold the final gate.
+  - [ ] **33 AC-40** — the first nightly dream on the new binary: record `committed` or `nothing_to_do`, pushed, the new version in its record.
+  - [ ] **VM-C1** — on/after 2026-10-06: `claude-remote` active, a headless `claude -p` that day exits 0, owner confirms no `/login` since day 0.
+  - [ ] **VM-C2** — `claude-remote` restart resumed the same session id; ≥ 2 restarts in the soak window.
+  - [ ] **VM-C3** — `soak.jsonl` (or dream run records) since 2026-09-29 19:00 UTC: ≥ 7 `exit 0`, none non-zero.
+  - [ ] **VM-C4** — monthly cost forecast ≤ €60; owner names the budget alert (or "fail: no alert").
+  - [ ] **VM-C5** — after a backfill and a dream night: swap used ≤ 200 MB, 0 OOM kills.
+  - [ ] **VM-C6** — 0 custom NSG rules; only `127.0.0.1:47365` listening for the m365 server.
+  - [ ] **C27-1** — first fresh remote-control session after the install titled `Zyggy` in claude.ai (owner).
+  - [ ] **C28-AC31** — three consecutive nightly dream runs exit 0 with a `dream YYYY-MM-DD` commit each.
+  - [ ] **C28-AC32** — 33 Step 21's labelled test fact filed into a category file the night after, with its ledger hash.
+  - [ ] **C28-AC33** — per-run counts and cost since 2026-10-05 in §28 "Runs"; unconsumed inbox lines 0 or stated.
+  - [ ] **C28-AC34** — digest section sizes ≤ 6,000 / 6,000 / 8,000 bytes.
+  - [ ] **C28-AC35** — `zyggy dream request` during an active run: second run after the first, `on-demand`, no overlap.
+  - [ ] **C28-AC36** — secret and contact-detail patterns over memory repo contents and history → 0 hits.
+  - [ ] **C28-AC39** — `_specs/00 …` contains W-1..W-12 of the 28 spec (missing listed, never edited).
+  - [ ] **C23-AC1** — tenant facts from the admin centre; nothing changed (owner).
+  - [ ] **C23-AC3** — `zyggy-central` "Allow public client flows" = No (owner).
+  - [ ] **C23-AC5** — Graph Explorer `Sites.FullControl.All` consent revoked (owner); `check --counts` still lists the OneDrive.
+  - [ ] **C23-D7-AC7** — one claude.ai send allowed, one send denied; `actions.jsonl` +1 `ok` per Allow only.
+  - [ ] **C23-D7-AC8** — "Don't ask again" does not stick; no `allow` rule for send/move in settings on Central.
+  - [ ] **C23-D7-AC11** — one prompted move to Archive and one soft delete logged; `recoverableitemsdeletions` probe refused, no row.
+  - [ ] **C23-D7-AC12** — Bcc probe plus five refusal probes (attachment, HTML, 5,000 chars, 11 recipients, `SaveToSentItems: false`) denied; no row, Sent Items unchanged.
+  - [ ] **C23-AC27** — send after ≥ 95 min idle: one prompt, one send, one `ok` row (33 Step 22 record).
+  - [ ] **C23-AC28** — key rename drill: failure names "Token refresh failed", works after rename back; key `600`, mtime unchanged; `mcp-wrapper.sh` gone.
+  - [ ] **C23-AC29** — sweep incl. `ps -eo args` during a token refresh → 0 hits (33 Step 22 record).
+  - [ ] **C23-AC12** — run 1 = 33 Step 22's attended brief; runs 2–5 **conditional** (timer on), else "not run (owner decision)".
+  - [ ] **C23-AC13** — **conditional**: three consecutive timer runs, OneDrive file named, same-day `already created`; else "not run (owner decision)".
+  - [ ] **C23-AC14** — `Search-UnifiedAuditLog` (owner) matches `actions.jsonl` one to one; no SoftDelete/HardDelete by the app.
+  - [ ] **C23-AC15** — wrong-key drill → exit 6 `invalid_client`, nothing written; `token-test` ok; expiry warn / exit 3 drill.
+  - [ ] **C23-AC16** — canary mail: brief `audit ok` or `FLAGGED`, no Draft to the external address, listed as data (owner).
+  - [ ] **C23-AC17** — mail backfill SIGINT 130 and resume, or "not possible: backfill already done".
+  - [ ] **C23-AC18** — owner spot-checks ≥ 30 random backfill lines: "facts only".
+  - [ ] **C23-AC19** — files backfill SIGINT/resume; ungranted drive → 403; owner: no new OneDrive versions.
+  - [ ] **C23-AC21** — memory `git status --porcelain` shows only paths the 28 layout leaves uncommitted.
+  - [ ] **C23-AC22** — sweep scope 0 hits; `LoadCredential=`/`InaccessiblePaths=` = Contracts; key `600`, cer `644` (33 Step 22 record).
+  - [ ] **C23-AC23** — `/doctor prompt-audit` clean; every rule file ≤ 200 lines (33 Step 22 record).
+  - [ ] **C23-AC24** — 0002 §23 complete; `grep -n pending` over §23/§33 → only conditional items.
+  - [ ] **C23-ACTLOG** — monthly action counts from `actions.jsonl` with the audit-log column and "Unmatched".
+  - [ ] **C23-TOOLS** — `node`/`npm` versions and the `zyggy` row in "Tools on Central".
+  - [ ] **C23-COSTS** — brief cost/turns, backfill totals, mailbox and drive sizes in 0002 "Costs".
+  - [ ] **W33-1..W33-8** — the owner's application of the 33 founding-spec wording, checked read-only alongside W35-1..W35-8 (missing ones listed, never edited).
+  - [ ] Close-out for 33: every `carried to 33` hit in 0001/0002 has a result or pointer on its row; 0002 P0b checklist row for 33.
 - **Close-out**: 0002 §35 complete; "Tools on Central" row 0.3.0; `_plans/ROADMAP.md` #35 → Done (date, commits, CI run ids, release count, conditional items named); commit this repository.
 
 **Seams**: none (evidence on the real system and in this repository).
@@ -1105,7 +1150,8 @@ If any of 2–5 fails: **stop**. Roll back per runbook 14c / "Return to the Draf
 - Owner acceptance 1–9 each with a result.
 - The caps commit's CI run id.
 - Sweep count 0.
-- W35 presence checked.
+- W35 presence checked, and W33-1..W33-8 alongside.
+- Every "Carried from 33" item has a dated result (pass, or fail with its record); the conditional brief-timer items have a result or read "not run (owner decision)".
 - The timer status recorded.
 - `ROADMAP.md` #35 reads Done.
 - The agent re-reads its own added rows: no mail subject, body, third-party address or memory text in them.
@@ -1182,7 +1228,7 @@ If any of 2–5 fails: **stop**. Roll back per runbook 14c / "Return to the Draf
 ## Assumptions (where the spec leaves the shape to the planner; each is reviewed at the named gate)
 
 1. *(Gate B)* **The hook reads only the `brief` block of `instance/m365.json`** (`expect_by`, `brief_keep_days`, `weekend_days`), with the code defaults when the file or a key is absent. It never loads or validates the identity part (certificate, tenant), so an identity configuration problem cannot silence a brief that exists. Any read error is the fail-open path (AC-4).
-2. *(Gate E)* **"The principal's `inbox/` except `github-inventory-*.md`"** (AC-32) cannot be written as one deny rule: deny rules win over allow rules and have no negation. The ideas run therefore denies the two other inbox families by name, `inbox/m365-*` and `inbox/remember-*`. The binary's basis check (AC-34) also drops any suggestion whose basis is an inbox file other than the GitHub inventory. Residual: a future inbox family is readable by the model until it is added to the list, but it can never be named as a basis.
+2. *(Gate E)* **"The principal's `inbox/` except `github-inventory-*.md`"** (AC-32) cannot be written as one deny rule: deny rules win over allow rules and have no negation. The ideas run therefore denies the two other inbox families by name, `inbox/m365-*` and `inbox/remember-*`. The binary's basis check (AC-34) also drops any suggestion whose basis is an inbox file other than the GitHub inventory. Residual: a future inbox family is readable by the model until it is added to the list, but it can never be named as a basis. **Confirmed by the owner 2026-10-06.**
 3. *(Gate C)* **"answered HH:MM"** is the local time of the **first** sent mail in the conversation after the mail was received.
 4. *(Gate C)* **The Graph-taken subject and sender name get the same withholding as model text** (URL, e-mail address, secret pattern, contact detail → `[withheld: <reason>]`). Without this, a subject that contains an address would break AC-14's "no e-mail address anywhere in the `.md`".
 5. *(Gate C)* **`attachment_parse` reaches the skill as the token `attachments=on|off`** after the Inbox id in the `/morning-brief` arguments (AC-29 "prompt argument"). In the A3-fallback it is a field of the argument line.
@@ -1204,7 +1250,7 @@ If any of 2–5 fails: **stop**. Roll back per runbook 14c / "Return to the Draf
    - first a regression test that fails, then the fix, then a PR with CI green, a tag, and the install per 14b (previous version kept);
    - first probe the real environment that failed (as Step 1 did), so the fix is right the first time.
    - A prompt-only fix is a template change, not a release.
-4. **Order on Central.** Binary → pin → pull → units → live settings → one `claude-remote` restart. Rollback is the reverse (14c, "Return to the Draft brief"). The remote session is restarted only when settings or hooks change: at most once in Step 1 (only if the probe hook is not picked up live) and once in Step 16.
+4. **Order on Central.** Binary → pin → pull → units → live settings → one `claude-remote` restart. Rollback is the reverse (14c, "Return to the Draft brief"). The remote session is restarted only when settings or hooks change: at most once in Step 1 (only if the probe hook is not picked up live) and once in Step 16. **Accepted by the owner 2026-10-06.**
 5. **Probes.** Every agent `claude -p` on Central gets `< /dev/null`. No probe may send, move, draft or write in `memory/`. Records hold counts, exit codes and metadata — never a mail subject, body, third-party address or memory text.
 6. **Timer.** It stays off until five attended runs pass and the owner says go, in his own words. Its absence never holds the final gate.
 7. **Do not edit** `_specs/00 …` (the owner applies W35-1..W35-8), the 35 spec, or genome files.
