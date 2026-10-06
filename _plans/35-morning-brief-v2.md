@@ -782,7 +782,7 @@ Slice H has two (first live run, definition of done).
 
 ## Step 11 — Through the real process runner and `tools/fake-claude`, one weekday `zyggy m365 brief` makes two model calls — the mail run, then the ideas run from an empty directory under the brief state with only Read, Grep and Glob and the memory as an added directory — and writes a brief with both parts; a weekend run makes one call and touches no mailbox state; a failing ideas run leaves the mail part intact
 
-- [ ] Done
+- [x] Done — 2026-10-06 (executor note: the seven tests passed on their first run — Step 10 had built the behaviour — so their RED was not observable; Linux rows green in the SDK container (Core brief classes 217, Integration brief + parse 40, one Windows-only skip each); the ideas call's captured argument vector equals `ideas-args.txt`; the canary subjects never reach the ideas run's stdin)
 
 **Scope**:
 - `tools/fake-claude/scenarios/brief-ideas-ok.jsonl`, `brief-ideas-error.jsonl`, `brief-ideas-fabricated-basis.jsonl` *(create)*; README rows.

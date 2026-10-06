@@ -24,6 +24,9 @@ A compiled stand-in for the `claude` CLI, used by `tests/Zyggy.Integration`. It 
 | `scenarios/m365-brief-mail-invalid.jsonl` | `structured_output` whose `mail` is not an array (spec 35: no valid brief, exit 6) |
 | `scenarios/m365-brief-mail-noclass.jsonl` | as `m365-brief-mail-ok`, the first mail entry without `class` (spec 35: rejected) |
 | `scenarios/m365-brief-mail-80.jsonl` | 80 mail entries for `tests/golden/m365/graph/brief/inbox-since-80.json` (m20..m99): 5 urgent with an owner action, 60 important, 15 other; `total_cost_usd: 1.10`, `num_turns: 30` (spec 35: the page cap bites) |
+| `scenarios/brief-ideas-ok.jsonl` | `system/init`, then a success `result` (`total_cost_usd: 0.2`, `num_turns: 5`) whose `structured_output` is `tests/golden/brief/ideas-output-ok.json`: three suggestions, one with an invented basis (spec 35) |
+| `scenarios/brief-ideas-error.jsonl` | `system/init` and a `result` with `is_error: true`, `subtype: error_during_execution`, `total_cost_usd: 0.05` (spec 35: the ideas run fails) |
+| `scenarios/brief-ideas-fabricated-basis.jsonl` | one family suggestion whose basis line does not occur in the memory file it names (spec 35: dropped by the binary) |
 | `scenarios/m365-mail-batch.jsonl` | `system/init`, a success `result` ending `mail-backfill batch: messages 25, facts 4 (0 dup, 0 refused)`, `total_cost_usd: 0.42`, `num_turns: 9` (spec 33) |
 | `scenarios/m365-mail-empty.jsonl` | `system/init`, a success `result` `mail-backfill batch: messages 0, facts 0 (0 dup, 0 refused)`, `total_cost_usd: 0.03`, `num_turns: 2` (spec 33) |
 | `scenarios/m365-files-batch.jsonl` | `system/init`, a success `result` ending `files-backfill batch: listed 16, parsed 14, skipped 2 (type 0, size 0, path 0, parse error 2, secret pattern 0), facts 4 (0 dup, 0 refused)`, `total_cost_usd: 0.38`, `num_turns: 14` (spec 33) |
