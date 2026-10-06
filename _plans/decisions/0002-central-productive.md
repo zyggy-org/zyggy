@@ -15,7 +15,7 @@ secret-shaped sample is quoted truncated (`ghp…`).
 | 32 | Central clones and analyses the owner's repositories on request | Done 2026-10-02 (final gate approved by the owner; 8 pass, 2 partial, 5 not run by owner decision; O32 applied). The 7 partial/not-run rows are to be re-tested on the .NET version in 34 (owner decision 2026-10-05) | this file, section 32 |
 | 28 | Nightly dream pass on Central without the bus (nightly and on demand, in .NET) | Done 2026-10-05 by owner decision (Steps 1–17 done, 0.1.5 pinned, nightly timer running; the three-night evidence AC-31..AC-36, AC-39 carried to 33's Central steps) | this file, section 28 |
 | 33 | The Microsoft 365 tools and `remember` as `zyggy` verbs (the template keeps only thin launchers) | Done 2026-10-06 by owner decision ("Close 33 now"); 0.2.4 installed on Central; brief, owner sends, guard refusal, remember, idle refresh, secret sweep and prompt-audit fixes pass. Carried to 35's close-out (35 plan Step 17): the first nightly dream on the new binary (AC-40 dream row), plan 33 Step 23's carried checks (VM-*, C27-1, C28-*, C23-*), AC-45 (W33-1..W33-8, owner applies) | this file, section 33 |
-| 35 | Morning brief v2: brief shown in the session, two action lists, long-run suggestions (mail run + ideas run) | Not started — spec approved and plan written 2026-10-06 | this file, section 35 (to be added) |
+| 35 | Morning brief v2: brief shown on request, two action lists, long-run suggestions (mail run + ideas run) | In progress — Step 1 (Central probe) done 2026-10-06, all four assumptions hold; at Gate A | this file, section 35 |
 | 29 | Telegram as Central's chat channel | Not started | |
 | 23 | Digiverse Microsoft 365 on Central: morning brief, reply Drafts, per-action-consented send/move/delete, mail and files backfills through an MCP server with an app-only certificate credential | Done 2026-10-04 (closed by the owner, live tests waived; morning brief off). Rows still "not run"/"partial" are to be re-tested on the .NET version in 33 (owner decision 2026-10-05) | this file, section 23 |
 | 30 | Social connectors on Central | Not started | |
@@ -376,6 +376,23 @@ Carried to 35 Step 17 (owner decision 2026-10-06).
 
 Items `C23-*` (deliverable 23) and `C28-*` (deliverable 28) as listed in plan Step 23 — rows added there with their
 evidence.
+
+## 35 — Morning brief v2 (shown on request, two action lists, long-run suggestions)
+
+Spec: `_specs/35-morning-brief-v2.md` (approved 2026-10-06, revised the same day for OD-5 and OD-6) · Plan: `_plans/35-morning-brief-v2.md`.
+
+### Step 1 — Central probe (2026-10-06, agent-run, Claude Code 2.1.291, binary 0.2.4; no code, no release, no restart)
+
+| Check | Result | Branch |
+|-------|--------|--------|
+| A2 attachment route | `$expand=attachments(…)` accepted; `download-bytes-to-file` of the PDF into the run directory (440,273 bytes written of 440,599 reported); `zyggy m365 parse` exit 0. `$filter hasAttachments eq true` + `$orderby` → `400 InefficientFilter` (use `hasAttachments` from the normal listing) | `attachment_parse` true |
+| A3 schema + skill on stdin | skill expanded, one tool call, `structured_output` matched the schema | main |
+| A4 ideas-run read limits | `Read(<path>)` deny rules refused Read and Grep of both canaries (no nonce leaked); `github-inventory-*` readable; `Grep()`/`Glob()` rule forms accepted; no `inbox/m365-*` file present to test that pattern by a hit | `Read(…)` rules |
+| A6 20,000 chars through Bash | read whole (500 lines, exact last line) | holds; the brief is capped at one page (OD-6) |
+| E1 session environment | settings `env` reaches Bash; `zyggy` on PATH; a Bash `touch` under `~/.local/state/zyggy/` is denied by the `Edit(…)` deny rule → writes go through verbs | — |
+| E2 ideas run in the unit sandbox | started under the brief unit's properties, read the principal directory, exit 0 | — |
+
+Before = after: live settings sha `911e415f…`, `claude-remote` since 06:30:41 UTC, checkout clean, memory 4 uncommitted (the owner's day), `actions.jsonl` 13 rows, Drafts 1. Throw-away files (probe dir, canaries, user skill, run dir) removed. Probe cost ≈ 3.6 USD (caps 1.0–1.5 USD; the plan's 0.50 is below the project-context cost of ~0.58 USD per run in the checkout).
 
 ## Repositories
 

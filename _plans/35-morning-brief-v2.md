@@ -73,7 +73,7 @@ Slice H has two (first live run, definition of done).
 
 ## Step 1 — On Central, with the installed 0.2.4 binary and throw-away runs only, the platform facts the design rests on (A2, A3, A4, A6) and the environments the new code will run in are checked and recorded, and every fallback the spec names is either chosen or ruled out — before any code is written
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done — 2026-10-06 (see Branch decisions and 0002 §35) *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Precondition**: plan approved; 33's Step 22 done. If `az vm run-command` is blocked, the commands become the owner's, sent as one numbered list (33 Notes 4).
 
@@ -1220,12 +1220,14 @@ If any of 2–5 fails: **stop**. Roll back per runbook 14c / "Return to the Draf
 
 | Assumption | Result on Central (date, Claude Code version) | Branch taken | Steps affected |
 |------------|-----------------------------------------------|--------------|----------------|
-| A2 — attachment route on server 0.157.2 | *(pending Step 1)* | `attachment_parse` true / false | 7 (skill), 14 (instance) |
-| A3 — `--json-schema` + `/morning-brief` on stdin + strict MCP config | *(pending Step 1)* | main / A3-fallback (embedded mail prompt) | 6, 7 |
-| A4 — deny rules refuse Read/Grep of denied paths; which rule forms are accepted | *(pending Step 1)* | `Read(…)` only / `Read`+`Grep`+`Glob` forms / fence only (residual recorded) | 6, 10, 11 |
-| A6 — a 20,000-character `show` output reaches the model whole through the Bash tool | *(pending Step 1)* | cap 20,000 / the largest size that passed | 2, 3 |
+| A2 — attachment route on server 0.157.2 | 2026-10-06, Claude Code 2.1.291: `get-shared-mailbox-message` with `$expand=attachments($select=id,name,contentType,size)` accepted (1 attachment, `application/pdf`, 440,599 bytes reported); `download-bytes-to-file` with `/users/<mailbox>/messages/<id>/attachments/<id>/$value` wrote 440,273 bytes into the run directory; `zyggy m365 parse` exit 0 (`237 lines, 3 withheld, cut at 20000 bytes`). Side finding: `$filter hasAttachments eq true` **with** `$orderby` → Graph `400 InefficientFilter`; the normal listing (`$filter receivedDateTime gt …` + `$orderby`) is unaffected — detect attachments from `hasAttachments` in that listing, never add a second filter | **`attachment_parse` true** | 7 (skill), 14 (instance) |
+| A3 — `--json-schema` + `/morning-brief` on stdin + strict MCP config | 2026-10-06, 2.1.291: a throw-away user skill on stdin was expanded (one `list-shared-mailbox-messages` call), `structured_output` = `{"ok":true,"messages":5}` matched the schema, no literal skill text in the result; with `--settings {"autoMemoryEnabled":false}`, `--strict-mcp-config --mcp-config .mcp.json`, no `CREDENTIALS_DIRECTORY` (the helper used the key file) | **main** (skill + schema on stdin) | 6, 7 |
+| A4 — deny rules refuse Read/Grep of denied paths; which rule forms are accepted | 2026-10-06, 2.1.291, from an empty cwd with the ideas-run shape: with `Read(<path>)` deny rules alone, both canaries (`~/.local/state/zyggy/probe/`, `~/.cache/`) were refused for Read **and** Grep (`permission_denials` Read×2, Grep×2), no nonce leaked; the `github-inventory-*` file was readable (73 lines). The `Grep(<path>)`/`Glob(<path>)` rule forms were accepted without error and gave the same result. Residual: the model found no `inbox/m365-*.md` to test (none present at probe time), so that one pattern is proven only by the mechanism, not by a hit | **`Read(…)` rules suffice**; emit them (the `Grep`/`Glob` forms are harmless and may be added) | 6, 10, 11 |
+| A6 — a 20,000-character `show` output reaches the model whole through the Bash tool | 2026-10-06, 2.1.291, in the checkout with the project settings: a 20,000-byte file (500 lines) was read whole, the model reported 500 lines and the exact `END <nonce>` line, no truncation. Overtaken by OD-6 (one page): the cap becomes the one-page limit | **cap 20,000 holds technically; the brief itself is capped at one page (OD-6)** | 2, 3 |
 
 A1 (bridge variable) and A5 (hook context from the phone) were dropped with OD-5 2026-10-06; there is no A1 or A5 branch.
+
+Environment checks (Step 1, 2026-10-06): **E1** — the settings `env` (`ZYGGY_TIMEZONE`, `ZYGGY_INSTANCE_DIR`) reaches the session's Bash tool and `zyggy` is `/usr/local/bin/zyggy`; a Bash `touch`/`rm` naming a path under `~/.local/state/zyggy/` is **denied** (the template's `Edit(~/.local/state/zyggy/**)` deny rule applies to shell commands that name the path), so every write of 35 goes through a verb without a path argument (`zyggy brief show`, `zyggy brief idea`), as 33's `zyggy m365 state` already does. **E2** — the ideas-run shape started inside the brief unit's sandbox (`systemd-run` with the unit's properties, cwd under the state directory) and read the principal directory (3 files, `profile.md` 27 lines), exit 0. Probe budget: the plan's 0.50 USD per probe was too low for a run in the checkout (the project context alone costs ~0.58 USD on the first turn); the probes used 1.0–1.5 USD caps; total spent ≈ 3.6 USD. Before/after: live settings sha, `claude-remote` start time, checkout and memory status, `actions.jsonl` (13 rows) and the Drafts count (1) unchanged; no probe file left.
 
 ## Acceptance-criteria → step map
 
