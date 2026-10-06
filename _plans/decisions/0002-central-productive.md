@@ -330,6 +330,16 @@ Spec: `_specs/33-central-tools-dotnet.md` · Plan: `_plans/33-central-tools-dotn
   `linux-x64` SHA-256 `4885c2833fe38608b7c26d047b6052c56377e55d61ae5766ac2799ce8355f8bb`; template `zyggy-core` `main` `93e4279`
   (CI 37361927942); instance `zyggy-geoffrey` `main` `7a13fab` pin 0.2.0 (CI 37362434553, the minimum-version check passes).
   Installed 2026-10-05 19:5x UTC (agent; binary copied over Tailscale SSH after the owner's approval).
+- Fix releases found by the first unit-run brief (2026-10-06, each test-first, PR + CI, pinned and installed as 14b; previous
+  versions kept under `/opt/zyggy/`):
+  - `0.2.1` (#2): the `LoadCredential` key copy may be mode 0440 (it is `root:root 0440` on systemd 255).
+  - `0.2.2` (#3): that copy may be owned by root. Then an instance-only unit fix (`e164363`): the certificate comes in as a
+    second credential, `ZYGGY_M365_CER_FILE=%d/m365-app-cer` (`~/.config/zyggy` is inaccessible to the unit).
+  - `0.2.3` (#4, owner OK): the m365 runs pass the unit's `CREDENTIALS_DIRECTORY` to `claude` (28's runner removed it).
+  - `0.2.4` (#5): the m365 runs load `<checkout>/.mcp.json` through `--strict-mcp-config --mcp-config` — Claude Code starts a
+    project-scope headersHelper without `CREDENTIALS_DIRECTORY` (probed on Central: with the flag, "token minted", 16 tools).
+    Tag CI 37421071660, SHA-256 `ce2bddd348c7bf749f604e92ee230c510239f5ff1be156d75cbe2b03e90a36e8`, instance pin `9c3fb7c`.
+  The shell's brief unit had the same three latent defects (it never ran under systemd in 23).
 - Template and instance before the install: `zyggy-core` branch `feature/33-m365-verbs` (`8dfc2a8`, `93e4279`; CI
   37356220490 green); `zyggy-geoffrey` branch `feature/33-m365-verbs` (`46b1daf`; CI 37357542019 red only at the pin
   check — instance pin `0.1.5` below the template's minimum `0.2.0`, by design until Step 21 raises the pin).
@@ -340,10 +350,14 @@ Spec: `_specs/33-central-tools-dotnet.md` · Plan: `_plans/33-central-tools-dotn
 |----|-----------|----------------------------------|--------|
 | AC-40 | Install: tagged release, `SHA256SUMS` checked, `/opt/zyggy/<version>/zyggy` root:root 0755, previous version kept, symlink switched, `instance/zyggy.json` bumped; then template and instance pulled, units reloaded, `zyggy-m365-mcp.service` restarted once | 2026-10-05 19:5x UTC (agent, `az vm run-command` as root). Before: `zyggy --version` 0.1.5, `zyggy-m365-mcp` ExecStart `…/m365/mcp-server.sh`, `/opt/zyggy/0.1.2..0.1.5` present, checkout `08071f9` 5 behind. Install: `sha256sum -c` OK and = pin; `/opt/zyggy/0.2.0` and the binary `root:root 755`, not writable by `zyggy`; `/usr/local/bin/zyggy` → it, `--version` `0.2.0+bee4b5c…`; 0.1.2–0.1.5 kept. **Then** `git pull --ff-only` → `7a13fab` (pin 0.2.0). Units installed, `daemon-reload`, `zyggy-m365-mcp` restarted once → active, ExecStart `/usr/local/bin/zyggy m365 mcp-server`; `zyggy-morning-brief.service` ExecStart `/usr/local/bin/zyggy m365 brief`, its timer not installed (stays off). `claude-remote` restarted once after the server → active; log `resuming 91e9375d-…` (the newest session file; the previous restart, 2026-10-04 17:33, had resumed `8528ac18-…`) | pass |
 | AC-41 | Agent-run checks on the installed binary: `zyggy m365 check`; one backfill that reads the shell's checkpoint and reports done or resumes; `zyggy m365 mcp-server --probe` = the allowlist; out-of-policy send (hidden Bcc to the owner's own address) refused by the guard, nothing sent, no `actions.jsonl` row; one `remember` from a session | 2026-10-05 ~20:0x UTC (agent, as `zyggy` with the session environment). `check`: exit 0, `key: file`, folders 14 (5 excluded), drives 1 (OneDrive). `mcp-server --probe`: `tools: 16` (the allowlist), `listen: 127.0.0.1:47365`, env names only (no token). Backfill: the shell's `mail-backfill.json` (2026-10-04) holds only Archive and Inbox, both done; `zyggy m365 mail-backfill --folder archive` and `--folder inbox` each print `mail-backfill: done — folders 1 (excluded 5), messages 6120, batches 250, facts 727 (1 duplicates dropped, 0 refused), turns 1575, cost 51.92 (cap 1000.0)`, exit 0, no model run, checkpoint byte-unchanged — no work remained, so no interruption (the seven never-started folders were not started). Refusal probe: `claude -p` in the checkout asked for one send to the owner's own address with a Bcc → `permission_denials` = `mcp__m365__send-shared-mailbox-mail`, transcript `m365-guard: refused: Bcc is not allowed`, not retried, 0.35 USD; `actions.jsonl` unchanged (1 row, 14:38 UTC, earlier); Sent Items 998 after. Remember: `claude -p` with only `Bash(zyggy memory remember *)` allowed → `inbox/remember-2026-10-05.md` 16 → 17 lines, `- [stated] 2026-10-05 (project:zyggy): The deliverable 33 remember probe ran on 2026-10-05 (a test fact; it can be deleted).` (day N = 2026-10-05 for C28-AC32), 0.32 USD | pass |
-| AC-42 | Attended brief: `zyggy m365 brief` once by hand on Central (timer stays off) leaves a "Zyggy — morning brief" Draft; one real owner send from the phone | — | pending (Step 22) |
+| AC-42 | Attended brief: `zyggy m365 brief` once by hand on Central (timer stays off) leaves a "Zyggy — morning brief" Draft; one real owner send from the phone | Brief 2026-10-06 ~05:5x UTC (agent: `systemctl start zyggy-morning-brief.service`, 0.2.4): `token minted`, `key: credentials directory`, journal `brief 2026-10-06: mail 23, files 3, replies 2, suggestions 10, facts 7, turns 24, cost 1.05, audit ok, exit 0`; receipt `audit ok`, 3 Drafts; `brief.jsonl` row exit 0; no run directory left; timer not installed. Earlier unit runs that day and the evening before: exit 3 (credential mode, owner, certificate path) and twice exit 5 `audit FLAGGED` with no m365 tools (0.24 + 0.22 USD), each receipt removed with the owner's OK. `systemd-analyze security zyggy-morning-brief.service`: 8.0 EXPOSED. Owner send from the phone after ≥ 95 min idle: pending | partial — brief pass; owner send pending |
 | AC-43 | Secret sweep of Central after the install (23 AC-23/AC-29 scope) | — | pending (Step 22) |
 | AC-44 | Runbook sections 13–14 and the `remember` mentions updated verb for verb, with the m365 consequences of a missing or wrong binary and an entry per new failure mode | — | pending (Step 20 gate review) |
-| AC-45 | Founding-spec amendments W33-1..W33-8 accepted by the owner and applied by the owner to `_specs/00 …` | — | pending (owner) |
+| AC-45 | Founding-spec amendments W33-1..W33-8 accepted by the owner and applied by the owner to `_specs/00 …` | 2026-10-06 (agent, read-only `grep`): none of W33-1..W33-8 is in `_specs/00 …` yet | pending (owner applies) |
+
+- Dream on the new version (AC-40): the nightly run 2026-10-06 01:11 UTC (binary 0.2.0) `partial (edit_mismatch)`, 3 batches /
+  375 lines, commit `924275d` pushed, 3.58 USD, remaining 921 — the known filing mismatch of 28, not a 33 regression; the next
+  nightly runs on 0.2.4.
 
 ### Carried-over checks (plan Step 23)
 
@@ -405,7 +419,7 @@ evidence.
 | `node` / `npm` | pending (13e) — record carried to 33 (owner decision 2026-10-05), item C23-TOOLS | the VM's Node used by Claude Code (02) | runs the MCP server | pending (13e) — the server runs since 2026-10-03 (section 23 AC-6, AC-25) |
 | `openssl` | Ubuntu 24.04 | OS | `graph.sh` key pair and PS256 client assertion | pending (13a) |
 | `zyggy` (this repo, MIT) | 0.1.2 installed 2026-10-04, now 0.1.5 (section 28); the row's final values are recorded by 33's install, item C23-TOOLS | CI artefact `zyggy-linux-x64` of the release tag, SHA-256 pinned in `instance/zyggy.json`; `/opt/zyggy/<v>/zyggy` root:root 0755, symlink `/usr/local/bin/zyggy` | the dream pass (`zyggy-dream.service`) and the session digest (`session-start.sh` launcher) | pending (Step 17) |
-| `zyggy` for the m365 verbs (spec 33) | `0.2.0` (= the template's `.claude/zyggy-min-version`), SHA-256 `4885c283…` | as above | `zyggy m365 …` (the guard and log hooks, the MCP server unit, the headersHelper, the brief unit, the backfills) and `zyggy memory remember` | 2026-10-05 (33 Step 21) |
+| `zyggy` for the m365 verbs (spec 33) | `0.2.4` (≥ the template's `.claude/zyggy-min-version` 0.2.0), SHA-256 `ce2bddd3…`; 0.2.0–0.2.3 kept | as above | `zyggy m365 …` (the guard and log hooks, the MCP server unit, the headersHelper, the brief unit, the backfills) and `zyggy memory remember` | 2026-10-05 (33 Step 21) |
 
 ## Credentials on Central
 
