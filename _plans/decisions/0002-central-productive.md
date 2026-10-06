@@ -317,6 +317,7 @@ Spec: `_specs/28-central-dream-local.md` · Plan: `_plans/28-central-dream-local
 | 2026-10-05 04:4x | on-demand | partial `slug_duplicate` (0.1.4) | 4 / 487 (3 accepted, 337) | 33 / 0 / 132 / 172 | 0 | 2.74 | `7697451` |
 | 2026-10-05 05:1x | on-demand (owner test) | partial `fact_not_found` (L62 filed into `business/areas/digiverse-company-car.md` without its full provenance) | 3 / 375 (2 accepted, 225) | — | 0 | 3.98 | `84fed00` |
 | 2026-10-05 06:0x | on-demand (0.1.5 check) | partial `edit_mismatch` (replace #2 in `business/areas/digiverse-insurance-pension.md`: old 318 chars, nearest line at distance 158, in no other file) | 2 / 225 (1 accepted, 75) | — | 0 | 2.33 | `7dd9f31` |
+| 2026-10-06 01:00 | nightly (binary 0.2.0) | partial `edit_mismatch` (replace #1 in `business/areas/digiverse-company-car.md`: old 188 chars, nearest line 26 at distance 45, in no other file) — second `edit_mismatch` in a row | 3 / 375 (2 accepted, 225) | 92 / 78 / 2 / 53 | 0 | 3.58 | `924275d` |
 
 ## 33 — Microsoft 365 tools and `remember` as `zyggy` verbs
 
