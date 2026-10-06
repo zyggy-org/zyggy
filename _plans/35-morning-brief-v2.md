@@ -130,16 +130,16 @@ Slice H has two (first live run, definition of done).
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: in plain words, show the answer to each of the four questions and what it means for the build:
+- [x] Behavioral verification: in plain words, show the answer to each of the four questions and what it means for the build:
   - Can the brief run open a PDF attachment?
   - Does the structured answer work together with the skill and the Microsoft 365 server?
   - Does the read-only run really refuse the forbidden folders?
   - Does a 20,000-character brief reach Zyggy whole when it runs `zyggy brief show`?
 
   Also show that the ideas run starts inside the brief unit's sandbox, and that the remote session was not touched.
-- [ ] Contract review: the Branch decisions table at the end of the plan is filled in, and each fallback chosen is the one the spec names (no new tool, no new delivery path).
-- [ ] ⚠️ Risk review: the probes sent, moved and drafted nothing (`actions.jsonl` and the Drafts count unchanged), wrote nothing in memory, and left nothing behind; the live settings and the remote session are unchanged.
-- [ ] User approved — implementation may continue past this gate
+- [x] Contract review: the Branch decisions table at the end of the plan is filled in, and each fallback chosen is the one the spec names (no new tool, no new delivery path).
+- [x] ⚠️ Risk review: the probes sent, moved and drafted nothing (`actions.jsonl` and the Drafts count unchanged), wrote nothing in memory, and left nothing behind; the live settings and the remote session are unchanged.
+- [x] User approved — implementation may continue past this gate — 2026-10-06 owner: "Approved" (OD-6 defaults accepted)
 
 ---
 
