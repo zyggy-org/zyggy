@@ -1523,7 +1523,7 @@ If any of steps 3–5 fails: **stop**. Do not continue to Step 22. Roll back per
 
 ## Step 23 — The live checks carried over from 02, 23, 27 and 28 are re-run on the new binary and recorded: the VM soak holds on day 7, the dream files a fact the night after it was told on three nights in a row, every consent and guard check passes from the phone and on Central, the brief and backfill drills pass, and every original row points to its result
 
-- [ ] Done *(ticked when every non-conditional item below has a dated result — pass, or fail with its record — and every conditional item is either run or recorded as not run (owner decision))*
+- [x] Done — not run, carried to plan 35 Step 17 (owner decision 2026-10-06) *(ticked when every non-conditional item below has a dated result — pass, or fail with its record — and every conditional item is either run or recorded as not run (owner decision))*
 - **Not run — carried to plan 35 Step 17 (owner decision 2026-10-06).** Plan 33 was closed by the owner's decision "Close 33 now"; every item below is now a "Carried from 33" check in `_plans/35-morning-brief-v2.md` Step 17. The item list is kept here as the source.
 
 **Origin**: owner's clean-slate decision of 2026-10-05 (`ROADMAP.md` #33 "Carried into 33's Central evidence"; 0001 VM soak; 0002 §§23, 27, 28). The ids are the project manager's. The 32 items go to 34, not here. "D7 form" = consent by a Claude Code permission prompt and `actions.jsonl` (the D6 terminal path no longer exists).
