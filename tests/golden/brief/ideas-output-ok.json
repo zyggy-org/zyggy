@@ -1,0 +1,29 @@
+{
+  "suggestions": [
+    {
+      "id": "acme-renewal-offer",
+      "area": "client",
+      "text": "Prepare the Acme renewal offer before the November talks",
+      "whyNow": "The renewal talks start in November",
+      "basis": [{ "file": "business/clients/acme-corp.md", "line": "Acme renewal talks start in November" }],
+      "deadline": "2026-10-30",
+      "prepare": "an outline of the offer"
+    },
+    {
+      "id": "family-autumn-trip",
+      "area": "family",
+      "text": "Plan the autumn-holiday trip",
+      "whyNow": "The school holiday starts on 26 October",
+      "basis": [{ "file": "private/family/holidays.md", "line": "school autumn holiday from 26 October to 1 November" }],
+      "prepare": null
+    },
+    {
+      "id": "architect-role",
+      "area": "career",
+      "text": "Apply for the architect role",
+      "whyNow": "It closes soon",
+      "basis": [{ "file": "career/goals.md", "line": "apply for the architect role by Friday" }],
+      "prepare": null
+    }
+  ]
+}

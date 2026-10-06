@@ -90,7 +90,12 @@ public sealed class BriefRunTests : IDisposable
         outcome.Exit.Should().Be(0, string.Join('\n', outcome.StderrLines));
         outcome.StdoutLines[^1].Should().Be(File.ReadAllText(M365Run.Golden("expected", "journal-weekday.txt")).TrimEnd('\n'));
         outcome.StderrLines.Should().Contain("key: file");
-        await _model.Received(1).RunAsync(Arg.Any<ModelRunRequest>(), Arg.Any<CancellationToken>());
+        await _model.Received(2).RunAsync(Arg.Any<ModelRunRequest>(), Arg.Any<CancellationToken>());
+        Received.InOrder(() =>
+        {
+            _model.RunAsync(Arg.Is<ModelRunRequest>(r => r.Tools == null), Arg.Any<CancellationToken>());
+            _model.RunAsync(Arg.Is<ModelRunRequest>(r => r.Tools != null), Arg.Any<CancellationToken>());
+        });
 
         var markdown = File.ReadAllText(Markdown);
         markdown.Split('\n')[0].Should().Be("Zyggy — morning brief 2026-10-06 (4 new mails since 2026-10-06T04:30:00Z: 1 urgent, 3 important, 0 other; 1 changed file)");
@@ -127,10 +132,15 @@ public sealed class BriefRunTests : IDisposable
         byte[]? mailJson = null;
         _model.RunAsync(Arg.Do<ModelRunRequest>(r =>
         {
+            if (r.Tools is not null)
+            {
+                return; // the ideas run
+            }
+
             request = r;
             var mail = Path.Combine(r.Environment["ZYGGY_M365_RUN_DIR"], "mail.json");
             mailJson = File.Exists(mail) ? File.ReadAllBytes(mail) : null;
-        }), Arg.Any<CancellationToken>()).Returns(Build("mail-output-ok.json"));
+        }), Arg.Any<CancellationToken>()).Returns(call => call.Arg<ModelRunRequest>().Tools is null ? Build("mail-output-ok.json") : _ideas);
 
         // Act
         await RunAsync();
@@ -141,7 +151,7 @@ public sealed class BriefRunTests : IDisposable
         Path.GetFileName(runDirectory).Should().MatchRegex("^zyggy-m365-brief-2026-10-06\\.[A-Za-z0-9]{6}$");
         request.Prompt.Should().Be($"/morning-brief alice@acme.example AQMkInbox0001 attachments=on b!onedrive0001 b!ops0001 b!opsarchive0001 {runDirectory}");
         request.AllowedTools.Should().Equal([.. File.ReadAllLines(M365Run.Golden("run-lists", "brief-allow.txt")), $"Read({runDirectory}/**)"]);
-        request.DisallowedTools.Should().Equal([.. File.ReadAllLines(M365Run.Golden("run-lists", "brief-deny.txt")), $"Read(//{Path.Join(_session.Instance.Checkout, "memory").Replace('\\', '/')}/**)"]);
+        request.DisallowedTools.Should().Equal([.. File.ReadAllLines(M365Run.Golden("run-lists", "brief-deny.txt")), $"Read(//{Path.Join(_session.Instance.Checkout, "memory").Replace('\\', '/').TrimStart('/')}/**)"]);
         request.JsonSchema.Should().Be(new Core.Brief.BriefPrompts().MailSchema);
         request.Isolation.Should().Be(ModelSessionIsolation.NoAutoMemory);
         request.Timeout.Should().Be(TimeSpan.FromMinutes(30));
@@ -330,10 +340,142 @@ public sealed class BriefRunTests : IDisposable
         File.Exists(Path.Combine(State, "brief-2026-10-06.json")).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task Run_Weekday_IdeasAfterMail_SectionRendered_ShownRows()
+    {
+        // Arrange: the two basis files; the model proposes three ideas, one with an invented basis
+        WriteBasisFiles();
+        _ideas = Ideas(File.ReadAllText(Path.Combine(Golden.Directory, "brief", "ideas-output-ok.json")));
+        string? ideasInput = null;
+        _model.When(m => m.RunAsync(Arg.Is<ModelRunRequest>(r => r.Tools != null), Arg.Any<CancellationToken>())).Do(c => ideasInput = c.Arg<ModelRunRequest>().Prompt);
+
+        // Act
+        var outcome = await RunAsync();
+
+        // Assert
+        outcome.Exit.Should().Be(0, string.Join('\n', outcome.StderrLines));
+        outcome.StdoutLines[^1].Should().Contain(", ideas 2, ");
+        File.ReadAllText(Markdown).Should().EndWith(
+            "## For the long run\n" +
+            "1. Prepare the Acme renewal offer before the November talks — The renewal talks start in November — client → I can prepare: an outline of the offer   (basis: business/clients/acme-corp.md, \"Acme renewal talks start in November\")\n" +
+            "2. Plan the autumn-holiday trip — The school holiday starts on 26 October — family → you   (basis: private/family/holidays.md, \"school autumn holiday from 26 October to 1 November\")\n");
+        var ideas = JsonDocument.Parse(File.ReadAllText(Sidecar)).RootElement.GetProperty("ideas");
+        ideas.GetRawText().Should().Be("[\n    {\n      \"n\": 1,\n      \"id\": \"acme-renewal-offer\",\n      \"area\": \"client\"\n    },\n    {\n      \"n\": 2,\n      \"id\": \"family-autumn-trip\",\n      \"area\": \"family\"\n    }\n  ]");
+        File.ReadAllLines(Path.Combine(BriefDirectory, "ideas.jsonl")).Should().Equal(
+            "{\"date\":\"2026-10-06\",\"kind\":\"shown\",\"id\":\"acme-renewal-offer\",\"area\":\"client\",\"deadline\":\"2026-10-30\"}",
+            "{\"date\":\"2026-10-06\",\"kind\":\"shown\",\"id\":\"family-autumn-trip\",\"area\":\"family\"}");
+        var row = JsonDocument.Parse(File.ReadAllLines(Path.Combine(State, "brief.jsonl"))[^1]).RootElement;
+        row.GetProperty("ideas").GetInt32().Should().Be(2);
+        row.GetProperty("ideas_dropped").GetInt32().Should().Be(1);
+        row.GetProperty("ideas_exit").GetInt32().Should().Be(0);
+        ideasInput.Should().StartWith("Today: 2026-10-06 (Tuesday, weekday)\nAllowed areas: career, business, client, zyggy, family, travel, home, hobbies\n");
+        ideasInput.Should().NotContain("Invoice").And.NotContain("Carol").And.NotContain("Q3 report", "nothing from the mail run reaches the ideas run");
+    }
+
+    [Fact]
+    public async Task Run_Weekday_IdeasFail_NoteRowIdeasExitExitIsMailPart()
+    {
+        // Arrange
+        _ideas = new ModelRunResult(ModelRunOutcome.Failed, Zyggy.Core.Runs.RunFailureReason.ClaudeError, "error_during_execution", null, null, 0.05m, 2, TimeSpan.Zero, null, null, null, 1, 0);
+
+        // Act
+        var outcome = await RunAsync();
+
+        // Assert
+        outcome.Exit.Should().Be(0, string.Join('\n', outcome.StderrLines));
+        File.ReadAllText(Markdown).Should().EndWith("## For the long run\n- not available today (claude run failed (error_during_execution)) — runbook 13 \"Ideas run failed but mail run succeeded\"\n");
+        var row = JsonDocument.Parse(File.ReadAllLines(Path.Combine(State, "brief.jsonl"))[^1]).RootElement;
+        row.GetProperty("ideas_exit").GetInt32().Should().Be(6);
+        row.GetProperty("ideas_cost").GetRawText().Should().Be("0.05");
+        row.GetProperty("exit").GetInt32().Should().Be(0);
+        File.Exists(Path.Combine(BriefDirectory, "ideas.jsonl")).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Run_Weekend_NoGraphNoMailRunNoReceiptWatermarkUntouched_PrivateAreas()
+    {
+        // Arrange: Saturday 2026-10-10, 10:30 in Brussels
+        WriteBasisFiles();
+        _ideas = Ideas(File.ReadAllText(Path.Combine(Golden.Directory, "brief", "ideas-output-ok.json")));
+        _clock.SetUtcNow(new DateTimeOffset(2026, 10, 10, 8, 30, 0, TimeSpan.Zero));
+        _graph.Stub.Requests.Clear();
+
+        // Act
+        var outcome = await RunAsync();
+
+        // Assert
+        outcome.Exit.Should().Be(0, string.Join('\n', outcome.StderrLines));
+        outcome.StdoutLines.Should().Equal("brief 2026-10-10: weekend, ideas 1, turns 5, cost 0.20, exit 0");
+        _graph.Stub.Requests.Should().BeEmpty("a weekend run makes no Graph call");
+        await _model.Received(1).RunAsync(Arg.Is<ModelRunRequest>(r => r.Tools != null && r.Prompt.Contains("Allowed areas: family, travel, home, hobbies\n", StringComparison.Ordinal)), Arg.Any<CancellationToken>());
+        await _model.DidNotReceive().RunAsync(Arg.Is<ModelRunRequest>(r => r.Tools == null), Arg.Any<CancellationToken>());
+        File.ReadAllText(Path.Combine(BriefDirectory, "brief-2026-10-10.md")).Should().Be(
+            "Zyggy — morning brief 2026-10-10 (weekend)\n\n## For the long run\n" +
+            "1. Plan the autumn-holiday trip — The school holiday starts on 26 October — family → you   (basis: private/family/holidays.md, \"school autumn holiday from 26 October to 1 November\")\n");
+        var sidecar = JsonDocument.Parse(File.ReadAllText(Path.Combine(BriefDirectory, "brief-2026-10-10.json"))).RootElement;
+        sidecar.GetProperty("mode").GetString().Should().Be("weekend");
+        sidecar.GetProperty("items").GetArrayLength().Should().Be(0);
+        File.Exists(Path.Combine(State, "brief-2026-10-10.json")).Should().BeFalse("no m365 receipt on a weekend");
+        File.ReadAllText(Path.Combine(State, "mail-watermark")).TrimEnd('\n').Should().Be("2026-10-06T04:30:00Z");
+        var row = JsonDocument.Parse(File.ReadAllLines(Path.Combine(State, "brief.jsonl"))[^1]).RootElement;
+        row.GetProperty("mode").GetString().Should().Be("weekend");
+        row.GetProperty("ideas_dropped").GetInt32().Should().Be(2, "the client idea and the career idea are not private");
+    }
+
+    [Fact]
+    public async Task Run_Weekend_IdeasFail_ExitSixNoFile()
+    {
+        // Arrange
+        _ideas = new ModelRunResult(ModelRunOutcome.Failed, Zyggy.Core.Runs.RunFailureReason.ClaudeError, "error_during_execution", null, null, 0.05m, 2, TimeSpan.Zero, null, null, null, 1, 0);
+        _clock.SetUtcNow(new DateTimeOffset(2026, 10, 10, 8, 30, 0, TimeSpan.Zero));
+
+        // Act
+        var outcome = await RunAsync();
+
+        // Assert
+        outcome.Exit.Should().Be(6);
+        outcome.StderrLines[^1].Should().Be("m365-brief: ideas run failed (claude run failed (error_during_execution)) — runbook 13 \"Brief run failed\"");
+        File.Exists(Path.Combine(BriefDirectory, "brief-2026-10-10.md")).Should().BeFalse();
+        File.Exists(Path.Combine(BriefDirectory, "brief-2026-10-10.json")).Should().BeFalse();
+        var row = JsonDocument.Parse(File.ReadAllLines(Path.Combine(State, "brief.jsonl"))[^1]).RootElement;
+        row.GetProperty("exit").GetInt32().Should().Be(6);
+    }
+
+    [Fact]
+    public async Task Run_IdeasCapZero_NoIdeasRunSectionOmitted()
+    {
+        // Arrange
+        _graph.Stub.Requests.Clear();
+        using var graph = new GraphFixture("""{"brief":{"ideas_cap":0}}""");
+        graph.Stub.Once("GET", DraftsRoute, 200, "{\"value\":[" + ReplyDraft + "]}");
+
+        // Act
+        var outcome = await new BriefRun(_session with { Configuration = graph.Configuration }, _partition, graph.Reader, _model, _clock).RunAsync(CancellationToken.None);
+
+        // Assert
+        outcome.Exit.Should().Be(0, string.Join('\n', outcome.StderrLines));
+        await _model.Received(1).RunAsync(Arg.Any<ModelRunRequest>(), Arg.Any<CancellationToken>());
+        File.ReadAllText(Markdown).Should().NotContain("For the long run");
+        var row = JsonDocument.Parse(File.ReadAllLines(Path.Combine(State, "brief.jsonl"))[^1]).RootElement;
+        row.GetProperty("ideas_exit").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    private ModelRunResult _ideas = Ideas("""{"suggestions":[]}""");
+
+    private void WriteBasisFiles()
+    {
+        _tree.Write("business/clients/acme-corp.md", "# Acme Corp\n- [observed] 2026-09-20: Acme renewal talks start in November\n");
+        _tree.Write("private/family/holidays.md", "- [stated] 2026-09-01: school autumn holiday from 26 October to 1 November\n");
+    }
+
+    private static ModelRunResult Ideas(string json) =>
+        new(ModelRunOutcome.Succeeded, null, null, null, JsonDocument.Parse(json).RootElement.Clone(), 0.20m, 5, TimeSpan.FromSeconds(1), null, null, null, 0, 0);
+
+    // The mail run (no Tools: the session's MCP shape) and the ideas run (Read, Grep, Glob) answer separately.
     private ModelRunResult Result(string fixture, decimal cost = 0.42m, int turns = 12, string[]? denials = null)
     {
         var result = Build(fixture, cost, turns, denials);
-        _model.RunAsync(Arg.Any<ModelRunRequest>(), Arg.Any<CancellationToken>()).Returns(result);
+        _model.RunAsync(Arg.Any<ModelRunRequest>(), Arg.Any<CancellationToken>()).Returns(call => call.Arg<ModelRunRequest>().Tools is null ? result : _ideas);
         return result;
     }
 

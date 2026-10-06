@@ -50,6 +50,12 @@ internal sealed class BriefRun(M365Session session, M365ToolPartition partition,
         var briefPaths = BriefPaths.Beside(Paths);
         var store = new BriefStore(briefPaths);
 
+        // 3. The mode (AC-39): a weekend run touches no mailbox state — no sign-in, no Graph call, no mail run.
+        if (BriefModes.Of(now, session.TimeZone, settings.WeekendDays) == BriefMode.Weekend)
+        {
+            return await WeekendAsync(today, now, briefPaths, store, settings, signalExit, cancellationToken).ConfigureAwait(false);
+        }
+
         // 1. The identity, fails fast.
         var signIn = await reader.SignInAsync(cancellationToken).ConfigureAwait(false);
         var key = reader.KeySource == CredentialSource.None ? string.Empty : reader.KeySource.ToText();
@@ -74,7 +80,6 @@ internal sealed class BriefRun(M365Session session, M365ToolPartition partition,
             return AlreadyCreated(" (brief file missing — runbook 13 \"Brief run failed\")");
         }
 
-        // 3. The mode: the weekend run comes with the ideas run (Step 10); until then every day is a weekday run.
         // 4. The folders, the drives, the pre-pass.
         var folders = await reader.MailFoldersAsync(cancellationToken).ConfigureAwait(false);
         if (folders.Failure is { } foldersFailure)
@@ -204,6 +209,18 @@ internal sealed class BriefRun(M365Session session, M365ToolPartition partition,
             new M365State(Paths, clock).Set(MailWatermark, Iso(newest));
         }
 
+        // 8. The ideas run, after the mail part and from nothing of it (AC-33); a failure is a note, the exit stays the mail part's (AC-37).
+        IdeasPart ideas;
+        try
+        {
+            ideas = await IdeasAsync(today, BriefMode.Weekday, briefPaths, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return new RunOutcome(signalExit?.Invoke() ?? 143, _stdout, _stderr);
+        }
+
+        document = document with { Ideas = ideas.Lines, IdeasNote = ideas.Failure, IdeasOff = config.IdeasCap == 0 };
         var c = document.Counts;
         var summary = $"mail {c.NewMails} ({c.Urgent} urgent, {c.Important} important, {c.Other} other), files {c.Files + c.FilesOther}, replies {output.Replies}, z {document.Items.Count}, you {document.You.Count}, ideas {document.Ideas.Count}, facts {output.Facts}";
         Remember($"Morning brief {_date} written: {summary}, audit {verdict}");
@@ -221,6 +238,7 @@ internal sealed class BriefRun(M365Session session, M365ToolPartition partition,
             return Fail(3, $"cannot write the brief files in {briefPaths.Directory}: {ex.Message}");
         }
 
+        RecordIdeas(briefPaths, today, ideas);
         Prune(briefPaths, store, today, settings.KeepDays, now);
 
         var denials = string.Join(',', result.PermissionDenialTools.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal));
@@ -255,11 +273,7 @@ internal sealed class BriefRun(M365Session session, M365ToolPartition partition,
             w.WriteNumber("exit", code);
             w.WriteString("mode", "weekday");
             w.WriteNumber("z_dropped", zDropped);
-            w.WriteNumber("ideas_dropped", 0);
-            w.WriteNumber("ideas_turns", 0);
-            w.WritePropertyName("ideas_cost");
-            w.WriteRawValue("0");
-            w.WriteNull("ideas_exit");
+            IdeasFields(w, ideas);
             w.WriteStartObject("counts");
             w.WriteNumber("urgent", c.Urgent);
             w.WriteNumber("important", c.Important);
@@ -283,6 +297,122 @@ internal sealed class BriefRun(M365Session session, M365ToolPartition partition,
 
         _stdout.Add($"{line}, exit {code}");
         return new RunOutcome(code, _stdout, _stderr);
+    }
+
+    // AC-39: the weekend brief — the ideas run with the private areas only; no sign-in, no Graph, no mail run, no receipt, no watermark.
+    private async Task<RunOutcome> WeekendAsync(DateOnly today, DateTimeOffset now, BriefPaths briefPaths, BriefStore store, BriefSettings settings, Func<int?>? signalExit, CancellationToken cancellationToken)
+    {
+        if (File.Exists(briefPaths.Markdown(today)))
+        {
+            return AlreadyCreated(string.Empty);
+        }
+
+        IdeasPart ideas;
+        try
+        {
+            ideas = await IdeasAsync(today, BriefMode.Weekend, briefPaths, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return new RunOutcome(signalExit?.Invoke() ?? 143, _stdout, _stderr);
+        }
+
+        if (ideas.Failure is { } failure)
+        {
+            return Fail(6, $"ideas run failed ({failure}) — runbook 13 \"Brief run failed\"");
+        }
+
+        var document = new BriefDocument(today, now, BriefMode.Weekend, string.Empty, "ok", [], [], [], [], 0, [], [], ideas.Lines, new BriefCounts(0, 0, 0, 0, 0))
+        {
+            IdeasOff = session.Configuration.IdeasCap == 0,
+        };
+        Remember($"Morning brief {_date} written: weekend, ideas {ideas.Lines.Count}");
+        var (markdown, pageExceeded) = BriefRenderer.RenderMarkdown(document, session.Configuration.PageMaxLines, session.Configuration.PageMaxChars);
+        document = document with { PageExceeded = pageExceeded };
+        try
+        {
+            store.WriteAtomically(briefPaths.Sidecar(today), BriefSidecar.From(document).ToBytes());
+            store.WriteAtomically(briefPaths.Markdown(today), Encoding.UTF8.GetBytes(markdown));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return Fail(3, $"cannot write the brief files in {briefPaths.Directory}: {ex.Message}");
+        }
+
+        RecordIdeas(briefPaths, today, ideas);
+        Prune(briefPaths, store, today, settings.KeepDays, now);
+        Append(Row(w =>
+        {
+            w.WriteString("date", _date);
+            w.WriteString("ts", Iso(clock.GetUtcNow()));
+            w.WriteString("mode", "weekend");
+            w.WriteNumber("ideas", ideas.Lines.Count);
+            IdeasFields(w, ideas);
+            w.WriteNumber("exit", 0);
+        }));
+        _stdout.Add($"brief {_date}: weekend, ideas {ideas.Lines.Count}, turns {ideas.Turns}, cost {ideas.Cost.ToString("0.00", CultureInfo.InvariantCulture)}, exit 0");
+        return new RunOutcome(0, _stdout, _stderr);
+    }
+
+    // The ideas run and the binary's filter (AC-32..AC-35). The input holds nothing from the mail run.
+    private async Task<IdeasPart> IdeasAsync(DateOnly today, BriefMode mode, BriefPaths briefPaths, CancellationToken cancellationToken)
+    {
+        var config = session.Configuration;
+        if (config.IdeasCap == 0)
+        {
+            return IdeasPart.Off;
+        }
+
+        var history = new IdeasHistory(briefPaths).Read();
+        var areas = config.IdeasAreas.Where(a => mode == BriefMode.Weekday || a.Value == "private").Select(a => a.Key).ToList();
+        var recent = history.Where(r => r.Date > today.AddDays(-config.IdeasSuppressDays) || (r.Answer == "later" && r.Until > today)).ToList();
+        var areasLast6Days = history.Where(r => r.Kind == "shown" && r.Date >= today.AddDays(-6) && r.Date < today).Select(r => r.Area).Distinct(StringComparer.Ordinal).ToList();
+        var input = IdeasInput.Render(today, mode, areas, config.IdeasCap, recent, areasLast6Days);
+        var run = await new IdeasRun(model, new BriefPrompts(), briefPaths, session.Memory)
+            .RunAsync(input, config.IdeasMaxTurns, config.IdeasBudgetUsd, config.IdeasModel, cancellationToken).ConfigureAwait(false);
+        if (run.Suggestions is not { } suggestions)
+        {
+            return new IdeasPart([], [], 0, run.Cost, run.Turns, 6, run.Failure);
+        }
+
+        var (kept, dropped) = IdeaFilter.Filter(suggestions, new IdeaFilterContext(
+            today, areas, config.IdeasCap, config.IdeasRepeatDays, config.IdeasSuppressDays, history, session.Memory, session.Patterns));
+        var lines = kept.Select((s, i) => new IdeaLine(i + 1, s.Id, s.Area, Printable(s.Text), Printable(s.WhyNow), s.Prepare is { } p ? Printable(p) : null,
+            Printable(s.Basis[0].File), Printable(s.Basis[0].Line))).ToList();
+        return new IdeasPart(lines, kept, dropped.Values.Sum(), run.Cost, run.Turns, 0, null);
+    }
+
+    private static string Printable(string text) => BriefPayload.Neutralise(text).Replace('\n', ' ').Trim();
+
+    // AC-35: one "shown" row per kept suggestion; AC-42: the history pruned. A failure here never fails the brief.
+    private void RecordIdeas(BriefPaths briefPaths, DateOnly today, IdeasPart ideas)
+    {
+        try
+        {
+            var history = new IdeasHistory(briefPaths);
+            history.AppendShown(today, ideas.Kept.Select(k => (k.Id, k.Area, k.Deadline)));
+            history.Prune(today, session.Configuration.IdeasSuppressDays);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or StateDirectoryException)
+        {
+            _stderr.Add($"{Prefix}could not record the ideas in {briefPaths.IdeasLog}: {ex.Message}");
+        }
+    }
+
+    private static void IdeasFields(Utf8JsonWriter w, IdeasPart ideas)
+    {
+        w.WriteNumber("ideas_dropped", ideas.Dropped);
+        w.WriteNumber("ideas_turns", ideas.Turns);
+        w.WritePropertyName("ideas_cost");
+        w.WriteRawValue(ideas.Cost.ToString("0.00", CultureInfo.InvariantCulture));
+        if (ideas.Exit is { } exit)
+        {
+            w.WriteNumber("ideas_exit", exit);
+        }
+        else
+        {
+            w.WriteNull("ideas_exit");
+        }
     }
 
     // The mailbox owner's display name, as the folder listing's owner is not exposed: the configured mailbox's local part when nothing better is known.
@@ -484,4 +614,10 @@ internal static class RunDirectory
             // rm -rf: what cannot be removed stays.
         }
     }
+}
+
+/// <summary>The ideas part of a brief: the printed lines, the kept suggestions, the dropped count, cost, turns, the exit (null = not run) and the failure.</summary>
+internal sealed record IdeasPart(IReadOnlyList<IdeaLine> Lines, IReadOnlyList<IdeaSuggestion> Kept, int Dropped, decimal Cost, int Turns, int? Exit, string? Failure)
+{
+    public static IdeasPart Off { get; } = new([], [], 0, 0m, 0, null, null);
 }

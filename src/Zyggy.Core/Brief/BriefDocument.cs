@@ -1,12 +1,5 @@
 namespace Zyggy.Core.Brief;
 
-/// <summary>Weekday: mail, files, items and ideas; weekend: the header and "For the long run" only (spec 35 OD-2).</summary>
-internal enum BriefMode
-{
-    Weekday,
-    Weekend,
-}
-
 /// <summary>One Mail line of the brief, as the validator settled it.</summary>
 internal sealed record MailLine(string Id, MailClass Class, string Time, string Received, string SenderName, string Subject, string Summary, string Decision);
 
@@ -16,8 +9,8 @@ internal sealed record FileLine(string Name, string Drive, string Folder, string
 /// <summary>One "Only you can do these" line.</summary>
 internal sealed record YouItem(string Action, string SenderName, string Subject, string Why, bool FromUrgent);
 
-/// <summary>One "For the long run" line (Step 10); empty until then.</summary>
-internal sealed record IdeaLine(int N, string Id, string Area, string Text);
+/// <summary>One "For the long run" line (spec 35 AC-35): the kept suggestion, its first basis and what Zyggy could prepare (null = "you").</summary>
+internal sealed record IdeaLine(int N, string Id, string Area, string Text, string WhyNow, string? Prepare, string BasisFile, string BasisLine);
 
 /// <summary>The brief's counts, printed in the header and kept in the sidecar.</summary>
 internal sealed record BriefCounts(int Urgent, int Important, int Other, int Files, int FilesOther)
@@ -47,6 +40,12 @@ internal sealed record BriefDocument(
 {
     /// <summary>Gets a value indicating whether urgent content alone exceeded the page (set by the renderer).</summary>
     public bool PageExceeded { get; init; }
+
+    /// <summary>Gets why the ideas run gave nothing today (AC-37), or <see langword="null"/>.</summary>
+    public string? IdeasNote { get; init; }
+
+    /// <summary>Gets a value indicating whether the ideas run is off (<c>ideas_cap</c> 0): the section is omitted.</summary>
+    public bool IdeasOff { get; init; }
 
     /// <summary>Gets the one <see cref="ZKind.FileOther"/> item, when there are "other" mails.</summary>
     public ZItem? FileOtherItem => Items.FirstOrDefault(i => i.Kind == ZKind.FileOther);

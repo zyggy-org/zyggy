@@ -147,12 +147,58 @@ public sealed class BriefRendererTests
     public void Render_Weekend_HeaderAndLongRunOnly()
     {
         // Arrange
-        var document = BriefScenario.Document() with { Mode = BriefMode.Weekend, Ideas = [new IdeaLine(1, "walk", "hobbies", "Plan the Sunday walk — why — hobbies → you")] };
+        var document = BriefScenario.Document() with { Mode = BriefMode.Weekend, Ideas = [Trip] };
 
         // Act
         var (markdown, _) = Render(document);
 
         // Assert
-        markdown.Should().Be("Zyggy — morning brief 2026-10-06 (weekend)\n\n## For the long run\n1. Plan the Sunday walk — why — hobbies → you\n");
+        markdown.Should().Be(BriefFixture.GoldenText("brief-weekend.md"));
+    }
+
+    private static readonly IdeaLine Acme = new(1, "acme-renewal-offer", "client", "Prepare the Acme renewal offer before the November talks",
+        "The renewal talks start in November", "an outline of the offer", "business/clients/acme-corp.md", "Acme renewal talks start in November");
+
+    private static readonly IdeaLine Trip = new(1, "family-autumn-trip", "family", "Plan the autumn-holiday trip",
+        "The school holiday starts on 26 October", null, "private/family/holidays.md", "school autumn holiday from 26 October to 1 November");
+
+    [Fact]
+    public void Render_WithIdeas_ByteEqualsGolden()
+    {
+        // Arrange: spec 35 AC-35 — text, why now, area, prepare or you, the basis file and line
+        var document = BriefScenario.Document() with { Ideas = [Acme, Trip with { N = 2 }] };
+
+        // Act
+        var (markdown, _) = Render(document);
+
+        // Assert
+        markdown.Should().Be(BriefFixture.GoldenText("brief-10-ideas.md"));
+    }
+
+    [Fact]
+    public void Render_IdeasUnavailable_NoteNamesRunbook()
+    {
+        // Arrange
+        var document = BriefScenario.Document() with { IdeasNote = "claude run failed (error_during_execution)" };
+
+        // Act
+        var (markdown, _) = Render(document);
+
+        // Assert
+        markdown.Should().EndWith("## For the long run\n- not available today (claude run failed (error_during_execution)) — runbook 13 \"Ideas run failed but mail run succeeded\"\n");
+    }
+
+    [Fact]
+    public void Render_IdeasOff_SectionOmitted()
+    {
+        // Arrange: ideas_cap 0
+        var document = BriefScenario.Document() with { IdeasOff = true };
+
+        // Act
+        var (markdown, _) = Render(document);
+
+        // Assert
+        markdown.Should().NotContain("For the long run");
+        markdown.Should().EndWith("— the amount is in the attachment\n");
     }
 }

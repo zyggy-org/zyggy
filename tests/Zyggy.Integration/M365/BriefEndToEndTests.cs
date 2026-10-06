@@ -129,7 +129,7 @@ public sealed partial class BriefEndToEndTests : IDisposable
             "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "auto", "--permission-prompts", "none",
             "--no-session-persistence", "--max-turns", "40", "--max-budget-usd", "3.0",
             "--allowedTools", string.Join(',', [.. Lines("brief-allow.txt"), $"Read({runDirectory}/**)"]),
-            "--disallowedTools", string.Join(',', [.. Lines("brief-deny.txt"), $"Read(//{Path.Join(_run.Fixture.Checkout, "memory").Replace('\\', '/')}/**)"]),
+            "--disallowedTools", string.Join(',', [.. Lines("brief-deny.txt"), $"Read(//{Path.Join(_run.Fixture.Checkout, "memory").Replace('\\', '/').TrimStart('/')}/**)"]),
             "--json-schema", new Core.Brief.BriefPrompts().MailSchema,
             "--settings", """{"autoMemoryEnabled":false}""",
             "--strict-mcp-config", "--mcp-config", Path.Join(_run.Fixture.Checkout, ".mcp.json"),

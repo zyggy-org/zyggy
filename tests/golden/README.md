@@ -125,3 +125,13 @@ A hand-written, synthetic MarkItDown-style text of an insurer statement (fiction
 where only the number-shaped patterns (`iban`, `card-number`) match keeps its text with the token run replaced by
 `[redacted: <name>]`; the line that also carries a `token=` assignment still matches after redaction and is withheld whole, named by the
 first pattern in file order. Never produced by the code under test.
+
+## `brief/ideas-*.txt|json`, `brief/brief-10-ideas.md`, `brief/brief-weekend.md` — the ideas run (deliverable 35, Step 10)
+
+Hand-derived from spec 35 AC-32..AC-35 and AC-39, never produced by the code under test. `ideas-args.txt` is the ideas run's argument
+vector, one argument per line, with the placeholders `<principal>` (the principal directory as given to `--add-dir`), `<principal-rule>`
+(the same path in a rule: `/` separators, no leading slash after the rule's `//`), `<schema>` and `<prompt>` (the embedded files)
+substituted by the test. `ideas-input-weekday.txt` is the stdin for a Tuesday with three history rows and one area shown in the last six
+days. `ideas-output-ok.json` is a model answer with three suggestions: one client idea and one family idea whose basis lines occur in the
+test's memory tree, and one career idea with an invented basis (dropped). `brief-10-ideas.md` is `brief-10-noideas.md` with the two kept
+ideas rendered; `brief-weekend.md` is the weekend brief with the family idea only.

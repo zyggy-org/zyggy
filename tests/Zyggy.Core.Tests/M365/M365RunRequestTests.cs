@@ -128,7 +128,8 @@ public sealed class M365RunRequestTests : IDisposable
 
         // Assert
         request.AllowedTools[^1].Should().Be("Read(/tmp/run.ABC123/**)");
-        request.DisallowedTools[^1].Should().Be($"Read(//{Path.Join(_instance.Checkout, "memory").Replace('\\', '/')}/**)");
+        request.DisallowedTools[^1].Should().Be($"Read(//{Path.Join(_instance.Checkout, "memory").Replace('\\', '/').TrimStart('/')}/**)");
+        request.DisallowedTools[^1].Should().NotStartWith("Read(///", "an absolute rule path has exactly two leading slashes");
         request.DisallowedTools.Should().Contain("Bash(zyggy brief *)").And.Contain("Bash(zyggy memory *)");
     }
 

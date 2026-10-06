@@ -120,17 +120,30 @@ internal static class BriefRenderer
             Fixed("- none");
         }
 
-        Fixed(string.Empty);
-        Fixed("## For the long run");
-        Ideas(d, lines);
+        if (!d.IdeasOff)
+        {
+            Fixed(string.Empty);
+            Fixed("## For the long run");
+            Ideas(d, lines);
+        }
+
         return lines;
     }
 
+    // AC-35: "<n>. <text> — <why now> — <area> → I can prepare: <what> | you   (basis: <file>, "<line>")"; AC-37: the note when the run failed.
     private static void Ideas(BriefDocument d, List<RenderedLine> lines)
     {
+        if (d.IdeasNote is { } note)
+        {
+            lines.Add(new RenderedLine($"- not available today ({note}) — runbook 13 \"Ideas run failed but mail run succeeded\"", LineKind.Fixed));
+            return;
+        }
+
         foreach (var idea in d.Ideas)
         {
-            lines.Add(new RenderedLine($"{idea.N}. {idea.Text}", LineKind.Idea, true, idea.N));
+            var next = idea.Prepare is { } prepare ? "I can prepare: " + prepare : "you";
+            lines.Add(new RenderedLine(
+                $"{idea.N}. {idea.Text} — {idea.WhyNow} — {idea.Area} → {next}   (basis: {idea.BasisFile}, \"{idea.BasisLine}\")", LineKind.Idea, true, idea.N));
         }
 
         if (d.Ideas.Count == 0)

@@ -55,7 +55,7 @@ internal static class M365RunRequest
         {
             // Spec 35 AC-45/AC-46: the mail run reads its run directory, never memory; it gets no auto memory and answers in the schema.
             allow = runDirectory is null ? allow : [.. allow, $"Read({runDirectory}/**)"];
-            deny = [.. deny, $"Read(//{Path.Join(instance.Checkout, "memory").Replace('\\', '/')}/**)"];
+            deny = [.. deny, $"Read({ClaudeRules.Absolute(Path.Join(instance.Checkout, "memory"))}/**)"];
         }
 
         return new ModelRunRequest(prompt, instance.Checkout, TimeSpan.FromMinutes(brief ? 30 : 120))

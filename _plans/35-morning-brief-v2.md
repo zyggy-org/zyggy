@@ -710,7 +710,7 @@ Slice H has two (first live run, definition of done).
 
 ## Step 10 — After the mail part, a read-only ideas run in the dream's shape returns suggestions that the binary keeps only when their area is allowed, their basis line really occurs in an allowed memory file, they were not shown recently or answered "not interested", and they carry no link, address or secret — at most three, never padded; on a weekend only the ideas run runs, from private areas (fake model)
 
-- [ ] Done
+- [x] Done — 2026-10-06 (executor notes: "previous brief day" = yesterday (the brief runs every day), not the last day an idea was shown — the first version did that and two tests caught it; a basis line must be at least 10 characters and occur in the file; the basis file and line are also checked for links, addresses, contact details and secrets (they are printed); the deny list also covers `<principal>/.dream/**` and the filter refuses `.dream/` bases (the dream's state is not memory); `ClaudeRules.Absolute` fixes the Step 6 memory rule, which would have read `Read(///…)` on Linux; the weekend sidecar is checked structurally in `BriefRunTests` rather than by a `brief-weekend.json` golden; DST change-day row not added (the test zone has no DST; the mode only reads the local day)
 
 **Scope**:
 - `src/Zyggy.Core/Brief/Prompts/ideas.prompt.md`, `ideas.schema.json` *(create, embedded)*:

@@ -78,7 +78,7 @@ public sealed class PageCapTests
         // Arrange
         var document = BriefScenario.Generated_(urgent: 6, important: 60, other: 10, files: 20) with
         {
-            Ideas = [new IdeaLine(1, "a", "career", "idea one"), new IdeaLine(2, "b", "home", "idea two")],
+            Ideas = [new IdeaLine(1, "a", "career", "idea one", "why", null, "career/goals.md", "a dated line"), new IdeaLine(2, "b", "home", "idea two", "why", "a plan", "home/notes.md", "another dated line")],
         };
 
         // Act
@@ -87,7 +87,7 @@ public sealed class PageCapTests
 
         // Assert
         page.Count(l => l.StartsWith("- ! ", StringComparison.Ordinal)).Should().Be(6);
-        page.Should().Contain("1. idea one").And.Contain("2. idea two");
+        page.Should().Contain(l => l.StartsWith("1. idea one — ", StringComparison.Ordinal)).And.Contain(l => l.StartsWith("2. idea two — ", StringComparison.Ordinal));
         var urgentIds = document.Mail.Where(m => m.Class == MailClass.Urgent).Select(m => m.Id).ToList();
         foreach (var item in document.Items.Where(i => i.FromUrgent))
         {

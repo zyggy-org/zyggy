@@ -268,31 +268,25 @@ internal static partial class MailRunValidator
         ArgumentNullException.ThrowIfNull(reasons);
         ArgumentNullException.ThrowIfNull(secrets);
         var neutral = BriefPayload.Neutralise(text ?? string.Empty).Replace('\n', ' ').Trim();
-        string? reason = null;
-        if (Url().IsMatch(neutral))
-        {
-            reason = "link";
-        }
-        else if (Email().IsMatch(neutral))
-        {
-            reason = "address";
-        }
-        else if (secrets.TryMatch(neutral, out var name))
-        {
-            reason = "secret " + name;
-        }
-        else if (ContactDetailPatterns.Contains(neutral))
-        {
-            reason = "contact detail";
-        }
-
-        if (reason is null)
+        if (WithheldReason(neutral, secrets) is not { } reason)
         {
             return neutral;
         }
 
         reasons.Add($"{reason} withheld in {what}");
         return $"[withheld: {reason}]";
+    }
+
+    /// <summary>Why model text may not be printed — a link, an address, a secret pattern or a contact detail — or <see langword="null"/>.</summary>
+    internal static string? WithheldReason(string text, SecretPatterns secrets)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        ArgumentNullException.ThrowIfNull(secrets);
+        return Url().IsMatch(text) ? "link"
+            : Email().IsMatch(text) ? "address"
+            : secrets.TryMatch(text, out var name) ? "secret " + name
+            : ContactDetailPatterns.Contains(text) ? "contact detail"
+            : null;
     }
 
     private static string Cut(string text, int max) => text.Length <= max ? text : text[..(max - 1)].TrimEnd() + "…";
