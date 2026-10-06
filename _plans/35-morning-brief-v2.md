@@ -627,7 +627,7 @@ Slice H has two (first live run, definition of done).
 
 ## Step 8 — A parsed document line where only an IBAN or card number matches keeps its other text with the number replaced by `[redacted: <pattern>]`, the line is re-tested against every pattern and withheld whole if anything still matches, and no printed line ever matches a secret pattern (fake process runner)
 
-- [ ] Done
+- [x] Done — 2026-10-06 (executor note: `SecretPatterns.TryRedactNumberShaped` maps the joined variant back to the original span; overlapping raw/joined matches merge; the re-test uses every pattern; a withheld line keeps the first-match name as in 33; `parse` stderr gains `, <r> redacted` counting only lines fully printed before a cut)
 
 **Scope**:
 - `src/Zyggy.Core/Memory/SecretPatterns.cs` *(modify, additive)*:

@@ -117,3 +117,11 @@ schema. `journal-weekday.txt` and `brief-jsonl-weekday.json` are the journal lin
 locations (routes appended to `routes.tsv`). `inbox-since-80.json` holds 80 Inbox mails m20..m99 for the page-cap case (five urgent,
 sixty important, fifteen other as the fake classes them in `tools/fake-claude/scenarios/m365-brief-mail-80.jsonl`); it is used through
 a per-test route override, never by default.
+
+## `m365/parse/insurer-statement.txt` and `insurer-statement.expected.txt` — number redaction in parsed text (deliverable 35, Step 8)
+
+A hand-written, synthetic MarkItDown-style text of an insurer statement (fictional policyholder, the IBAN and card number of
+`secret-patterns/secret-samples.txt`) and the bytes `zyggy m365 parse` must print for it, derived by hand from spec 35 AC-30: a line
+where only the number-shaped patterns (`iban`, `card-number`) match keeps its text with the token run replaced by
+`[redacted: <name>]`; the line that also carries a `token=` assignment still matches after redaction and is withheld whole, named by the
+first pattern in file order. Never produced by the code under test.

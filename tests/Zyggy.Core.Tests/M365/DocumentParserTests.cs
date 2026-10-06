@@ -58,6 +58,24 @@ public sealed class DocumentParserTests : IDisposable
     }
 
     [Fact]
+    public async Task Parse_InsurerStatement_ByteEqualsExpected_StderrCountsRedacted()
+    {
+        // Arrange: spec 35 AC-30 — the IBAN and the card number are redacted inside their lines; the line that also carries a token is withheld
+        _runner.Hook = _ => RecordingProcessRunner.Ok(Encoding.UTF8.GetString(File.ReadAllBytes(M365Run.Golden("parse", "insurer-statement.txt"))));
+
+        // Act
+        var result = await ParseAsync(Input("insurer-statement.pdf"));
+
+        // Assert
+        result.Exit.Should().Be(0, result.Stderr);
+        result.Stdout.Should().Equal(File.ReadAllBytes(M365Run.Golden("parse", "insurer-statement.expected.txt")));
+        result.Stderr.Should().Be("parse: insurer-statement.pdf 8 lines, 1 withheld, 2 redacted\n");
+        Encoding.UTF8.GetString(result.Stdout).Should().NotContain("6769").And.NotContain("4111").And.NotContain("abcdef123456");
+        var patterns = SecretPatterns.Load(Path.Combine(Golden.Directory, "secret-patterns", "secret-patterns.txt")).Patterns!;
+        Encoding.UTF8.GetString(result.Stdout).Split('\n').Where(l => patterns.TryMatch(l, out _)).Should().BeEmpty("no printed line matches a secret pattern");
+    }
+
+    [Fact]
     public async Task Parse_BigPdf_CutAt20000WithMarker()
     {
         // Arrange

@@ -1,0 +1,9 @@
+# Insurance statement 2026-09
+
+Policy number: POL-2026-0042 (home insurance)
+Policyholder: Alice Example
+Direct debit from IBAN BE71 0961 2345 6769 on the 5th of each month
+Card on file: 4111-1111-1111-1111 (expires 12/28)
+Amount due: 0.00 EUR
+Refund to IBAN BE71 0961 2345 6769, reference token=abcdef123456
+Questions? Call the service desk.
