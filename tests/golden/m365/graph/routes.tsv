@@ -23,3 +23,10 @@ GET	/drives/b!onedrive0001/items/[^/?]+:/[^?]+\?\$select=id$	404	graph-not-found
 GET	/drives/b!onedrive0001/items/(01PARENT0001|01ROOT0001)\?\$select=id,folder,root$	200	item-folder.json	-
 GET	/drives/b!onedrive0001/items/01FILE0001\?\$select=id,folder,root$	200	item-file.json	-
 GET	/drives/b!onedrive0001/items/[^/?:]+\?\$select=id,folder,root$	404	graph-not-found.json	-
+GET	/users/alice@acme\.example/mailFolders/AQMkInbox0001/messages\?\$filter=receivedDateTime	200	brief/inbox-since.json	-
+GET	/users/alice@acme\.example/mailFolders/sentitems/messages\?\$filter=sentDateTime.*\$top=100$	200	brief/sent-since.json	-
+GET	/users/alice@acme\.example/mailFolders/sentitems/messages\?\$skip=100&page=2$	200	brief/sent-since-page2.json	-
+GET	/users/alice@acme\.example/messages/d5\?\$select=id,parentFolderId	200	brief/message-in-drafts.json	-
+GET	/users/alice@acme\.example/messages/d6\?\$select=id,parentFolderId	200	brief/message-in-drafts-unanswered.json	-
+GET	/users/alice@acme\.example/messages/d4\?\$select=id,parentFolderId	200	brief/message-in-inbox.json	-
+GET	/users/alice@acme\.example/messages/d7\?\$select=id,parentFolderId	404	graph-not-found.json	-

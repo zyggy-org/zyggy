@@ -316,7 +316,7 @@ Slice H has two (first live run, definition of done).
 
 ## Step 4 — Before the mail run, the binary itself lists the new Inbox mail, finds in Sent Items which of them were already answered and when, and turns Zyggy's own earlier reply drafts to answered mails into "discard" items — with Graph reads only, written to `mail.json` as data (stubbed Graph)
 
-- [ ] Done
+- [x] Done — 2026-10-06 (executor note: the one Sent Items query starts at the earlier of the oldest listed mail and now − brief_keep_days, so it also covers the earlier reply drafts; paged under the mailbox only)
 
 **Scope**:
 - `src/Zyggy.Core/M365/Graph/GraphReader.cs` + `IGraphReader` *(modify, additive; still the only code that reads Graph)*:

@@ -36,6 +36,15 @@ internal interface IGraphReader
     Task<GraphRead<ItemKind>> ItemKindAsync(string driveId, string itemId, CancellationToken cancellationToken);
 
     Task<GraphRead<GraphResponse>> GetAsync(string pathAndQuery, Func<int, bool> tolerate, CancellationToken cancellationToken);
+
+    /// <summary>The Inbox messages received after <paramref name="sinceIso"/>, oldest first, at most <paramref name="top"/> (spec 35 Step 4).</summary>
+    Task<GraphRead<IReadOnlyList<InboxMessage>>> InboxSinceAsync(string inboxId, string sinceIso, int top, CancellationToken cancellationToken);
+
+    /// <summary>Every Sent Items message sent at or after <paramref name="sinceIso"/>, as conversation markers; pages followed under the mailbox only.</summary>
+    Task<GraphRead<IReadOnlyList<SentMarker>>> SentSinceAsync(string sinceIso, CancellationToken cancellationToken);
+
+    /// <summary>Where a message is now (its folder), or <see cref="MessageLocation.Absent"/> for a 404.</summary>
+    Task<GraphRead<MessageLocation>> MessageLocationAsync(string messageId, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -48,6 +57,7 @@ internal sealed partial class GraphReader(GraphTokenClient tokens, GraphHttp htt
     private const int Top = 50;
     private const int MaxDeltaPages = 2000;
     private const int MaxFolderDepth = 64;
+    private const int MaxSentPages = 50;
     private const string DraftsSelect = "id,subject,toRecipients,ccRecipients,bccRecipients,conversationId,createdDateTime,changeKey,body";
     private const string DeltaSelect = "id,name,file,folder,root,size,lastModifiedDateTime,parentReference,deleted";
 
@@ -273,6 +283,101 @@ internal sealed partial class GraphReader(GraphTokenClient tokens, GraphHttp htt
         ArgumentNullException.ThrowIfNull(pathAndQuery);
         return CallAsync(GraphEndpoints.Graph + pathAndQuery, tolerate, cancellationToken);
     }
+
+    public async Task<GraphRead<IReadOnlyList<InboxMessage>>> InboxSinceAsync(string inboxId, string sinceIso, int top, CancellationToken cancellationToken)
+    {
+        var url = $"{Mailbox}/mailFolders/{inboxId}/messages?$filter=receivedDateTime%20gt%20{sinceIso}&$orderby=receivedDateTime%20asc&$top={top}"
+            + "&$select=id,subject,from,receivedDateTime,conversationId,hasAttachments";
+        var page = await CallAsync(url, None, cancellationToken).ConfigureAwait(false);
+        if (page.Failure is not null)
+        {
+            return GraphRead<IReadOnlyList<InboxMessage>>.Fail(page.Failure);
+        }
+
+        var messages = new List<InboxMessage>();
+        foreach (var m in Values(page.Value!.Body))
+        {
+            var from = m.TryGetProperty("from", out var f) && f.ValueKind == JsonValueKind.Object && f.TryGetProperty("emailAddress", out var e) ? e : default;
+            messages.Add(new InboxMessage(
+                Str(m, "id"),
+                Str(m, "subject"),
+                from.ValueKind == JsonValueKind.Object ? Str(from, "name") : string.Empty,
+                from.ValueKind == JsonValueKind.Object ? Str(from, "address") : string.Empty,
+                Str(m, "receivedDateTime"),
+                Str(m, "conversationId"),
+                m.TryGetProperty("hasAttachments", out var h) && h.ValueKind == JsonValueKind.True));
+        }
+
+        return GraphRead<IReadOnlyList<InboxMessage>>.Ok(messages);
+    }
+
+    public async Task<GraphRead<IReadOnlyList<SentMarker>>> SentSinceAsync(string sinceIso, CancellationToken cancellationToken)
+    {
+        var url = $"{Mailbox}/mailFolders/sentitems/messages?$filter=sentDateTime%20ge%20{sinceIso}&$select=conversationId,sentDateTime&$top={Page}";
+        var markers = new List<SentMarker>();
+        for (var pages = 0; pages < MaxSentPages; pages++)
+        {
+            var page = await CallAsync(url, None, cancellationToken).ConfigureAwait(false);
+            if (page.Failure is not null)
+            {
+                return GraphRead<IReadOnlyList<SentMarker>>.Fail(page.Failure);
+            }
+
+            using var document = JsonDocument.Parse(page.Value!.Body);
+            if (document.RootElement.TryGetProperty("value", out var value) && value.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var m in value.EnumerateArray())
+                {
+                    markers.Add(new SentMarker(Str(m, "conversationId"), Str(m, "sentDateTime")));
+                }
+            }
+
+            if (!document.RootElement.TryGetProperty("@odata.nextLink", out var next) || next.ValueKind != JsonValueKind.String)
+            {
+                return GraphRead<IReadOnlyList<SentMarker>>.Ok(markers);
+            }
+
+            url = next.GetString()!;
+            if (!url.StartsWith(Mailbox + "/", StringComparison.Ordinal))
+            {
+                return GraphRead<IReadOnlyList<SentMarker>>.Fail(new GraphFailure(6, "Graph returned a next page outside the mailbox"));
+            }
+        }
+
+        return GraphRead<IReadOnlyList<SentMarker>>.Fail(new GraphFailure(6, $"Sent Items listing did not end within {MaxSentPages} pages"));
+    }
+
+    public async Task<GraphRead<MessageLocation>> MessageLocationAsync(string messageId, CancellationToken cancellationToken)
+    {
+        var message = await CallAsync(
+            $"{Mailbox}/messages/{messageId}?$select=id,parentFolderId,conversationId,subject,from,receivedDateTime",
+            status => status == 404,
+            cancellationToken).ConfigureAwait(false);
+        if (message.Failure is not null)
+        {
+            return GraphRead<MessageLocation>.Fail(message.Failure);
+        }
+
+        if (message.Value!.Status == 404)
+        {
+            return GraphRead<MessageLocation>.Ok(MessageLocation.Absent);
+        }
+
+        using var document = JsonDocument.Parse(message.Value.Body);
+        var m = document.RootElement;
+        var from = m.TryGetProperty("from", out var f) && f.ValueKind == JsonValueKind.Object && f.TryGetProperty("emailAddress", out var e) ? e : default;
+        return GraphRead<MessageLocation>.Ok(new MessageLocation(
+            true,
+            Str(m, "id"),
+            Str(m, "parentFolderId"),
+            Str(m, "conversationId"),
+            Str(m, "subject"),
+            from.ValueKind == JsonValueKind.Object ? Str(from, "name") : string.Empty,
+            Str(m, "receivedDateTime")));
+    }
+
+    private static string Str(JsonElement element, string name) =>
+        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString()! : string.Empty;
 
     // graph_call: the Bearer header, one re-mint on a 401 not tolerated; anything not accepted is graph_error.
     private async Task<GraphRead<GraphResponse>> CallAsync(string url, Func<int, bool> tolerate, CancellationToken cancellationToken, bool preferText = false)

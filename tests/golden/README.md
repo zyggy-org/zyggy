@@ -87,3 +87,12 @@ Hand-derived from spec 35's Contracts ("Rendered brief", the page markers, AC-12
 - `brief-weekday.md` is a complete brief file as the renderer writes it (fictional people, `*.example` names), with the two page markers: a line the page cap dropped carries the prefix `<!--page:drop-->`, a "… and <n> more" count line the prefix `<!--page:count-->`.
 - `show-weekday.txt` is the exact stdout of `zyggy brief show` for it on 2026-10-06 (page view: dropped lines removed, count prefixes stripped; the sidecar's `generated` 2026-10-06T04:31:00Z; the watermark 2026-10-05T04:30:00Z); `show-weekday-full.txt` the stdout of `show --full` (count lines removed, dropped lines kept).
 - `show-failure.txt` (no brief, 07:00 or later, a failed `brief.jsonl` row and two earlier briefs not shown) and `show-not-ready.txt` (no brief, before 07:00).
+
+## `m365/graph/brief/` and `brief/mail-input.json` — the brief's pre-pass (deliverable 35, Step 4)
+
+Hand-written Graph answers (tenant `acme`, user `alice`, fictional senders at `example.org`) for the three brief reads of spec 35
+Step 4: `inbox-since.json` (four new Inbox mails), `sent-since.json` + `sent-since-page2.json` (Sent Items markers, one `@odata.nextLink`
+under the mailbox), `message-in-drafts.json` / `message-in-drafts-unanswered.json` / `message-in-inbox.json` (where an earlier reply
+draft is now). Their routes are appended to `routes.tsv`. `brief/mail-input.json` is the exact `mail.json` the pre-pass writes for
+them on 2026-10-06 in Europe/Brussels (+02:00), derived by hand from the contract: names only, local `HH:MM`, `answered` = the first
+later sent mail of the conversation.

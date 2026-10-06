@@ -28,6 +28,9 @@ internal sealed partial class M365Configuration
 
     public string Mailbox => String("mailbox");
 
+    /// <summary>Gets <c>brief.mail_max_items</c>: how many new Inbox mails one brief lists.</summary>
+    public int MailMaxItems => Int("brief", "mail_max_items");
+
     public string TimeZone => String("timezone");
 
     public string Language => String("language");
