@@ -71,6 +71,29 @@ public sealed class M365RunRequestTests : IDisposable
     }
 
     [Fact]
+    public void For_CredentialsDirectorySet_PassedToTheRunForTheHeadersHelper()
+    {
+        // Arrange: the brief unit's LoadCredential directory
+        var instance = M365Environment.Load(new Dictionary<string, string?>
+        {
+            ["ZYGGY_INSTANCE_DIR"] = Path.Combine(_root, "checkout", "instance"),
+            ["HOME"] = _root,
+            ["CREDENTIALS_DIRECTORY"] = "/run/credentials/zyggy-morning-brief.service",
+        }).Environment!;
+
+        // Act
+        var request = M365RunRequest.For(M365RunKind.Brief, "/x", instance, _configuration, _partition, "/run/dir");
+
+        // Assert
+        request.Environment.Should().BeEquivalentTo(new Dictionary<string, string>
+        {
+            ["ZYGGY_HOOKS"] = "off",
+            ["ZYGGY_M365_RUN_DIR"] = "/run/dir",
+            ["CREDENTIALS_DIRECTORY"] = "/run/credentials/zyggy-morning-brief.service",
+        });
+    }
+
+    [Fact]
     public void For_WorkingDirectoryIsCheckoutCapsAndLimits()
     {
         // Act
