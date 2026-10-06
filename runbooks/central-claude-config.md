@@ -1518,6 +1518,12 @@ set -a; . <(systemctl show zyggy-dream.service -p Environment --value | tr ' ' '
 5. Only then `runuser -u zyggy -- git -C /srv/agent/central pull --ff-only` (the template's `session-start.sh` now
    needs `zyggy`). As root: `install -m 644 /srv/agent/central/instance/systemd/zyggy-dream.{service,timer,path}
    /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now zyggy-dream.path`.
+   When the pull changes `instance/settings.local.json`, install it as the live copy and restart the remote session once:
+   `install -o zyggy -g zyggy -m 600 /srv/agent/central/instance/settings.local.json
+   /srv/agent/central/.claude/settings.local.json && systemctl restart claude-remote`. Since deliverable 33 the m365
+   headersHelper needs its `ZYGGY_INSTANCE_DIR` (it cannot derive the checkout from its own path as the shell did); without
+   it every session logs `token refresh failed: configuration error: ZYGGY_INSTANCE_DIR is not set` and has no m365 tools
+   (found 2026-10-06).
 
    **The order is binary → pin → pull → units, never otherwise**: a template pulled before its binary leaves the guard
    blocking every action and the `m365` tools gone (14d). For the deliverable-33 release and any release that changes
