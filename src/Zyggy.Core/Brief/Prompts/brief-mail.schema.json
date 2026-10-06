@@ -1,0 +1,75 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Zyggy morning brief — mail run output (spec 35)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["mail", "files", "replies", "facts"],
+  "properties": {
+    "mail": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "class", "summary", "action"],
+        "properties": {
+          "id": { "type": "string", "maxLength": 512 },
+          "class": { "type": "string", "enum": ["urgent", "important", "other"] },
+          "summary": { "type": "string", "maxLength": 200 },
+          "action": { "type": "string", "enum": ["z", "you", "nothing"] },
+          "z": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "why"],
+            "properties": {
+              "kind": { "type": "string", "enum": ["send", "move"] },
+              "destination": { "type": "string", "enum": ["archive", "deleteditems"] },
+              "draftId": { "type": "string", "maxLength": 512 },
+              "why": { "type": "string", "maxLength": 120 }
+            }
+          },
+          "you": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "action", "why"],
+            "properties": {
+              "kind": { "type": "string", "enum": ["pay", "other"] },
+              "action": { "type": "string", "maxLength": 80 },
+              "why": { "type": "string", "maxLength": 120 }
+            }
+          },
+          "amount": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status"],
+            "properties": {
+              "status": { "type": "string", "enum": ["read", "stated", "not_read"] },
+              "amountDue": { "type": "number", "minimum": 0 },
+              "currency": { "type": "string", "maxLength": 3 },
+              "dueDate": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+            }
+          }
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "drive", "folder", "modified", "by", "about"],
+        "properties": {
+          "name": { "type": "string", "maxLength": 255 },
+          "drive": { "type": "string", "maxLength": 80 },
+          "folder": { "type": "string", "maxLength": 200 },
+          "modified": { "type": "string", "maxLength": 25 },
+          "by": { "type": "string", "maxLength": 120 },
+          "about": { "type": "string", "maxLength": 200 },
+          "youAction": { "type": "string", "maxLength": 80 },
+          "tiedTo": { "type": "string", "maxLength": 512 }
+        }
+      }
+    },
+    "replies": { "type": "integer", "minimum": 0 },
+    "facts": { "type": "integer", "minimum": 0 }
+  }
+}

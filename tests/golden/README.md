@@ -96,3 +96,13 @@ under the mailbox), `message-in-drafts.json` / `message-in-drafts-unanswered.jso
 draft is now). Their routes are appended to `routes.tsv`. `brief/mail-input.json` is the exact `mail.json` the pre-pass writes for
 them on 2026-10-06 in Europe/Brussels (+02:00), derived by hand from the contract: names only, local `HH:MM`, `answered` = the first
 later sent mail of the conversation.
+
+## `brief/mail-output-10.json`, `brief-10-noideas.md`, `brief-10-noideas.json` — the validated brief (deliverable 35, Step 5)
+
+`mail-output-10.json` is a hand-written answer of the mail run (ten classed mails: one urgent invoice with an amount read, a reply to
+send, a reply to an already-answered mail, two "other" mails, a statement with 0.00 due, a quote to delete, a summary carrying a link,
+a renewal notice the model called "other" with a pay action, and three files). `brief-10-noideas.md` and `brief-10-noideas.json` are
+the brief and its item list hand-derived from spec 35's Contracts ("Rendered brief", the validator rules AC-14..AC-19, AC-21, AC-28,
+AC-64..AC-66, the Z numbering AC-17) for the pre-pass scenario in `tests/Zyggy.Core.Tests/Brief/BriefScenario.cs` (an eleventh mail the
+model omitted, one discard item; Europe/Brussels +02:00). The 40- and 80-mail cases are generated in the tests and checked structurally
+(caps, shortening order, markers, no urgent line dropped), not against a golden. Never produced by the code under test.

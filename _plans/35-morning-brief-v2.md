@@ -368,7 +368,7 @@ Slice H has two (first live run, definition of done).
 
 ## Step 5 — The mail run's structured answer is checked before anything is written: each mail has a class the binary may raise but never lower below what its facts demand, each ends in exactly one decision, Z items are numbered by the binary and must point at a listed mail in the expected folder, answered mails get no reply and no send, pay items need an amount read or stated, model text with a link, address, secret or contact detail is withheld — and one page is rendered from that record with the "other" mails as one line and one filing item, urgent lines never dropped, the complete form kept behind page markers, and the item list beside it (pure, golden)
 
-- [ ] Done
+- [x] Done — 2026-10-06 (executor note: the 10-mail brief and its sidecar are hand-derived goldens; the 40- and 80-mail cases are generated in the tests and checked structurally — caps, shortening order, markers, no urgent line dropped — instead of byte-equal goldens; finding for Gate C: on a busy day with many actions the spec's order drops every important mail line before touching the lists)
 
 **Scope**:
 - `src/Zyggy.Core/Brief/Prompts/brief-mail.schema.json` *(create, embedded resource)*: the spec's mail-run schema (draft-07). `class` is required and one of `urgent`/`important`/`other`; `action` is one of `z`/`you`/`nothing`, with its sub-object and length caps exactly as in spec Contracts; `files[].tiedTo` is an optional mail id.

@@ -1,0 +1,80 @@
+{
+  "schema": 1,
+  "date": "2026-10-06",
+  "generated": "2026-10-06T04:31:00Z",
+  "mode": "weekday",
+  "watermark": "2026-10-05T04:30:00Z",
+  "audit": "ok",
+  "auditReasons": [
+    "reply to the answered mail m03 dropped",
+    "link withheld in summary of m09"
+  ],
+  "counts": {
+    "urgent": 1,
+    "important": 8,
+    "other": 2,
+    "files": 2,
+    "filesOther": 1
+  },
+  "page_exceeded": false,
+  "items": [
+    {
+      "n": 1,
+      "kind": "send",
+      "messageId": "m02",
+      "draftId": "d02",
+      "subject": "Lunch on Thursday?",
+      "sender": {
+        "name": "Bob Example",
+        "address": "bob@example.org"
+      },
+      "received": "2026-10-06T06:05:00Z"
+    },
+    {
+      "n": 2,
+      "kind": "move",
+      "messageId": "m07",
+      "destination": "archive",
+      "subject": "Statement September",
+      "sender": {
+        "name": "Gus Example",
+        "address": "gus@example.org"
+      },
+      "received": "2026-10-06T08:00:00Z"
+    },
+    {
+      "n": 3,
+      "kind": "move",
+      "messageId": "m08",
+      "destination": "deleteditems",
+      "subject": "Old quote",
+      "sender": {
+        "name": "Hal Example",
+        "address": "hal@example.org"
+      },
+      "received": "2026-10-06T08:20:00Z"
+    },
+    {
+      "n": 4,
+      "kind": "discard-draft",
+      "draftId": "d09",
+      "destination": "deleteditems",
+      "subject": "RE: Old thread",
+      "sender": {
+        "name": "Alice Example",
+        "address": ""
+      }
+    },
+    {
+      "n": 5,
+      "kind": "file-other",
+      "messageIds": [
+        "m05",
+        "m06"
+      ],
+      "destination": "archive",
+      "subject": "2 other mails"
+    }
+  ],
+  "ideas": []
+}
