@@ -186,7 +186,7 @@ Gate placement: one per slice; Slice C is the new package on its own; Slice F ha
 
 ## Step 2 — `zyggy linkedin auth finish` reads the pasted address from stdin and, only when it is the pending, fresh, uncancelled answer to the registered redirect, exchanges it once for a token, reads the account once, refuses a different account than the pinned one, and stores the token atomically — the code, the secret and the token never printed (stubbed LinkedIn handler)
 
-- [ ] Done
+- [x] Done — 2026-10-07 (executor notes: `LinkedInEndpoints.Resolve` returns `LinkedInRoutes` (the three request addresses + the loopback base); an exchange or user-info failure carries a sanitised code (`invalid_grant`, `http_<status>`, `request_failed`, `invalid_response`), never LinkedIn's description; a pasted line that is not an address is "not the registered redirect address"; a line over 4,096 characters is exit 4; Windows: 1984 + 303 passed)
 
 **Scope**:
 - `src/Zyggy.Core/LinkedIn/LinkedInEndpoints.cs` *(create, internal static; **the only file naming** `https://api.linkedin.com` and `https://www.linkedin.com`)*:

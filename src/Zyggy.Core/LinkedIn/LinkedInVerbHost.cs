@@ -14,6 +14,7 @@ public sealed class LinkedInVerbHost
     private readonly Dictionary<string, Func<LinkedInVerbContext, ILinkedInVerb>> _verbs = new(StringComparer.Ordinal)
     {
         ["auth start"] = context => new AuthStartVerb(context),
+        ["auth finish"] = context => new AuthFinishVerb(context),
         ["auth status"] = context => new AuthStatusVerb(context),
     };
 
