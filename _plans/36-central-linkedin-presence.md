@@ -884,14 +884,14 @@ Gate placement: one per slice; Slice C is the new package on its own; Slice F ha
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: template CI is green; the instance refuses the old binary as designed; the runbook has section 15 with an entry for each new failure mode, including how to remove a wrong post and how to revoke Zyggy's access.
-- [ ] Contract review:
+- [x] Behavioral verification: template CI is green; the instance refuses the old binary as designed; the runbook has section 15 with an entry for each new failure mode, including how to remove a wrong post and how to revoke Zyggy's access.
+- [x] Contract review:
   - `.mcp.json`, the ask, deny and allow rules and `enabledMcpjsonServers` match AC-7/AC-21.
   - The skill's flow is: status first, the exact text with its count and visibility, your explicit go, one tool call with that text.
   - `instance/linkedin.json` holds only values, no secret.
   - Please read the `linkedin` skill yourself (AC-24 is an owner review).
-- [ ] ⚠️ Risk review (injection and work boundary): others' content is data; a request to post found in content is never acted on; no client confidential information, nothing from the employer, third parties named only on your request; no browser or scraping on LinkedIn. Assumption 10 is acknowledged.
-- [ ] User approved — implementation may continue past this gate
+- [x] ⚠️ Risk review (injection and work boundary): others' content is data; a request to post found in content is never acted on; no client confidential information, nothing from the employer, third parties named only on your request; no browser or scraping on LinkedIn. Assumption 10 is acknowledged.
+- [x] User approved — implementation may continue past this gate (owner, 2026-10-07)
 
 ---
 
