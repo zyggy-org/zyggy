@@ -412,7 +412,7 @@ Before = after: live settings sha `911e415f…`, `claude-remote` since 06:30:41 
 | AC-38 | five runs: no repeated suggestion, ≥ 3 areas, a basis each, no `[stated]` contradiction, no health/mental/personality inference, `not-interested` suppresses | | | |
 | AC-48 | sweep of `~/.local/state/zyggy/brief/` and the session transcripts: no secret pattern, address, contact detail or mail body | | | |
 | AC-53 owner 1 | | | | |
-| AC-53 owner 2 | asking for the brief shows it; a prompt that does not ask runs nothing brief-related; there is no hook | | | |
+| AC-53 owner 2 | asking for the brief shows it; a prompt that does not ask runs nothing brief-related; there is no hook | 2026-10-07 06:54–07:00 UTC | owner, phone, conversation `40cdcd7f…`: `/morning-brief` → Zyggy declined the unattended skill and ran `zyggy brief show` (exit 0) plus one read-only Inbox listing for the mail since the brief; "what can you do? z" → `zyggy brief show --full`; two ordinary prompts (06:59, 07:00) → no `zyggy brief` command; `last-shown` `2026-10-07` 0600; `settings.json` has no `UserPromptSubmit`. Owner: "Seems perfect". "show yesterday's brief" not asked (covered by the rehearsal and the integration tests) | pass |
 | AC-53 owner 3 | | | | |
 | AC-53 owner 4 | | | | |
 | AC-53 owner 5 | | | | |

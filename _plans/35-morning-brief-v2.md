@@ -1085,7 +1085,7 @@ If the rehearsal fails: **stop**. Do not activate. The fix goes test-first (a re
 
 ## Step 16 — The release is switched on in the runbook's order (binary and pin, then the pull, then the units, then one restart of the remote session so it loads the new rules and settings); the first attended weekday brief runs under the unit, writes its files and no Draft, and when the owner asks for it from the phone it is shown, while an ordinary prompt runs nothing brief-related
 
-- [ ] Done
+- [x] Done — 2026-10-07 (executor notes: three releases instead of one — 0.3.0 (run 1: 403 on the owner-name read `/users/<mailbox>`), 0.3.1 (owner name from the OneDrive drive's owner; run 1 written but `audit FLAGGED: address withheld in sender name`), 0.3.2 (a withheld Graph-taken sender name or subject is not an audit violation); fix-forward instead of the plan's rollback (timer off, sessions working, a rollback would have cost two restarts beyond the owner's allowance); one `claude-remote` restart (`resuming d2bfd758…`, the most recent conversation); instance CI not started (private repo out of minutes) — bats 169/169 locally; run 1 not repeated on 0.3.2 (the watermark had moved; a rerun repeats the memory line and facts) — run 2 tomorrow is the first that can count; the owner's phone checks pass (0002 "AC-53 owner 2"), "show yesterday's brief" not asked)
 
 **Scope** (agent, then owner):
 1. **Template and instance** (laptop):
