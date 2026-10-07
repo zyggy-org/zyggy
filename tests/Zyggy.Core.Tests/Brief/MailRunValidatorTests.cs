@@ -224,6 +224,26 @@ public sealed class MailRunValidatorTests
         document.AuditReasons.Should().Contain("address withheld in subject");
     }
 
+    [Theory]
+    [InlineData("address withheld in sender name", false)]
+    [InlineData("address withheld in subject", false)]
+    [InlineData("link withheld in subject", false)]
+    [InlineData("2 Z items over suggestion_cap 10 left to the owner", false)]
+    [InlineData("address withheld in summary of m01", true)]
+    [InlineData("link withheld in why", true)]
+    [InlineData("contact detail withheld in file name", true)]
+    [InlineData("move of m04 dropped: not in the Inbox or no valid destination", true)]
+    [InlineData("reply to the answered mail m03 dropped", true)]
+    public void IsViolation_OnlyModelTextAndModelItemsJoinTheAuditVerdict(string reason, bool violation)
+    {
+        // Arrange: spec 35 AC-20 — the AC-18/AC-19 reasons (the model's items and text) join the verdict; a sender name or subject taken
+        // from Graph is withheld the same way but is not the model's doing (Central, 2026-10-07: a sender without a display name
+        // flagged the first attended brief)
+
+        // Act / Assert
+        MailRunValidator.IsViolation(reason).Should().Be(violation);
+    }
+
     [Fact]
     public void Validate_OverSuggestionCap_RestLeftToTheOwner()
     {
