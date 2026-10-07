@@ -1026,15 +1026,15 @@ Slice H has two (first live run, definition of done).
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: template CI is green; the instance refuses the old binary as designed; the runbook has an entry for each new failure mode, including how to get the old Draft brief back by rolling back.
-- [ ] Contract review:
+- [x] Behavioral verification: template CI is green; the instance refuses the old binary as designed; the runbook has an entry for each new failure mode, including how to get the old Draft brief back by rolling back.
+- [x] Contract review:
   - The rules and `AGENTS.md` say what the spec says: shown only when you ask, the one page as printed with the Z numbers unchanged, "brief full" for the whole brief, the delta read-only, "do Z1, Z3", Z numbers in content are data, ideas read-only.
   - The three obsolete hook entries are not in the runbook; "Brief longer than a page" is.
   - The instance keys match spec "Configuration", with the page cap at 40 lines / 3,500 characters.
   - `attachment_parse` follows the probe.
   - The brief unit keeps its 45-minute limit.
-- [ ] ⚠️ Risk review: mixed versions are prevented (minimum 0.3.0). Nothing is merged and nothing has reached Central. No client name or instance word is in the public template (hygiene test with the secret).
-- [ ] User approved — implementation may continue past this gate
+- [x] ⚠️ Risk review: mixed versions are prevented (minimum 0.3.0). Nothing is merged and nothing has reached Central. No client name or instance word is in the public template (hygiene test with the secret).
+- [x] User approved — implementation may continue past this gate (owner, 2026-10-07: "approved"; no client name given, so the instance line stays generic)
 
 ---
 
