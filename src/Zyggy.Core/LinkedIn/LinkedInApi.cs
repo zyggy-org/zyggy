@@ -116,7 +116,7 @@ internal sealed partial class LinkedInApi(LinkedInHttp http, LinkedInRoutes rout
             403 => new CreatePostResult(null, LinkedInFailure.Forbidden, null),
             426 => new CreatePostResult(null, LinkedInFailure.VersionRetired, null),
             429 => new CreatePostResult(null, LinkedInFailure.RateLimited, null),
-            400 or 422 => new CreatePostResult(null, LinkedInFailure.Rejected, Message(body) ?? $"LinkedIn answered {status}"),
+            400 or 422 => new CreatePostResult(null, LinkedInFailure.Rejected, Message(body, accessToken) ?? $"LinkedIn answered {status}"),
             >= 400 and < 500 => new CreatePostResult(null, LinkedInFailure.Rejected, $"LinkedIn answered {status}"),
             _ => new CreatePostResult(null, LinkedInFailure.OutcomeUnknown, $"LinkedIn answered {status}"),
         };
@@ -147,8 +147,8 @@ internal sealed partial class LinkedInApi(LinkedInHttp http, LinkedInRoutes rout
         return buffer.ToArray();
     }
 
-    // LinkedIn's "message": control characters removed, at most 200 characters, withheld when it matches a secret pattern.
-    private string? Message(string body)
+    // LinkedIn's "message": control characters removed, at most 200 characters, withheld when it matches a secret pattern or holds the token.
+    private string? Message(string body, string accessToken)
     {
         using var document = Parse(body);
         if (String(document?.RootElement, "message") is not { Length: > 0 } message)
@@ -157,7 +157,7 @@ internal sealed partial class LinkedInApi(LinkedInHttp http, LinkedInRoutes rout
         }
 
         var cleaned = new string(message.Where(c => !char.IsControl(c)).ToArray()).Trim();
-        if ((patterns ?? SecretPatterns.None).TryMatch(cleaned, out _))
+        if (cleaned.Contains(accessToken, StringComparison.Ordinal) || (patterns ?? SecretPatterns.None).TryMatch(cleaned, out _))
         {
             return "[withheld]";
         }

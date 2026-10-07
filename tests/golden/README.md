@@ -151,3 +151,10 @@ token). `linkedin.json` is the fixture instance file with only the required keys
 default; the client id is alphanumeric because the instance rule is `^[A-Za-z0-9]{1,64}$`). `auth-start-url.txt` is the one line
 `zyggy linkedin auth start` prints for it, with `<state>` in place of the fresh random state. `token.json` is the shape of the token file
 `auth finish` writes (compact, no trailing newline, timestamps in UTC with `Z`; `scope` as LinkedIn returns it, comma-separated).
+
+Publishing (deliverable 36, Step 5): `post-request.json` is the exact `POST /rest/posts` body (spec 36 AC-2) for the text
+`Agents (part 1) [draft] {v2} <b> a|b @name *bold* _it_ ~x~ back\slash #dotnet # not` + `\n` + `Second line 🚀` + `\n` + `Third`: keys in the
+contract's order, every reserved `little` character escaped, `#dotnet` kept as a hashtag, `# not` escaped, compact JSON with
+non-ASCII kept except characters outside the BMP, which JSON writes as a `\uXXXX` surrogate pair (System.Text.Json always does).
+`little/cases.tsv` is one input → commentary case per escaping rule (AC-14). `inbox-linkedin.md` is the new inbox file after one published
+post. `http/post-*` are LinkedIn's answers: the 201's `x-restli-id` header, and the 400/422/426/429 bodies as the Posts API documents them.

@@ -1,0 +1,25 @@
+# input<TAB>escaped commentary (spec 36 AC-14), one case per rule; hand-written.
+(	\(
+)	\)
+[	\[
+]	\]
+{	\{
+}	\}
+<	\<
+>	\>
+a|b	a\|b
+@name	\@name
+*	\*
+_	\_
+~	\~
+back\slash	back\\slash
+#dotnet	#dotnet
+#1	#1
+#é	#é
+# space	\# space
+end#	end\#
+##tag	\##tag
+#🚀	\#🚀
+🚀	🚀
+plain text, ok.	plain text, ok.
+"quotes" & ampersand	"quotes" & ampersand

@@ -402,7 +402,7 @@ Gate placement: one per slice; Slice C is the new package on its own; Slice F ha
 
 ## Step 5 — An accepted text becomes exactly one `POST /rest/posts` whose commentary, un-escaped, is byte-equal to the text the owner approved; a 201 answers `published: <urn> — <link>` with one `ok` row and one `[observed]` fact; 401, 403, 426, 429, 400/422, 5xx, a timeout or a reset each map to one closed outcome and are never retried; a fact the validator refuses never undoes the post (stubbed LinkedIn handler)
 
-- [ ] Done
+- [x] Done — 2026-10-07 (executor notes: the body is written with `Utf8JsonWriter` (relaxed escaping) in the contract's key order rather than a source-generated type; characters outside the BMP appear as a `\uXXXX` surrogate pair, so the golden carries the emoji that way (JSON-equivalent); a rejection message that holds the access token is `[withheld]` like a secret-pattern match; another 4xx maps to `rejected: LinkedIn answered <status>`, a 3xx or other status to `outcome_unknown`; `forbidden` carries the runbook hint "Publish refused or failed"; the fact-refused case uses `(012) 345 6789`, which the post's phone rule allows and the fact validator refuses; Windows: 2800 + 308 passed)
 
 **Scope**:
 - `src/Zyggy.Core/LinkedIn/LittleText.cs` *(create, internal static; the spec's `LittleText`)* (AC-14):
