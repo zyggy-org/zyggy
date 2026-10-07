@@ -12,13 +12,16 @@ public sealed class GraphReaderBriefReadsTests : IDisposable
     [Fact]
     public async Task OwnerDisplayName_ReadsTheMailboxUsersDisplayName()
     {
-        // Act: the name OneDrive puts on a file the owner changed ("modified by"), for the files rule (spec 35 AC-66)
+        // Act: the name OneDrive puts on a file the owner changed ("modified by"), for the files rule (spec 35 AC-66) — the OneDrive
+        // drive's owner: the user object itself needs a directory permission the app does not have (403 Authorization_RequestDenied
+        // on Central, 2026-10-07)
         var read = await _f.Graph.Reader.OwnerDisplayNameAsync(TestContext.Current.CancellationToken);
 
         // Assert
         read.Failure.Should().BeNull();
         read.Value.Should().Be("Alice Example");
-        _f.Graph.Urls.Should().Contain("GET https://graph.microsoft.com/v1.0/users/alice@acme.example?$select=displayName");
+        _f.Graph.Urls.Should().Contain("GET https://graph.microsoft.com/v1.0/users/alice@acme.example/drive?$select=owner");
+        _f.Graph.Urls.Should().NotContain(u => u.Contains("acme.example?$select=displayName", StringComparison.Ordinal), "the user object is never read");
     }
 
     [Fact]

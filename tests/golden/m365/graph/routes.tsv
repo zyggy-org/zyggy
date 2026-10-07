@@ -5,6 +5,7 @@ GET	/users/alice@acme\.example/mailFolders\?	200	mail-folders.json	-
 GET	/users/alice@acme\.example/mailFolders/[^/?]+/childFolders\?	200	mail-folders-children.json	-
 GET	/users/alice@acme\.example/mailFolders/drafts/messages\?\$filter=createdDateTime	200	drafts-ok.json	-
 GET	/users/alice@acme\.example/mailFolders/drafts/messages\?\$select=id,subject&	200	drafts-zyggy-count.json	-
+GET	/users/alice@acme\.example/drive\?\$select=owner$	200	brief/user-drive-owner.json	-
 GET	/users/alice@acme\.example/drive\?	200	user-drive.json	-
 GET	/users/alice@acme\.example/messages/m1\?\$select=from,replyTo,conversationId$	200	message-m1.json	-
 GET	/users/alice@acme\.example/messages/m2\?\$select=from,replyTo,conversationId$	200	message-m2.json	-
@@ -34,4 +35,3 @@ GET	/users/alice@acme\.example/messages/d12\?\$select=id,parentFolderId	200	brie
 GET	/users/alice@acme\.example/messages/m13\?\$select=id,parentFolderId	200	brief/message-in-inbox-m13.json	-
 GET	/users/alice@acme\.example/messages/m20\?\$select=id,parentFolderId	200	brief/message-in-archive.json	-
 GET	/users/alice@acme\.example/messages/m21\?\$select=id,parentFolderId	200	brief/message-in-deleteditems.json	-
-GET	/users/alice@acme\.example\?\$select=displayName$	200	brief/user-displayname.json	-

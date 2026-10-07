@@ -46,7 +46,7 @@ internal interface IGraphReader
     /// <summary>Where a message is now (its folder), or <see cref="MessageLocation.Absent"/> for a 404.</summary>
     Task<GraphRead<MessageLocation>> MessageLocationAsync(string messageId, CancellationToken cancellationToken);
 
-    /// <summary>The mailbox user's display name — the name a file the owner changed carries as "modified by" (spec 35 AC-66).</summary>
+    /// <summary>The owner's display name from the OneDrive drive — the name a file the owner changed carries as "modified by" (spec 35 AC-66).</summary>
     Task<GraphRead<string>> OwnerDisplayNameAsync(CancellationToken cancellationToken);
 }
 
@@ -379,16 +379,20 @@ internal sealed partial class GraphReader(GraphTokenClient tokens, GraphHttp htt
             Str(m, "receivedDateTime")));
     }
 
+    // The OneDrive drive's owner: the same identity OneDrive names as "modified by". The user object (`/users/<mailbox>`) needs a
+    // directory permission the app does not hold — Central answered 403 Authorization_RequestDenied (2026-10-07).
     public async Task<GraphRead<string>> OwnerDisplayNameAsync(CancellationToken cancellationToken)
     {
-        var user = await CallAsync($"{Mailbox}?$select=displayName", None, cancellationToken).ConfigureAwait(false);
-        if (user.Failure is not null)
+        var drive = await CallAsync($"{Mailbox}/drive?$select=owner", None, cancellationToken).ConfigureAwait(false);
+        if (drive.Failure is not null)
         {
-            return GraphRead<string>.Fail(user.Failure);
+            return GraphRead<string>.Fail(drive.Failure);
         }
 
-        using var document = JsonDocument.Parse(user.Value!.Body);
-        return GraphRead<string>.Ok(Str(document.RootElement, "displayName"));
+        using var document = JsonDocument.Parse(drive.Value!.Body);
+        var root = document.RootElement;
+        var user = root.TryGetProperty("owner", out var owner) && owner.ValueKind == JsonValueKind.Object && owner.TryGetProperty("user", out var u) ? u : default;
+        return GraphRead<string>.Ok(Str(user, "displayName"));
     }
 
     private static string Str(JsonElement element, string name) =>
