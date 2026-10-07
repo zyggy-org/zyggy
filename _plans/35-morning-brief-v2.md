@@ -1140,21 +1140,21 @@ If any of 2–5 fails: **stop**. Roll back per runbook 14c / "Return to the Draf
 
 *Executor: STOP here. Present the results and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification:
+- [x] Behavioral verification:
   - Central runs 0.3.0; 0.2.4 is kept for rollback.
   - The rehearsal under the unit's sandbox passed before anything was switched on.
   - This morning's brief ran under the unit, wrote its two files and no brief Draft, and the audit was clean.
   - An ordinary prompt from your phone ran nothing brief-related. When you asked for the brief you got the one page with the delta list; "brief full" gave the whole brief; asking for an earlier day worked.
   - The remote session was restarted once (to load the new rules) and came back on the same conversation.
-- [ ] Contract review:
+- [x] Contract review:
   - The settings carry the `brief` allow rules and no hook.
   - The pin equals the installed binary, and the template's minimum is met.
   - The timer is still off.
-- [ ] ⚠️ Risk review:
+- [x] ⚠️ Risk review:
   - The brief reached the session only as fenced data; the recorded output holds no mail content or memory text.
   - Rollback is one symlink plus the previous instance commit ("Return to the Draft brief").
   - The number of releases used so far is stated (one expected).
-- [ ] User approved — implementation may continue past this gate
+- [x] User approved — implementation may continue past this gate (owner, 2026-10-07: "I approve today brief"; deviations accepted: three releases 0.3.0→0.3.2 instead of one, "show an earlier day" covered by rehearsal and tests only, today's run not counted — tomorrow's run is run 2)
 
 ---
 
