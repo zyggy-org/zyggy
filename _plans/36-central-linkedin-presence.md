@@ -480,7 +480,7 @@ Gate placement: one per slice; Slice C is the new package on its own; Slice F ha
 
 ## Step 6 — Publishing runs end to end in process over a real socket and real files: the token written by `auth finish` is read from its file, one post reaches the loopback stand-in with the exact body, the action log and the inbox fact appear on disk with their modes, a 500 leaves an `outcome_unknown` row after exactly one request, a second identical call is refused as a duplicate, and the token appears nowhere but its file
 
-- [ ] Done
+- [x] Done — 2026-10-07 (executor notes: the factory is `PublishToolFactory` behind `LinkedInVerbHost.CreatePublishTool(TextWriter)`, returning an `IPublishTool` (the real handler owning its HTTP exchange, or a `ConfigurationErrorTool` whose every call is `configuration_error: <message>` with one row); on Windows the real store's platform refusal surfaces at call time as `configuration_error: linkedin: not supported on this platform`; extra row: secret patterns missing → configuration error on every call, no request; Linux rows green in the SDK container (Core `_OnLinux|LinkedIn` 969, Integration 42); Windows: 2800 + 310 passed)
 
 **Scope**:
 - `src/Zyggy.Core/LinkedIn/LinkedInVerbHost.cs` *(modify)*: `internal PublishPostTool CreatePublishTool()` builds the handler with the real `CredentialFileSecretStore`, `LinkedInHttp`, `LinkedInActionLog`, `MemoryEnvironment` and `SecretPatternsLocation`. A configuration error gives a tool whose every call is `configuration_error: <message>` (one row when the state dir is usable). Step 8's server uses this same factory.

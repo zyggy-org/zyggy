@@ -40,6 +40,9 @@ public sealed class LinkedInVerbHost
         _context = new LinkedInVerbContext(environment, clock, findTimeZone, linkedInHandler, checkOwnership, httpTimeout);
     }
 
+    /// <summary>The <c>publish_post</c> handler over this host's context (the MCP server's, and the integration tests' in process).</summary>
+    internal IPublishTool CreatePublishTool(TextWriter diagnostics) => PublishToolFactory.Create(_context, diagnostics);
+
     /// <summary>Runs <c>linkedin &lt;verb&gt; …</c>.</summary>
     /// <param name="args">The arguments after <c>linkedin</c>.</param>
     /// <param name="io">The console.</param>
