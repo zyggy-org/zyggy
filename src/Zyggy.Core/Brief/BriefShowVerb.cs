@@ -5,8 +5,60 @@ using Zyggy.Core.Verbs;
 
 namespace Zyggy.Core.Brief;
 
-/// <summary>What every <c>zyggy brief</c> verb is given: the environment, the clock and the time-zone lookup (tests: a custom zone).</summary>
-internal sealed record BriefVerbContext(IReadOnlyDictionary<string, string?> Environment, TimeProvider Clock, Func<string, TimeZoneInfo> FindTimeZone);
+/// <summary>
+/// What every <c>zyggy brief</c> verb is given: the environment, the clock and the time-zone lookup (tests: a custom zone); for
+/// <c>items</c>, the Graph handler (tests: the stub) and whether the key file's owner is checked.
+/// </summary>
+internal sealed record BriefVerbContext(
+    IReadOnlyDictionary<string, string?> Environment,
+    TimeProvider Clock,
+    Func<string, TimeZoneInfo> FindTimeZone,
+    HttpMessageHandler? GraphHandler = null,
+    bool CheckKeyOwnership = true)
+{
+    /// <summary>The configured zone (<c>ZYGGY_TIMEZONE</c>), or the configuration error.</summary>
+    public (TimeZoneInfo? Zone, string? Error) Zone()
+    {
+        var id = Environment.TryGetValue("ZYGGY_TIMEZONE", out var value) && !string.IsNullOrEmpty(value) ? value : null;
+        if (id is null)
+        {
+            return (null, "configuration error: ZYGGY_TIMEZONE is not set");
+        }
+
+        try
+        {
+            return (id == "UTC" ? TimeZoneInfo.Utc : FindTimeZone(id), null);
+        }
+        catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException)
+        {
+            return (null, $"configuration error: ZYGGY_TIMEZONE '{ShellText.Prefix(id, 40)}' is not a known time zone");
+        }
+    }
+
+    /// <summary>Today in the configured zone.</summary>
+    public DateOnly Today(TimeZoneInfo zone) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(Clock.GetUtcNow(), zone).DateTime);
+
+    /// <summary>The item list of <paramref name="date"/>, or why there is none (exit 3).</summary>
+    public (BriefSidecar? Sidecar, string? Error) Sidecar(DateOnly date)
+    {
+        var path = new BriefPaths(Environment).Sidecar(date);
+        if (!File.Exists(path))
+        {
+            return (null, $"no brief for {BriefPaths.Iso(date)}");
+        }
+
+        try
+        {
+            return BriefSidecar.Parse(File.ReadAllBytes(path)) is { } sidecar
+                ? (sidecar, null)
+                : (null, $"{path} cannot be read — runbook 13 \"Brief run failed\"");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            return (null, $"{path} cannot be read — runbook 13 \"Brief run failed\"");
+        }
+    }
+}
 
 /// <summary>
 /// <c>zyggy brief show [--full] [&lt;YYYY-MM-DD&gt;]</c> (spec 35 AC-12, AC-56..AC-61, AC-67): prints the brief the owner asked for, fenced as
@@ -42,20 +94,10 @@ internal sealed class BriefShowVerb(BriefVerbContext context)
             }
         }
 
-        var zoneId = Value("ZYGGY_TIMEZONE");
-        if (zoneId is null)
+        var (zone, zoneError) = context.Zone();
+        if (zone is null)
         {
-            return await FailAsync(io, 3, "configuration error: ZYGGY_TIMEZONE is not set").ConfigureAwait(false);
-        }
-
-        TimeZoneInfo zone;
-        try
-        {
-            zone = zoneId == "UTC" ? TimeZoneInfo.Utc : context.FindTimeZone(zoneId);
-        }
-        catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException)
-        {
-            return await FailAsync(io, 3, $"configuration error: ZYGGY_TIMEZONE '{ShellText.Prefix(zoneId, 40)}' is not a known time zone").ConfigureAwait(false);
+            return await FailAsync(io, 3, zoneError!).ConfigureAwait(false);
         }
 
         var (settings, error) = BriefSettings.Load(context.Environment);
@@ -108,8 +150,6 @@ internal sealed class BriefShowVerb(BriefVerbContext context)
         return 0;
     }
 
-    private string? Value(string key) => context.Environment.TryGetValue(key, out var value) && !string.IsNullOrEmpty(value) ? value : null;
-
     private static async Task<int> FailAsync(VerbIo io, int exit, string message)
     {
         await io.Error.WriteAsync(Prefix + message + "\n").ConfigureAwait(false);
@@ -122,7 +162,7 @@ internal sealed class BriefShowVerb(BriefVerbContext context)
 /// </summary>
 public sealed class BriefVerbHost
 {
-    private const string Usage = " (usage: zyggy brief show [--full] [<YYYY-MM-DD>])";
+    private const string Usage = " (usage: zyggy brief show|items|idea …)";
 
     private readonly BriefVerbContext _context;
 
@@ -134,12 +174,17 @@ public sealed class BriefVerbHost
     }
 
     // Tests: a fake clock and a zone lookup (IANA ids need ICU off Linux, and the build is invariant-globalization).
-    internal BriefVerbHost(IReadOnlyDictionary<string, string?> environment, TimeProvider clock, Func<string, TimeZoneInfo> findTimeZone)
+    internal BriefVerbHost(
+        IReadOnlyDictionary<string, string?> environment,
+        TimeProvider clock,
+        Func<string, TimeZoneInfo> findTimeZone,
+        HttpMessageHandler? graphHandler = null,
+        bool checkKeyOwnership = true)
     {
         ArgumentNullException.ThrowIfNull(environment);
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(findTimeZone);
-        _context = new BriefVerbContext(environment, clock, findTimeZone);
+        _context = new BriefVerbContext(environment, clock, findTimeZone, graphHandler, checkKeyOwnership);
     }
 
     /// <summary>Runs <c>brief &lt;verb&gt; …</c>.</summary>
@@ -158,12 +203,18 @@ public sealed class BriefVerbHost
             return 4;
         }
 
-        if (args[0] != "show")
+        var rest = args.Skip(1).ToList();
+        switch (args[0])
         {
-            await io.Error.WriteAsync($"brief: unknown verb '{ShellText.Prefix(args[0], 40)}'{Usage}\n").ConfigureAwait(false);
-            return 4;
+            case "show":
+                return await new BriefShowVerb(_context).RunAsync(rest, io, cancellationToken).ConfigureAwait(false);
+            case "items":
+                return await new BriefItemsVerb(_context).RunAsync(rest, io, cancellationToken).ConfigureAwait(false);
+            case "idea":
+                return await new BriefIdeaVerb(_context).RunAsync(rest, io).ConfigureAwait(false);
+            default:
+                await io.Error.WriteAsync($"brief: unknown verb '{ShellText.Prefix(args[0], 40)}'{Usage}\n").ConfigureAwait(false);
+                return 4;
         }
-
-        return await new BriefShowVerb(_context).RunAsync(args.Skip(1).ToList(), io, cancellationToken).ConfigureAwait(false);
     }
 }

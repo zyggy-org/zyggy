@@ -835,7 +835,7 @@ Slice H has two (first live run, definition of done).
 
 ## Step 12 — "Z1,Z3", "Z1-Z5" and "all" are resolved from the item list only, each selected item is checked with one Graph read (still in the folder it was in → `ok`, else `moved`/`deleted`, unknown number → `unknown`), the "file the other mails" item expands to one line per mail, and an answer to suggestion 2 is recorded once under the lock with `later` requiring a future date (stubbed Graph)
 
-- [ ] Done
+- [x] Done — 2026-10-07 (executor notes: `items` is split into `BriefItems.ResolveAsync` (unit-tested against the stubbed Graph as `BriefItemsTests`) and the thin `BriefItemsVerb` (session, item list, printing — covered by Step 13's in-process and binary tests); one read of the folder list precedes the per-item reads (the expected folder ids); the "file the other mails" lines carry the subject, sender name and received time from that mail's own Graph read, so the session can name each mail before its prompt; an `answer` row is dated the day of the answer; `ZItemStatus` sits in `BriefItems.cs`; the host's usage line is now `zyggy brief show|items|idea …`)
 
 **Scope**:
 - `src/Zyggy.Core/Brief/ZSelector.cs` *(create, internal static)*: `TryParse(string, out ZSelection)` for `Zn[,Zm…]`, `Zn-Zm`, `all` (case-insensitive `Z`); a bad selector → usage. Numbers come only from the argument and the sidecar, never from brief text (AC-24).

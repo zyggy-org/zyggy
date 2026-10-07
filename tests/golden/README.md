@@ -135,3 +135,11 @@ substituted by the test. `ideas-input-weekday.txt` is the stdin for a Tuesday wi
 days. `ideas-output-ok.json` is a model answer with three suggestions: one client idea and one family idea whose basis lines occur in the
 test's memory tree, and one career idea with an invented basis (dropped). `brief-10-ideas.md` is `brief-10-noideas.md` with the two kept
 ideas rendered; `brief-weekend.md` is the weekend brief with the family idea only.
+
+## `brief/items-sidecar.json`, `m365/graph/brief/message-in-{archive,deleteditems}.json` — acting on the brief (deliverable 35, Step 12)
+
+A hand-written item list (spec 35 Contracts "Files") with one item of every kind and every status the stubbed Graph can give: Z1 a reply
+to send (its draft d12 still in Drafts), Z2 a move (m13 in the Inbox), Z3 an old reply draft to discard (d5 in Drafts), Z4 a mail filed by
+hand (m20 in Archive), Z5 a mail deleted by hand (m21 in Deleted Items), Z6 a mail gone for good (d7 answers 404), Z7 the "file the
+other mails" item over m13, d4 and m20; and two ideas. The two message fixtures answer the location reads for m20 and m21; their routes
+are appended to `routes.tsv`.

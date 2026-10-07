@@ -76,6 +76,14 @@ internal sealed class BriefFixture : IDisposable
         return (exit, console);
     }
 
+    /// <summary>Runs <c>zyggy brief &lt;args&gt;</c> in process (any verb).</summary>
+    public async Task<(int Exit, VerbConsole Console)> RunBriefAsync(params string[] args)
+    {
+        var console = new VerbConsole();
+        var exit = await new BriefVerbHost(Environment, Clock, FindTimeZone).RunAsync(args, console.Io, TestContext.Current.CancellationToken);
+        return (exit, console);
+    }
+
     public void Dispose()
     {
         try

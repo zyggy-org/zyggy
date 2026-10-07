@@ -45,6 +45,18 @@ internal sealed class IdeasHistory(BriefPaths paths)
         }
     }
 
+    /// <summary>The owner's answer to a suggestion (spec 35 AC-36), dated the day it was given.</summary>
+    /// <exception cref="IOException">Thrown when the row cannot be appended.</exception>
+    public void AppendAnswer(DateOnly date, string id, string area, string answer, DateOnly? until)
+    {
+        var row = Row(new IdeaRow(date, "answer", id, area, null, answer, until));
+        Locked(stream =>
+        {
+            stream.Seek(0, SeekOrigin.End);
+            stream.Write(Encoding.UTF8.GetBytes(row + "\n"));
+        });
+    }
+
     /// <summary>Drops rows older than <paramref name="suppressDays"/>, except a <c>later</c> answer whose date is still ahead.</summary>
     public void Prune(DateOnly today, int suppressDays)
     {
