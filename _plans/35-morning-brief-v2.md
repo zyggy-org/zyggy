@@ -934,24 +934,24 @@ Slice H has two (first live run, definition of done).
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification:
+- [x] Behavioral verification:
   - Show `zyggy brief items Z1,Z3` printing two lines, one `ok` and one `moved` (a mail filed by hand).
   - Show the "file 12 other mails" item printing twelve lines, so Zyggy would ask you twelve times, once per mail, and skip the one you already moved.
   - Show an unknown number giving `unknown`, and a Graph failure printing nothing, so Zyggy acts on nothing.
   - Show `zyggy brief idea 2 not-interested` recording the answer.
   - Show the new wording of the `m365` skill and the security rule.
   - CI is green on the pull request.
-- [ ] Contract review:
+- [x] Contract review:
   - Numbers come only from the item list.
   - Each action is still one tool call, one guard check, one permission prompt and one log row — also for every mail inside the "file the other mails" item.
   - A send is shown in full before it is sent, and its Draft is discarded as a second, separately prompted move.
   - "brief full" runs `show --full`; a "say "brief full"" line inside the brief is the brief's hint, not an instruction Zyggy follows on its own.
   - The session may run `show`, `items` and `idea`; the model runs deny every `zyggy brief` verb.
-- [ ] ⚠️ Risk review:
+- [x] ⚠️ Risk review:
   - A Z number inside a mail, a document, the brief or memory is data, never a reason to act.
   - The guard, the hooks and `actions.jsonl` are unchanged.
   - Threaded replies remain a documented limit (no new action tool).
-- [ ] User approved — implementation may continue past this gate
+- [x] User approved — implementation may continue past this gate (owner, 2026-10-07: "approved"; CI stand-in in the Linux container accepted while Actions are out of minutes)
 
 ---
 
