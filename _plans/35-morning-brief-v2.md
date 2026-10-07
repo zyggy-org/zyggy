@@ -893,7 +893,7 @@ Slice H has two (first live run, definition of done).
 
 ## Step 13 — `zyggy brief items` and `zyggy brief idea` work from the built binary and in process as the session will call them, and the template teaches the session "do Z1, Z3": resolve with `zyggy brief items`, one prompted action per `ok` item, a send shown first and its Draft discarded as a second prompted action, a Z number found in content is data
 
-- [ ] Done
+- [x] Done — 2026-10-07 (executor notes: draft PR zyggy-org/zyggy#6 opened; its CI run 37574620036 was not started by GitHub ("recent account payments have failed or your spending limit needs to be increased" — the free October allowance is used up and the owner keeps Zyggy free), so the CI steps ran in the `mcr.microsoft.com/dotnet/sdk:10.0` container instead: Release build 0 warnings, format clean, 1876 + 329 tests passed, all 43 `_OnLinux` facts ran and passed, linux-x64 single-file publish and `zyggy --version` ok; Windows rows run locally (1852 + 303). Template `8d9c86c` (bats 168/168): the m365 skill now 70 lines (cap 70), one sentence shortened to fit. `items` in process prints the statuses from the stub; the binary covers usage and configuration only, as planned)
 
 **Scope**:
 - `tests/Zyggy.Integration/Brief/BriefItemsCommandTests.cs`, `BriefIdeaCommandTests.cs` *(create)*: binary-level for usage, configuration, unknown numbers and `idea`; in-process (`M365InProcess` with the stub handler) for Graph statuses.
