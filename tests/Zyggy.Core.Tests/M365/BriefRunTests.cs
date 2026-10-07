@@ -341,6 +341,27 @@ public sealed class BriefRunTests : IDisposable
     }
 
     [Fact]
+    public async Task Run_FileChangedByTheOwner_NotTied_CountedNotListed()
+    {
+        // Arrange: a regression of Step 6 — the owner's name came from an unset key and fell back to the mailbox address, so every file
+        // the owner changed counted as "changed by someone else"; it now comes from Graph (the mailbox user's displayName)
+        var answer = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(M365Run.Golden("fixtures", "mail-output-ok.json")))!;
+        answer["files"]!.AsArray().Add(System.Text.Json.Nodes.JsonNode.Parse("""{"name":"notes.md","drive":"OneDrive","folder":"/","modified":"2026-10-06T07:00:00Z","by":"Alice Example","about":"Running notes"}"""));
+        var result = new ModelRunResult(ModelRunOutcome.Succeeded, null, null, null, JsonDocument.Parse(answer.ToJsonString()).RootElement.Clone(), 0.42m, 12, TimeSpan.FromSeconds(1), null, null, null, 0, 0);
+        _model.RunAsync(Arg.Any<ModelRunRequest>(), Arg.Any<CancellationToken>()).Returns(call => call.Arg<ModelRunRequest>().Tools is null ? result : _ideas);
+
+        // Act
+        var outcome = await RunAsync();
+
+        // Assert
+        outcome.Exit.Should().Be(0, string.Join('\n', outcome.StderrLines));
+        var markdown = File.ReadAllText(Markdown);
+        markdown.Split('\n')[0].Should().EndWith("; 2 changed files)");
+        markdown.Should().Contain("Q3-report.docx").And.NotContain("notes.md");
+        markdown.Should().Contain("- 1 other changed file");
+    }
+
+    [Fact]
     public async Task Run_Weekday_IdeasAfterMail_SectionRendered_ShownRows()
     {
         // Arrange: the two basis files; the model proposes three ideas, one with an invented basis

@@ -45,6 +45,9 @@ internal interface IGraphReader
 
     /// <summary>Where a message is now (its folder), or <see cref="MessageLocation.Absent"/> for a 404.</summary>
     Task<GraphRead<MessageLocation>> MessageLocationAsync(string messageId, CancellationToken cancellationToken);
+
+    /// <summary>The mailbox user's display name — the name a file the owner changed carries as "modified by" (spec 35 AC-66).</summary>
+    Task<GraphRead<string>> OwnerDisplayNameAsync(CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -374,6 +377,18 @@ internal sealed partial class GraphReader(GraphTokenClient tokens, GraphHttp htt
             Str(m, "subject"),
             from.ValueKind == JsonValueKind.Object ? Str(from, "name") : string.Empty,
             Str(m, "receivedDateTime")));
+    }
+
+    public async Task<GraphRead<string>> OwnerDisplayNameAsync(CancellationToken cancellationToken)
+    {
+        var user = await CallAsync($"{Mailbox}?$select=displayName", None, cancellationToken).ConfigureAwait(false);
+        if (user.Failure is not null)
+        {
+            return GraphRead<string>.Fail(user.Failure);
+        }
+
+        using var document = JsonDocument.Parse(user.Value!.Body);
+        return GraphRead<string>.Ok(Str(document.RootElement, "displayName"));
     }
 
     private static string Str(JsonElement element, string name) =>

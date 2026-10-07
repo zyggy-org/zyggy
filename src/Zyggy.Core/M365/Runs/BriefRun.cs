@@ -174,7 +174,14 @@ internal sealed class BriefRun(M365Session session, M365ToolPartition partition,
             locations[target] = location.Value!;
         }
 
-        var context = new ValidationContext(today, now, inbox, draftsFolder, OwnerName(folders.Value!), locations, session.Patterns, config.SuggestionCap, session.TimeZone);
+        // AC-66: a file the owner changed himself carries his display name as "modified by".
+        var owner = await reader.OwnerDisplayNameAsync(cancellationToken).ConfigureAwait(false);
+        if (owner.Failure is not null)
+        {
+            return Fail(owner.Failure.ExitCode, owner.Failure.Message);
+        }
+
+        var context = new ValidationContext(today, now, inbox, draftsFolder, owner.Value!, locations, session.Patterns, config.SuggestionCap, session.TimeZone);
         var (document, validationRejection) = MailRunValidator.Validate(output, prepass!, context, prepass!.Watermark);
         if (document is null)
         {
@@ -413,15 +420,6 @@ internal sealed class BriefRun(M365Session session, M365ToolPartition partition,
         {
             w.WriteNull("ideas_exit");
         }
-    }
-
-    // The mailbox owner's display name, as the folder listing's owner is not exposed: the configured mailbox's local part when nothing better is known.
-    private string OwnerName(IReadOnlyList<MailFolder> folders)
-    {
-        _ = folders;
-        return session.Configuration.Root.TryGetProperty("owner_name", out var name) && name.ValueKind == JsonValueKind.String && name.GetString()!.Length > 0
-            ? name.GetString()!
-            : session.Configuration.Mailbox;
     }
 
     private RunOutcome? CheckResult(ModelRunResult result)

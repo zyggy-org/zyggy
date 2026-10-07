@@ -10,6 +10,18 @@ public sealed class GraphReaderBriefReadsTests : IDisposable
     public void Dispose() => _f.Dispose();
 
     [Fact]
+    public async Task OwnerDisplayName_ReadsTheMailboxUsersDisplayName()
+    {
+        // Act: the name OneDrive puts on a file the owner changed ("modified by"), for the files rule (spec 35 AC-66)
+        var read = await _f.Graph.Reader.OwnerDisplayNameAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        read.Failure.Should().BeNull();
+        read.Value.Should().Be("Alice Example");
+        _f.Graph.Urls.Should().Contain("GET https://graph.microsoft.com/v1.0/users/alice@acme.example?$select=displayName");
+    }
+
+    [Fact]
     public async Task InboxSince_QueryExactAscendingTopSelect()
     {
         // Act
