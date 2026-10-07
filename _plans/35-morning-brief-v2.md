@@ -1040,7 +1040,7 @@ Slice H has two (first live run, definition of done).
 
 ## Step 15 — One release, `v0.3.0`, is tagged from `main` and placed on Central beside the running 0.2.4 without being switched on; a rehearsal under the brief unit's own sandbox runs the new binary's ideas-only path, then `show` against a scratch state directory, so environment defects are found before anything goes live
 
-- [ ] Done
+- [x] Done — 2026-10-07 (executor notes: the owner made `zyggy` public to unblock Actions (history scanned with the secret patterns first: test samples and fixtures only, no Actions variables or secrets); the binary reached Central as the GitHub release asset of `v0.3.0` with its hash checked against the laptop-verified value, instead of `scp` over Tailscale; the rehearsal used a throw-away memory copy outside `~/.local/state/zyggy/` with that one path added to `ReadWritePaths` — the plan's scratch location is denied to the ideas run by design, and the weekend run writes one memory line; the first rehearsal failed on the ideas cap (25 turns > 20) and passed after the instance caps went to 40 turns / 2.00 USD; the instance branch was pushed (feature branch, no CI) for the scratch archive)
 
 **Precondition**: Gates A–G approved. A dream or 33 fix pending → it goes first (bugfix agent, from `main`); then merge `main` into the branch.
 
