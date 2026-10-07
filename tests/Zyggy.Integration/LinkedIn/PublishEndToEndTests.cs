@@ -108,12 +108,14 @@ public sealed class PublishEndToEndTests : IAsyncLifetime
         // Arrange
         await LinkedInInProcess.ConnectAsync(_fixture, _stub);
         using var tool = new LinkedInInProcess(_fixture, _stub);
-        (await tool.PublishAsync("Once only.")).IsError.Should().BeFalse();
+        (await tool.PublishAsync("Once only — déjà vu, ✨ and 🚀.")).IsError.Should().BeFalse();
 
         // Act
-        var second = await tool.PublishAsync("Once only.", "CONNECTIONS");
+        var second = await tool.PublishAsync("Once only — déjà vu, ✨ and 🚀.", "CONNECTIONS");
 
-        // Assert
+        // Assert: the stand-in received the raw UTF-8 body whole (non-ASCII as bytes, outside the BMP as an escape)
+        JsonDocument.Parse(_stub.To(StubLinkedInServer.PostsPath).Single().Body!).RootElement.GetProperty("commentary").GetString()
+            .Should().Be("Once only — déjà vu, ✨ and 🚀.");
         second.IsError.Should().BeTrue();
         second.Text.Should().StartWith($"refused: duplicate of {Urn} posted ");
         _stub.To(StubLinkedInServer.PostsPath).Should().ContainSingle();

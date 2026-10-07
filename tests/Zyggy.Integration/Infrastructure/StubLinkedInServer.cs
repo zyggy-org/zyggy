@@ -104,22 +104,34 @@ internal sealed class StubLinkedInServer : IAsyncDisposable
 
     private async Task HandleAsync(TcpClient client, NetworkStream stream)
     {
-        var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
-        var requestLine = await reader.ReadLineAsync(_stop.Token) ?? string.Empty;
+        // The head is ASCII up to the blank line; the body is exactly Content-Length bytes (UTF-8), read as bytes.
+        var head = new List<byte>();
+        var one = new byte[1];
+        while (head.Count < 4 || !head[^4..].SequenceEqual("\r\n\r\n"u8.ToArray()))
+        {
+            if (await stream.ReadAsync(one, _stop.Token) == 0)
+            {
+                return;
+            }
+
+            head.Add(one[0]);
+        }
+
+        var lines = Encoding.ASCII.GetString([.. head]).Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+        var requestLine = lines[0];
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        string? line;
-        while (!string.IsNullOrEmpty(line = await reader.ReadLineAsync(_stop.Token)))
+        foreach (var line in lines.Skip(1))
         {
             var colon = line.IndexOf(':', StringComparison.Ordinal);
             headers[line[..colon].Trim()] = line[(colon + 1)..].Trim();
         }
 
         var length = headers.TryGetValue("Content-Length", out var value) ? int.Parse(value, System.Globalization.CultureInfo.InvariantCulture) : 0;
-        var buffer = new char[length];
+        var buffer = new byte[length];
         var read = 0;
         while (read < length)
         {
-            var n = await reader.ReadAsync(buffer.AsMemory(read, length - read), _stop.Token);
+            var n = await stream.ReadAsync(buffer.AsMemory(read, length - read), _stop.Token);
             if (n == 0)
             {
                 break;
@@ -132,7 +144,7 @@ internal sealed class StubLinkedInServer : IAsyncDisposable
         var method = parts[0];
         var target = parts.Length > 1 ? parts[1] : string.Empty;
         var path = target.Split('?')[0];
-        Requests.Enqueue(new StubRequest(method, target, headers, length == 0 ? null : new string(buffer, 0, read)));
+        Requests.Enqueue(new StubRequest(method, target, headers, length == 0 ? null : Encoding.UTF8.GetString(buffer, 0, read)));
 
         var answer = _queued.TryGetValue(path, out var queue) && queue.TryDequeue(out var queued) ? queued : Default(method, path);
         if (answer.Delay is { } delay)
