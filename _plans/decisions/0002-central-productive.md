@@ -421,6 +421,42 @@ Before = after: live settings sha `911e415f…`, `claude-remote` since 06:30:41 
 | AC-53 owner 8 | rolling back to the previous pinned release restores the Draft brief (runbook "Return to the Draft brief") | | | |
 | Carried from 33 | first nightly dream on the new binary; plan 33 Step 23's VM-*/C27-1/C28-*/C23-* items | | | |
 
+## 36 — LinkedIn presence (owner-approved posts)
+
+Spec `_specs/36-central-linkedin-presence.md`, plan `_plans/36-central-linkedin-presence.md`. Zyggy drafts a text post
+for the owner's personal profile, shows the exact text, and publishes it only through `publish_post` of the `linkedin`
+MCP server, after a permission prompt the owner answers; never unattended (O38).
+
+### Accepted risk (OQ-4, owner, 2026-10-07)
+
+Claude Code documents that Bash rules are not a boundary around a program and that Read deny rules do not stop every
+subprocess. The model's Bash runs as the same user as the `linkedin` server, so a deliberately evasive command in the
+owner's session could read `token.json` or start a second `zyggy linkedin mcp-server` and skip the prompt — the same
+class as today's m365 key and GitHub token. Accepted for v1 with the controls: the Read/Edit deny rules, the
+`Bash(zyggy linkedin mcp-server*)` deny, the auto-mode classifier, the injection rules, and the server's refusal under
+`ZYGGY_HOOKS=off`. Claude Code's OS-level Bash sandbox on Central is proposed to the roadmap as a separate hardening
+item (not part of 36).
+
+### Evidence on Central (Steps 12–14; empty until then)
+
+| Row | What | Date | Command / excerpt | Result |
+|-----|------|------|-------------------|--------|
+| Release | `v0.4.0` tagged from `main`, artefact hash, installed beside the running 0.3.x | | | |
+| P1 | rehearsal: `linkedin auth status`, `auth start` and `mcp-server` (`tools/list`, `ZYGGY_HOOKS=off` → 5) on a scratch instance | | | |
+| P2 | probe: Claude Code accepts the dream's new deny list and the m365-only `--mcp-config` file | | | |
+| P3 | probe: the ideas run's new deny list | | | |
+| Switch-on | 0.4.0 live in the runbook order (binary and pin, pull, live settings, one restart) | | | |
+| A1 (owner-run) | the permission prompt shows the whole text (2,900 characters) and the visibility — phone and claude.ai — then Deny | | | |
+| A2 (owner-run) | the portal accepts `redirect_uri`; the landed address is copyable on the phone | | | |
+| A3 | a self-serve token creates a member post through `POST /rest/posts` with `Linkedin-Version` 202609 (else the `ugcPosts` fallback, release `v0.4.1`) | | | |
+| A4 | `urn:li:person:<sub>` is accepted as `author` | | | |
+| A5 (owner taps Deny) | the stdio server starts in the remote-control session; `mcp__linkedin__publish_post` appears; the ask rule prompts | | | |
+| AC-10 (owner-run) | one Deny (nothing published, no `ok` row), then one Allow (the post on the profile, the row with its URN, the fact in `inbox/linkedin-<date>.md`) | | | |
+| AC-11 | `claude -p` probe with the session's settings and `--permission-prompts none` asked to publish: denied, nothing published, reason recorded | | | |
+| AC-28 | sweep (memory, both checkouts, settings, units, `~/.local/state/zyggy`, journal, `~/.claude.json`, `~/.claude/debug/`, transcripts, `ps -eo args` during a publish): the token and the client secret only in their files | | | |
+| AC-29 | A1–A5, AC-10, AC-11, AC-28 recorded | | | |
+| P0b | proposed clause: "an owner-requested LinkedIn post, shown first and approved in the session, appears on the owner's profile; a refused prompt or an unattended run publishes nothing; the token never appears outside its credential file" | | | |
+
 ## Repositories
 
 | repo | role (template/instance/memory) | owner | visibility | laptop checkout + remotes | VM clone path | remote alias | key (name, scope) |
@@ -443,6 +479,7 @@ Before = after: live settings sha `911e415f…`, `claude-remote` since 06:30:41 
 | server (`.mcp.json`) | package | version | integrity (`dist.integrity`) | tarball | licence | tools loaded | always-on tokens | purpose | credential | added |
 |----------------------|---------|---------|------------------------------|---------|---------|--------------|------------------|---------|------------|-------|
 | `m365` → `.claude/skills/m365/mcp-wrapper.sh` (template-owned, 23) | `@softeria/ms-365-mcp-server` (Softeria) | `0.157.2`, pinned (probe 2026-10-01, plan 23 Step 1; upgrade = regenerate the three lists + review) | `sha512-07Elnb0oIqgalywK6pK7KNxUuLDoOs+mraMCjluM3jeUYeO5DMkpS55HgdKiYoLAlpyxxytWFqhiDUVfah7ghg==` | `https://registry.npmjs.org/@softeria/ms-365-mcp-server/-/ms-365-mcp-server-0.157.2.tgz` | MIT | 14 (`tests/fixtures/m365/enabled-tools.txt`) of 344; the other 330 denied by name in the template settings (plan 23 Step 4) | pending (13f `/context`; none expected — BYOT mode holds no cache) | mail read + the two `/users` Draft tools + drive read + `download-bytes-to-file` for the morning brief, the backfills and the remote session | app-only access token per start from `graph.sh token` (`MS365_MCP_OAUTH_TOKEN`, one hour, no cache, never in a settings or unit file) | pending (13e, `npm install -g` as `zyggy` under `~/.local`) |
+| `linkedin` → `zyggy linkedin mcp-server` (stdio, template-owned, 36) | the `zyggy` binary (`ModelContextProtocol` 2.2.0, Apache-2.0, inside it) | the pinned `zyggy` (≥ 0.4.0) | the binary's SHA-256 in `instance/zyggy.json` | — | MIT (zyggy) | 1 (`publish_post`), none when `actions.enabled` is `[]` | pending (Step 13) | owner-approved LinkedIn text posts, one permission prompt each; never in an unattended run | reads `~/.config/zyggy/linkedin/token.json` per call through the credential store | pending (Step 13) |
 
 ## Settings
 
@@ -487,6 +524,9 @@ Before = after: live settings sha `911e415f…`, `claude-remote` since 06:30:41 
 | GitHub read token `zyggy-central-read` (fine-grained PAT) | `/srv/agent/home/.config/zyggy/github-read-token` (0600, `zyggy`; dir 0700) | Metadata: read + Contents: read, **All repositories** of `geobarteam` (personal resource owner; org/employer repositories unreachable) | no expiration (applied 2026-10-01); no scheduled rotation (owner, 2026-09-30); re-issue per runbook 11 "Re-issue the GitHub read token" on compromise; revoke on GitHub + shred the file; deploy keys untouched. Consumers (32): `github-inventory` (gh); `github-clone` (gh; git via `askpass.sh`, one-shot, never stored); revoking also stops cloning — run `clone.sh --clean` |
 
 | Application certificate `zyggy-central` (23; app-only, no secret, no delegated permission) | private key `/srv/agent/home/.config/zyggy/m365-app.key` (0600, `zyggy`, generated on the VM by `graph.sh cert-init`, never transferred, no backup); public `m365-app.cer` (0644) beside it; in the timer unit a read-only copy via `LoadCredential=m365-app-key` | Entra: application `Sites.Selected` only + per-site `read` grants (the OneDrive personal site — pending 13d); Exchange RBAC for Applications: **`Application Mail.ReadWrite` and `Application Mail.Send`**, both scoped to the owner's mailbox (`zyggy-central owner mailbox`, assignment names pending 13c); no Entra `Mail.*`. Consumers: `graph.sh` (token minting; Graph reads and audit reads; **execution of approved rows on the owner's terminal** — `send-draft`/`move`/`delete --approved`), the MCP server (a one-hour access token per start via `mcp-wrapper.sh`) | expires pending (13a; 398 days), rotation due = expiry − 30 days; rotate per runbook 13 "Rotate the certificate"; revoke = delete the certificate / the app registration in Entra (also stops sending), `shred -u` the key — runbook 13 "Revoke the application credential" |
+
+| LinkedIn app client secret (36) | `/srv/agent/home/.config/zyggy/linkedin/client-secret` (0600, `zyggy`; dir 0700), placed by the owner over SSH (runbook 15) | the app on LinkedIn's default Page for individual developers; read only by `zyggy linkedin auth finish` at the moment of the exchange | rotate in the developer portal (Auth tab); runbook 15 "Revoke Zyggy's LinkedIn access" |
+| LinkedIn member access token (36) | `/srv/agent/home/.config/zyggy/linkedin/token.json` (0600, `zyggy`), written by `zyggy linkedin auth finish` | `openid profile w_member_social`, the owner's personal profile; 60 days, no refresh | the owner connects again ("connect LinkedIn"); revoke in LinkedIn Settings → Data privacy → Permitted services and delete the file |
 
 No `zyggy-core` key on Central. No `gh` credential store, no `GH_TOKEN` in any settings file or unit. No Microsoft
 token stored anywhere (minted per use; the server holds none in BYOT mode).

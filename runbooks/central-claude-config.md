@@ -1560,7 +1560,9 @@ headersHelper, the MCP unit and `zyggy memory remember` do not check the pin: th
 names, so switch the symlink and the pin together. A template update that raises `.claude/zyggy-min-version` comes
 after the binary and the pin ("Template needs a newer binary"). If the release changes an m365 unit: 14a step 5's
 unit install and the one `systemctl restart zyggy-m365-mcp`; otherwise restart `zyggy-m365-mcp` once anyway so the
-server runs under the new binary's launcher.
+server runs under the new binary's launcher. When the pull changes `instance/settings.local.json` (for example
+`enabledMcpjsonServers` gaining `linkedin`, deliverable 36), install the live copy (section 4) before the one restart
+of the remote-control session.
 
 ### 14c. Rollback [vm/root]
 
@@ -1685,6 +1687,123 @@ pin in `instance/zyggy.json` (version and `sha256`; commit, push, instance CI gr
 on the VM, then the units (14a step 5). Never lower `.claude/zyggy-min-version` to make CI green, and never raise the
 pin to a version that is not installed. If the VM already pulled the template: install the binary and pin first
 (14b), or roll the instance back to the commit before the template merge (14c).
+
+## 15. LinkedIn (deliverable 36) [browser] [vm/zyggy] [laptop]
+
+Zyggy drafts a text post for the owner's personal LinkedIn profile, shows the exact text, and publishes it only through
+the one tool `publish_post` of the `linkedin` MCP server (`zyggy linkedin mcp-server`, stdio, `.mcp.json`), whose
+permission prompt shows that text and that the owner answers himself (O38). No unattended run loads the server or may
+call it. Files: the client secret `~zyggy/.config/zyggy/linkedin/client-secret` and the token
+`~zyggy/.config/zyggy/linkedin/token.json` (0600, directory 0700), the action log
+`~zyggy/.local/state/zyggy/linkedin/actions.jsonl`, the instance file `instance/linkedin.json` (no secret).
+
+### Create the developer app [browser]
+
+1. On `linkedin.com/developers/apps/new` create the app: name "Zyggy" (no "LinkedIn" or "In" in the name), a logo,
+   and as its Page **LinkedIn's default Page for individual developers** (OQ-2). The association is permanent.
+2. Products tab: add "Sign In with LinkedIn using OpenID Connect" and "Share on LinkedIn" (self-serve). Together they
+   give `openid`, `profile` and `w_member_social`; nothing else is requested.
+3. Auth tab: register the redirect address — the value of `redirect_uri` in `instance/linkedin.json`
+   (`https://localhost/zyggy/linkedin`, or `http://localhost:<port>/…` if the portal refuses it: A2). Copy the
+   **Client ID** into `instance/linkedin.json` `client_id` on the laptop (commit, push, pull on the VM).
+4. Never paste the Client Secret anywhere but the command of the next entry.
+
+### Install the LinkedIn client secret [vm/zyggy]
+
+Seen as: `zyggy linkedin auth finish` exits 3 `linkedin: no client secret at …`, or names the file with `must be mode
+0600`, `must be owned by`, `is empty` or `is not one line`. Over SSH as `zyggy`, never through the Zyggy chat:
+
+```bash
+install -d -m 700 ~/.config/zyggy/linkedin
+( umask 077; cat > ~/.config/zyggy/linkedin/client-secret )   # paste the secret, Enter, then Ctrl-D
+chmod 600 ~/.config/zyggy/linkedin/client-secret
+stat -c '%a %U %s' ~/.config/zyggy/linkedin/client-secret      # 600 zyggy <length>
+```
+
+One line, nothing else in the file. Rotation: generate a new secret in the portal (Auth tab), install it the same
+way; the token keeps working until it expires.
+
+### Connect LinkedIn / LinkedIn token expired [browser] [vm/zyggy]
+
+Seen as: `zyggy linkedin auth status` says `not connected`, `expired <date>`, `connected without scope …` (exit 5) or
+`reconnect soon`; `publish_post` answers `not_connected` or `token_expired`. LinkedIn gives this app no refresh token:
+every connection lasts 60 days.
+
+1. In the Zyggy session say "connect LinkedIn". Zyggy runs `zyggy linkedin auth start` and gives a link.
+2. Open it on the phone or laptop and approve (while the old connection is valid and you are logged in, LinkedIn
+   skips the approval screen).
+3. The browser lands on the registered address; the page does not load — expected. Copy the whole address and paste
+   it into the session. Zyggy runs `zyggy linkedin auth finish` with it on stdin and answers `connected: <name>,
+   expires <date>`.
+4. Refusals (exit 5): `no pending connection`, `sign-in link expired` (older than 30 minutes), `state mismatch`,
+   `sign-in cancelled`, `not the registered redirect address` — start again at step 1. `a different LinkedIn account`
+   — sign in to LinkedIn as yourself and start again.
+5. First connection only — **pin the account**: as `zyggy` run `jq -r .sub ~/.config/zyggy/linkedin/token.json` (prints
+   only the member id, never the token), put it into `instance/linkedin.json` as `member_sub` on the laptop (commit,
+   push, pull). From then on another account is refused.
+
+If the landed address cannot be copied on the phone (A2), do step 2–3 in the laptop browser.
+
+### Publish refused or failed [vm/zyggy]
+
+`publish_post` answers one line; nothing is retried. Local refusals (no request was sent; one row in `actions.jsonl`):
+
+| Answer | Meaning | Fix |
+|---|---|---|
+| `refused: empty` / `too long (<n> > <max>)` | The text is empty or over `post.max_chars` | Shorten the text |
+| `refused: control character` | A tab, carriage return or other control character | Ask Zyggy for a clean text |
+| `refused: secret pattern <name>` / `e-mail address` / `phone number` | The text contains one (never even your own contact details) | Remove it; post by hand if you really want it |
+| `refused: duplicate of <urn> posted <time>` | The same text was published in the last 24 hours | Check the profile; change the text if you want a second post |
+| `refused: publishing switched off` | `actions.enabled` is `[]` in `instance/linkedin.json` | Set it back to `["post"]` (commit, push, pull) |
+| `refused: invalid arguments` | The call's arguments were malformed | Ask again; if it repeats, report it |
+| `configuration_error: …` | The instance file, the secret patterns or a credential file is not usable (the line names it) | Fix what it names; "Install the LinkedIn client secret" |
+
+LinkedIn's answers: `token_expired` (401) → "Connect LinkedIn"; `forbidden` (403) → check the Products tab (both
+products added), then "Connect LinkedIn"; `rejected: <LinkedIn's message>` (400/422) → change the text (a
+`FIELD_LENGTH_TOO_LONG` means lower `post.max_chars`); `rate_limited`, `version_retired`, `outcome_unknown` → their
+entries below. `published: …; fact not recorded: <reason>` — the post is published; only its memory line was refused
+(for example a phone-shaped number in the first sentence): nothing to undo, add a fact by hand if you want one.
+
+### Outcome unknown — check the profile [browser]
+
+`outcome_unknown: the post may exist — check your profile before asking again`: LinkedIn answered 5xx, the request
+timed out (30 s) or the connection broke after it was sent. Open your profile: if the post is there, nothing to do (the
+action log row has no URN; the fact was not written); if not, ask Zyggy again — the duplicate guard does not block it,
+because no `ok` row exists.
+
+### Rate limited [vm/zyggy]
+
+`rate_limited: try again later` (429): LinkedIn's member limit is 150 requests a day. Nothing was posted. Ask again
+later; Zyggy never retries by itself.
+
+### LinkedIn API version retired [laptop]
+
+`version_retired: api_version <v> retired` (426): LinkedIn retired that monthly version (versions live about a year).
+On the laptop set `api_version` in `instance/linkedin.json` to a current `YYYYMM` from LinkedIn's versioning page,
+commit, push, pull on the VM. No release is needed.
+
+### Remove a wrongly published post [browser]
+
+On LinkedIn: open the post (the link in Zyggy's answer, `https://www.linkedin.com/feed/update/<urn>/`), post menu
+(⋯) → Delete. Then in memory delete or correct the line `(linkedin <urn>)` in `inbox/linkedin-<date>.md` (or, after the
+dream, in the file it was filed into). Zyggy has no delete tool.
+
+### Revoke Zyggy's LinkedIn access [browser] [vm/zyggy]
+
+1. LinkedIn → Settings → Data privacy → Permitted services → remove "Zyggy".
+2. As `zyggy`: `rm ~/.config/zyggy/linkedin/token.json`.
+3. Developer portal → Auth tab → generate a new Client Secret (the old one stops working); install it only when you
+   want LinkedIn back ("Install the LinkedIn client secret"), else `rm ~/.config/zyggy/linkedin/client-secret`.
+4. To switch the tool off without revoking: `actions.enabled: []` in `instance/linkedin.json`.
+
+### linkedin server missing in the session [vm/zyggy] [vm/root]
+
+`publish_post` is not offered where it should be. Check: `zyggy --version` is at least `.claude/zyggy-min-version`
+(14d); `.claude/settings.local.json` has `"enabledMcpjsonServers": ["m365", "linkedin"]` (install it from
+`instance/settings.local.json`, section 4); `zyggy linkedin mcp-server < /dev/null` as `zyggy` in
+`/srv/agent/central` exits 0 (exit 3 names the configuration problem; exit 5 means `ZYGGY_HOOKS=off` is set in that
+environment, which must never be the case in the remote-control session). Stdio servers do not come back by
+themselves: restart the remote-control session once (section 7).
 
 ## Re-run the digest by hand
 

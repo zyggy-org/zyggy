@@ -769,26 +769,26 @@ Gate placement: one per slice; Slice C is the new package on its own; Slice F ha
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification:
+- [x] Behavioral verification:
   - Show the captured command lines of a morning brief (both runs), a mail backfill, a files backfill and a dream call, with the two linkedin deny rules visible.
   - Show the m365-only MCP file each m365 run loaded (a fixture `.mcp.json` that does contain `linkedin` went in; only `m365` came out).
   - Show the hygiene test naming the one file that may contain LinkedIn's hosts. CI is green.
-- [ ] Contract review:
+- [x] Contract review:
   - The four run-list goldens and `ideas-args.txt` changed only by the two linkedin lines.
   - The dream's argument list changed only by them.
   - The m365 runs' `--mcp-config` now points at `<state>/m365/run-mcp.json` with the `m365` entry verbatim.
   - No 28/33/35 assertion was weakened (diff listed).
-- [ ] ⚠️ Risk review (shared contract):
+- [x] ⚠️ Risk review (shared contract):
   - Every unattended run is defended three times: the server is absent, the tool and the verbs are denied, and the server refuses `ZYGGY_HOOKS=off`.
   - The changed m365 configuration path and the dream's new deny rules are checked on Central before switch-on (Step 12 probes P1–P2).
   - Assumption 7 is acknowledged.
-- [ ] User approved — implementation may continue past this gate
+- [x] User approved — implementation may continue past this gate (owner, 2026-10-07)
 
 ---
 
 ## Step 11 — The template, the instance and the runbook are ready on their branches: `.mcp.json` lists the linkedin stdio server, the settings ask before `publish_post`, deny the server verb and the LinkedIn state, allow the `auth` verbs, the `linkedin` skill drafts in the owner's voice and publishes only after his go, the rules carry O38 and the data rules, the minimum binary is `0.4.0`, the instance enables the server with its `linkedin.json`, and the runbook has an entry for every new failure mode — nothing merged, nothing on Central
 
-- [ ] Done
+- [x] Done — 2026-10-07 (executor notes: **template** `zyggy-core` `feature/36-linkedin` (from `feature/35-morning-brief-v2`, not yet in `main`) `2f4b459` + `9a9b4a3`, bats 173/173 in `localhost/zyggy-bats`, **not pushed** (held with the code branch; template CI therefore not run — the container ran the same bats); existing assertions updated only where they pinned the old state: the allow list (+ `Bash(zyggy linkedin auth *)`), the deny layout (excluded tools now `deny[10:338]`, the three linkedin rules after them, 341), the ask diff limited to `mcp__m365__`, `.mcp.json` now two servers, the stub-coverage regex + `linkedin`, 35's min-version assertion 0.3.0 → 0.4.0; the template's "no `reconnect`" rule (an m365 rule over the rules, AGENTS.md and README) is kept — those files say "connect LinkedIn" and the word appears only in the skill; the instance-only checks (`instance/linkedin.json` keys, no secret, `enabledMcpjsonServers`) are a template test that skips in the template, as the pin check does. **Instance** `zyggy-geoffrey` `feature/36-linkedin` (from `main`, which has 35) `e4f1c72`/`98d6bd0` (template merges) + `60fd231`, local only; `instance/linkedin.json` has `client_id` `FILLINSTEP12` and `redirect_uri` `https://localhost/zyggy/linkedin` — **to fill in Step 12** from B1/B4; bats 172/173, red only at the minimum-version case (pin 0.3.2 < 0.4.0), by design. **This repository**: runbook section 15 (ten entries) and the 14b live-settings sentence; 0002 §36 skeleton with the OQ-4 acceptance, the MCP-server and the two credential rows. Failure-modes checklist: not connected/expired → "Connect LinkedIn / LinkedIn token expired"; client secret → "Install the LinkedIn client secret"; state/stale/cancelled/other account → "Connect LinkedIn"; 403, 400/422, local refusal, duplicate, fact rejected → "Publish refused or failed"; 426 → "LinkedIn API version retired"; 429 → "Rate limited"; timeout/5xx/reset → "Outcome unknown — check the profile"; wrong text → "Remove a wrongly published post"; server missing → "linkedin server missing in the session"; cut access → "Revoke Zyggy's LinkedIn access". Rule files: security 151, operations 128, instance 153, AGENTS 115 lines)
 
 **Scope**:
 - **Template** (`D:\source\zyggy-core`, branch `feature/36-linkedin`):
