@@ -27,11 +27,18 @@ internal sealed record ValidationContext(
 /// </summary>
 internal static partial class MailRunValidator
 {
-    /// <summary>AC-20: the AC-18/AC-19 reasons join the audit verdict; the suggestion-cap note is information, not a violation.</summary>
+    /// <summary>
+    /// AC-20: the AC-18/AC-19 reasons (the model's Z items and text) join the audit verdict; the suggestion-cap note and a withheld
+    /// Graph-taken sender name or subject are information, not violations.
+    /// </summary>
     public static bool IsViolation(string reason)
     {
         ArgumentNullException.ThrowIfNull(reason);
-        return !reason.EndsWith(" left to the owner", StringComparison.Ordinal);
+        // The sender name and the subject come from Graph, not from the model: withheld the same way, but not a violation (a sender
+        // without a display name has its address as its name).
+        return !reason.EndsWith(" left to the owner", StringComparison.Ordinal)
+            && !reason.EndsWith(" withheld in sender name", StringComparison.Ordinal)
+            && !reason.EndsWith(" withheld in subject", StringComparison.Ordinal);
     }
 
     public static (BriefDocument? Document, string? Rejection) Validate(MailRunOutput output, PrepassResult prepass, ValidationContext context, string watermark)

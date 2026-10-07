@@ -341,6 +341,28 @@ public sealed class BriefRunTests : IDisposable
     }
 
     [Fact]
+    public async Task Run_SenderWithoutDisplayName_AddressWithheld_AuditOk()
+    {
+        // Arrange: a regression of the first attended run on Central (0.3.1, 2026-10-07) — a sender without a display name has its
+        // address as its Graph name; it is withheld, and the audit stays ok (the model did nothing wrong)
+        var inbox = File.ReadAllText(Path.Combine(Golden.Directory, "m365", "graph", "brief", "inbox-since.json"))
+            .Replace("\"name\":\"Bob Example\"", "\"name\":\"bob@example.org\"", StringComparison.Ordinal);
+        _graph.Stub.Once("GET", "mailFolders/AQMkInbox0001/messages\\?\\$filter=receivedDateTime", 200, inbox);
+
+        // Act
+        var outcome = await RunAsync();
+
+        // Assert
+        outcome.Exit.Should().Be(0, string.Join('\n', outcome.StderrLines));
+        outcome.StdoutLines[^1].Should().Contain(", audit ok, ");
+        var markdown = File.ReadAllText(Markdown);
+        markdown.Should().NotStartWith("audit FLAGGED").And.NotContain("bob@example.org").And.Contain("[withheld: address]");
+        var sidecar = JsonDocument.Parse(File.ReadAllText(Sidecar)).RootElement;
+        sidecar.GetProperty("audit").GetString().Should().Be("ok");
+        sidecar.GetProperty("auditReasons").EnumerateArray().Select(r => r.GetString()).Should().Contain("address withheld in sender name");
+    }
+
+    [Fact]
     public async Task Run_FileChangedByTheOwner_NotTied_CountedNotListed()
     {
         // Arrange: a regression of Step 6 — the owner's name came from an unset key and fell back to the mailbox address, so every file
