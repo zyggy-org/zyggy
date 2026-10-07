@@ -258,7 +258,7 @@ Gate placement: one per slice; Slice C is the new package on its own; Slice F ha
 
 ## Step 3 — From the built binary, the owner's connection works end to end against a loopback LinkedIn stand-in: `auth start` → paste the landed address into `auth finish` → `auth status` says connected; a forged state, a missing client secret and a non-loopback API base are refused; on Linux the token file is 0600 in a 0700 directory and the token never appears in any output
 
-- [ ] Done
+- [x] Done — 2026-10-07 (executor notes: no production fix was needed beyond the CLI wiring; the integration fixture's zone is UTC on both OSes (the binary resolves IANA ids only on Linux); extra rows: a client secret of mode 0604 is refused naming the path; Linux rows green in the `mcr.microsoft.com/dotnet/sdk:10.0` container (Core `_OnLinux|LinkedIn` 152, Integration 35); Windows: 1984 + 308 passed)
 
 **Scope**:
 - `src/Zyggy.Cli/RawVerbs.cs` *(modify, additive)*: `linkedin …` → `LinkedInVerbHost`.
