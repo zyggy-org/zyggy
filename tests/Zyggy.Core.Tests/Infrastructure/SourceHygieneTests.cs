@@ -80,6 +80,21 @@ public sealed partial class SourceHygieneTests
         offenders.Should().BeEmpty();
     }
 
+    [Fact]
+    public void Src_McpSdk_OnlyUnderLinkedInMcp()
+    {
+        // Arrange: spec 36 Assumption 8 — the SDK is confined to the one server
+        const string Allowed = "src/Zyggy.Core/LinkedIn/Mcp/";
+
+        // Act
+        var holders = SourceFiles().Where(f => McpSdk().IsMatch(File.ReadAllText(f)))
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .ToList();
+
+        // Assert
+        holders.Should().NotBeEmpty().And.OnlyContain(f => f.StartsWith(Allowed, StringComparison.Ordinal));
+    }
+
     private static List<string> SourceFiles() =>
         Directory.EnumerateFiles(Path.Combine(RepoRoot(), "src"), "*.cs", SearchOption.AllDirectories)
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
@@ -97,4 +112,7 @@ public sealed partial class SourceHygieneTests
 
     [GeneratedRegex(@"new (ProcessSpec|ProcessStartInfo)\(\s*""(claude|markitdown|ms-365-mcp-server)""")]
     private static partial Regex BareProgram();
+
+    [GeneratedRegex(@"\bModelContextProtocol\.")]
+    private static partial Regex McpSdk();
 }

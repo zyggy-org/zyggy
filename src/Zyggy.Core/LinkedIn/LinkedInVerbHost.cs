@@ -16,6 +16,7 @@ public sealed class LinkedInVerbHost
         ["auth start"] = context => new AuthStartVerb(context),
         ["auth finish"] = context => new AuthFinishVerb(context),
         ["auth status"] = context => new AuthStatusVerb(context),
+        ["mcp-server"] = context => new McpServerVerb(context),
     };
 
     /// <summary>Creates the host over the process environment and the system clock.</summary>
