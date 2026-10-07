@@ -1,0 +1,4 @@
+{"@odata.context":"fixture","value":[
+{"conversationId":"c11","sentDateTime":"2026-10-06T08:00:00Z"},
+{"conversationId":"cOld","sentDateTime":"2026-10-06T06:00:00Z"}
+]}

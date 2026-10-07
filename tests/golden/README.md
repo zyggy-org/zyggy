@@ -79,3 +79,67 @@ The `m365.bats` cases they serve were run at `ZYGGY_NOW=2026-09-30T10:00:00Z`, `
 
 - `m365/tools/{enabled,excluded}.txt` are byte copies of `zyggy-core` `tests/fixtures/m365/{enabled,excluded}-tools.txt` at `5201115`; `actions.txt`, `auth.txt` and `server-version.txt` are written by hand from `ZY_M365_ACTION_TOOLS`, `ZY_M365_AUTH_TOOLS` and the pinned version in `m365-lib.sh`. These five files are also what the template ships as `.claude/skills/m365/tools/` (Step 19); the binary holds no copy (owner decision 8).
 - `m365/run-lists/{brief,mail-backfill,files-backfill}-{allow,deny}.txt` are derived by a shell script from those tool files with `m365-lib.sh`'s rules, each script rule replaced by its verb (`state.sh` → `Bash(zyggy m365 state *)`, `facts.sh`, `parse.sh` likewise; the common deny's `graph.sh` rule → the seven `Bash(zyggy m365 auth-header*)`, `token-test*`, `cert-init*`, `mcp-server*`, `brief*`, `mail-backfill*`, `files-backfill*` rules). The mail backfill's three read tools are taken in the enabled list's order (the binary picks them by the `list-/get-shared-mailbox-` prefix instead of a hard-coded list). Never produced by the code under test.
+
+## `brief/` — the printed brief (deliverable 35, Step 2)
+
+Hand-derived from spec 35's Contracts ("Rendered brief", the page markers, AC-12, AC-56..AC-58, AC-67), never produced by the code under test:
+
+- `brief-weekday.md` is a complete brief file as the renderer writes it (fictional people, `*.example` names), with the two page markers: a line the page cap dropped carries the prefix `<!--page:drop-->`, a "… and <n> more" count line the prefix `<!--page:count-->`.
+- `show-weekday.txt` is the exact stdout of `zyggy brief show` for it on 2026-10-06 (page view: dropped lines removed, count prefixes stripped; the sidecar's `generated` 2026-10-06T04:31:00Z; the watermark 2026-10-05T04:30:00Z); `show-weekday-full.txt` the stdout of `show --full` (count lines removed, dropped lines kept).
+- `show-failure.txt` (no brief, 07:00 or later, a failed `brief.jsonl` row and two earlier briefs not shown) and `show-not-ready.txt` (no brief, before 07:00).
+
+## `m365/graph/brief/` and `brief/mail-input.json` — the brief's pre-pass (deliverable 35, Step 4)
+
+Hand-written Graph answers (tenant `acme`, user `alice`, fictional senders at `example.org`) for the three brief reads of spec 35
+Step 4: `inbox-since.json` (four new Inbox mails), `sent-since.json` + `sent-since-page2.json` (Sent Items markers, one `@odata.nextLink`
+under the mailbox), `message-in-drafts.json` / `message-in-drafts-unanswered.json` / `message-in-inbox.json` (where an earlier reply
+draft is now). Their routes are appended to `routes.tsv`. `brief/mail-input.json` is the exact `mail.json` the pre-pass writes for
+them on 2026-10-06 in Europe/Brussels (+02:00), derived by hand from the contract: names only, local `HH:MM`, `answered` = the first
+later sent mail of the conversation.
+
+## `brief/mail-output-10.json`, `brief-10-noideas.md`, `brief-10-noideas.json` — the validated brief (deliverable 35, Step 5)
+
+`mail-output-10.json` is a hand-written answer of the mail run (ten classed mails: one urgent invoice with an amount read, a reply to
+send, a reply to an already-answered mail, two "other" mails, a statement with 0.00 due, a quote to delete, a summary carrying a link,
+a renewal notice the model called "other" with a pay action, and three files). `brief-10-noideas.md` and `brief-10-noideas.json` are
+the brief and its item list hand-derived from spec 35's Contracts ("Rendered brief", the validator rules AC-14..AC-19, AC-21, AC-28,
+AC-64..AC-66, the Z numbering AC-17) for the pre-pass scenario in `tests/Zyggy.Core.Tests/Brief/BriefScenario.cs` (an eleventh mail the
+model omitted, one discard item; Europe/Brussels +02:00). The 40- and 80-mail cases are generated in the tests and checked structurally
+(caps, shortening order, markers, no urgent line dropped), not against a golden. Never produced by the code under test.
+
+## `m365/fixtures/mail-output-ok.json`, `m365/expected/{journal-weekday.txt,brief-jsonl-weekday.json}`, `m365/graph/brief/{message-reply-d12,message-in-inbox-m13,inbox-since-80}.json` — the brief run (deliverable 35, Steps 6–7)
+
+`mail-output-ok.json` is the mail run's answer for the stub's Inbox m10..m13 as the fake model gives it (m10 urgent with an amount and a
+`pay` item, m11 answered, m12 a `send` of the reply Draft d12, m13 a `move` to Archive, one file tied to m12), hand-written in the
+schema. `journal-weekday.txt` and `brief-jsonl-weekday.json` are the journal line and the `brief.jsonl` row that run produces on
+2026-10-06 08:30Z; the row's fields follow spec 35's Contracts (`mode`, `z`, `you`, `ideas`, `z_dropped`, the `ideas_*` fields,
+`counts`, `page_exceeded`). `message-reply-d12.json` and `message-in-inbox-m13.json` are the Graph answers for the two Z targets'
+locations (routes appended to `routes.tsv`). `inbox-since-80.json` holds 80 Inbox mails m20..m99 for the page-cap case (five urgent,
+sixty important, fifteen other as the fake classes them in `tools/fake-claude/scenarios/m365-brief-mail-80.jsonl`); it is used through
+a per-test route override, never by default.
+
+## `m365/parse/insurer-statement.txt` and `insurer-statement.expected.txt` — number redaction in parsed text (deliverable 35, Step 8)
+
+A hand-written, synthetic MarkItDown-style text of an insurer statement (fictional policyholder, the IBAN and card number of
+`secret-patterns/secret-samples.txt`) and the bytes `zyggy m365 parse` must print for it, derived by hand from spec 35 AC-30: a line
+where only the number-shaped patterns (`iban`, `card-number`) match keeps its text with the token run replaced by
+`[redacted: <name>]`; the line that also carries a `token=` assignment still matches after redaction and is withheld whole, named by the
+first pattern in file order. Never produced by the code under test.
+
+## `brief/ideas-*.txt|json`, `brief/brief-10-ideas.md`, `brief/brief-weekend.md` — the ideas run (deliverable 35, Step 10)
+
+Hand-derived from spec 35 AC-32..AC-35 and AC-39, never produced by the code under test. `ideas-args.txt` is the ideas run's argument
+vector, one argument per line, with the placeholders `<principal>` (the principal directory as given to `--add-dir`), `<principal-rule>`
+(the same path in a rule: `/` separators, no leading slash after the rule's `//`), `<schema>` and `<prompt>` (the embedded files)
+substituted by the test. `ideas-input-weekday.txt` is the stdin for a Tuesday with three history rows and one area shown in the last six
+days. `ideas-output-ok.json` is a model answer with three suggestions: one client idea and one family idea whose basis lines occur in the
+test's memory tree, and one career idea with an invented basis (dropped). `brief-10-ideas.md` is `brief-10-noideas.md` with the two kept
+ideas rendered; `brief-weekend.md` is the weekend brief with the family idea only.
+
+## `brief/items-sidecar.json`, `m365/graph/brief/message-in-{archive,deleteditems}.json` — acting on the brief (deliverable 35, Step 12)
+
+A hand-written item list (spec 35 Contracts "Files") with one item of every kind and every status the stubbed Graph can give: Z1 a reply
+to send (its draft d12 still in Drafts), Z2 a move (m13 in the Inbox), Z3 an old reply draft to discard (d5 in Drafts), Z4 a mail filed by
+hand (m20 in Archive), Z5 a mail deleted by hand (m21 in Deleted Items), Z6 a mail gone for good (d7 answers 404), Z7 the "file the
+other mails" item over m13, d4 and m20; and two ideas. The two message fixtures answer the location reads for m20 and m21; their routes
+are appended to `routes.tsv`.

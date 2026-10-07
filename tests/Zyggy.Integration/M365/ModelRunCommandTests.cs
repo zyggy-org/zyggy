@@ -92,6 +92,24 @@ public sealed class ModelRunCommandTests : IDisposable
     }
 
     [Fact]
+    public async Task Brief_DeliveryKey_ExitThreeRemoved()
+    {
+        // Arrange: a 33-era instance still naming the Draft delivery
+        var path = Path.Combine(_run.Fixture.InstanceDirectory, "m365.json");
+        var config = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+        config["brief"]!["delivery"] = "draft";
+        File.WriteAllText(path, config.ToJsonString());
+
+        // Act
+        var run = await Zyggy(Env(), "brief");
+
+        // Assert
+        run.ExitCode.Should().Be(3);
+        run.Stderr.Should().Be("m365-brief: configuration error: brief.delivery is removed (spec 35: the brief is shown in the session; rollback restores the Draft brief)\n");
+        File.Exists(StdinCapture).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task MailBackfill_PrincipalOnlyInSettingsLocalJson_PassesConfigurationThenStopsAtPin()
     {
         // Arrange: a plain shell — the principal only in the checkout's settings file

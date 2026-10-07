@@ -28,6 +28,72 @@ internal sealed partial class M365Configuration
 
     public string Mailbox => String("mailbox");
 
+    /// <summary>Gets <c>brief.mail_max_items</c>: how many new Inbox mails one brief lists.</summary>
+    public int MailMaxItems => Int("brief", "mail_max_items");
+
+    /// <summary>Gets <c>brief.reply_cap</c>.</summary>
+    public int ReplyCap => Int("brief", "reply_cap");
+
+    /// <summary>Gets <c>brief.suggestion_cap</c>: the most Z items a brief lists.</summary>
+    public int SuggestionCap => Int("brief", "suggestion_cap");
+
+    /// <summary>Gets <c>brief.brief_keep_days</c> (default 14).</summary>
+    public int BriefKeepDays => IntOr("brief", "brief_keep_days", 14);
+
+    /// <summary>Gets <c>brief.ideas_cap</c> (default 3; 0 disables the ideas run).</summary>
+    public int IdeasCap => IntOr("brief", "ideas_cap", 3);
+
+    /// <summary>Gets <c>brief.ideas_repeat_days</c> (default 14).</summary>
+    public int IdeasRepeatDays => IntOr("brief", "ideas_repeat_days", 14);
+
+    /// <summary>Gets <c>brief.ideas_suppress_days</c> (default 90).</summary>
+    public int IdeasSuppressDays => IntOr("brief", "ideas_suppress_days", 90);
+
+    /// <summary>Gets <c>brief.ideas_max_turns</c> (default 20).</summary>
+    public int IdeasMaxTurns => IntOr("brief", "ideas_max_turns", 20);
+
+    /// <summary>Gets <c>brief.ideas_budget_usd</c> (default 1.0).</summary>
+    public decimal IdeasBudgetUsd => Find(Root, "brief", "ideas_budget_usd") is { ValueKind: JsonValueKind.Number } n ? n.GetDecimal() : 1.0m;
+
+    /// <summary>Gets <c>brief.ideas_model</c> (default empty: the CLI's default model).</summary>
+    public string IdeasModel => String("brief", "ideas_model");
+
+    /// <summary>Gets <c>brief.attachment_parse</c> (default true).</summary>
+    public bool AttachmentParse => Find(Root, "brief", "attachment_parse") is { ValueKind: JsonValueKind.False } ? false : true;
+
+    /// <summary>Gets <c>brief.page_max_lines</c> (default 40).</summary>
+    public int PageMaxLines => IntOr("brief", "page_max_lines", 40);
+
+    /// <summary>Gets <c>brief.page_max_chars</c> (default 3500).</summary>
+    public int PageMaxChars => IntOr("brief", "page_max_chars", 3500);
+
+    /// <summary>Gets <c>brief.expect_by</c> (default 07:00).</summary>
+    public TimeOnly ExpectBy => Find(Root, "brief", "expect_by") is { ValueKind: JsonValueKind.String } s && TimeOnly.TryParseExact(s.GetString(), "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var t) ? t : new TimeOnly(7, 0);
+
+    /// <summary>Gets <c>brief.weekend_days</c> (default Saturday and Sunday).</summary>
+    public IReadOnlyList<DayOfWeek> WeekendDays =>
+        Find(Root, "brief", "weekend_days") is { ValueKind: JsonValueKind.Array } days
+            ? [.. days.EnumerateArray().Select(d => Enum.Parse<DayOfWeek>(d.GetString()!, true))]
+            : [DayOfWeek.Saturday, DayOfWeek.Sunday];
+
+    /// <summary>Gets <c>brief.ideas_areas</c>: area → <c>work</c> | <c>private</c> (the spec's default map).</summary>
+    public IReadOnlyDictionary<string, string> IdeasAreas =>
+        Find(Root, "brief", "ideas_areas") is { ValueKind: JsonValueKind.Object } areas
+            ? areas.EnumerateObject().ToDictionary(a => a.Name, a => a.Value.GetString()!, StringComparer.Ordinal)
+            : new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["career"] = "work",
+                ["business"] = "work",
+                ["client"] = "work",
+                ["zyggy"] = "work",
+                ["family"] = "private",
+                ["travel"] = "private",
+                ["home"] = "private",
+                ["hobbies"] = "private",
+            };
+
+    private int IntOr(string section, string key, int fallback) => Find(Root, section, key) is { ValueKind: JsonValueKind.Number } n ? (int)n.GetDouble() : fallback;
+
     public string TimeZone => String("timezone");
 
     public string Language => String("language");
@@ -170,8 +236,71 @@ internal sealed partial class M365Configuration
             && Check(AllStrings("drives.exclude_paths"), "drives.exclude_paths is not a list of strings")
             && Actions()
             && Section("brief", ["mail_max_items", "reply_cap", "files_max_items", "file_max_bytes", "file_text_cap_bytes", "max_turns", "max_facts", "suggestion_cap"], ["budget_usd"])
+            && BriefExtras()
             && Section("mail_backfill", ["batch_messages", "max_turns", "max_facts", "max_messages"], ["budget_usd_per_batch", "budget_usd_total"], "exclude_folders")
             && Section("files_backfill", ["batch_files", "max_turns", "file_max_bytes", "file_text_cap_bytes", "max_facts"], ["budget_usd_per_batch", "budget_usd_total"]);
+
+        // Spec 35: the brief's optional keys (defaults apply when absent), each validated when present; `delivery` is removed (OQ-1).
+        private bool BriefExtras()
+        {
+            if (Value("brief.delivery") is not null)
+            {
+                return Fail("brief.delivery is removed (spec 35: the brief is shown in the session; rollback restores the Draft brief)");
+            }
+
+            foreach (var key in new[] { "ideas_cap", "ideas_repeat_days", "ideas_suppress_days", "ideas_max_turns" })
+            {
+                if (Value($"brief.{key}") is not null && !Integer($".brief.{key}", 0, IntegerMax))
+                {
+                    return false;
+                }
+            }
+
+            foreach (var key in new[] { "brief_keep_days", "page_max_lines", "page_max_chars" })
+            {
+                if (Value($"brief.{key}") is not null && !Integer($".brief.{key}", 1, IntegerMax))
+                {
+                    return false;
+                }
+            }
+
+            if (Value("brief.ideas_budget_usd") is not null && !Number(".brief.ideas_budget_usd", 0))
+            {
+                return false;
+            }
+
+            if (Value("brief.ideas_model") is { } model && !Check(model.ValueKind == JsonValueKind.String, "brief.ideas_model is not a string"))
+            {
+                return false;
+            }
+
+            if (Value("brief.attachment_parse") is { } parse && !Check(parse.ValueKind is JsonValueKind.True or JsonValueKind.False, "brief.attachment_parse is not true or false"))
+            {
+                return false;
+            }
+
+            if (Value("brief.expect_by") is { } expect
+                && !Check(expect.ValueKind == JsonValueKind.String && TimeOnly.TryParseExact(expect.GetString(), "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out _), "brief.expect_by is not a time HH:MM"))
+            {
+                return false;
+            }
+
+            if (Value("brief.weekend_days") is { } weekend
+                && !Check(weekend.ValueKind == JsonValueKind.Array && weekend.EnumerateArray().All(d => d.ValueKind == JsonValueKind.String && Enum.TryParse<DayOfWeek>(d.GetString(), true, out _)),
+                    "brief.weekend_days is not an array of day names"))
+            {
+                return false;
+            }
+
+            if (Value("brief.ideas_areas") is { } areas
+                && !Check(areas.ValueKind == JsonValueKind.Object && areas.EnumerateObject().All(a => a.Value.ValueKind == JsonValueKind.String && a.Value.GetString() is "work" or "private"),
+                    "brief.ideas_areas is not an object of area: work|private"))
+            {
+                return false;
+            }
+
+            return true;
+        }
 
         private bool Actions()
         {

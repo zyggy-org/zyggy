@@ -1,0 +1,1045 @@
+{
+"@odata.context": "fixture",
+"value": [
+{
+"id": "m20",
+"subject": "Subject 020",
+"from": {
+"emailAddress": {
+"name": "Sender 020",
+"address": "s20@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:00:00Z",
+"conversationId": "c20",
+"hasAttachments": false
+},
+{
+"id": "m21",
+"subject": "Subject 021",
+"from": {
+"emailAddress": {
+"name": "Sender 021",
+"address": "s21@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:01:00Z",
+"conversationId": "c21",
+"hasAttachments": false
+},
+{
+"id": "m22",
+"subject": "Subject 022",
+"from": {
+"emailAddress": {
+"name": "Sender 022",
+"address": "s22@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:02:00Z",
+"conversationId": "c22",
+"hasAttachments": false
+},
+{
+"id": "m23",
+"subject": "Subject 023",
+"from": {
+"emailAddress": {
+"name": "Sender 023",
+"address": "s23@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:03:00Z",
+"conversationId": "c23",
+"hasAttachments": false
+},
+{
+"id": "m24",
+"subject": "Subject 024",
+"from": {
+"emailAddress": {
+"name": "Sender 024",
+"address": "s24@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:04:00Z",
+"conversationId": "c24",
+"hasAttachments": false
+},
+{
+"id": "m25",
+"subject": "Subject 025",
+"from": {
+"emailAddress": {
+"name": "Sender 025",
+"address": "s25@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:05:00Z",
+"conversationId": "c25",
+"hasAttachments": false
+},
+{
+"id": "m26",
+"subject": "Subject 026",
+"from": {
+"emailAddress": {
+"name": "Sender 026",
+"address": "s26@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:06:00Z",
+"conversationId": "c26",
+"hasAttachments": false
+},
+{
+"id": "m27",
+"subject": "Subject 027",
+"from": {
+"emailAddress": {
+"name": "Sender 027",
+"address": "s27@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:07:00Z",
+"conversationId": "c27",
+"hasAttachments": false
+},
+{
+"id": "m28",
+"subject": "Subject 028",
+"from": {
+"emailAddress": {
+"name": "Sender 028",
+"address": "s28@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:08:00Z",
+"conversationId": "c28",
+"hasAttachments": false
+},
+{
+"id": "m29",
+"subject": "Subject 029",
+"from": {
+"emailAddress": {
+"name": "Sender 029",
+"address": "s29@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:09:00Z",
+"conversationId": "c29",
+"hasAttachments": false
+},
+{
+"id": "m30",
+"subject": "Subject 030",
+"from": {
+"emailAddress": {
+"name": "Sender 030",
+"address": "s30@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:10:00Z",
+"conversationId": "c30",
+"hasAttachments": false
+},
+{
+"id": "m31",
+"subject": "Subject 031",
+"from": {
+"emailAddress": {
+"name": "Sender 031",
+"address": "s31@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:11:00Z",
+"conversationId": "c31",
+"hasAttachments": false
+},
+{
+"id": "m32",
+"subject": "Subject 032",
+"from": {
+"emailAddress": {
+"name": "Sender 032",
+"address": "s32@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:12:00Z",
+"conversationId": "c32",
+"hasAttachments": false
+},
+{
+"id": "m33",
+"subject": "Subject 033",
+"from": {
+"emailAddress": {
+"name": "Sender 033",
+"address": "s33@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:13:00Z",
+"conversationId": "c33",
+"hasAttachments": false
+},
+{
+"id": "m34",
+"subject": "Subject 034",
+"from": {
+"emailAddress": {
+"name": "Sender 034",
+"address": "s34@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:14:00Z",
+"conversationId": "c34",
+"hasAttachments": false
+},
+{
+"id": "m35",
+"subject": "Subject 035",
+"from": {
+"emailAddress": {
+"name": "Sender 035",
+"address": "s35@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:15:00Z",
+"conversationId": "c35",
+"hasAttachments": false
+},
+{
+"id": "m36",
+"subject": "Subject 036",
+"from": {
+"emailAddress": {
+"name": "Sender 036",
+"address": "s36@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:16:00Z",
+"conversationId": "c36",
+"hasAttachments": false
+},
+{
+"id": "m37",
+"subject": "Subject 037",
+"from": {
+"emailAddress": {
+"name": "Sender 037",
+"address": "s37@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:17:00Z",
+"conversationId": "c37",
+"hasAttachments": false
+},
+{
+"id": "m38",
+"subject": "Subject 038",
+"from": {
+"emailAddress": {
+"name": "Sender 038",
+"address": "s38@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:18:00Z",
+"conversationId": "c38",
+"hasAttachments": false
+},
+{
+"id": "m39",
+"subject": "Subject 039",
+"from": {
+"emailAddress": {
+"name": "Sender 039",
+"address": "s39@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:19:00Z",
+"conversationId": "c39",
+"hasAttachments": false
+},
+{
+"id": "m40",
+"subject": "Subject 040",
+"from": {
+"emailAddress": {
+"name": "Sender 040",
+"address": "s40@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:20:00Z",
+"conversationId": "c40",
+"hasAttachments": false
+},
+{
+"id": "m41",
+"subject": "Subject 041",
+"from": {
+"emailAddress": {
+"name": "Sender 041",
+"address": "s41@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:21:00Z",
+"conversationId": "c41",
+"hasAttachments": false
+},
+{
+"id": "m42",
+"subject": "Subject 042",
+"from": {
+"emailAddress": {
+"name": "Sender 042",
+"address": "s42@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:22:00Z",
+"conversationId": "c42",
+"hasAttachments": false
+},
+{
+"id": "m43",
+"subject": "Subject 043",
+"from": {
+"emailAddress": {
+"name": "Sender 043",
+"address": "s43@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:23:00Z",
+"conversationId": "c43",
+"hasAttachments": false
+},
+{
+"id": "m44",
+"subject": "Subject 044",
+"from": {
+"emailAddress": {
+"name": "Sender 044",
+"address": "s44@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:24:00Z",
+"conversationId": "c44",
+"hasAttachments": false
+},
+{
+"id": "m45",
+"subject": "Subject 045",
+"from": {
+"emailAddress": {
+"name": "Sender 045",
+"address": "s45@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:25:00Z",
+"conversationId": "c45",
+"hasAttachments": false
+},
+{
+"id": "m46",
+"subject": "Subject 046",
+"from": {
+"emailAddress": {
+"name": "Sender 046",
+"address": "s46@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:26:00Z",
+"conversationId": "c46",
+"hasAttachments": false
+},
+{
+"id": "m47",
+"subject": "Subject 047",
+"from": {
+"emailAddress": {
+"name": "Sender 047",
+"address": "s47@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:27:00Z",
+"conversationId": "c47",
+"hasAttachments": false
+},
+{
+"id": "m48",
+"subject": "Subject 048",
+"from": {
+"emailAddress": {
+"name": "Sender 048",
+"address": "s48@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:28:00Z",
+"conversationId": "c48",
+"hasAttachments": false
+},
+{
+"id": "m49",
+"subject": "Subject 049",
+"from": {
+"emailAddress": {
+"name": "Sender 049",
+"address": "s49@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:29:00Z",
+"conversationId": "c49",
+"hasAttachments": false
+},
+{
+"id": "m50",
+"subject": "Subject 050",
+"from": {
+"emailAddress": {
+"name": "Sender 050",
+"address": "s50@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:30:00Z",
+"conversationId": "c50",
+"hasAttachments": false
+},
+{
+"id": "m51",
+"subject": "Subject 051",
+"from": {
+"emailAddress": {
+"name": "Sender 051",
+"address": "s51@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:31:00Z",
+"conversationId": "c51",
+"hasAttachments": false
+},
+{
+"id": "m52",
+"subject": "Subject 052",
+"from": {
+"emailAddress": {
+"name": "Sender 052",
+"address": "s52@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:32:00Z",
+"conversationId": "c52",
+"hasAttachments": false
+},
+{
+"id": "m53",
+"subject": "Subject 053",
+"from": {
+"emailAddress": {
+"name": "Sender 053",
+"address": "s53@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:33:00Z",
+"conversationId": "c53",
+"hasAttachments": false
+},
+{
+"id": "m54",
+"subject": "Subject 054",
+"from": {
+"emailAddress": {
+"name": "Sender 054",
+"address": "s54@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:34:00Z",
+"conversationId": "c54",
+"hasAttachments": false
+},
+{
+"id": "m55",
+"subject": "Subject 055",
+"from": {
+"emailAddress": {
+"name": "Sender 055",
+"address": "s55@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:35:00Z",
+"conversationId": "c55",
+"hasAttachments": false
+},
+{
+"id": "m56",
+"subject": "Subject 056",
+"from": {
+"emailAddress": {
+"name": "Sender 056",
+"address": "s56@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:36:00Z",
+"conversationId": "c56",
+"hasAttachments": false
+},
+{
+"id": "m57",
+"subject": "Subject 057",
+"from": {
+"emailAddress": {
+"name": "Sender 057",
+"address": "s57@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:37:00Z",
+"conversationId": "c57",
+"hasAttachments": false
+},
+{
+"id": "m58",
+"subject": "Subject 058",
+"from": {
+"emailAddress": {
+"name": "Sender 058",
+"address": "s58@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:38:00Z",
+"conversationId": "c58",
+"hasAttachments": false
+},
+{
+"id": "m59",
+"subject": "Subject 059",
+"from": {
+"emailAddress": {
+"name": "Sender 059",
+"address": "s59@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:39:00Z",
+"conversationId": "c59",
+"hasAttachments": false
+},
+{
+"id": "m60",
+"subject": "Subject 060",
+"from": {
+"emailAddress": {
+"name": "Sender 060",
+"address": "s60@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:40:00Z",
+"conversationId": "c60",
+"hasAttachments": false
+},
+{
+"id": "m61",
+"subject": "Subject 061",
+"from": {
+"emailAddress": {
+"name": "Sender 061",
+"address": "s61@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:41:00Z",
+"conversationId": "c61",
+"hasAttachments": false
+},
+{
+"id": "m62",
+"subject": "Subject 062",
+"from": {
+"emailAddress": {
+"name": "Sender 062",
+"address": "s62@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:42:00Z",
+"conversationId": "c62",
+"hasAttachments": false
+},
+{
+"id": "m63",
+"subject": "Subject 063",
+"from": {
+"emailAddress": {
+"name": "Sender 063",
+"address": "s63@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:43:00Z",
+"conversationId": "c63",
+"hasAttachments": false
+},
+{
+"id": "m64",
+"subject": "Subject 064",
+"from": {
+"emailAddress": {
+"name": "Sender 064",
+"address": "s64@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:44:00Z",
+"conversationId": "c64",
+"hasAttachments": false
+},
+{
+"id": "m65",
+"subject": "Subject 065",
+"from": {
+"emailAddress": {
+"name": "Sender 065",
+"address": "s65@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:45:00Z",
+"conversationId": "c65",
+"hasAttachments": false
+},
+{
+"id": "m66",
+"subject": "Subject 066",
+"from": {
+"emailAddress": {
+"name": "Sender 066",
+"address": "s66@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:46:00Z",
+"conversationId": "c66",
+"hasAttachments": false
+},
+{
+"id": "m67",
+"subject": "Subject 067",
+"from": {
+"emailAddress": {
+"name": "Sender 067",
+"address": "s67@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:47:00Z",
+"conversationId": "c67",
+"hasAttachments": false
+},
+{
+"id": "m68",
+"subject": "Subject 068",
+"from": {
+"emailAddress": {
+"name": "Sender 068",
+"address": "s68@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:48:00Z",
+"conversationId": "c68",
+"hasAttachments": false
+},
+{
+"id": "m69",
+"subject": "Subject 069",
+"from": {
+"emailAddress": {
+"name": "Sender 069",
+"address": "s69@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:49:00Z",
+"conversationId": "c69",
+"hasAttachments": false
+},
+{
+"id": "m70",
+"subject": "Subject 070",
+"from": {
+"emailAddress": {
+"name": "Sender 070",
+"address": "s70@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:50:00Z",
+"conversationId": "c70",
+"hasAttachments": false
+},
+{
+"id": "m71",
+"subject": "Subject 071",
+"from": {
+"emailAddress": {
+"name": "Sender 071",
+"address": "s71@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:51:00Z",
+"conversationId": "c71",
+"hasAttachments": false
+},
+{
+"id": "m72",
+"subject": "Subject 072",
+"from": {
+"emailAddress": {
+"name": "Sender 072",
+"address": "s72@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:52:00Z",
+"conversationId": "c72",
+"hasAttachments": false
+},
+{
+"id": "m73",
+"subject": "Subject 073",
+"from": {
+"emailAddress": {
+"name": "Sender 073",
+"address": "s73@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:53:00Z",
+"conversationId": "c73",
+"hasAttachments": false
+},
+{
+"id": "m74",
+"subject": "Subject 074",
+"from": {
+"emailAddress": {
+"name": "Sender 074",
+"address": "s74@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:54:00Z",
+"conversationId": "c74",
+"hasAttachments": false
+},
+{
+"id": "m75",
+"subject": "Subject 075",
+"from": {
+"emailAddress": {
+"name": "Sender 075",
+"address": "s75@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:55:00Z",
+"conversationId": "c75",
+"hasAttachments": false
+},
+{
+"id": "m76",
+"subject": "Subject 076",
+"from": {
+"emailAddress": {
+"name": "Sender 076",
+"address": "s76@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:56:00Z",
+"conversationId": "c76",
+"hasAttachments": false
+},
+{
+"id": "m77",
+"subject": "Subject 077",
+"from": {
+"emailAddress": {
+"name": "Sender 077",
+"address": "s77@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:57:00Z",
+"conversationId": "c77",
+"hasAttachments": false
+},
+{
+"id": "m78",
+"subject": "Subject 078",
+"from": {
+"emailAddress": {
+"name": "Sender 078",
+"address": "s78@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:58:00Z",
+"conversationId": "c78",
+"hasAttachments": false
+},
+{
+"id": "m79",
+"subject": "Subject 079",
+"from": {
+"emailAddress": {
+"name": "Sender 079",
+"address": "s79@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T05:59:00Z",
+"conversationId": "c79",
+"hasAttachments": false
+},
+{
+"id": "m80",
+"subject": "Subject 080",
+"from": {
+"emailAddress": {
+"name": "Sender 080",
+"address": "s80@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T06:00:00Z",
+"conversationId": "c80",
+"hasAttachments": false
+},
+{
+"id": "m81",
+"subject": "Subject 081",
+"from": {
+"emailAddress": {
+"name": "Sender 081",
+"address": "s81@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T06:01:00Z",
+"conversationId": "c81",
+"hasAttachments": false
+},
+{
+"id": "m82",
+"subject": "Subject 082",
+"from": {
+"emailAddress": {
+"name": "Sender 082",
+"address": "s82@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T06:02:00Z",
+"conversationId": "c82",
+"hasAttachments": false
+},
+{
+"id": "m83",
+"subject": "Subject 083",
+"from": {
+"emailAddress": {
+"name": "Sender 083",
+"address": "s83@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T06:03:00Z",
+"conversationId": "c83",
+"hasAttachments": false
+},
+{
+"id": "m84",
+"subject": "Subject 084",
+"from": {
+"emailAddress": {
+"name": "Sender 084",
+"address": "s84@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T06:04:00Z",
+"conversationId": "c84",
+"hasAttachments": false
+},
+{
+"id": "m85",
+"subject": "Subject 085",
+"from": {
+"emailAddress": {
+"name": "Sender 085",
+"address": "s85@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T06:05:00Z",
+"conversationId": "c85",
+"hasAttachments": false
+},
+{
+"id": "m86",
+"subject": "Subject 086",
+"from": {
+"emailAddress": {
+"name": "Sender 086",
+"address": "s86@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T06:06:00Z",
+"conversationId": "c86",
+"hasAttachments": false
+},
+{
+"id": "m87",
+"subject": "Subject 087",
+"from": {
+"emailAddress": {
+"name": "Sender 087",
+"address": "s87@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T06:07:00Z",
+"conversationId": "c87",
+"hasAttachments": false
+},
+{
+"id": "m88",
+"subject": "Subject 088",
+"from": {
+"emailAddress": {
+"name": "Sender 088",
+"address": "s88@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T06:08:00Z",
+"conversationId": "c88",
+"hasAttachments": false
+},
+{
+"id": "m89",
+"subject": "Subject 089",
+"from": {
+"emailAddress": {
+"name": "Sender 089",
+"address": "s89@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T06:09:00Z",
+"conversationId": "c89",
+"hasAttachments": false
+},
+{
+"id": "m90",
+"subject": "Subject 090",
+"from": {
+"emailAddress": {
+"name": "Sender 090",
+"address": "s90@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T06:10:00Z",
+"conversationId": "c90",
+"hasAttachments": false
+},
+{
+"id": "m91",
+"subject": "Subject 091",
+"from": {
+"emailAddress": {
+"name": "Sender 091",
+"address": "s91@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T06:11:00Z",
+"conversationId": "c91",
+"hasAttachments": false
+},
+{
+"id": "m92",
+"subject": "Subject 092",
+"from": {
+"emailAddress": {
+"name": "Sender 092",
+"address": "s92@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T06:12:00Z",
+"conversationId": "c92",
+"hasAttachments": false
+},
+{
+"id": "m93",
+"subject": "Subject 093",
+"from": {
+"emailAddress": {
+"name": "Sender 093",
+"address": "s93@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T06:13:00Z",
+"conversationId": "c93",
+"hasAttachments": false
+},
+{
+"id": "m94",
+"subject": "Subject 094",
+"from": {
+"emailAddress": {
+"name": "Sender 094",
+"address": "s94@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T06:14:00Z",
+"conversationId": "c94",
+"hasAttachments": false
+},
+{
+"id": "m95",
+"subject": "Subject 095",
+"from": {
+"emailAddress": {
+"name": "Sender 095",
+"address": "s95@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T06:15:00Z",
+"conversationId": "c95",
+"hasAttachments": false
+},
+{
+"id": "m96",
+"subject": "Subject 096",
+"from": {
+"emailAddress": {
+"name": "Sender 096",
+"address": "s96@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T06:16:00Z",
+"conversationId": "c96",
+"hasAttachments": false
+},
+{
+"id": "m97",
+"subject": "Subject 097",
+"from": {
+"emailAddress": {
+"name": "Sender 097",
+"address": "s97@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T06:17:00Z",
+"conversationId": "c97",
+"hasAttachments": false
+},
+{
+"id": "m98",
+"subject": "Subject 098",
+"from": {
+"emailAddress": {
+"name": "Sender 098",
+"address": "s98@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T06:18:00Z",
+"conversationId": "c98",
+"hasAttachments": false
+},
+{
+"id": "m99",
+"subject": "Subject 099",
+"from": {
+"emailAddress": {
+"name": "Sender 099",
+"address": "s99@example.org"
+}
+},
+"receivedDateTime": "2026-10-06T06:19:00Z",
+"conversationId": "c99",
+"hasAttachments": false
+}
+]
+}

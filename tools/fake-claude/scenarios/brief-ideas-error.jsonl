@@ -1,0 +1,2 @@
+{"type": "system", "subtype": "init", "model": "fake-model-1", "session_id": "fake-session-ideas"}
+{"type": "result", "subtype": "error_during_execution", "is_error": true, "duration_ms": 4000, "num_turns": 2, "session_id": "00000000-0000-0000-0000-000000000000", "total_cost_usd": 0.05, "permission_denials": []}

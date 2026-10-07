@@ -1118,8 +1118,12 @@ Owner, **attended runs 1–5** (one per morning, timer still disabled):
 sudo systemctl start zyggy-morning-brief.service; sudo journalctl -u zyggy-morning-brief -n 30 --no-pager
 ```
 
-*Expect*: `key: credentials directory`, then `brief <date>: mail <n>, files <m>, replies <r>, suggestions <s>, facts
-<f>, turns <t>, cost <usd>, audit ok, exit 0`; **no `executed:` line anywhere**. `configuration error:
+*Expect* (from 0.3.0, spec 35): `key: credentials directory`, then `brief <date>: mail <n> (<u> urgent, <i> important,
+<o> other), files <m>, replies <r>, z <s>, you <y>, ideas <i>, facts <f>, turns <t>, cost <usd>, audit ok, exit 0`;
+**no `executed:` line anywhere**. Then ask the session for the brief ("morning brief"; `zyggy brief show`): one page,
+urgent mails first with `!`, the "I can do these" list `Z1. …`, "Only you can do these", "For the long run" with a
+basis line per suggestion; **no Draft** `Zyggy — morning brief` in Outlook. Then try "do Z1" on one item and check
+the prompt. (0.2.x expected the Draft described below.) `configuration error:
 version_mismatch: …` (exit 3) → section 14 "Binary missing or wrong version"; any other failure → "Brief or backfill
 run failed". `key: not found in credentials
 directory or file` → the `LoadCredential=` path (fix the unit); `EACCES`/`Read-only file system` → paste the path:
@@ -1205,8 +1209,12 @@ Costs, Dates, P0b row, Actions log); this section's status rows.
 
 ### 13l. Acting on the brief's suggestions — the daily routine [browser] — owner
 
-The brief's "## Suggested actions" lists what could be done; nothing happens until you ask in the session ("do 1
-and 3"). Each action is one tool call and one permission prompt: "Answering an action prompt" below.
+Ask the session for the brief ("morning brief"; "brief full" for the whole of it). Its "I can do these" list is
+numbered `Z1, Z2, …`; nothing happens until you ask in the session ("do Z1, Z3" or "do all Z"). Zyggy first checks
+each item with `zyggy brief items` and skips those you already handled in Outlook; each remaining action is one tool
+call and one permission prompt ("Answering an action prompt" below) — "file the other mails" asks once per mail, and a
+send is followed by a second prompt to move its Draft to Deleted Items. Answer a "For the long run" suggestion in
+your own words ("idea 2: not interested"); Zyggy records it with `zyggy brief idea`.
 
 ### Answering an action prompt [browser]
 
@@ -1438,9 +1446,13 @@ rejected"`, exit 6, before `claude`; no Draft, receipt or proposal. After the re
 ### Run the brief by hand [vm/root]
 
 `sudo systemctl start zyggy-morning-brief.service` (the unit runs `/usr/local/bin/zyggy m365 brief` with its
-environment and sandbox; never `zyggy m365 brief` from a session — the template's settings deny it there). A second run the same day prints `brief <date>: already created` (a receipt or a brief Draft of today
-exists); to run again on purpose, delete today's brief Draft in Outlook **and** the receipt
-`~/.local/state/zyggy/m365/brief-<date>.json`.
+environment and sandbox; never `zyggy m365 brief` from a session — the template's settings deny it there). From
+0.3.0 the run writes no Draft: it writes `~/.local/state/zyggy/brief/brief-<date>.md` and its item list
+`brief-<date>.json`, and you read it by asking the session for the brief (`zyggy brief show`). A second run the same
+day prints `brief <date>: already created` (today's brief file, or on a weekday the receipt
+`~/.local/state/zyggy/m365/brief-<date>.json`, exists); to run again on purpose, delete today's two brief files
+**and** the receipt. A receipt without the brief file prints `already created (brief file missing — runbook 13
+"Brief run failed")`.
 
 ### Brief or backfill run failed [vm/root] [vm/zyggy]
 
@@ -2070,10 +2082,79 @@ brief time"). A `denials <tool,…>` suffix on the journal line names tools the 
 brief, then `/doctor prompt-audit` if a prompt invited it. Other exit codes and the case where the model answered
 the literal `/skill` prompt: "Brief or backfill run failed".
 
+### Brief run failed — `show` prints the failure line [vm/root]
+
+Asking for the brief prints `exit <n>: <error> — runbook 13 "…"` (the last failed `brief.jsonl` row of today) or `no
+brief run recorded today — runbook 13 "Brief run failed"` after `expect_by` (07:00). Read the journal (`sudo
+journalctl -u zyggy-morning-brief -n 30 --no-pager`) and follow the entry the error names ("Brief or backfill run
+failed" by exit code). `no brief run recorded today`: the timer did not run — `systemctl list-timers
+zyggy-morning-brief.timer` (enabled? next run?), then "Run the brief by hand". A weekend run failed when its ideas
+run failed: "Ideas run failed but mail run succeeded" for the cause, then run it again by hand. `brief: <dir> is
+missing` or `<file> cannot be read` (exit 3): as `zyggy`, `ls -la ~/.local/state/zyggy/brief/` — no directory means
+no run has written a brief yet ("Run the brief by hand"); an unreadable file needs owner `zyggy`, mode 0600. `already
+created (brief file missing …)`: the run wrote its receipt but not the brief — delete the receipt
+`~/.local/state/zyggy/m365/brief-<date>.json` and run the brief by hand.
+
+### Brief longer than a page
+
+The journal line ends `, page exceeded` and the item list says `"page_exceeded": true`: the **urgent** mails and
+actions alone did not fit 40 lines / 3,500 characters, so nothing was dropped and the page is longer. Read that
+morning's brief in full ("brief full", `zyggy brief show --full <date>`) and check which mails were classed urgent:
+an urgent class comes from the model's judgment or from a due date the binary saw. Tell the agent which mails were
+wrongly urgent (a prompt fix in the template). Lower nothing and raise nothing: the page cap is never the fix, and an
+instance may only lower `page_max_lines`/`page_max_chars`.
+
+### Ideas run failed but mail run succeeded
+
+The brief's "For the long run" reads `- not available today (<detail>) — runbook 13 "Ideas run failed but mail run
+succeeded"`, and `brief.jsonl` has `"ideas_exit": 6`; the rest of the brief is complete. By the detail: `claude run
+failed (…)` → as "Model run failed" (`claude --version` as `zyggy`); `over the cap (…)` → raise `ideas_max_turns` or
+`ideas_budget_usd` in `instance/m365.json` `brief` ("Change caps, sites, exclusions or the brief time"); `invalid
+output (…)` → tell the agent (a prompt or schema fix in the template). On a weekend the same failure means no brief
+file at all (exit 6). Suggestions dropped by the binary (an invented basis line, an area shown yesterday, a repeat)
+are not failures: `brief.jsonl` counts them in `ideas_dropped`.
+
+### Attachment not read
+
+An invoice, statement or reminder line says `check the attachment (amount not read)`: the run could not read an
+amount. With `attachment_parse` true the model lists the mail's attachments and parses a PDF up to `file_max_bytes`
+with `zyggy m365 parse`; it says "not read" when there is no PDF, it is larger, the parser failed ("MarkItDown"), or
+the amount line held an account number that was redacted with nothing else on the line. Open the mail in Outlook.
+`attachment_parse` false turns attachment reading off on purpose (the line then always says "not read" unless the
+mail text states the amount).
+
+### Show an earlier brief
+
+Ask for the brief of a date ("show Tuesday's brief"; `zyggy brief show <YYYY-MM-DD>`, `--full` for all of it); briefs
+are kept `brief_keep_days` (14). The first brief you ask for each day also names the earlier briefs you have not
+seen (`N earlier briefs not shown (…) — say "show <date>"`). To reset that list, delete
+`~/.local/state/zyggy/brief/last-shown` as `zyggy` (the next brief you ask for sets it again). "do Z2 for yesterday"
+works only with the date you name (`zyggy brief items Z2 --date <date>`).
+
+### Return to the Draft brief
+
+There is no switch: 0.3.0 never writes a brief Draft (an instance that sets `brief.delivery` is refused with
+`configuration error: brief.delivery is removed …`). To get the 0.2.x Draft brief back, roll back to the previous
+pinned release (14c): on the laptop revert the instance's merge of the 35 template (and its `zyggy.json` pin) and
+push; on the VM pull, reinstall the units and the live settings (14a order), `ln -sfn /opt/zyggy/0.2.4/zyggy
+/usr/local/bin/zyggy`, and restart `claude-remote` once. The brief files of 0.3.0 stay in `~/.local/state/zyggy/brief/`
+until removed by hand; 0.2.4 does not read them.
+
+### Replies sent from another mailbox
+
+A mail you answered from another mailbox (a client's Outlook, a phone account) that is not copied into this mailbox
+still reads as unanswered: the brief sees only this mailbox's Sent Items. Nothing to fix; say "already answered"
+and, if Zyggy left a reply Draft for it, delete the Draft or ask "do Z<n>" on its discard item the next day.
+
 ### Audit flagged
 
-`zyggy m365 brief` (or `zyggy m365 verify <date> <window start>` by hand) ends `audit FLAGGED: …` (exit 5); the Drafts stay for your review. By the reason: a brief Draft not to you
-only, more than one brief Draft, more than `reply_cap` reply Drafts, a reply Draft to someone other than the
+`zyggy m365 brief` (or `zyggy m365 verify <date> <window start>` by hand) ends `audit FLAGGED: …` (exit 5); the Drafts stay for your review.
+From 0.3.0 the brief is still written and its **first line** is `audit FLAGGED: <reasons>` (also in the journal line
+and `brief.jsonl`); there is no brief Draft any more, so a Draft with the subject `Zyggy — morning brief` is itself a
+reason. Other 0.3.0 reasons: a reply Draft to a mail you had already answered (`… answers a mail the owner already
+answered`), and the brief's own checks (`link|address|secret <name>|contact detail withheld in <field>`, a Z item
+dropped because its mail or draft was not where expected) — the withheld text never reaches the brief. By the
+reason (0.2.x): a brief Draft not to you only, more than one brief Draft, more than `reply_cap` reply Drafts, a reply Draft to someone other than the
 sender/`replyTo` of a mail recorded as replied, a URL, an e-mail address or a secret shape in generated Draft text
 (a reply Draft is checked above Outlook's quote separator only — the quoted original below it is not generated
 text) → review and delete the Draft(s), refuse that day's proposals, tell the agent (the run does not count toward

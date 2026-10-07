@@ -1,0 +1,6 @@
+{"@odata.context":"fixture","value":[
+{"id":"m10","subject":"Invoice 2026-41 due 2026-10-10","from":{"emailAddress":{"name":"Carol Example","address":"carol@example.org"}},"receivedDateTime":"2026-10-06T06:12:00Z","conversationId":"c10","hasAttachments":true},
+{"id":"m11","subject":"Lunch on Thursday?","from":{"emailAddress":{"name":"Bob Example","address":"bob@example.org"}},"receivedDateTime":"2026-10-06T07:05:00Z","conversationId":"c11","hasAttachments":false},
+{"id":"m12","subject":"Q3 report draft","from":{"emailAddress":{"name":"Dana Example","address":"dana@example.org"}},"receivedDateTime":"2026-10-06T07:40:00Z","conversationId":"c12","hasAttachments":true},
+{"id":"m13","subject":"Team offsite dates","from":{"emailAddress":{"name":"Erin Example","address":"erin@example.org"}},"receivedDateTime":"2026-10-06T08:15:00Z","conversationId":"c13","hasAttachments":false}
+]}

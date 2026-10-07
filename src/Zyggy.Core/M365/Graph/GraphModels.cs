@@ -87,3 +87,15 @@ internal enum ItemKind
     File,
     Absent,
 }
+
+/// <summary>An Inbox message as the brief's pre-pass lists it (spec 35 Step 4): names only reach the brief; the address stays in the sidecar.</summary>
+internal sealed record InboxMessage(string Id, string Subject, string SenderName, string SenderAddress, string Received, string ConversationId, bool HasAttachments);
+
+/// <summary>A sent mail of a conversation: enough to know that, and when, the owner answered.</summary>
+internal sealed record SentMarker(string ConversationId, string Sent);
+
+/// <summary>Where a message is now; <see cref="Present"/> false for a 404.</summary>
+internal sealed record MessageLocation(bool Present, string? Id, string? ParentFolderId, string? ConversationId, string? Subject, string? SenderName, string? Received)
+{
+    public static MessageLocation Absent { get; } = new(false, null, null, null, null, null, null);
+}

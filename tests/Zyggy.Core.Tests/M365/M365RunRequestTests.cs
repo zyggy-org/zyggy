@@ -41,7 +41,7 @@ public sealed class M365RunRequestTests : IDisposable
 
         // Assert
         request.AllowedTools.Should().Equal(File.ReadAllLines(M365Run.Golden("run-lists", lists + "-allow.txt")));
-        request.DisallowedTools.Should().Equal(File.ReadAllLines(M365Run.Golden("run-lists", lists + "-deny.txt")));
+        request.DisallowedTools.Where(t => !t.StartsWith("Read(//", StringComparison.Ordinal)).Should().Equal(File.ReadAllLines(M365Run.Golden("run-lists", lists + "-deny.txt")), "the brief adds its per-run memory deny after the list");
         request.MaxTurns.Should().Be(turns);
         request.MaxBudgetUsd.Should().Be(decimal.Parse(budget, System.Globalization.CultureInfo.InvariantCulture));
         request.Model.Should().Be(model);
@@ -114,8 +114,38 @@ public sealed class M365RunRequestTests : IDisposable
 
         // Assert
         request.WorkingDirectory.Should().Be(_instance.Checkout);
-        request.Timeout.Should().Be(TimeSpan.FromMinutes(120));
+        request.Timeout.Should().Be(TimeSpan.FromMinutes(30), "spec 35: the mail run is shorter than 33's brief");
         request.MaxCaptureBytes.Should().Be(64 * 1024 * 1024);
+        request.Isolation.Should().Be(Zyggy.Core.Models.ModelSessionIsolation.NoAutoMemory);
+        request.JsonSchema.Should().Be(new Zyggy.Core.Brief.BriefPrompts().MailSchema);
+    }
+
+    [Fact]
+    public void For_Brief_RunDirectoryReadableMemoryDenied()
+    {
+        // Act
+        var request = M365RunRequest.For(M365RunKind.Brief, "/x", _instance, _configuration, _partition, "/tmp/run.ABC123");
+
+        // Assert
+        request.AllowedTools[^1].Should().Be("Read(/tmp/run.ABC123/**)");
+        request.DisallowedTools[^1].Should().Be($"Read(//{Path.Join(_instance.Checkout, "memory").Replace('\\', '/').TrimStart('/')}/**)");
+        request.DisallowedTools[^1].Should().NotStartWith("Read(///", "an absolute rule path has exactly two leading slashes");
+        request.DisallowedTools.Should().Contain("Bash(zyggy brief *)").And.Contain("Bash(zyggy memory *)");
+    }
+
+    [Theory]
+    [InlineData("MailBackfill")]
+    [InlineData("FilesBackfill")]
+    public void For_Backfill_UnchangedByTheBriefRules(string kind)
+    {
+        // Act
+        var request = M365RunRequest.For(Enum.Parse<M365RunKind>(kind), "/x", _instance, _configuration, _partition, "/tmp/run.ABC123");
+
+        // Assert
+        request.Timeout.Should().Be(TimeSpan.FromMinutes(120));
         request.Isolation.Should().Be(Zyggy.Core.Models.ModelSessionIsolation.None);
+        request.JsonSchema.Should().BeNull();
+        request.AllowedTools.Should().NotContain("Read(/tmp/run.ABC123/**)");
+        request.DisallowedTools.Should().NotContain(t => t.StartsWith("Read(//", StringComparison.Ordinal));
     }
 }

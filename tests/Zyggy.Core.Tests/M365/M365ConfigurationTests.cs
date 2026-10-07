@@ -62,6 +62,16 @@ public sealed class M365ConfigurationTests : IDisposable
         { """{"brief":{"max_turns":1.5}}""", "configuration error: .brief.max_turns must be an integer 0..100000000" },
         { """{"brief":{"file_max_bytes":"__delete__"}}""", "configuration error: .brief.file_max_bytes must be an integer 0..100000000" },
         { """{"brief":{"model":3}}""", "configuration error: brief.model is not a string" },
+        { """{"brief":{"delivery":"draft"}}""", "configuration error: brief.delivery is removed (spec 35: the brief is shown in the session; rollback restores the Draft brief)" },
+        { """{"brief":{"ideas_cap":-1}}""", "configuration error: .brief.ideas_cap must be an integer 0..100000000" },
+        { """{"brief":{"brief_keep_days":0}}""", "configuration error: .brief.brief_keep_days must be an integer 1..100000000" },
+        { """{"brief":{"page_max_lines":"40"}}""", "configuration error: .brief.page_max_lines must be an integer 1..100000000" },
+        { """{"brief":{"ideas_budget_usd":"1"}}""", "configuration error: .brief.ideas_budget_usd is not a number" },
+        { """{"brief":{"ideas_model":7}}""", "configuration error: brief.ideas_model is not a string" },
+        { """{"brief":{"attachment_parse":"yes"}}""", "configuration error: brief.attachment_parse is not true or false" },
+        { """{"brief":{"expect_by":"7am"}}""", "configuration error: brief.expect_by is not a time HH:MM" },
+        { """{"brief":{"weekend_days":["Funday"]}}""", "configuration error: brief.weekend_days is not an array of day names" },
+        { """{"brief":{"ideas_areas":{"career":"public"}}}""", "configuration error: brief.ideas_areas is not an object of area: work|private" },
         { """{"mail_backfill":{"exclude_folders":"junkemail"}}""", "configuration error: mail_backfill.exclude_folders is not a list of strings" },
         { """{"mail_backfill":{"batch_messages":-1}}""", "configuration error: .mail_backfill.batch_messages must be an integer 0..100000000" },
         { """{"mail_backfill":{"budget_usd_total":"x"}}""", "configuration error: .mail_backfill.budget_usd_total is not a number" },
@@ -95,6 +105,58 @@ public sealed class M365ConfigurationTests : IDisposable
         config.WriteDriveId.Should().Be("b!onedrive0001");
         config.FileMaxBytes.Should().Be(15728640);
         config.FileTextCapBytes.Should().Be(20000);
+    }
+
+    [Fact]
+    public void Load_BriefKeysAbsent_SpecDefaults()
+    {
+        // Arrange
+        File.Copy(M365Run.Golden("fixtures", "m365.json"), ConfigPath);
+
+        // Act
+        var configuration = Load().Configuration!;
+
+        // Assert
+        configuration.BriefKeepDays.Should().Be(14);
+        configuration.IdeasCap.Should().Be(3);
+        configuration.IdeasRepeatDays.Should().Be(14);
+        configuration.IdeasSuppressDays.Should().Be(90);
+        configuration.IdeasMaxTurns.Should().Be(20);
+        configuration.IdeasBudgetUsd.Should().Be(1.0m);
+        configuration.IdeasModel.Should().BeEmpty();
+        configuration.AttachmentParse.Should().BeTrue();
+        configuration.PageMaxLines.Should().Be(40);
+        configuration.PageMaxChars.Should().Be(3500);
+        configuration.ExpectBy.Should().Be(new TimeOnly(7, 0));
+        configuration.WeekendDays.Should().Equal(DayOfWeek.Saturday, DayOfWeek.Sunday);
+        configuration.IdeasAreas.Should().HaveCount(8);
+        configuration.IdeasAreas["career"].Should().Be("work");
+        configuration.IdeasAreas["home"].Should().Be("private");
+        configuration.SuggestionCap.Should().Be(10);
+        configuration.ReplyCap.Should().Be(3);
+    }
+
+    [Fact]
+    public void Load_BriefKeysPresent_Read()
+    {
+        // Arrange
+        WritePatched("""{"brief":{"ideas_cap":0,"brief_keep_days":30,"page_max_lines":25,"page_max_chars":2000,"attachment_parse":false,"expect_by":"06:30","weekend_days":["friday","saturday"],"ideas_areas":{"zyggy":"work"},"ideas_model":"sonnet","ideas_budget_usd":0.5}}""");
+
+        // Act
+        var configuration = Load().Configuration!;
+
+        // Assert
+        configuration.IdeasCap.Should().Be(0);
+        configuration.BriefKeepDays.Should().Be(30);
+        configuration.PageMaxLines.Should().Be(25);
+        configuration.PageMaxChars.Should().Be(2000);
+        configuration.AttachmentParse.Should().BeFalse();
+        configuration.ExpectBy.Should().Be(new TimeOnly(6, 30));
+        configuration.WeekendDays.Should().Equal(DayOfWeek.Friday, DayOfWeek.Saturday);
+        configuration.IdeasAreas.Should().Equal(new Dictionary<string, string> { ["zyggy"] = "work" });
+        configuration.IdeasModel.Should().Be("sonnet");
+        configuration.IdeasBudgetUsd.Should().Be(0.5m);
+        Zyggy.Core.Brief.BriefSettings.From(configuration).Should().BeEquivalentTo(new Zyggy.Core.Brief.BriefSettings(new TimeOnly(6, 30), 30, [DayOfWeek.Friday, DayOfWeek.Saturday]));
     }
 
     [Fact]

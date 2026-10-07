@@ -1,0 +1,4 @@
+{"@odata.context":"fixture","@odata.nextLink":"https://graph.microsoft.com/v1.0/users/alice@acme.example/mailFolders/sentitems/messages?$skip=100&page=2","value":[
+{"conversationId":"c11","sentDateTime":"2026-10-06T07:30:00Z"},
+{"conversationId":"c12","sentDateTime":"2026-10-06T07:00:00Z"}
+]}

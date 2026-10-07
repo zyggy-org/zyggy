@@ -43,3 +43,16 @@ internal static class M365InProcess
             ? TimeZoneInfo.CreateCustomTimeZone("Europe/Brussels", TimeSpan.FromHours(2), "Test/Brussels", "Test/Brussels")
             : TimeZoneInfo.FindSystemTimeZoneById(id);
 }
+
+/// <summary>Runs a whole <c>zyggy brief &lt;verb&gt;</c> inside the test with the stubbed Graph handler (the binary has no test switch).</summary>
+internal static class BriefInProcess
+{
+    public static async Task<(int Exit, VerbConsole Console)> RunAsync(
+        IReadOnlyDictionary<string, string?> environment, StubGraphHandler graph, string[] args, FakeTimeProvider clock)
+    {
+        var console = new VerbConsole();
+        var host = new Zyggy.Core.Brief.BriefVerbHost(environment, clock, TimeZoneInfo.FindSystemTimeZoneById, graph, checkKeyOwnership: OperatingSystem.IsLinux());
+        var exit = await host.RunAsync(args, console.Io, CancellationToken.None);
+        return (exit, console);
+    }
+}

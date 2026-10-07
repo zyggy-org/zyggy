@@ -177,13 +177,23 @@ internal sealed partial class DocumentParser(
         }
 
         // mapfile -t: lines split on LF, a last line without one included; each printed back with LF.
+        // Spec 35 AC-30: a line where only number-shaped patterns match keeps its text with the number redacted (re-tested; else withheld).
         var output = new List<byte>(clean.Count + 64);
+        var redactedEnds = new List<int>();
         foreach (var line in Lines([.. clean]))
         {
             var text = Encoding.UTF8.GetString(line);
             if (patterns.TryMatch(text, out var secret))
             {
-                output.AddRange(Encoding.UTF8.GetBytes($"[line withheld: matches secret pattern {secret}]"));
+                if (patterns.TryRedactNumberShaped(text, out var redacted, out _))
+                {
+                    output.AddRange(Encoding.UTF8.GetBytes(redacted));
+                    redactedEnds.Add(output.Count);
+                }
+                else
+                {
+                    output.AddRange(Encoding.UTF8.GetBytes($"[line withheld: matches secret pattern {secret}]"));
+                }
             }
             else
             {
@@ -214,8 +224,10 @@ internal sealed partial class DocumentParser(
         var lines = Lines(final);
         var shown = lines.Count;
         var hidden = lines.Count(line => Withheld().IsMatch(Encoding.UTF8.GetString(line)));
+        var redactedShown = redactedEnds.Count(end => end <= final.Length);
+        var redactedNote = redactedShown > 0 ? $", {redactedShown} redacted" : string.Empty;
         byte[] stdout = note.Length == 0 ? final : [.. final, .. Encoding.UTF8.GetBytes($"[cut at {cap} bytes]\n")];
-        stderr.Append(Prefix).Append(CultureInfo.InvariantCulture, $"{name} {shown - hidden} lines, {hidden} withheld{note}\n");
+        stderr.Append(Prefix).Append(CultureInfo.InvariantCulture, $"{name} {shown - hidden} lines, {hidden} withheld{redactedNote}{note}\n");
         return new ParseResult(0, stdout, stderr.ToString());
     }
 

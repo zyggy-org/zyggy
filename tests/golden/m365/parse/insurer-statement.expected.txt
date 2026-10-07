@@ -1,0 +1,9 @@
+# Insurance statement 2026-09
+
+Policy number: POL-2026-0042 (home insurance)
+Policyholder: Alice Example
+Direct debit from IBAN [redacted: iban] on the 5th of each month
+Card on file: [redacted: card-number] (expires 12/28)
+Amount due: 0.00 EUR
+[line withheld: matches secret pattern iban]
+Questions? Call the service desk.

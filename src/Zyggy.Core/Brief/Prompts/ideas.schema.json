@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Zyggy morning brief — ideas run output (spec 35)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["suggestions"],
+  "properties": {
+    "suggestions": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "area", "text", "whyNow", "basis", "prepare"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,59}$" },
+          "area": { "type": "string", "maxLength": 40 },
+          "text": { "type": "string", "minLength": 1, "maxLength": 160 },
+          "whyNow": { "type": "string", "minLength": 1, "maxLength": 160 },
+          "basis": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 3,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["file", "line"],
+              "properties": {
+                "file": { "type": "string", "maxLength": 200 },
+                "line": { "type": "string", "maxLength": 200 }
+              }
+            }
+          },
+          "deadline": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+          "prepare": { "type": ["string", "null"], "maxLength": 160 }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "date": "2026-10-06",
+  "generated": "2026-10-06T08:30:00Z",
+  "mode": "weekday",
+  "watermark": "2026-10-06T04:30:00Z",
+  "audit": "ok",
+  "auditReasons": [],
+  "counts": { "urgent": 1, "important": 3, "other": 3, "files": 1, "filesOther": 0 },
+  "page_exceeded": false,
+  "items": [
+    { "n": 1, "kind": "send", "messageId": "m12", "draftId": "d12", "subject": "Q3 report draft", "sender": { "name": "Dana Example", "address": "dana@example.org" }, "received": "2026-10-06T07:40:00Z" },
+    { "n": 2, "kind": "move", "messageId": "m13", "destination": "archive", "subject": "Team offsite dates", "sender": { "name": "Erin Example", "address": "erin@example.org" }, "received": "2026-10-06T08:15:00Z" },
+    { "n": 3, "kind": "discard-draft", "draftId": "d5", "destination": "deleteditems", "subject": "RE: Old thread", "sender": { "name": "alice@acme.example", "address": "" } },
+    { "n": 4, "kind": "move", "messageId": "m20", "destination": "archive", "subject": "Filed by hand", "sender": { "name": "Fay Example", "address": "fay@example.org" }, "received": "2026-10-06T06:00:00Z" },
+    { "n": 5, "kind": "move", "messageId": "m21", "destination": "deleteditems", "subject": "Deleted by hand", "sender": { "name": "Gus Example", "address": "gus@example.org" }, "received": "2026-10-06T06:05:00Z" },
+    { "n": 6, "kind": "move", "messageId": "d7", "destination": "archive", "subject": "Gone for good", "sender": { "name": "Hal Example", "address": "hal@example.org" }, "received": "2026-10-06T06:10:00Z" },
+    { "n": 7, "kind": "file-other", "messageIds": ["m13", "d4", "m20"], "destination": "archive", "subject": "3 other mails" }
+  ],
+  "ideas": [
+    { "n": 1, "id": "acme-renewal-offer", "area": "client" },
+    { "n": 2, "id": "family-autumn-trip", "area": "family" }
+  ]
+}

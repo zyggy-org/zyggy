@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 
 using Zyggy.Core.Models;
 using Zyggy.Core.Processes;
@@ -78,8 +79,8 @@ internal sealed class M365RunHarness : IDisposable
         return env;
     }
 
-    public Task<(int Exit, VerbConsole Console)> RunAsync(ActingModelRunner model, string[] args, CancellationToken cancellationToken) =>
-        M365InProcess.RunAsync(Env(), Graph, args, model: _ => model, cancellationToken: cancellationToken);
+    public Task<(int Exit, VerbConsole Console)> RunAsync(ActingModelRunner model, string[] args, CancellationToken cancellationToken, FakeTimeProvider? clock = null) =>
+        M365InProcess.RunAsync(Env(), Graph, args, clock, model: _ => model, cancellationToken: cancellationToken);
 
     /// <summary>Cancels <paramref name="source"/> once call <paramref name="call"/>'s stdin capture exists: the fake is running and has its prompt.</summary>
     public static async Task CancelWhenStartedAsync(ActingModelRunner model, int call, CancellationTokenSource source)
