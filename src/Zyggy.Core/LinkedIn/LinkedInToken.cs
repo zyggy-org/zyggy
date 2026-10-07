@@ -64,4 +64,5 @@ internal sealed class UtcSecondsConverter : JsonConverter<DateTimeOffset>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower, RespectRequiredConstructorParameters = true)]
 [JsonSerializable(typeof(LinkedInToken))]
 [JsonSerializable(typeof(OAuthPending))]
+[JsonSerializable(typeof(ActionRow))]
 internal sealed partial class LinkedInJsonContext : JsonSerializerContext;

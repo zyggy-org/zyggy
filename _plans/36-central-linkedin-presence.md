@@ -302,30 +302,30 @@ Gate placement: one per slice; Slice C is the new package on its own; Slice F ha
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: show, run by hand against the stand-in on Linux (podman):
+- [x] Behavioral verification: show, run by hand against the stand-in on Linux (podman):
   - the link `auth start` prints;
   - `auth finish` with a pasted address answering "connected: Alice Example, expires …";
   - `auth status` before and after, and 6 days before expiry with the "reconnect soon" line;
   - the refusals for a forged state, a cancelled sign-in, a link older than 30 minutes and another LinkedIn account.
 
   Show that the token file is 0600 in a 0700 directory and that none of the outputs or files outside it contain the token, the code or the client secret. Local tests and the Linux facts in podman are green.
-- [ ] Contract review:
+- [x] Contract review:
   - The URL parameters and scopes are `openid profile w_member_social`, no `email` (F1).
   - The token file fields, the exit codes 0 · 3 · 4 · 5 · 6 and the instance keys and defaults match the spec's Contracts.
   - Only `LinkedInEndpoints.cs` names LinkedIn's hosts.
   - The test-only API base accepts loopback only.
-- [ ] ⚠️ Risk review (secrets):
+- [x] ⚠️ Risk review (secrets):
   - The client secret and the token go only through `ISecretStore`, are never cached, and their buffers are cleared.
   - The client secret is read only at the moment of the exchange.
   - 33's m365 credential behaviour is unchanged.
   - Assumptions 5, 6 and 11 are acknowledged.
-- [ ] User approved — implementation may continue past this gate
+- [x] User approved — implementation may continue past this gate (owner, 2026-10-07)
 
 ---
 
 ## Step 4 — A publish request whose arguments are malformed, whose text must not be posted (empty, too long, a control character, a secret pattern, an e-mail address, a phone number), that repeats a text published in the last 24 h, or that arrives while publishing is switched off, LinkedIn is not connected or the token has expired, is refused before any request, never echoes what matched, and leaves exactly one action-log row (fakes)
 
-- [ ] Done
+- [x] Done — 2026-10-07 (executor notes: `PostArguments.TryParse` checks the shape only (no `maxChars` parameter): length and emptiness are `PostPolicy`'s, so a too-long text is refused as `too long (<n> > <max>)` rather than `invalid arguments`; the e-mail rule is `FactValidator.HoldsEmail`, the phone rule `ContactDetailPatterns`; `PublishPostTool` takes a `TextWriter` for its one stderr line; the request path of Step 5 was written in the same change and is proven by Step 5's tests; a failed log append is one stderr line and a result suffix `; action log not written`; Windows: 2038 + 308 passed)
 
 **Scope**:
 - `src/Zyggy.Core/LinkedIn/PostVisibility.cs` *(create)*: `PostVisibility { Public, Connections }` with wire values `PUBLIC` / `CONNECTIONS`.
