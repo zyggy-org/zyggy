@@ -20,8 +20,9 @@ internal sealed record RunOutcome(int Exit, IReadOnlyList<string> StdoutLines, I
 /// <summary>
 /// The model request of an m365 run (spec 33 Contracts): the prompt on stdin (decision 7), the checkout as working directory, the run's
 /// allow and deny lists from the tool partition, its caps and model from <c>instance/m365.json</c>, <c>ZYGGY_HOOKS=off</c>, the run
-/// directory and the unit's <c>CREDENTIALS_DIRECTORY</c> (for the headersHelper) as the only additions to the environment, the checkout's
-/// <c>.mcp.json</c> through <c>--mcp-config</c> (so that helper gets them), a 2-hour limit and a 64 MiB capture (Assumption 7).
+/// directory and the unit's <c>CREDENTIALS_DIRECTORY</c> (for the headersHelper) as the only additions to the environment, the m365-only
+/// copy of the checkout's <c>.mcp.json</c> (<see cref="RunMcpConfig"/>, spec 36 AC-8) through <c>--mcp-config</c> (so that helper gets
+/// them), a 2-hour limit and a 64 MiB capture (Assumption 7).
 /// </summary>
 internal static class M365RunRequest
 {
@@ -68,7 +69,7 @@ internal static class M365RunRequest
             Environment = environment,
             Isolation = brief ? ModelSessionIsolation.NoAutoMemory : ModelSessionIsolation.None,
             JsonSchema = brief ? new Brief.BriefPrompts().MailSchema : null,
-            McpConfig = Path.Join(instance.Checkout, ".mcp.json"),
+            McpConfig = instance.Paths.StateFile(RunMcpConfig.FileName),
             MaxCaptureBytes = 64 * 1024 * 1024,
         };
     }

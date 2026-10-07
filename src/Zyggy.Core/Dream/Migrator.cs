@@ -53,6 +53,7 @@ internal sealed class Migrator(IModelRunner model, DreamPrompts prompts)
                 MaxBudgetUsd = options.CallMaxBudgetUsd,
                 JsonSchema = prompts.MigrationSchema,
                 Model = options.Model,
+                DisallowedTools = LinkedIn.LinkedInRunDeny.Rules,
                 Isolation = ModelSessionIsolation.NoMcp | ModelSessionIsolation.NoHooks | ModelSessionIsolation.NoAutoMemory
                     | ModelSessionIsolation.NoSlashCommands,
                 Environment = new Dictionary<string, string> { ["ZYGGY_HOOKS"] = "off" },

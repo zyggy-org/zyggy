@@ -158,3 +158,8 @@ contract's order, every reserved `little` character escaped, `#dotnet` kept as a
 non-ASCII kept except characters outside the BMP, which JSON writes as a `\uXXXX` surrogate pair (System.Text.Json always does).
 `little/cases.tsv` is one input → commentary case per escaping rule (AC-14). `inbox-linkedin.md` is the new inbox file after one published
 post. `http/post-*` are LinkedIn's answers: the 201's `x-restli-id` header, and the 400/422/426/429 bodies as the Posts API documents them.
+
+Unattended runs (deliverable 36, Steps 9–10): `m365/fixtures/mcp-with-linkedin.json` is a checkout `.mcp.json` naming the `m365` server
+(the template's HTTP entry) and the `linkedin` stdio server; `m365/run-mcp.json` is the m365-only file a brief or backfill writes from it
+(two-space indent, `\n`, final newline). The three `m365/run-lists/*-deny.txt` lists and `brief/ideas-args.txt` end their common part
+with `mcp__linkedin__*` and `Bash(zyggy linkedin *)` (spec 36 AC-8).

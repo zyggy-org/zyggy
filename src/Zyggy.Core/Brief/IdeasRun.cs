@@ -32,6 +32,7 @@ internal sealed class IdeasRun(IModelRunner model, BriefPrompts prompts, BriefPa
             $"Read({principal}/inbox/m365-*)",
             $"Read({principal}/inbox/remember-*)",
             $"Read({principal}/.dream/**)",
+            .. LinkedIn.LinkedInRunDeny.Rules,
         ];
     }
 

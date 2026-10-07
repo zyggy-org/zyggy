@@ -21,6 +21,8 @@ public sealed class M365InstanceFixture : IDisposable
             Path.Combine(InstanceDirectory, "m365.json"),
             OperatingSystem.IsLinux() ? config : config.Replace("\"Europe/Brussels\"", "\"UTC\"", StringComparison.Ordinal));
         File.Copy(Golden("secret-patterns", "secret-patterns.txt"), Path.Combine(Checkout, ".claude", "hooks", "secret-patterns.txt"));
+        // Spec 36 AC-8: the checkout's .mcp.json names the linkedin server too, so the runs' m365-only filtering is proven against it.
+        File.Copy(Golden("m365", "fixtures", "mcp-with-linkedin.json"), Path.Combine(Checkout, ".mcp.json"));
         Directory.CreateDirectory(Path.Combine(MemoryRoot, "acme", "alice"));
         Directory.CreateDirectory(UserBin);
         Directory.CreateDirectory(RunDirectory);

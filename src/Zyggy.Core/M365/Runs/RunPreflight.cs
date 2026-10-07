@@ -15,7 +15,7 @@ internal sealed record RunSetup(M365Session Session, M365ToolPartition Partition
 
 /// <summary>
 /// The pre-flight of the brief and the backfills, before any request: the principal (optionally from the settings file, the backfills),
-/// <c>instance/m365.json</c>, the tool partition, <c>claude</c> resolvable (<c>ZYGGY_CLAUDE_PATH</c> or <c>PATH</c>) and the binary pin.
+/// <c>instance/m365.json</c>, the tool partition, the run's m365-only MCP configuration, <c>claude</c> resolvable (<c>ZYGGY_CLAUDE_PATH</c> or <c>PATH</c>) and the binary pin.
 /// </summary>
 internal static class RunPreflight
 {
@@ -37,6 +37,19 @@ internal static class RunPreflight
         if (M365ToolPartition.Load(session.Instance.Checkout) is not { Partition: { } partition } load)
         {
             return (null, 3, M365ToolPartition.Load(session.Instance.Checkout).Error, session.Warning);
+        }
+
+        // Spec 36 AC-8: the run loads only the m365 server, never the session's others (linkedin).
+        try
+        {
+            if (RunMcpConfig.WriteM365Only(session.Instance.Checkout, session.Instance.Paths).Error is { } mcpError)
+            {
+                return (null, 3, mcpError, session.Warning);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return (null, 3, $"configuration error: {ex.Message}", session.Warning);
         }
 
         var claude = Value(context.Environment, "ZYGGY_CLAUDE_PATH") ?? ProgramLocator.OnPath("claude", context.Environment);

@@ -651,15 +651,15 @@ Gate placement: one per slice; Slice C is the new package on its own; Slice F ha
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification:
+- [x] Behavioral verification:
   - Show a short MCP conversation with the built server: `initialize`, the `tools/list` answer with its one tool and schema, one `tools/call` that publishes to the stand-in, and the closing exit 0.
   - Show the same server offering no tool when `actions.enabled` is `[]`, and refusing to start (exit 5) under `ZYGGY_HOOKS=off`.
   - Show both published single-file binaries answering `tools/list`. CI on the draft PR is green.
-- [ ] Contract review:
+- [x] Contract review:
   - The tool name `publish_post`, its description, `additionalProperties: false`, `maxLength` = `post.max_chars`, and the result texts match spec Contracts "MCP tool".
   - The server name `linkedin` gives the permission rule `mcp__linkedin__publish_post`.
   - Exit codes 0 · 3 · 4 · 5.
-- [ ] ⚠️ Risk review (new package):
+- [x] ⚠️ Risk review (new package):
   - Licence Apache-2.0.
   - The transitive packages and versions as listed.
   - Any central version raised, and why.
@@ -668,13 +668,14 @@ Gate placement: one per slice; Slice C is the new package on its own; Slice F ha
   - The handler re-validates every argument.
   - No trimming is used (spec Dependencies).
   - Assumption 8 is acknowledged.
-- [ ] User approved — implementation may continue past this gate
+- [x] User approved — implementation may continue past this gate (owner, 2026-10-07; push and draft PR still held — not asked for)
 
 ---
 
 ## Step 9 — Every unattended model run is built without the linkedin server and with `mcp__linkedin__*` and `Bash(zyggy linkedin *)` denied: the m365 brief and backfills load an m365-only MCP configuration written for the run, the ideas run and the three dream calls carry the two deny rules, and only the adapter names LinkedIn's hosts (unit goldens)
 
-- [ ] Done
+- [x] Done — 2026-10-07 (executor notes: the m365-only file is written once in `RunPreflight` (the brief's and both backfills' shared pre-flight) and `M365RunRequest` points at `<state>/m365/run-mcp.json`, so the request builder's signature is unchanged; the `m365` entry is re-serialised (two-space indent, `
+`), not copied byte for byte; in the dream's arguments the deny list moves up as one `--disallowedTools mcp__*,mcp__linkedin__*,Bash(zyggy linkedin *)` and a lone `--strict-mcp-config` stays later in the vector; `Brief_McpConfigWithoutLinkedin_BeforeModelRun` is proven at the process boundary in Step 10 (`Brief_McpJsonWithoutM365_ExitThreeNoModelRun`, `Brief_CapturedArgs_RunMcpConfigOnlyM365…`) since the unit `BriefRunTests` bypass the pre-flight; PROVE was green only together with Step 10's fixture `.mcp.json`)
 
 **Scope**:
 - `src/Zyggy.Core/LinkedIn/LinkedInRunDeny.cs` *(create, internal static)*: `public static readonly IReadOnlyList<string> Rules = ["mcp__linkedin__*", "Bash(zyggy linkedin *)"]` (immutable; no static mutable state).
@@ -727,7 +728,7 @@ Gate placement: one per slice; Slice C is the new package on its own; Slice F ha
 
 ## Step 10 — Through the real process runner and `tools/fake-claude`, the captured argument lists of a weekday brief (mail run + ideas run), a mail backfill, a files backfill and a dream night show the linkedin rules denied and no linkedin server loaded, and while each m365 run is running its MCP configuration file holds only `m365` at 0600
 
-- [ ] Done
+- [x] Done — 2026-10-07 (executor notes: the run file is read while the model "runs" through `ActingModelRunner.Act`; `BriefTwoRunsEndToEndTests` needed no change (its golden carries the two rules); existing expectations changed only by the config path (brief, mail backfill) and the dream's deny list; Windows 2835 + 325, Linux (whole suite in the SDK container) 2873 + 366 passed)
 
 **Scope**:
 - `tests/Zyggy.Integration/Infrastructure/M365InstanceFixture.cs` *(modify, additive)*: the fixture checkout's `.mcp.json` is `tests/golden/m365/fixtures/mcp-with-linkedin.json`, so filtering is proven against a file that does name the linkedin server.

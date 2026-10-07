@@ -361,3 +361,5 @@ Bash(git *)
 Bash(npm *)
 Bash(npx *)
 Bash(node *)
+mcp__linkedin__*
+Bash(zyggy linkedin *)

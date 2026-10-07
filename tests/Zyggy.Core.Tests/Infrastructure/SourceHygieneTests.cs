@@ -40,6 +40,8 @@ public sealed partial class SourceHygieneTests
     [Theory]
     [InlineData("login.microsoftonline.com", "src/Zyggy.Core/M365/Graph/GraphEndpoints.cs")]
     [InlineData("graph.microsoft.com", "src/Zyggy.Core/M365/Graph/GraphEndpoints.cs")]
+    [InlineData("api.linkedin.com", "src/Zyggy.Core/LinkedIn/LinkedInEndpoints.cs")]
+    [InlineData("www.linkedin.com", "src/Zyggy.Core/LinkedIn/LinkedInEndpoints.cs")]
     public void Src_ServiceLiteral_OnlyInItsAdapter(string literal, string allowed)
     {
         // Act
@@ -93,6 +95,40 @@ public sealed partial class SourceHygieneTests
 
         // Assert
         holders.Should().NotBeEmpty().And.OnlyContain(f => f.StartsWith(Allowed, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Src_LinkedInVerbs_OnlyAuthAndMcpServer()
+    {
+        // Arrange: spec 36 AC-9 — no publishing verb on the command line; the only publish path is the consented MCP tool
+        var host = new Zyggy.Core.LinkedIn.LinkedInVerbHost(new Dictionary<string, string?>());
+        var table = typeof(Zyggy.Core.LinkedIn.LinkedInVerbHost)
+            .GetField("_verbs", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetValue(host) as System.Collections.IDictionary;
+
+        // Act
+        var verbs = table!.Keys.Cast<string>().Order(StringComparer.Ordinal).ToList();
+
+        // Assert
+        verbs.Should().Equal("auth finish", "auth start", "auth status", "mcp-server");
+    }
+
+    [Fact]
+    public void Src_LinkedInWrite_OnlyInCreatePost()
+    {
+        // Act: the Posts path is named once, and its route is used by one request — CreatePostAsync's
+        var pathHolders = SourceFiles().Where(f => File.ReadAllText(f).Contains("\"/rest/posts\"", StringComparison.Ordinal))
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/')).ToList();
+        var routeUsers = SourceFiles().Where(f => File.ReadAllText(f).Contains("routes.PostsUrl", StringComparison.Ordinal))
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/')).ToList();
+        var api = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Zyggy.Core", "LinkedIn", "LinkedInApi.cs"));
+        var createPost = api[api.IndexOf("public async Task<CreatePostResult> CreatePostAsync(", StringComparison.Ordinal)..];
+
+        // Assert
+        pathHolders.Should().Equal("src/Zyggy.Core/LinkedIn/LinkedInEndpoints.cs");
+        routeUsers.Should().Equal("src/Zyggy.Core/LinkedIn/LinkedInApi.cs");
+        Regex.Count(api, @"routes\.PostsUrl").Should().Be(1);
+        createPost[..createPost.IndexOf("\n    }\n", StringComparison.Ordinal)].Should().Contain("routes.PostsUrl");
     }
 
     private static List<string> SourceFiles() =>

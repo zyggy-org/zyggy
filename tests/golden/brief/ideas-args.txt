@@ -14,7 +14,7 @@ none
 --tools
 Read,Grep,Glob
 --disallowedTools
-mcp__*,Read(~/.config/zyggy/**),Read(~/.local/state/zyggy/**),Read(~/.cache/**),Read(~/.claude/**),Read(//<principal-rule>/inbox/m365-*),Read(//<principal-rule>/inbox/remember-*),Read(//<principal-rule>/.dream/**)
+mcp__*,Read(~/.config/zyggy/**),Read(~/.local/state/zyggy/**),Read(~/.cache/**),Read(~/.claude/**),Read(//<principal-rule>/inbox/m365-*),Read(//<principal-rule>/inbox/remember-*),Read(//<principal-rule>/.dream/**),mcp__linkedin__*,Bash(zyggy linkedin *)
 --add-dir
 <principal>
 --json-schema

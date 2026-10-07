@@ -49,7 +49,7 @@ internal sealed partial class M365Paths
     }
 
     [GeneratedRegex(
-        @"\A(mail-watermark|(files-)?backfill-[A-Za-z0-9!_=-]{1,200}\.watermark|drive-[A-Za-z0-9!_=-]{1,200}\.token|replied-[0-9]{4}-[0-9]{2}-[0-9]{2}\.ids|actions\.jsonl|brief\.jsonl|brief-[0-9]{4}-[0-9]{2}-[0-9]{2}\.json|mail-backfill\.json|files-backfill\.json)\z",
+        @"\A(mail-watermark|(files-)?backfill-[A-Za-z0-9!_=-]{1,200}\.watermark|drive-[A-Za-z0-9!_=-]{1,200}\.token|replied-[0-9]{4}-[0-9]{2}-[0-9]{2}\.ids|actions\.jsonl|brief\.jsonl|run-mcp\.json|brief-[0-9]{4}-[0-9]{2}-[0-9]{2}\.json|mail-backfill\.json|files-backfill\.json)\z",
         RegexOptions.CultureInvariant)]
     private static partial Regex StateFileName();
 }

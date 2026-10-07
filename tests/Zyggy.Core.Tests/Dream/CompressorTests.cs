@@ -95,6 +95,18 @@ public sealed class CompressorTests : IDisposable
             Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task Request_DisallowsLinkedInToolAndVerbs_NoMcp()
+    {
+        // Act
+        await CompressAsync(Valid());
+
+        // Assert: spec 36 AC-8
+        var request = (ModelRunRequest)_model.ReceivedCalls().Single().GetArguments()[0]!;
+        request.DisallowedTools.Should().Equal("mcp__linkedin__*", "Bash(zyggy linkedin *)");
+        global::Zyggy.Core.Models.ClaudeArguments.Build(request).Should().ContainInConsecutiveOrder("--disallowedTools", "mcp__*,mcp__linkedin__*,Bash(zyggy linkedin *)").And.Contain("--strict-mcp-config").And.NotContain("--mcp-config");
+    }
+
     public static TheoryData<string> InvalidCases() => ["over 300", "ratio", "no provenance", "stated unmapped", "other path"];
 
     [Theory]
