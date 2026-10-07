@@ -957,7 +957,7 @@ Slice H has two (first live run, definition of done).
 
 ## Step 14 — The template, the instance and the runbook are ready on their branches: the rules and `AGENTS.md` say the brief is shown when the owner asks for it, the minimum binary is `0.3.0`, the instance carries the new `brief` keys (and the Step 1 branch results), and the runbook has an entry for every new failure mode — nothing merged, nothing on Central
 
-- [ ] Done
+- [x] Done — 2026-10-07 (executor notes: template `cf258be` on PR zyggy-org/zyggy-core#1, CI 37576082529 green incl. the hygiene test with the secret list, bats 169/169; instance `b902274` on the local branch only, bats red only at the minimum-version case (pin 0.2.4 < 0.3.0, by design until Step 16); `instance/m365.json` validated by the binary's own loader; the client name for R2.6 is not in any file — `instance.md` asks the owner to name it; runbook: seven new entries, "Run the brief by hand", "Audit flagged", 13g and 13l updated, the three obsolete hook entries absent; every row of the spec's Failure modes table maps to an entry; 0002 §35 has the evidence skeleton and the P0b row. Found and fixed before the docs (`52caa8a`): the files rule took the owner's name from an unset key and fell back to the mailbox address, so on Central every file the owner changed would have counted as changed by someone else; the brief run now reads the mailbox user's displayName from Graph, with a regression test)
 
 **Scope**:
 - **Template** (`zyggy-core`, same branch), R7 as revised per AC-50 (each rule file ≤ 200 lines):
