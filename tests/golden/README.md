@@ -143,3 +143,11 @@ to send (its draft d12 still in Drafts), Z2 a move (m13 in the Inbox), Z3 an old
 hand (m20 in Archive), Z5 a mail deleted by hand (m21 in Deleted Items), Z6 a mail gone for good (d7 answers 404), Z7 the "file the
 other mails" item over m13, d4 and m20; and two ideas. The two message fixtures answer the location reads for m20 and m21; their routes
 are appended to `routes.tsv`.
+
+## `linkedin/` — LinkedIn presence on Central (deliverable 36)
+
+Hand-written from spec 36's Contracts, never produced by the code under test; every value is synthetic (no real LinkedIn id, member or
+token). `linkedin.json` is the fixture instance file with only the required keys and `actions.enabled` (every other key takes its code
+default; the client id is alphanumeric because the instance rule is `^[A-Za-z0-9]{1,64}$`). `auth-start-url.txt` is the one line
+`zyggy linkedin auth start` prints for it, with `<state>` in place of the fresh random state. `token.json` is the shape of the token file
+`auth finish` writes (compact, no trailing newline, timestamps in UTC with `Z`; `scope` as LinkedIn returns it, comma-separated).

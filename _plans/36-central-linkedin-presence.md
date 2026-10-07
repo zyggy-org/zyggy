@@ -84,7 +84,7 @@ Gate placement: one per slice; Slice C is the new package on its own; Slice F ha
 
 ## Step 1 — `zyggy linkedin auth start` prints one sign-in link with a fresh one-time state and remembers that state 0600; `auth status` says whether LinkedIn is connected, until when, warns from 7 days before expiry, and names a missing scope; the instance file is validated key by key (in process, temp config and state dirs, no network)
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done — 2026-10-07 (executor notes: built ahead of 35's definition of done on the owner's go of 2026-10-07 — local only, nothing released or on Central until 35 is Done; the tests were written alongside the code, so RED was not observed as a separate run; the synthetic client id is `clientid0001` because the instance rule `^[A-Za-z0-9]{1,64}$` refuses `client-id-0001`; `token.json` timestamps are UTC `…Z` and `scope` is accepted comma- or space-separated (LinkedIn answers with commas); a `LinkedInSession` loads instance + principal + store for the verbs that touch a credential; the 13 `_OnLinux` facts run at the gate in podman; Windows: 1933 + 303 passed)
 
 **Precondition**: 35 is Done (its final gate ticked).
 

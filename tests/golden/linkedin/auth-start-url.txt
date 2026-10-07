@@ -1,0 +1,1 @@
+https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=clientid0001&redirect_uri=https%3A%2F%2Flocalhost%2Fzyggy%2Flinkedin&state=<state>&scope=openid%20profile%20w_member_social
