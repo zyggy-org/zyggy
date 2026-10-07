@@ -515,7 +515,7 @@ Gate placement: one per slice; Slice C is the new package on its own; Slice F ha
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: show, side by side:
+- [x] Behavioral verification: show, side by side:
   - a sample text with brackets, an asterisk, an `@name`, a `#hashtag`, an emoji and two line breaks;
   - the exact request body sent to the stand-in;
   - the result line `published: urn:li:share:… — https://www.linkedin.com/feed/update/…/`;
@@ -523,25 +523,25 @@ Gate placement: one per slice; Slice C is the new package on its own; Slice F ha
   - the fact line in `inbox/linkedin-<date>.md`.
 
   Show the property test (500 random texts: what is sent, un-escaped, equals what was approved). Show one refusal per local rule (none echoes what matched), the duplicate refusal, and a server error that ends in "the post may exist — check your profile" after exactly one request. Linux facts in podman are green.
-- [ ] Contract review:
+- [x] Contract review:
   - The body fields and headers match spec AC-2.
   - The failure set and texts match AC-12.
   - The row fields match AC-22.
   - The fact line matches AC-22's format.
   - Nothing is retried.
   - No draft is stored (AC-23).
-- [ ] ⚠️ Risk review (public channel):
+- [x] ⚠️ Risk review (public channel):
   - What LinkedIn receives is exactly the approved text, by construction and by test.
   - A second Allow of the same text within 24 h publishes nothing.
   - An unclear outcome tells you to check the profile.
   - Assumptions 1–4 are acknowledged: characters counted as Unicode scalar values; a content-refused row stores no text; the order of checks; the fact excerpt rule.
-- [ ] User approved — implementation may continue past this gate
+- [x] User approved — implementation may continue past this gate (owner, 2026-10-07)
 
 ---
 
 ## Step 7 — The one tool's name, description and strict input schema are fixed from the instance's limits, and the server's start rule is decided before any protocol code exists: an unattended run is refused with exit 5, a configuration error exits 3, and with publishing switched off no tool is offered (pure, golden)
 
-- [ ] Done
+- [x] Done — 2026-10-07 (executor notes: `Decide` takes an optional zone lookup for the principal check (IANA ids off Linux); the schema/arguments agreement is shown on shape samples — the length bounds are the policy's (`Schema_LengthBounds_EnforcedByThePolicy`), as Step 4 moved them; Windows: 2819 + 310 passed)
 
 **Scope**:
 - `src/Zyggy.Core/LinkedIn/PublishPostDescriptor.cs` *(create, internal static)*:
