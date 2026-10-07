@@ -816,20 +816,20 @@ Slice H has two (first live run, definition of done).
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification:
+- [x] Behavioral verification:
   - Show a weekday brief with its "For the long run" section: each suggestion names its memory file and dated line.
   - Show a weekend brief with only that section, from private areas.
   - Show the two captured model calls side by side: the mail run, and the ideas run with only Read, Grep and Glob, your memory folder added read-only, no Microsoft 365 server, no hooks, no auto memory.
   - Show a suggestion with an invented basis line being dropped, and a failing ideas run that leaves the mail part intact with the "not available today" line.
-- [ ] Contract review:
+- [x] Contract review:
   - The ideas run gets only the date, weekday or weekend, the allowed areas, the cap and its own history — nothing from your mail.
   - The repeat (14 days), "not interested" (90 days), "later" and area-yesterday rules are in code.
   - The sidecar maps suggestion numbers to ids.
-- [ ] ⚠️ Risk review:
+- [x] ⚠️ Risk review:
   - This is the first scheduled run that reads your memory: it is read-only, the forbidden folders are denied (in the forms the probe proved), and the binary checks every basis line itself.
   - Assumption 2 (the inbox's mail-derived and `remember` files are denied by name, the GitHub inventory stays readable) is acknowledged.
   - No health, mental-state or personality inference is enforced by the prompt and your review of the five runs (AC-38).
-- [ ] User approved — implementation may continue past this gate
+- [x] User approved — implementation may continue past this gate (owner, 2026-10-07: "approve"; the five decisions reported at the gate accepted)
 
 ---
 
