@@ -42,6 +42,18 @@ internal sealed partial class LinkedInInProcess : IDisposable
             JsonSerializer.SerializeToElement(new Dictionary<string, string> { ["text"] = text, ["visibility"] = visibility }),
             TestContext.Current.CancellationToken);
 
+    /// <summary>Publishes with one image by path and SHA-256 (plan 36b D1).</summary>
+    public Task<ToolCallResult> PublishWithImageAsync(string text, string imagePath, string imageSha256, string? alt, string visibility = "PUBLIC")
+    {
+        var arguments = new Dictionary<string, string> { ["text"] = text, ["visibility"] = visibility, ["image_path"] = imagePath, ["image_sha256"] = imageSha256 };
+        if (alt is not null)
+        {
+            arguments["image_alt"] = alt;
+        }
+
+        return _tool.CallAsync(JsonSerializer.SerializeToElement(arguments), TestContext.Current.CancellationToken);
+    }
+
     public void Dispose() => _tool.Dispose();
 
     [GeneratedRegex("[?&]state=([^&\n]*)")]

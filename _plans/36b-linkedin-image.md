@@ -101,7 +101,8 @@ access (D2), no secret anywhere new.
 
 ## Step 3 — `publish_post` publishes a post with the approved image end to end: order, refusals, row, fact, duplicate key
 
-- [ ] Done
+- [x] Done — 2026-10-08 (executor notes: for an image post the row's `sha256` is the duplicate key `sha256(text + "
+" + image_sha256)`; image keys written only when present (text rows byte-identical); Windows 2906+328 green, Linux podman LinkedIn 1046+35 green incl. the symlink refusal and `Publish_WithImage_OnLinux_…`.)
 
 **Scope**:
 - `src/Zyggy.Core/LinkedIn/PublishPostTool.cs` *(modify)*: D4 order; D5 mapping; D6 one settle wait through `TimeProvider` (`Task.Delay(…, clock, ct)`); D7 duplicate key; result unchanged (`published: <urn> — <link>`).

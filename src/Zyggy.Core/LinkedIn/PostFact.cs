@@ -16,11 +16,12 @@ internal static partial class PostFact
 {
     public const int ExcerptMax = 120;
 
-    /// <summary>The fact part (what the validator judges), without the tag, date and source.</summary>
-    public static string Fact(PostVisibility visibility, string text) => $"Posted on LinkedIn ({visibility.Wire()}): \"{Excerpt(text)}\"";
+    /// <summary>The fact part (what the validator judges), without the tag, date and source; <c> (with an image)</c> for a post with one (plan 36b D7).</summary>
+    public static string Fact(PostVisibility visibility, string text, bool withImage = false) =>
+        $"Posted on LinkedIn ({visibility.Wire()}): \"{Excerpt(text)}\"" + (withImage ? " (with an image)" : string.Empty);
 
-    public static string Line(DateOnly date, string urn, PostVisibility visibility, string text) =>
-        $"- [observed] {date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)} (linkedin {urn}): {Fact(visibility, text)}";
+    public static string Line(DateOnly date, string urn, PostVisibility visibility, string text, bool withImage = false) =>
+        $"- [observed] {date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)} (linkedin {urn}): {Fact(visibility, text, withImage)}";
 
     /// <summary>The first sentence (up to <c>.</c>, <c>!</c> or <c>?</c> before whitespace or the end) or line, URLs as <c>[link]</c>, <c>"</c> as <c>'</c>, cut to 120.</summary>
     public static string Excerpt(string text)
