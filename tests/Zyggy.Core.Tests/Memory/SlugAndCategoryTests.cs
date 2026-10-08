@@ -33,7 +33,7 @@ public sealed class SlugAndCategoryTests
 
     [Theory]
     [InlineData("acme-corp", true)]
-    [InlineData("riziv-redis", true)]
+    [InlineData("work-redis", true)]
     [InlineData("0day", true)]
     [InlineData("a", true)]
     [InlineData("-a", false)]

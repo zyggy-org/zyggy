@@ -406,7 +406,7 @@ The work laptop is a separate trust boundary. Everything below is a hard require
 - The work node's outbound envelopes contain only: sender display name, subject, received date, one-line summary, requested action, deadline. No bodies, no attachments, no quoted text, no recipient lists beyond the sender.
 - Work-related memory lives in `memory/<tenant>/<user>/work/` on the work laptop, in its own git repo that is not the bus and is never pushed to GitHub.
 - Drafts are created in the M365 mailbox as Drafts; sending happens only by the user in Outlook. The node has no `mail.send` scope.
-- Before go-live the user confirms with RIZIV-INAMI security that (a) Claude Code with the Max subscription is allowed on work data, and (b) summaries may be pushed to a personal GitHub repo (both answered yes, §13 Q1). If GitHub cannot be reached through the corporate proxy in the P0 test (§5), the work node runs with `bus: disabled` and only local scheduled jobs; this fallback stays in the design.
+- Before go-live the user confirms with the employer's security team that (a) Claude Code with the Max subscription is allowed on work data, and (b) summaries may be pushed to a personal GitHub repo (both answered yes, §13 Q1). If GitHub cannot be reached through the corporate proxy in the P0 test (§5), the work node runs with `bus: disabled` and only local scheduled jobs; this fallback stays in the design.
 
 **Secrets**
 
@@ -629,7 +629,7 @@ All five open questions are answered as of 27 September 2026; the decisions tabl
 
 | # | Question | Blocks | Answer | Status |
 | --- | --- | --- | --- | --- |
-| Q1 | Does RIZIV-INAMI security allow Claude Code on work data and summaries pushed to a personal GitHub repo? | P4 | Yes; Claude Code and remote control already work on the work laptop. P4 proceeds without the `bus: disabled` fallback. | Decided |
+| Q1 | Does the employer's security team allow Claude Code on work data and summaries pushed to a personal GitHub repo? | P4 | Yes; Claude Code and remote control already work on the work laptop. P4 proceeds without the `bus: disabled` fallback. | Decided |
 | Q2 | Graph app registration with device-code flow, or Chrome against Outlook Web, for work mail? | P4 | Reuse the mail access Geoffrey already uses on the work laptop; no new app registration in v1. | Decided |
 | Q3 | Central hosting? | P1 | Azure VM, Standard B2as v2 (2 vCPU, 8 GB), Ubuntu 24.04, 64 GB Premium SSD, Tailscale; Azure Backup daily. Roughly €40–50/month against an unused €125 cloud budget. A VM beats containers here: persistent `~/.claude`, tmux, git and the CLI all live on one disk. | Decided |
 | Q4 | Session continuity for remote control after a service restart? | P1 | `claude-remote.service` runs a wrapper that finds the newest session in `~/.claude/projects/<dir>/` and starts `claude --resume <id> --remote-control`; falls back to a fresh session if none exists or resume fails. Verify in the installed version during P1. | Decided |
