@@ -125,4 +125,4 @@ internal sealed class StubGraphHandler : HttpMessageHandler
 }
 
 /// <summary>One request the stub received.</summary>
-internal sealed record RecordedRequest(HttpMethod Method, Uri Uri, IReadOnlyDictionary<string, string> Headers, string? Body);
+internal sealed record RecordedRequest(HttpMethod Method, Uri Uri, IReadOnlyDictionary<string, string> Headers, string? Body, byte[]? Bytes = null);

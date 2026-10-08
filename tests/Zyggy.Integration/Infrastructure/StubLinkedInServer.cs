@@ -8,7 +8,8 @@ namespace Zyggy.Integration.Infrastructure;
 /// <summary>
 /// A stand-in for LinkedIn on loopback HTTP/1.1, modelled on <see cref="FakeMcpServer"/> (spec 36 AC-15: the binary reaches it through
 /// <c>ZYGGY_LINKEDIN_API_BASE=http://127.0.0.1:&lt;port&gt;</c>). It answers <c>POST /oauth/v2/accessToken</c>, <c>GET /v2/userinfo</c> and
-/// <c>POST /rest/posts</c> from the golden successes, or from one-shot per-path answers queued by a test (status, headers, body, a delay,
+/// <c>POST /rest/posts</c> — and, for an image (plan 36b), <c>POST /rest/images</c> with an upload address on itself and
+/// <c>PUT /dms-uploads/…</c> — from the golden successes, or from one-shot per-path answers queued by a test (status, headers, body, a delay,
 /// a connection reset). It records every request; one request per connection.
 /// </summary>
 internal sealed class StubLinkedInServer : IAsyncDisposable
@@ -17,6 +18,9 @@ internal sealed class StubLinkedInServer : IAsyncDisposable
     public const string UserInfoPath = "/v2/userinfo";
     public const string PostsPath = "/rest/posts";
     public const string PostUrn = "urn:li:share:7000000000000000001";
+    public const string ImagesPath = "/rest/images";
+    public const string UploadPrefix = "/dms-uploads/";
+    public const string ImageUrn = "urn:li:image:C4E10AQFoyyAjHPMQuQ";
 
     private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
     private readonly CancellationTokenSource _stop = new();
@@ -69,11 +73,18 @@ internal sealed class StubLinkedInServer : IAsyncDisposable
 
     private static string Golden(string name) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "golden", "linkedin", "http", name));
 
-    private static Answer Default(string method, string path) => (method, path) switch
+    private Answer Default(string method, string path) => (method, path) switch
     {
         ("POST", TokenPath) => new Answer(200, Golden("token-ok.json"), string.Empty, null, false),
         ("GET", UserInfoPath) => new Answer(200, Golden("userinfo-ok.json"), string.Empty, null, false),
         ("POST", PostsPath) => new Answer(201, string.Empty, $"x-restli-id: {PostUrn}\r\n", null, false),
+        ("POST", ImagesPath) => new Answer(
+            200,
+            $$$"""{"value":{"uploadUrlExpiresAt":1650567510704,"uploadUrl":"{{{BaseAddress}}}/dms-uploads/C4E10AQFoyyAjHPMQuQ/uploaded-image/0?ut=x","image":"{{{ImageUrn}}}"}}""",
+            string.Empty,
+            null,
+            false),
+        ("PUT", _) when path.StartsWith(UploadPrefix, StringComparison.Ordinal) => new Answer(201, string.Empty, string.Empty, null, false),
         _ => new Answer(404, "{}", string.Empty, null, false),
     };
 
@@ -144,7 +155,7 @@ internal sealed class StubLinkedInServer : IAsyncDisposable
         var method = parts[0];
         var target = parts.Length > 1 ? parts[1] : string.Empty;
         var path = target.Split('?')[0];
-        Requests.Enqueue(new StubRequest(method, target, headers, length == 0 ? null : Encoding.UTF8.GetString(buffer, 0, read)));
+        Requests.Enqueue(new StubRequest(method, target, headers, length == 0 ? null : Encoding.UTF8.GetString(buffer, 0, read), buffer[..read]));
 
         var answer = _queued.TryGetValue(path, out var queue) && queue.TryDequeue(out var queued) ? queued : Default(method, path);
         if (answer.Delay is { } delay)
@@ -168,8 +179,8 @@ internal sealed class StubLinkedInServer : IAsyncDisposable
     private sealed record Answer(int Status, string Body, string Headers, TimeSpan? Delay, bool Reset);
 }
 
-/// <summary>One request the stand-in received: method, target (path and query), headers, body.</summary>
-internal sealed record StubRequest(string Method, string Target, IReadOnlyDictionary<string, string> Headers, string? Body)
+/// <summary>One request the stand-in received: method, target (path and query), headers, body (as text and as the raw bytes).</summary>
+internal sealed record StubRequest(string Method, string Target, IReadOnlyDictionary<string, string> Headers, string? Body, byte[] Bytes)
 {
     public string Path => Target.Split('?')[0];
 }

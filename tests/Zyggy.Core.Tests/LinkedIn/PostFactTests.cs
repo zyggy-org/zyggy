@@ -76,4 +76,14 @@ public sealed class PostFactTests
             + "- [observed] 2026-10-07 (linkedin urn:li:share:1): Posted on LinkedIn (PUBLIC): \"One.\"\n"
             + $"- [observed] 2026-10-07 (linkedin {Urn}): Posted on LinkedIn (PUBLIC): \"Two.\"\n");
     }
+
+    [Fact]
+    public void Line_WithImage_AddsSuffix()
+    {
+        // Act
+        var line = PostFact.Line(new DateOnly(2026, 10, 8), "urn:li:share:1", PostVisibility.Connections, "Human in the loop. More text.", withImage: true);
+
+        // Assert
+        line.Should().Be("- [observed] 2026-10-08 (linkedin urn:li:share:1): Posted on LinkedIn (CONNECTIONS): \"Human in the loop.\" (with an image)");
+    }
 }

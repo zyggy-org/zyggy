@@ -9,7 +9,9 @@ namespace Zyggy.Core.LinkedIn;
 
 /// <summary>
 /// One row of <c>actions.jsonl</c> (spec 36 AC-22): <c>{schema:1, ts, tool, urn, visibility, chars, sha256, text, status}</c>. A refusal
-/// for content stores no text (spec 36 Assumption 2); <c>urn</c> only after a published post.
+/// for content stores no text (spec 36 Assumption 2); <c>urn</c> only after a published post. A call with an image (plan 36b D7) adds
+/// <c>image_sha256</c>, <c>image_bytes</c> and, once uploaded, <c>image_urn</c> — absent otherwise, so text rows keep their bytes — and
+/// its <c>sha256</c> is the duplicate key <c>sha256(text + "\n" + image_sha256)</c>.
 /// </summary>
 internal sealed record ActionRow(
     int Schema,
@@ -20,7 +22,10 @@ internal sealed record ActionRow(
     int Chars,
     string Sha256,
     string? Text,
-    string Status)
+    string Status,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ImageSha256 = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? ImageBytes = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ImageUrn = null)
 {
     public const string Ok = "ok";
 }

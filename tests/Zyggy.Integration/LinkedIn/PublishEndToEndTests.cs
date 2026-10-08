@@ -66,6 +66,41 @@ public sealed class PublishEndToEndTests : IAsyncLifetime
 
     [Fact(SkipUnless = nameof(IsLinux), Skip = "the credential files: Linux only")]
     [SupportedOSPlatform("linux")]
+    public async Task Publish_WithImage_OnLinux_InitializeUploadPost_BytesExact_Row_Fact()
+    {
+        // Arrange: no settle wait in the test; the image in the default media folder under HOME
+        await LinkedInInProcess.ConnectAsync(_fixture, _stub);
+        var instance = Path.Combine(_fixture.InstanceDirectory, "linkedin.json");
+        File.WriteAllText(instance, File.ReadAllText(instance).TrimEnd().TrimEnd('}') + ",\"image\":{\"settle_ms\":0}}\n");
+        var media = Path.Combine(_fixture.Home, ".local", "share", "zyggy", "linkedin", "media");
+        Directory.CreateDirectory(media);
+        var png = new byte[200];
+        new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 4, 0xB0, 0, 0, 4, 0xB0, 8, 2 }.CopyTo(png, 0);
+        var image = Path.Combine(media, "deny.png");
+        File.WriteAllBytes(image, png);
+        var sha = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(png));
+        using var tool = new LinkedInInProcess(_fixture, _stub);
+
+        // Act
+        var result = await tool.PublishWithImageAsync("Hello", image, sha, "A thumb on Deny");
+
+        // Assert
+        result.Should().Be(new ToolCallResult(false, $"published: {Urn} — https://www.linkedin.com/feed/update/{Urn}/"));
+        _stub.To(StubLinkedInServer.ImagesPath).Should().ContainSingle().Which.Body.Should().Be("""{"initializeUploadRequest":{"owner":"urn:li:person:sub-alice-0001"}}""");
+        var upload = _stub.Requests.Where(r => r.Method == "PUT").Should().ContainSingle().Subject;
+        upload.Bytes.Should().Equal(png);
+        upload.Headers["Authorization"].Should().Be("Bearer " + LinkedInFixture.AccessToken);
+        _stub.To(StubLinkedInServer.PostsPath).Single().Body
+            .Should().Be(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "golden", "linkedin", "post-request-image.json")));
+        var row = JsonDocument.Parse(File.ReadAllLines(ActionLog).Single()).RootElement;
+        row.GetProperty("image_sha256").GetString().Should().Be(sha);
+        row.GetProperty("image_urn").GetString().Should().Be(StubLinkedInServer.ImageUrn);
+        File.ReadAllText(FactFile).Should().Contain($"(linkedin {Urn}): Posted on LinkedIn (PUBLIC): \"Hello\" (with an image)");
+        _fixture.EverythingOutsideCredentials().Should().NotContain(LinkedInFixture.AccessToken);
+    }
+
+    [Fact(SkipUnless = nameof(IsLinux), Skip = "the credential files: Linux only")]
+    [SupportedOSPlatform("linux")]
     public async Task Publish_OnLinux_Stub500_OutcomeUnknownRow_ExactlyOneRequest_NoFact()
     {
         // Arrange

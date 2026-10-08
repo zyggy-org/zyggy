@@ -26,6 +26,40 @@ public sealed class LinkedInConfigurationTests : IDisposable
         config.PostEnabled.Should().BeTrue();
         config.PostMaxChars.Should().Be(3000);
         config.ExpiryWarnDays.Should().Be(7);
+        config.Image.Dir.Should().Be(Path.Join(_fixture.Environment["HOME"], ".local", "share", "zyggy", "linkedin", "media"));
+        config.Image.MaxBytes.Should().Be(10 * 1024 * 1024);
+        config.Image.SettleMilliseconds.Should().Be(3000);
+    }
+
+    [Fact]
+    public void Load_ImageKeysSet_Values()
+    {
+        // Arrange
+        var dir = Path.Join(_fixture.Root, "media");
+        _fixture.WriteInstance(
+            "{\"client_id\":\"abc\",\"redirect_uri\":\"https://localhost/cb\",\"image\":{\"dir\":"
+            + System.Text.Json.JsonSerializer.Serialize(dir) + ",\"max_bytes\":5000,\"settle_ms\":0}}");
+
+        // Act
+        var config = LinkedInConfiguration.Load(_fixture.Environment).Configuration!;
+
+        // Assert
+        config.Image.Dir.Should().Be(dir);
+        config.Image.MaxBytes.Should().Be(5000);
+        config.Image.SettleMilliseconds.Should().Be(0);
+    }
+
+    [Fact]
+    public void Load_TildeImageDir_ExpandsHome()
+    {
+        // Arrange
+        _fixture.WriteInstance("""{"client_id":"abc","redirect_uri":"https://localhost/cb","image":{"dir":"~/pics"}}""");
+
+        // Act
+        var config = LinkedInConfiguration.Load(_fixture.Environment).Configuration!;
+
+        // Assert
+        config.Image.Dir.Should().Be(Path.Join(_fixture.Environment["HOME"], "pics"));
     }
 
     [Fact]
@@ -82,6 +116,13 @@ public sealed class LinkedInConfigurationTests : IDisposable
     [InlineData("""{"client_id":"abc","redirect_uri":"https://localhost/cb","post":{"max_chars":12.5}}""", "post.max_chars must be an integer 1..3000")]
     [InlineData("""{"client_id":"abc","redirect_uri":"https://localhost/cb","expiry_warn_days":0}""", "expiry_warn_days must be an integer 1..30")]
     [InlineData("""{"client_id":"abc","redirect_uri":"https://localhost/cb","scopes":"r_member_social"}""", "scopes is not a known key")]
+    [InlineData("""{"client_id":"abc","redirect_uri":"https://localhost/cb","image":{"dir":"relative/media"}}""", "image.dir must be an absolute path")]
+    [InlineData("""{"client_id":"abc","redirect_uri":"https://localhost/cb","image":{"max_bytes":0}}""", "image.max_bytes must be an integer 1..10485760")]
+    [InlineData("""{"client_id":"abc","redirect_uri":"https://localhost/cb","image":{"max_bytes":10485761}}""", "image.max_bytes must be an integer 1..10485760")]
+    [InlineData("""{"client_id":"abc","redirect_uri":"https://localhost/cb","image":{"settle_ms":-1}}""", "image.settle_ms must be an integer 0..10000")]
+    [InlineData("""{"client_id":"abc","redirect_uri":"https://localhost/cb","image":{"settle_ms":10001}}""", "image.settle_ms must be an integer 0..10000")]
+    [InlineData("""{"client_id":"abc","redirect_uri":"https://localhost/cb","image":{"video":true}}""", "image.video is not a known key")]
+    [InlineData("""{"client_id":"abc","redirect_uri":"https://localhost/cb","image":[]}""", "image must be an object")]
     public void Load_Misconfigured_ExitThreeNamesKey(string? json, string expected)
     {
         // Arrange

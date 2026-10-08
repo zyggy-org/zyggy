@@ -125,4 +125,32 @@ public sealed class LinkedInActionLogTests : IDisposable
 
     private static ActionRow Row(DateTimeOffset ts, string sha, string status, string? urn, string? text) =>
         new(1, ts, "publish_post", urn, "PUBLIC", 5, sha, text, status);
+
+    [Fact]
+    public void Append_WithImage_ImageKeysAfterStatus()
+    {
+        // Act
+        _log.Append(new ActionRow(1, LinkedInFixture.Now, "publish_post", "urn:li:share:1", "PUBLIC", 2, "key", "Hi", ActionRow.Ok, "img", 66, "urn:li:image:A1"));
+
+        // Assert
+        File.ReadAllText(_paths.ActionLog).Should().Be(
+            "{\"schema\":1,\"ts\":\"2026-10-07T08:00:00Z\",\"tool\":\"publish_post\",\"urn\":\"urn:li:share:1\",\"visibility\":\"PUBLIC\",\"chars\":2,\"sha256\":\"key\",\"text\":\"Hi\",\"status\":\"ok\",\"image_sha256\":\"img\",\"image_bytes\":66,\"image_urn\":\"urn:li:image:A1\"}\n");
+    }
+
+    [Fact]
+    public void RecentOk_OldRowWithoutImageKeys_StillFound()
+    {
+        // Arrange: a row written before plan 36b
+        Directory.CreateDirectory(Path.GetDirectoryName(_paths.ActionLog)!);
+        File.WriteAllText(
+            _paths.ActionLog,
+            "{\"schema\":1,\"ts\":\"2026-10-07T08:00:00Z\",\"tool\":\"publish_post\",\"urn\":\"urn:li:share:9\",\"visibility\":\"PUBLIC\",\"chars\":5,\"sha256\":\"abc\",\"text\":\"Hello\",\"status\":\"ok\"}\n");
+
+        // Act
+        var found = _log.RecentOk("abc", LinkedInFixture.Now.AddHours(-1));
+
+        // Assert
+        found!.Urn.Should().Be("urn:li:share:9");
+        found.ImageSha256.Should().BeNull();
+    }
 }

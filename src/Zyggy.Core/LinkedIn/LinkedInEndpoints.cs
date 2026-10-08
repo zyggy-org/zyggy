@@ -7,8 +7,9 @@ namespace Zyggy.Core.LinkedIn;
 /// <param name="AccessTokenUrl">The token exchange.</param>
 /// <param name="UserInfoUrl">The OpenID Connect user info.</param>
 /// <param name="PostsUrl">The Posts API.</param>
+/// <param name="ImagesUrl">The Images API's <c>initializeUpload</c> action (plan 36b L1).</param>
 /// <param name="Loopback">The loopback base when overridden, else <see langword="null"/>.</param>
-internal sealed record LinkedInRoutes(string AccessTokenUrl, string UserInfoUrl, string PostsUrl, Uri? Loopback);
+internal sealed record LinkedInRoutes(string AccessTokenUrl, string UserInfoUrl, string PostsUrl, string ImagesUrl, Uri? Loopback);
 
 /// <summary>The outcome of <see cref="LinkedInEndpoints.Resolve"/>: the routes, or the configuration error (exit 3).</summary>
 internal sealed record EndpointsLoad(LinkedInRoutes? Routes, string? Error);
@@ -28,6 +29,25 @@ internal static partial class LinkedInEndpoints
     private const string AccessTokenPath = "/oauth/v2/accessToken";
     private const string UserInfoPath = "/v2/userinfo";
     private const string PostsPath = "/rest/posts";
+    private const string ImagesPath = "/rest/images?action=initializeUpload";
+    private const string UploadPath = "/dms-uploads/";
+
+    /// <summary>
+    /// Whether an upload address LinkedIn handed out may receive the image (plan 36b D5, D10): HTTPS on <c>www.linkedin.com</c> under
+    /// <c>/dms-uploads/</c>, or — only when the routes are the loopback stand-in — that stand-in's own <c>/dms-uploads/</c>.
+    /// </summary>
+    public static bool IsAllowedUploadUrl(string address, LinkedInRoutes routes)
+    {
+        ArgumentNullException.ThrowIfNull(routes);
+        if (!Uri.TryCreate(address, UriKind.Absolute, out var uri) || !uri.AbsolutePath.StartsWith(UploadPath, StringComparison.Ordinal) || uri.UserInfo.Length != 0)
+        {
+            return false;
+        }
+
+        return routes.Loopback is { } loopback
+            ? uri.Scheme == loopback.Scheme && uri.Host == loopback.Host && uri.Port == loopback.Port
+            : uri.Scheme == Uri.UriSchemeHttps && uri.Host == "www.linkedin.com" && uri.IsDefaultPort;
+    }
 
     /// <summary>Where a published post is seen.</summary>
     public static string FeedUpdateUrl(string urn) => $"{Www}/feed/update/{urn}/";
@@ -37,7 +57,7 @@ internal static partial class LinkedInEndpoints
         ArgumentNullException.ThrowIfNull(environment);
         if (!environment.TryGetValue("ZYGGY_LINKEDIN_API_BASE", out var value) || string.IsNullOrEmpty(value))
         {
-            return new EndpointsLoad(new LinkedInRoutes(Www + AccessTokenPath, Api + UserInfoPath, Api + PostsPath, null), null);
+            return new EndpointsLoad(new LinkedInRoutes(Www + AccessTokenPath, Api + UserInfoPath, Api + PostsPath, Api + ImagesPath, null), null);
         }
 
         var match = LoopbackBase().Match(value);
@@ -46,7 +66,7 @@ internal static partial class LinkedInEndpoints
             return new EndpointsLoad(null, "configuration error: ZYGGY_LINKEDIN_API_BASE must be a loopback address");
         }
 
-        return new EndpointsLoad(new LinkedInRoutes(value + AccessTokenPath, value + UserInfoPath, value + PostsPath, new Uri(value)), null);
+        return new EndpointsLoad(new LinkedInRoutes(value + AccessTokenPath, value + UserInfoPath, value + PostsPath, value + ImagesPath, new Uri(value)), null);
     }
 
     [GeneratedRegex(@"\Ahttp://127\.0\.0\.1:([0-9]{1,5})\z", RegexOptions.CultureInvariant)]
