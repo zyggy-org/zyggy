@@ -897,7 +897,7 @@ Gate placement: one per slice; Slice C is the new package on its own; Slice F ha
 
 ## Step 12 — One release, `v0.4.0`, is tagged from `main` and placed on Central beside the running binary without being switched on; a rehearsal checks the new verbs against a scratch instance, and three throw-away probes check that Claude Code accepts the dream's new deny list, the m365-only MCP file shape and the ideas run's new deny list — before anything goes live
 
-- [ ] Done
+- [x] Done — 2026-10-08 (executor notes: precondition "35 Done" waived by the owner 2026-10-08 ("release 0.4.0 now, if problems exist on morning brief we'll correct them from the main branch"). main merged into the branch (runbook LinkedIn section renumbered **16** beside the document-skills section 15 — the template's "runbook 15" pointers become 16 in Step 13), PR #9 merged `c9fac3c`, `v0.4.0` released, installed side by side; rehearsal and P1–P3 recorded in 0002 §36. Probes need the session's `ZYGGY_MEMORY_ROOT/TENANT/USER`; P2 used `get-drive-root-item` because `list-mail-folders` is not a loaded tool.)
 
 **Precondition**: Gates A–E approved; 35 Done. A dream, 33 or 35 fix pending → it goes first (bugfix agent, from `main`); then merge `main` into the branch. **Owner (before this step)**: B1, B3, B4 done and the `client_id` and `redirect_uri` given to the agent (they go into `instance/linkedin.json` if Step 11 could not fill them).
 
