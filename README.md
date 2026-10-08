@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo/zyggy-logo.svg" alt="Zyggy logo" width="128" height="128"></p>
+
 # Zyggy
 
 **A personal AI assistant that remembers, briefs you every morning, and never acts without your say-so.**
