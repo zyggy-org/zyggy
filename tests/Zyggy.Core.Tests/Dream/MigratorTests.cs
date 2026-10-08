@@ -18,14 +18,14 @@ namespace Zyggy.Core.Tests.Dream;
 public sealed class MigratorTests : IDisposable
 {
     private const string Zyggy = "---\nname: Zyggy\ndescription: Zyggy, the platform\nupdated: 2026-09-25\n---\n- [stated] 2026-09-25: Goal: an assistant.\n";
-    private const string Redis = "---\nname: riziv-redis\ndescription: Redis at RIZIV\nupdated: 2026-09-25\n---\n- [stated] 2026-09-25: I run the Redis upgrade.\n";
+    private const string Redis = "---\nname: work-redis\ndescription: Redis at work\nupdated: 2026-09-25\n---\n- [stated] 2026-09-25: I run the Redis upgrade.\n";
     private const string Carol = "---\nname: carol\ndescription: \"Carol, Alice's sister\"\nupdated: 2026-09-28\n---\n- [stated] 2026-09-28: Carol is my sister.\r\n";
     private const string Tea = "- [stated] 2026-09-20: I like green tea.\n";
 
     private readonly MemoryTree _tree = new(
         ("profile.md", "- [stated] 2026-09-18: Alice.\n"),
         ("areas/zyggy.md", Zyggy),
-        ("areas/riziv-redis.md", Redis),
+        ("areas/work-redis.md", Redis),
         ("areas/.gitkeep", ""),
         ("people/carol.md", Carol),
         ("topics/tea.md", Tea),
@@ -46,7 +46,7 @@ public sealed class MigratorTests : IDisposable
     private static (string, string)[] ValidMoves() =>
     [
         ("areas/zyggy.md", "business/areas/zyggy.md"),
-        ("areas/riziv-redis.md", "business/areas/riziv-redis.md"),
+        ("areas/work-redis.md", "business/areas/work-redis.md"),
         ("people/carol.md", "private/people/carol.md"),
         ("topics/tea.md", "private/topics/tea.md"),
     ];
@@ -90,10 +90,10 @@ public sealed class MigratorTests : IDisposable
         outcome.Accepted.Should().BeTrue();
         outcome.Moves.Should().Be(4);
         set.Text("business/areas/zyggy.md").Should().Be(Zyggy);
-        set.Text("business/areas/riziv-redis.md").Should().Be(Redis);
+        set.Text("business/areas/work-redis.md").Should().Be(Redis);
         set.Text("private/people/carol.md").Should().Be(Carol);
         set.Text("private/topics/tea.md").Should().Be(Tea);
-        foreach (var legacy in new[] { "areas/zyggy.md", "areas/riziv-redis.md", "areas/.gitkeep", "people/carol.md", "topics/tea.md" })
+        foreach (var legacy in new[] { "areas/zyggy.md", "areas/work-redis.md", "areas/.gitkeep", "people/carol.md", "topics/tea.md" })
         {
             set.Exists(legacy).Should().BeFalse(legacy);
         }
@@ -105,7 +105,7 @@ public sealed class MigratorTests : IDisposable
 
         set.Exists("inbox/remember-2026-10-03.md").Should().BeTrue();
         _requests.Single().JsonSchema.Should().Be(new DreamPrompts().MigrationSchema);
-        _requests.Single().Prompt.Should().Contain("areas/riziv-redis.md — riziv-redis — Redis at RIZIV");
+        _requests.Single().Prompt.Should().Contain("areas/work-redis.md — work-redis — Redis at work");
     }
 
     [Fact]
@@ -115,7 +115,7 @@ public sealed class MigratorTests : IDisposable
         var (outcome, _) = await Migrate(Proposal(
         [
             ("areas/zyggy.md", "private/areas/zyggy.md"),
-            ("areas/riziv-redis.md", "business/topics/riziv-redis.md"),
+            ("areas/work-redis.md", "business/topics/work-redis.md"),
             ("people/carol.md", "business/people/carol.md"),
             ("topics/tea.md", "private/topics/tea.md"),
         ]));
@@ -128,17 +128,17 @@ public sealed class MigratorTests : IDisposable
     public async Task Migrate_NewCategory_CreatedWithIndex()
     {
         // Arrange
-        var moves = ValidMoves().Select(m => m.Item1 == "areas/riziv-redis.md" ? (m.Item1, "business/employer/riziv-redis.md") : m);
+        var moves = ValidMoves().Select(m => m.Item1 == "areas/work-redis.md" ? (m.Item1, "business/employer/work-redis.md") : m);
 
         // Act
-        var (outcome, set) = await Migrate(Proposal(moves, ("business", "employer", "The owner's employer RIZIV/NIHDI")));
+        var (outcome, set) = await Migrate(Proposal(moves, ("business", "employer", "The owner's employer")));
 
         // Assert
         outcome.Accepted.Should().BeTrue();
         outcome.CategoriesCreated.Should().Be(1);
         var index = MemoryFileReader.Parse(set.Text("business/employer/_index.md")!);
-        index.Description.Should().Be("The owner's employer RIZIV/NIHDI");
-        set.Text("business/employer/riziv-redis.md").Should().Be(Redis);
+        index.Description.Should().Be("The owner's employer");
+        set.Text("business/employer/work-redis.md").Should().Be(Redis);
     }
 
     public static TheoryData<string> InvalidCases() =>
@@ -240,7 +240,7 @@ public sealed class MigratorTests : IDisposable
     {
         // Arrange: on Central a legacy file can be untracked (written but never committed); git cannot commit its deletion.
         Returns(Proposal(ValidMoves()));
-        var git = new RecordingProcessRunner().On("status", RecordingProcessRunner.Ok("?? acme/alice/areas/riziv-redis.md\0 M acme/alice/topics/tea.md\0"));
+        var git = new RecordingProcessRunner().On("status", RecordingProcessRunner.Ok("?? acme/alice/areas/work-redis.md\0 M acme/alice/topics/tea.md\0"));
 
         // Act
         var record = await Runner(git).RunAsync(DreamTrigger.Manual, TestContext.Current.CancellationToken);
@@ -248,9 +248,9 @@ public sealed class MigratorTests : IDisposable
         // Assert
         record.Outcome.Should().Be("committed");
         var commit = git.CallsOf("commit").Single().Arguments;
-        commit.Should().NotContain("acme/alice/areas/riziv-redis.md").And.Contain("acme/alice/business/areas/riziv-redis.md");
+        commit.Should().NotContain("acme/alice/areas/work-redis.md").And.Contain("acme/alice/business/areas/work-redis.md");
         commit.Should().Contain("acme/alice/topics/tea.md", "a tracked legacy file's deletion is committed");
-        git.CallsOf("add").Single().Arguments.Should().Contain("acme/alice/business/areas/riziv-redis.md");
+        git.CallsOf("add").Single().Arguments.Should().Contain("acme/alice/business/areas/work-redis.md");
     }
 
     [Fact]

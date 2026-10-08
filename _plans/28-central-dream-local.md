@@ -435,7 +435,7 @@ Deserialisation uses `DreamJsonContext`; any `JsonException` → `Aborted(Format
 
 **RED** (`dotnet test tests/Zyggy.Core.Tests --filter "FullyQualifiedName~SecretPatternsTests|FullyQualifiedName~ContactDetailPatternsTests|FullyQualifiedName~DreamChecks"`):
 - `SecretPatternsTests`: `TryMatch_EverySecretSample_Matches` (`[MemberData]` over the copied `secret-samples.txt`), `TryMatch_EveryBenignSample_DoesNotMatch`, `Load_MissingFile_ReturnsLoadFailure`.
-- `ContactDetailPatternsTests`: e-mail rows, `+32 470 12 34 56`, `0470/12.34.56`, `0032 2 123 45 67` match; `2026-10-04`, `01J8Y3N7Q2X9Z4A5B6C7D8E9F0`, `v1.2.3`, `riziv-redis`, `[m365-mail 2026-10-03]` do not.
+- `ContactDetailPatternsTests`: e-mail rows, `+32 470 12 34 56`, `0470/12.34.56`, `0032 2 123 45 67` match; `2026-10-04`, `01J8Y3N7Q2X9Z4A5B6C7D8E9F0`, `v1.2.3`, `work-redis`, `[m365-mail 2026-10-03]` do not.
 - `DreamChecksTests` (AC-15, one `[Fact]` per row of Appendix B, named `CheckBatch_<Rule>_Aborts<Check>`, e.g. `CheckBatch_PathInAuto_AbortsPathRefused`, `CheckBatch_ObservedLineInProfile_AbortsIdentityObserved`, `CheckBatch_StatedInboxLineDropped_AbortsStatedDropped`, `CheckBatch_TargetEditedOnDiskSinceSnapshot_AbortsConcurrentEdit`). Each asserts the check, an unchanged pre-batch working set, an unchanged ledger, and no file write under the temp root.
 - `DreamChecksTests.CheckBatch_ValidProposal_ReturnsNull`; `DreamChecksTests.CheckBatch_EarlierBatchKept_WhenLaterBatchAborts` (via `DreamFiler` twice on one working set).
 - `DreamChecksRunLevelTests` (AC-17): `CheckRun_RemovalsOverTenPercentOfDurableLines_RunRemovalLimit`, `CheckRun_AtLimit_Passes`.
@@ -770,7 +770,7 @@ Every exception other than `OperationCanceledException` becomes `failed` with `c
 
 **GREEN**: moves keep bytes (no front-matter rewrite). The `_index.md` for a category takes `name` and `description` from `new_categories` or, for `areas`/`people`/`topics`, from fixed §7 meanings in the prompt resource. A legacy directory is removed when empty. The model's migration request uses the same isolation as filing.
 
-**Contract impact**: ⚠️ one-time rewrite of the durable layout (W-7). The three RIZIV/NIHDI files move like any other (OQ-2).
+**Contract impact**: ⚠️ one-time rewrite of the durable layout (W-7). The three employer files move like any other (OQ-2).
 
 **VERIFY**: failing-run command passes; build/test/format green.
 
@@ -921,7 +921,7 @@ If step 5 or 6 does not end `committed`/`partial`, **stop**: do not arm the time
 
 - [x] Behavioral verification: the two on-demand run records, their commits on `origin/main` (subjects, bodies, `--stat`), the journal excerpt with the argument vector, the wrong-pin exit 3, digest byte counts, `list-timers` output; template and instance CI run ids.
 - [x] Contract review: units against the spec table (no `LoadCredential=`, `ZYGGY_HOOKS=off`, `TimeoutStartSec`); pin file shape; runbook section 14 complete (AC-38); the `dream` skill text and its two allow rules.
-- [x] ⚠️ Risk review: binary root-owned and out of the `zyggy` user's write reach; hash = CI `SHA256SUMS` = pin; the RIZIV/NIHDI files migrated under `business/` (OQ-2); no secret in the first commits (quick grep); the Claude Code flags accepted by 2.1.289 (no `unknown option` in the journal).
+- [x] ⚠️ Risk review: binary root-owned and out of the `zyggy` user's write reach; hash = CI `SHA256SUMS` = pin; the employer files migrated under `business/` (OQ-2); no secret in the first commits (quick grep); the Claude Code flags accepted by 2.1.289 (no `unknown option` in the journal).
 - [x] User approved — implementation may continue past this gate — 2026-10-05 owner: "Yes" (Step 18 after the third night)
 
 ---

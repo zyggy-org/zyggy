@@ -67,7 +67,7 @@ public sealed class MemoryPathsTests
     [InlineData("inbox/m365-mail-backfill-2026-10-03.md", MemoryArea.Inbox)]
     [InlineData("auto/MEMORY.md", MemoryArea.Auto)]
     [InlineData(".dream/ledger.json", MemoryArea.Dream)]
-    [InlineData("areas/riziv-redis.md", MemoryArea.Legacy)]
+    [InlineData("areas/work-redis.md", MemoryArea.Legacy)]
     [InlineData("people/carol.md", MemoryArea.Legacy)]
     [InlineData("topics/tea.md", MemoryArea.Legacy)]
     [InlineData("README.md", MemoryArea.Other)]
