@@ -70,4 +70,20 @@ public sealed class PublishPostDescriptorTests
         PostPolicy.Check(new string('a', 3001), 3000, PublishHarness.Patterns).Should().Be("too long (3001 > 3000)");
         PostPolicy.Check(string.Concat(Enumerable.Repeat("ab ", 1000)), 3000, PublishHarness.Patterns).Should().BeNull();
     }
+
+    [Fact]
+    public void InputSchema_HasOptionalImageKeys_RequiredStillTextAndVisibility()
+    {
+        // Act
+        var schema = PublishPostDescriptor.InputSchema(3000);
+
+        // Assert
+        var properties = schema.GetProperty("properties");
+        properties.GetProperty("image_path").GetProperty("type").GetString().Should().Be("string");
+        properties.GetProperty("image_sha256").GetProperty("pattern").GetString().Should().Be("^[0-9a-f]{64}$");
+        properties.GetProperty("image_alt").GetProperty("maxLength").GetInt32().Should().Be(300);
+        schema.GetProperty("required").EnumerateArray().Select(e => e.GetString()).Should().Equal("text", "visibility");
+        schema.GetProperty("additionalProperties").GetBoolean().Should().BeFalse();
+        PublishPostDescriptor.Description.Should().Contain("one image the owner was shown");
+    }
 }

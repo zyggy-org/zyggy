@@ -7,6 +7,18 @@ namespace Zyggy.Core.LinkedIn;
 internal sealed record LinkedInConfigurationLoad(LinkedInConfiguration? Configuration, string? Error);
 
 /// <summary>
+/// The <c>image</c> section (plan 36b D2, D6): the one folder an attached image may come from (<see langword="null"/> when neither the key
+/// nor <c>HOME</c> gives one), the largest file in bytes, and the one wait between the upload and the post.
+/// </summary>
+internal sealed record LinkedInImageOptions(string? Dir, int MaxBytes, int SettleMilliseconds)
+{
+    public const int DefaultMaxBytes = 10 * 1024 * 1024;
+    public const int DefaultSettleMilliseconds = 3000;
+    public const int MaxSettleMilliseconds = 10000;
+}
+
+
+/// <summary>
 /// <c>instance/linkedin.json</c> (spec 36 Configuration), the instance being <c>ZYGGY_INSTANCE_DIR</c>, else
 /// <c>$CLAUDE_PROJECT_DIR/instance</c>. Absent keys take the code defaults; an unknown key is an error; the instance may only set values,
 /// so <c>actions.enabled</c> can only hold <c>post</c> and <c>post.max_chars</c> can only be lowered.
@@ -19,13 +31,16 @@ internal sealed partial record LinkedInConfiguration(
     string ApiVersion,
     IReadOnlyList<string> ActionsEnabled,
     int PostMaxChars,
-    int ExpiryWarnDays)
+    int ExpiryWarnDays,
+    LinkedInImageOptions Image)
 {
     public const string DefaultApiVersion = "202609";
     public const int MaxPostChars = 3000;
     public const string PostAction = "post";
 
-    private static readonly HashSet<string> TopKeys = new(["client_id", "redirect_uri", "member_sub", "api_version", "actions", "post", "expiry_warn_days"], StringComparer.Ordinal);
+    private static readonly HashSet<string> TopKeys = new(["client_id", "redirect_uri", "member_sub", "api_version", "actions", "post", "expiry_warn_days", "image"], StringComparer.Ordinal);
+
+    private static readonly HashSet<string> ImageKeys = new(["dir", "max_bytes", "settle_ms"], StringComparer.Ordinal);
 
     /// <summary>Gets a value indicating whether <c>actions.enabled</c> lists <c>post</c>.</summary>
     public bool PostEnabled => ActionsEnabled.Contains(PostAction, StringComparer.Ordinal);
@@ -50,7 +65,7 @@ internal sealed partial record LinkedInConfiguration(
         try
         {
             using var document = JsonDocument.Parse(File.ReadAllBytes(path));
-            return Validate(path, document.RootElement);
+            return Validate(path, document.RootElement, Get("HOME"));
         }
         catch (JsonException)
         {
@@ -62,7 +77,7 @@ internal sealed partial record LinkedInConfiguration(
         }
     }
 
-    private static LinkedInConfigurationLoad Validate(string path, JsonElement root)
+    private static LinkedInConfigurationLoad Validate(string path, JsonElement root, string? home)
     {
         LinkedInConfigurationLoad Error(string key, string reason) => Fail($"configuration error: {path}: {key} {reason}");
 
@@ -172,8 +187,61 @@ internal sealed partial record LinkedInConfiguration(
             warnDays = value;
         }
 
+        var imageDir = home is null ? null : System.IO.Path.Join(home, ".local", "share", "zyggy", "linkedin", "media");
+        var imageMax = LinkedInImageOptions.DefaultMaxBytes;
+        var settle = LinkedInImageOptions.DefaultSettleMilliseconds;
+        if (root.TryGetProperty("image", out var image))
+        {
+            if (image.ValueKind != JsonValueKind.Object)
+            {
+                return Error("image", "must be an object");
+            }
+
+            if (image.EnumerateObject().Select(p => p.Name).FirstOrDefault(name => !ImageKeys.Contains(name)) is { } unknownImage)
+            {
+                return Error("image." + unknownImage, "is not a known key");
+            }
+
+            if (image.TryGetProperty("dir", out var dir))
+            {
+                var text = dir.ValueKind == JsonValueKind.String ? dir.GetString()! : string.Empty;
+                if (text.StartsWith("~/", StringComparison.Ordinal) && home is not null)
+                {
+                    text = System.IO.Path.Join(home, text[2..]);
+                }
+
+                if (!System.IO.Path.IsPathFullyQualified(text))
+                {
+                    return Error("image.dir", "must be an absolute path (or ~/…)");
+                }
+
+                imageDir = System.IO.Path.TrimEndingDirectorySeparator(text);
+            }
+
+            if (image.TryGetProperty("max_bytes", out var maxBytes))
+            {
+                if (Integer(maxBytes, 1, LinkedInImageOptions.DefaultMaxBytes) is not { } value)
+                {
+                    return Error("image.max_bytes", $"must be an integer 1..{LinkedInImageOptions.DefaultMaxBytes}");
+                }
+
+                imageMax = value;
+            }
+
+            if (image.TryGetProperty("settle_ms", out var settleMs))
+            {
+                if (Integer(settleMs, 0, LinkedInImageOptions.MaxSettleMilliseconds) is not { } value)
+                {
+                    return Error("image.settle_ms", $"must be an integer 0..{LinkedInImageOptions.MaxSettleMilliseconds}");
+                }
+
+                settle = value;
+            }
+        }
+
         return new LinkedInConfigurationLoad(
-            new LinkedInConfiguration(path, clientId.GetString()!, redirect.GetString()!, memberSub, apiVersion, enabled, maxChars, warnDays),
+            new LinkedInConfiguration(
+                path, clientId.GetString()!, redirect.GetString()!, memberSub, apiVersion, enabled, maxChars, warnDays, new LinkedInImageOptions(imageDir, imageMax, settle)),
             null);
     }
 

@@ -47,7 +47,7 @@ access (D2), no secret anywhere new.
 
 ## Step 1 — The tool accepts and checks an image locally: arguments, schema, configuration, and the file rules — every refusal before any request
 
-- [ ] Done
+- [x] Done — 2026-10-08 (executor notes: `PostImage.Load(path, sha, dir, maxBytes)`; the pixel refusal carries the numbers: `image too many pixels (<n> ≥ 36152320)`; `image.dir not configured` when neither the key nor HOME gives one; golden `tool-publish_post.json` updated on purpose.)
 
 **Scope**:
 - `src/Zyggy.Core/LinkedIn/PostArguments.cs` *(modify)*: optional `ImagePath`, `ImageSha256`, `ImageAlt`; D1 pairing; `image_alt` ≤ 300 runes, no control characters; `image_sha256` `^[0-9a-f]{64}$`.
