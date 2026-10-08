@@ -40,6 +40,12 @@ internal sealed partial class BriefPaths
     /// <summary>Gets <c>last-shown</c>: the newest brief <c>zyggy brief show</c> has printed.</summary>
     public string LastShown => Path.Join(Directory, "last-shown");
 
+    /// <summary>
+    /// Gets <c>brief.request</c> in the state root (beside the <c>brief</c> and <c>m365</c> directories, as <c>dream.request</c> is): written by
+    /// <c>zyggy brief request</c>, watched by the instance's <c>zyggy-morning-brief.path</c> unit, deleted by <c>zyggy m365 brief</c> before it runs.
+    /// </summary>
+    public string Request => Path.Join(Path.GetDirectoryName(Directory), "brief.request");
+
     /// <summary>Gets <c>ideas.jsonl</c>: the suggestions shown and the owner's answers.</summary>
     public string IdeasLog => Path.Join(Directory, "ideas.jsonl");
 

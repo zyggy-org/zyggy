@@ -81,6 +81,23 @@ public sealed partial class BriefEndToEndTests : IDisposable
     }
 
     [Fact]
+    public async Task Brief_WithRequestFilePresent_FileDeletedBeforeTheRun()
+    {
+        // Arrange: the session asked for a brief (zyggy brief request); the path unit started this run
+        var request = Path.Combine(_run.Fixture.StateDirectory, "brief.request");
+        File.WriteAllText(request, string.Empty);
+        var model = _run.Model(_ => "m365-brief-mail-ok");
+
+        // Act
+        var (exit, console) = await BriefAsync(model, TestContext.Current.CancellationToken);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr + console.Stdout);
+        File.Exists(request).Should().BeFalse("a run that leaves the file would be restarted by the path unit");
+        File.Exists(Markdown).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Brief_80Mails_PageViewWithinCaps_FullViewComplete_SidecarCountsPageExceededFalse()
     {
         // Arrange: the Inbox holds m20..m99 (5 urgent, 60 important, 15 other), the model classes them all
