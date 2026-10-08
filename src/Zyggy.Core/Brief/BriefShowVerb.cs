@@ -162,7 +162,7 @@ internal sealed class BriefShowVerb(BriefVerbContext context)
 /// </summary>
 public sealed class BriefVerbHost
 {
-    private const string Usage = " (usage: zyggy brief show|items|idea …)";
+    private const string Usage = " (usage: zyggy brief show|items|idea|request …)";
 
     private readonly BriefVerbContext _context;
 
@@ -212,6 +212,8 @@ public sealed class BriefVerbHost
                 return await new BriefItemsVerb(_context).RunAsync(rest, io, cancellationToken).ConfigureAwait(false);
             case "idea":
                 return await new BriefIdeaVerb(_context).RunAsync(rest, io).ConfigureAwait(false);
+            case "request":
+                return await new BriefRequestVerb(_context).RunAsync(rest, io).ConfigureAwait(false);
             default:
                 await io.Error.WriteAsync($"brief: unknown verb '{ShellText.Prefix(args[0], 40)}'{Usage}\n").ConfigureAwait(false);
                 return 4;

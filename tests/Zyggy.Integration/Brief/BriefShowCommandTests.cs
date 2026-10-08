@@ -200,7 +200,7 @@ public sealed class BriefShowCommandTests : IDisposable
 
         // Assert
         run.ExitCode.Should().Be(4);
-        run.Stderr.Should().Be("brief: unknown verb 'inject' (usage: zyggy brief show|items|idea …)\n");
+        run.Stderr.Should().Be("brief: unknown verb 'inject' (usage: zyggy brief show|items|idea|request …)\n");
     }
 
     [Fact]
