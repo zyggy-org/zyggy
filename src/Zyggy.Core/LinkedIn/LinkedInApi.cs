@@ -81,13 +81,19 @@ internal sealed partial class LinkedInApi(LinkedInHttp http, LinkedInRoutes rout
     }
 
     public async Task<CreatePostResult> CreatePostAsync(
-        string accessToken, string authorUrn, string commentary, PostVisibility visibility, string apiVersion, CancellationToken cancellationToken)
+        string accessToken,
+        string authorUrn,
+        string commentary,
+        PostVisibility visibility,
+        string apiVersion,
+        CancellationToken cancellationToken,
+        PostMedia? media = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(accessToken);
         ArgumentNullException.ThrowIfNull(authorUrn);
         ArgumentNullException.ThrowIfNull(commentary);
         ArgumentNullException.ThrowIfNull(apiVersion);
-        using var request = new HttpRequestMessage(HttpMethod.Post, routes.PostsUrl) { Content = new ByteArrayContent(PostBody(authorUrn, commentary, visibility)) };
+        using var request = new HttpRequestMessage(HttpMethod.Post, routes.PostsUrl) { Content = new ByteArrayContent(PostBody(authorUrn, commentary, visibility, media)) };
         request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         request.Headers.Add("Linkedin-Version", apiVersion);
@@ -122,8 +128,86 @@ internal sealed partial class LinkedInApi(LinkedInHttp http, LinkedInRoutes rout
         };
     }
 
-    /// <summary>The request body, keys in the contract's order (spec 36 AC-2).</summary>
-    public static byte[] PostBody(string authorUrn, string commentary, PostVisibility visibility)
+    public async Task<ImageUploadStart> InitializeImageUploadAsync(string accessToken, string ownerUrn, string apiVersion, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(accessToken);
+        ArgumentNullException.ThrowIfNull(ownerUrn);
+        ArgumentNullException.ThrowIfNull(apiVersion);
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer, Compact))
+        {
+            writer.WriteStartObject();
+            writer.WriteStartObject("initializeUploadRequest");
+            writer.WriteString("owner", ownerUrn);
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, routes.ImagesUrl) { Content = new ByteArrayContent(buffer.ToArray()) };
+        request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        request.Headers.Add("Linkedin-Version", apiVersion);
+        request.Headers.Add("X-Restli-Protocol-Version", "2.0.0");
+
+        int status;
+        string body;
+        try
+        {
+            using var response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            status = (int)response.StatusCode;
+            body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
+        {
+            return new ImageUploadStart(null, ex is TaskCanceledException ? "initialize: timeout" : "initialize: connection failed");
+        }
+
+        if (status != 200)
+        {
+            return new ImageUploadStart(null, $"initialize: LinkedIn answered {status}");
+        }
+
+        using var document = Parse(body);
+        var value = document?.RootElement is { ValueKind: JsonValueKind.Object } root && root.TryGetProperty("value", out var v) ? v : (JsonElement?)null;
+        var uploadUrl = String(value, "uploadUrl");
+        var image = String(value, "image");
+        if (uploadUrl is null || image is null || !ImageUrn().IsMatch(image))
+        {
+            return new ImageUploadStart(null, "initialize: no upload address");
+        }
+
+        return LinkedInEndpoints.IsAllowedUploadUrl(uploadUrl, routes)
+            ? new ImageUploadStart(new ImageUploadTicket(uploadUrl, image), null)
+            : new ImageUploadStart(null, "upload address not allowed");
+    }
+
+    public async Task<string?> UploadImageAsync(string accessToken, string uploadUrl, ReadOnlyMemory<byte> bytes, string mediaType, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(accessToken);
+        ArgumentNullException.ThrowIfNull(uploadUrl);
+        ArgumentNullException.ThrowIfNull(mediaType);
+        if (!LinkedInEndpoints.IsAllowedUploadUrl(uploadUrl, routes))
+        {
+            return "upload address not allowed";
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, uploadUrl) { Content = new ReadOnlyMemoryContent(bytes) };
+        request.Content.Headers.ContentType = new MediaTypeHeaderValue(mediaType);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        try
+        {
+            using var response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            var status = (int)response.StatusCode;
+            return status is >= 200 and < 300 ? null : $"upload: LinkedIn answered {status}";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
+        {
+            return ex is TaskCanceledException ? "upload: timeout" : "upload: connection failed";
+        }
+    }
+
+    /// <summary>The request body, keys in the contract's order (spec 36 AC-2), <c>content.media</c> before <c>lifecycleState</c> (plan 36b L5).</summary>
+    public static byte[] PostBody(string authorUrn, string commentary, PostVisibility visibility, PostMedia? media = null)
     {
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer, Compact))
@@ -139,6 +223,20 @@ internal sealed partial class LinkedInApi(LinkedInHttp http, LinkedInRoutes rout
             writer.WriteStartArray("thirdPartyDistributionChannels");
             writer.WriteEndArray();
             writer.WriteEndObject();
+            if (media is not null)
+            {
+                writer.WriteStartObject("content");
+                writer.WriteStartObject("media");
+                if (media.AltText is { } alt)
+                {
+                    writer.WriteString("altText", alt);
+                }
+
+                writer.WriteString("id", media.ImageUrn);
+                writer.WriteEndObject();
+                writer.WriteEndObject();
+            }
+
             writer.WriteString("lifecycleState", "PUBLISHED");
             writer.WriteBoolean("isReshareDisabledByAuthor", false);
             writer.WriteEndObject();
@@ -215,4 +313,7 @@ internal sealed partial class LinkedInApi(LinkedInHttp http, LinkedInRoutes rout
 
     [GeneratedRegex(@"\Aurn:li:(share|ugcPost):[0-9]+\z", RegexOptions.CultureInvariant)]
     private static partial Regex PostUrn();
+
+    [GeneratedRegex(@"\Aurn:li:image:[A-Za-z0-9_-]+\z", RegexOptions.CultureInvariant)]
+    private static partial Regex ImageUrn();
 }

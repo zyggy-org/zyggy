@@ -16,7 +16,25 @@ public sealed class LinkedInEndpointsTests
         routes.AccessTokenUrl.Should().Be("https://www.linkedin.com/oauth/v2/accessToken");
         routes.UserInfoUrl.Should().Be("https://api.linkedin.com/v2/userinfo");
         routes.PostsUrl.Should().Be("https://api.linkedin.com/rest/posts");
+        routes.ImagesUrl.Should().Be("https://api.linkedin.com/rest/images?action=initializeUpload");
         routes.Loopback.Should().BeNull();
+        LinkedInEndpoints.IsAllowedUploadUrl("https://www.linkedin.com/dms-uploads/A/uploaded-image/0?x=1", routes).Should().BeTrue();
+        LinkedInEndpoints.IsAllowedUploadUrl("https://api.linkedin.com/dms-uploads/A", routes).Should().BeFalse();
+        LinkedInEndpoints.IsAllowedUploadUrl("http://127.0.0.1:5000/dms-uploads/A", routes).Should().BeFalse();
+        LinkedInEndpoints.IsAllowedUploadUrl("not a url", routes).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Resolve_Loopback_MovesImagesAndAllowsLoopbackUpload()
+    {
+        // Act
+        var routes = LinkedInEndpoints.Resolve(new Dictionary<string, string?> { ["ZYGGY_LINKEDIN_API_BASE"] = "http://127.0.0.1:5000" }).Routes!;
+
+        // Assert
+        routes.ImagesUrl.Should().Be("http://127.0.0.1:5000/rest/images?action=initializeUpload");
+        LinkedInEndpoints.IsAllowedUploadUrl("http://127.0.0.1:5000/dms-uploads/A", routes).Should().BeTrue();
+        LinkedInEndpoints.IsAllowedUploadUrl("http://127.0.0.1:5001/dms-uploads/A", routes).Should().BeFalse();
+        LinkedInEndpoints.IsAllowedUploadUrl("https://www.linkedin.com/dms-uploads/A", routes).Should().BeFalse();
     }
 
     [Theory]

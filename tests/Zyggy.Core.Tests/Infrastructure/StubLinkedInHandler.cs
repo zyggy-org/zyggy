@@ -15,6 +15,8 @@ internal sealed class StubLinkedInHandler : HttpMessageHandler
     public const string TokenUrl = "^https://www\\.linkedin\\.com/oauth/v2/accessToken$";
     public const string UserInfoUrl = "^https://api\\.linkedin\\.com/v2/userinfo$";
     public const string PostsUrl = "^https://api\\.linkedin\\.com/rest/posts$";
+    public const string ImagesUrl = "^https://api\\.linkedin\\.com/rest/images\\?action=initializeUpload$";
+    public const string UploadUrl = "^https://www\\.linkedin\\.com/dms-uploads/";
 
     private readonly List<Route> _routes = [];
     private readonly List<Route> _scenario = [];
@@ -70,10 +72,11 @@ internal sealed class StubLinkedInHandler : HttpMessageHandler
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var uri = request.RequestUri!;
-        var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var bytes = request.Content is null ? null : await request.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+        var body = bytes is null ? null : Encoding.UTF8.GetString(bytes);
         var headers = request.Headers.Concat(request.Content?.Headers ?? Enumerable.Empty<KeyValuePair<string, IEnumerable<string>>>())
             .ToDictionary(h => h.Key, h => string.Join(", ", h.Value), StringComparer.OrdinalIgnoreCase);
-        Requests.Add(new RecordedRequest(request.Method, uri, headers, body));
+        Requests.Add(new RecordedRequest(request.Method, uri, headers, body, bytes));
 
         if (uri.Scheme != Uri.UriSchemeHttps)
         {
@@ -85,12 +88,17 @@ internal sealed class StubLinkedInHandler : HttpMessageHandler
             Violations.Add("host: " + uri.Host);
         }
 
-        if (request.Method == HttpMethod.Post && uri.AbsolutePath is not ("/oauth/v2/accessToken" or "/rest/posts"))
+        if (request.Method == HttpMethod.Post && uri.AbsolutePath is not ("/oauth/v2/accessToken" or "/rest/posts" or "/rest/images"))
         {
             Violations.Add("POST: " + uri);
         }
 
-        if (request.Method != HttpMethod.Get && request.Method != HttpMethod.Post)
+        if (request.Method == HttpMethod.Put && !(uri.Host == "www.linkedin.com" && uri.AbsolutePath.StartsWith("/dms-uploads/", StringComparison.Ordinal)))
+        {
+            Violations.Add("PUT: " + uri);
+        }
+
+        if (request.Method != HttpMethod.Get && request.Method != HttpMethod.Post && request.Method != HttpMethod.Put)
         {
             Violations.Add($"{request.Method}: {uri}");
         }

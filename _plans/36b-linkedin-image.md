@@ -75,7 +75,7 @@ access (D2), no secret anywhere new.
 
 ## Step 2 — The adapter uploads an image and posts with it: initialize, PUT, the post body with `content.media`
 
-- [ ] Done
+- [x] Done — 2026-10-08 (executor notes: `InitializeImageUploadAsync`/`UploadImageAsync`; `CreatePostAsync(..., PostMedia? media = null)` keeps text posts byte-identical; reasons `initialize: …`, `upload: …`, `upload address not allowed`; the stub handler records raw bytes and allows the image POST and the upload PUT.)
 
 **Scope**:
 - `src/Zyggy.Core/LinkedIn/LinkedInEndpoints.cs` *(modify)*: `ImagesInitializePath = "/rest/images?action=initializeUpload"`, `UploadPrefix = Www + "/dms-uploads/"`; routes gain `ImagesInitializeUrl`; `IsAllowedUploadUrl(Uri, LinkedInRoutes)` (the prefix, or the loopback base in tests).
