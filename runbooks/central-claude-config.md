@@ -98,6 +98,7 @@ Always start Claude in `/srv/agent/central`, never in `memory/` (hooks are per w
 | 13k 0002 section 23 complete (AC-21..AC-24) | pending | agent |
 | 13-D8a Loopback server unit, self-refreshing token (AC-25..AC-29) | installed 2026-10-04 (ahead of R7, owner's go); probe and idle tests pending | agent install and restart done; owner probe, idle test |
 | 13l Acting on the brief's suggestions — the daily routine | pending | owner, from the first brief on |
+| 15 Office documents (`document-skills`) | done 2026-10-08 | template `27cd35f`, instance `7d1598f`; plugin `683bc88e56f3` project scope; tools 15b/15c; smoke and `claude -p` (four skills) pass; instance CI not started (GitHub billing/spending limit on the private repo) |
 
 ## 1. Repositories, instance, deploy keys, SSH config [browser] [laptop] [vm/zyggy]
 
@@ -1686,6 +1687,54 @@ on the VM, then the units (14a step 5). Never lower `.claude/zyggy-min-version` 
 pin to a version that is not installed. If the VM already pulled the template: install the binary and pin first
 (14b), or roll the instance back to the commit before the template merge (14c).
 
+## 15. Office documents — Anthropic's `document-skills` plugin [laptop] [vm/root] [vm/zyggy] — agent
+
+The `pdf`, `docx`, `xlsx` and `pptx` skills come from Anthropic's `document-skills` plugin in the
+`anthropic-agent-skills` marketplace (`anthropics/skills`, a second Anthropic marketplace beside
+`claude-plugins-official`). Zyggy never copies these skills into a repository: their licence forbids reproducing or
+redistributing them, so they are only installed through `claude plugin install`. Done 2026-10-08 (owner decision:
+Central, template plugin).
+
+**15a Template** — `d:\source\zyggy-core\.claude\settings.json` declares the marketplace in
+`extraKnownMarketplaces` (`anthropic-agent-skills` → GitHub `anthropics/skills`) and enables
+`"document-skills@anthropic-agent-skills": true`; `tests/repo.bats` asserts both and that no `pdf`/`docx` skill folder
+is vendored. Then "Update Central from the template".
+
+**15b Machine tools [vm/root]** — the skills call these; none is in the template:
+
+```bash
+apt-get install -y --no-install-recommends libreoffice-writer libreoffice-calc libreoffice-impress fonts-dejavu   fonts-liberation2 pandoc poppler-utils qpdf pdftk-java tesseract-ocr tesseract-ocr-eng tesseract-ocr-nld   tesseract-ocr-fra python3-pip python-is-python3 python3-pypdf python3-reportlab python3-openpyxl python3-pandas   python3-pil python3-defusedxml python3-lxml
+```
+
+**15c User libraries [vm/zyggy]** — Python packages Ubuntu 24.04 does not ship go to `~/.local`; the Node packages to
+`~/.local/lib/office-node`, linked as `~/.node_modules` so `require()` finds them from any directory without
+`NODE_PATH` and nothing is installed into the checkout:
+
+```bash
+pip install --user --break-system-packages pdfplumber pytesseract pdf2image "markitdown[pptx,xlsx,docx,pdf]"
+mkdir -p ~/.local/lib/office-node && cd ~/.local/lib/office-node && npm init -y >/dev/null   && npm install docx pptxgenjs pdf-lib react react-dom react-icons sharp   && ln -sfn ~/.local/lib/office-node/node_modules ~/.node_modules
+```
+
+**15d Plugin [vm/zyggy]**, in `/srv/agent/central`:
+
+```bash
+claude plugin marketplace add anthropics/skills        # writes the marketplace into ~/.claude/settings.json too
+claude plugin install document-skills@anthropic-agent-skills --scope project
+git diff --quiet .claude/settings.json || { git show HEAD:.claude/settings.json | jq -S . > /tmp/a; jq -S . .claude/settings.json > /tmp/b; cmp /tmp/a /tmp/b && git checkout -- .claude/settings.json; }
+f=~/.claude/settings.json; t=$(mktemp); jq --indent 2 'del(.extraKnownMarketplaces)' $f > $t && install -m 600 $t $f && rm $t
+claude plugin list                                      # document-skills@anthropic-agent-skills, project, enabled
+```
+
+The install re-orders the keys of the tracked `.claude/settings.json` (same content): compare with `jq -S`, then
+restore it. The user-scope marketplace entry is removed because the project file declares it and nothing plugin-related
+lives at user scope on Central.
+
+**15e Verify [vm/zyggy]** — tool smoke in a throw-away directory: a PDF written with reportlab and read back with pypdf
+and pdfplumber; a `.docx` from `docx` and a `.pptx` from `pptxgenjs` read with pandoc and markitdown; `soffice
+--headless --convert-to pdf|csv` (a formula `=A1*21` recalculates to 42); `qpdf --check`; `tesseract --version`. Then
+`ZYGGY_HOOKS=off claude -p "Which of these skills are available to you right now: pdf, docx, xlsx, pptx? …"` from
+`/srv/agent/central` → all four `yes`; tree clean.
+
 ## Re-run the digest by hand
 
 ```bash
@@ -1712,6 +1761,8 @@ adds hooks or MCP servers in `~/.claude/plugins/cache/<marketplace>/<plugin>/<ve
 - **Switch a template plugin off on this instance**: `"<name>@<marketplace>": false` in `instance/settings.local.json`,
   then the same commit → push → pull → step-4 `install`.
 - **Never at user scope on Central** (the soak directory must not inherit it).
+- **Another Anthropic marketplace** (e.g. `anthropic-agent-skills`): declare it in the template's
+  `extraKnownMarketplaces` next to the `enabledPlugins` entry, and follow section 15d for the install.
 - **Auto-update** is left on (marketplace default). To pin after a breaking update:
   `extraKnownMarketplaces["claude-plugins-official"].autoUpdate=false` in `~/.claude/settings.json` of `zyggy`,
   recorded in 0002.
