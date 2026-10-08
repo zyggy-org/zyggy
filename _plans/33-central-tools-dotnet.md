@@ -1668,7 +1668,7 @@ If any of steps 3–5 fails: **stop**. Do not continue to Step 22. Roll back per
   - No token, key or JWT anywhere on Central.
   - The real key was moved only by you, and only for the drill; its mode and date are unchanged.
   - The records hold no mail content.
-  - The work boundary is unchanged: Central only, the Digiverse tenant only.
+  - The work boundary is unchanged: Central only, the <company> tenant only.
   - 34 can start on this foundation: the credential store table, the "replace the environment" option, the fact-line writer and the hygiene test rows.
 - [x] User approved — deliverable 33 is done — closed by owner decision 2026-10-06 ("Close 33 now"); open items carried to 35 Step 17
 

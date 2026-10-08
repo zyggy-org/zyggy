@@ -19,7 +19,7 @@ public sealed class ProvenanceTests
     [InlineData("m365-mail 2026-10-03 RE: Update leasing contract", "m365-mail 2026-10-03 RE: Update leasing contract")]
     [InlineData("m365-mail 2026-10-03 RE: Update leasing contract", "m365-mail 2026-10-03")]
     [InlineData("m365-mail 2026-10-03 RE: Update leasing contract", "remember 2026-10-04; m365-mail 2026-10-03 leasing")]
-    [InlineData("m365-file b!abc:/Documents/Digiverse/tesla/invoice.pdf 2026-09-01", "m365-file 2026-09-01")]
+    [InlineData("m365-file b!abc:/Documents/Acme/car/invoice.pdf 2026-09-01", "m365-file 2026-09-01")]
     [InlineData("github-inventory 2026-10-01", "github-inventory 2026-10-01")]
     public void Satisfied_SameSourceAndDate_True(string source, string target)
     {
@@ -42,7 +42,7 @@ public sealed class ProvenanceTests
     public void Satisfied_FileDateAfterLongPath_UsesTheSourceKindAndFirstDate()
     {
         // Arrange: the files backfill puts the drive path between the kind and the date.
-        var source = Observed("m365-file b!abc:/Documents/Digiverse/tesla/geoffrey (2023 to 2024)/Invoices/2024-01.pdf 2026-10-03");
+        var source = Observed("m365-file b!abc:/Documents/Acme/car/alice (2023 to 2024)/Invoices/2024-01.pdf 2026-10-03");
 
         // Assert
         DreamChecks.ProvenanceSatisfied(source, Target("m365-file 2026-10-03")).Should().BeTrue();

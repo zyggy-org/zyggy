@@ -96,7 +96,7 @@ Evidence kinds as in 33: **U** unit (`tests/Zyggy.Core.Tests`), **I** integratio
 
 Rules for these checks: results go in 0002 section 34 (one row per id), and the original 0002 §32 row gets a pointer to it (AC-17). Records hold exit codes, counts, ids and refusal lines only, never the token or repository contents. Work boundary unchanged: the employer repository is only named in a refused request, never cloned or read.
 
-**Owner reminder (not a test, no acceptance row):** two secrets were found in `salon25-api` during 32 (0002 §32 AC-3); their rotation is still unconfirmed. The plan's final gate repeats this reminder to the owner; it does not block the gate.
+**Owner reminder (not a test, no acceptance row):** two secrets were found in `<private-repo>` during 32 (0002 §32 AC-3); their rotation is still unconfirmed. The plan's final gate repeats this reminder to the owner; it does not block the gate.
 
 ---
 

@@ -1,4 +1,4 @@
-# Spec: 23 — Digiverse Microsoft 365 on Central: morning brief, Drafts, prompt-consented sending and OneDrive file creation, mail and files backfills through an MCP server with an app-only certificate credential (P0b)
+# Spec: 23 — <company> Microsoft 365 on Central: morning brief, Drafts, prompt-consented sending and OneDrive file creation, mail and files backfills through an MCP server with an app-only certificate credential (P0b)
 
 > Founding-spec sections: §1 In scope, Non-goals ("No automatic sending of e-mail or messages without explicit user confirmation"), Constraints (O33); §3 Central agent instance (`.mcp.json`), Skills (`triage-mail`); §6 Central executing its own jobs; §7 File format, Rules, dream pass; §8 Secrets table, Isolation (O29/O32), Injection, Work boundary / "Two trust boundaries" (O33); §10 Central, Claude Code side; §11 Runbooks, Alerts; §13 Q2 (unchanged), Q5 (reversed by D4), "Two trust boundaries" row; §14 shape kept. Roadmap entry: `_plans/ROADMAP.md` #23 and its brief (D1 → D6 → **D7**). Repo conventions: `_specs/27-…`, `_specs/31-…` (Finding 3 credential file, Finding 4 client assertion), `_specs/32-…` (Findings 1 and 5), `_plans/decisions/0002-central-productive.md` section 23 (evidence of Steps 1–15), `runbooks/central-claude-config.md` section 13, `.claude/templates/spec-template.md`. Executed template: `d:\source\zyggy-core` (`.claude/skills/m365/*`, `tests/m365.bats`, `tests/fixtures/m365/*`, `.claude/settings.json`; PATH fix `4e42911`).
 >
@@ -10,8 +10,8 @@
 |------|-------------------------------------------|
 | Plan 23 | Steps 1–15 Done on Central; **paused in Step 16** (the D6 session/approve test) by D7. Slices A–C gates approved under D6. |
 | Identity | App-only certificate identity `zyggy-central` works (PS256 assertion accepted); key `~/.config/zyggy/m365-app.key` (0600) on the VM. |
-| Exchange | RBAC for Applications: `Application Mail.ReadWrite` **and** `Application Mail.Send`, both scoped to `geoffrey@digiverse.be` (`InScope True`; another mailbox → 403). No Entra mail grant. |
-| Files | Entra `Sites.Selected`; **one `read` grant** on the OneDrive site `digiversebe-my.sharepoint.com,870a4a68-…,02f1046b-…`; the ungranted root drive → 403. |
+| Exchange | RBAC for Applications: `Application Mail.ReadWrite` **and** `Application Mail.Send`, both scoped to `<owner-mailbox>` (`InScope True`; another mailbox → 403). No Entra mail grant. |
+| Files | Entra `Sites.Selected`; **one `read` grant** on the OneDrive site `<tenant>-my.sharepoint.com,<site-id>,<web-id>`; the ungranted root drive → 403. |
 | Server | `@softeria/ms-365-mcp-server@0.157.2` connected in the remote session (after the PATH fix, template `4e42911`); `ENABLED_TOOLS` = the 14-tool allowlist (`tests/fixtures/m365/enabled-tools.txt`); the six auth tools outside `ENABLED_TOOLS` denied by settings; the other 330 tools in `excluded-tools.txt` and the template deny list. |
 | Template code built under D6 | `graph.sh` with `snapshot`, `get`, `sent-since` and the consent verbs `send-draft|move|delete --approved`; `state.sh` consent files (`proposals.jsonl`, `approvals.jsonl`, `executions.jsonl`); `propose.sh`; `m365-approve.sh`; `verify.sh` §5 sent-items-vs-executions; `brief.sh` allowlist with `propose.sh` and the "Proposed actions (pending your consent)" section; pty test harness and fixtures (`pty.bash`, `answers-*.txt`, `proposals-*.jsonl`, `approvals-*.jsonl`, `executions-p1.jsonl`); D6 wording in `security.md`, `AGENTS.md`, `operations.md`, the `m365` skill, README; `consent` block in `m365.json`. All of it is removed or reshaped by D7 (section "Code to remove or reshape"). |
 | Claude Code on the VM | 2.1.285; the remote-control session runs `--permission-mode auto` (02 wrapper). |
@@ -39,7 +39,7 @@ Facts **not** verified (each settled by the plan's first revised step or an owne
 ## User Story
 
 **As** the owner,
-**I want** Zyggy on Central to read my Digiverse mailbox and drives, leave a morning brief with numbered suggested actions, and — when I ask in my remote session ("send 1", "do 1 and 3", "save this as a file in Projects/Calizr") — to send the e-mail, create the new document in my OneDrive, or file or soft-delete a mail, each only after a permission prompt on my phone or claude.ai that shows me exactly what will be sent or created and that I answer myself,
+**I want** Zyggy on Central to read my <company> mailbox and drives, leave a morning brief with numbered suggested actions, and — when I ask in my remote session ("send 1", "do 1 and 3", "save this as a file in Projects/Calizr") — to send the e-mail, create the new document in my OneDrive, or file or soft-delete a mail, each only after a permission prompt on my phone or claude.ai that shows me exactly what will be sent or created and that I answer myself,
 **So that** Zyggy can act for me with one tap per action, nothing ever leaves my mailbox or lands in my OneDrive without that tap, and no timer run, backfill or injected mail can act on its own.
 
 **As** Central,
@@ -47,7 +47,7 @@ Facts **not** verified (each settled by the plan's first revised step or an owne
 **So that** every executed action maps to one prompt the owner answered, and the identity's tenant-side scope bounds what a leaked key could do.
 
 **As** the owner maintaining the template,
-**I want** the rules, hooks, wrapper, skills and tests generic in `zyggy-core` and every Digiverse fact in my instance,
+**I want** the rules, hooks, wrapper, skills and tests generic in `zyggy-core` and every <company> fact in my instance,
 **So that** a template change reaches Central with a fast-forward pull.
 
 ---
@@ -403,7 +403,7 @@ Sending existing Drafts by id, reply/reply-all/forward tools, attachments, Bcc, 
 
 **§1 In scope** — replace the bullet "Personal e-mail via MCP on Central; work M365 mail handled only on the work node" with: **[changed D7: last clause]**
 
-> Mail and files of the owner's own company tenant (Microsoft 365, Digiverse) on Central through a Microsoft Graph MCP server, using an application identity of Central scoped to the owner's mailbox and the granted sites: a morning brief and reply Drafts, one-off backfills of the mailbox and the drives into memory as facts, on-request questions in a conversation, and — only at the owner's request in the conversation and after his answer to a permission prompt for each action — sending mail, filing mail, and creating new files in his OneDrive; work (employer) M365 mail only on the work node.
+> Mail and files of the owner's own company tenant (Microsoft 365, <company>) on Central through a Microsoft Graph MCP server, using an application identity of Central scoped to the owner's mailbox and the granted sites: a morning brief and reply Drafts, one-off backfills of the mailbox and the drives into memory as facts, on-request questions in a conversation, and — only at the owner's request in the conversation and after his answer to a permission prompt for each action — sending mail, filing mail, and creating new files in his OneDrive; work (employer) M365 mail only on the work node.
 
 **§1 Non-goals** — the bullet "No automatic sending of e-mail or messages without explicit user confirmation" stays as written; add after it: **[changed D7]**
 
@@ -428,7 +428,7 @@ Sending existing Drafts by id, reply/reply-all/forward tools, attachments, Bcc, 
 
 **§8 Work boundary** — the §13 decision row "Two trust boundaries …" becomes (unchanged):
 
-> Three principals: personal (the owner), the owner's company (Digiverse — owner-controlled; its data is processed on Central under the data-protection rules of §8), work (the employer — never leaves the work laptop except as summaries). | The owner is controller and administrator of his company tenant; Conditional Access and data policy of the employer are unchanged. | Decided (1 October 2026)
+> Three principals: personal (the owner), the owner's company (<company> — owner-controlled; its data is processed on Central under the data-protection rules of §8), work (the employer — never leaves the work laptop except as summaries). | The owner is controller and administrator of his company tenant; Conditional Access and data policy of the employer are unchanged. | Decided (1 October 2026)
 
 **§8 Secrets table** — replace the row "Gmail / Outlook.com OAuth refresh tokens …" with: **[changed D7: OneDrive write grant; executor; changed 2026-10-01 plan gate: whole row]** **[changed D8: last cell, token hand-over]**
 
@@ -452,7 +452,7 @@ Sending existing Drafts by id, reply/reply-all/forward tools, attachments, Bcc, 
 
 **§13 Q5** — Answer column: **[changed D7]**
 
-> Reversed 1 October 2026: the owner's company mailbox and drives (Digiverse M365) on Central through the `m365` MCP server; Drafts by the model; sending, filing mail and creating new OneDrive files only at the owner's request in the conversation, each after a permission prompt he answers (3 October 2026); Gmail and personal Outlook.com dropped (D4).
+> Reversed 1 October 2026: the owner's company mailbox and drives (<company> M365) on Central through the `m365` MCP server; Drafts by the model; sending, filing mail and creating new OneDrive files only at the owner's request in the conversation, each after a permission prompt he answers (3 October 2026); Gmail and personal Outlook.com dropped (D4).
 
 <!-- founding-spec-wording:end -->
 

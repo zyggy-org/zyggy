@@ -875,7 +875,7 @@ Every exception other than `OperationCanceledException` becomes `failed` with `c
    - `git -C memory ls-files inbox/` (Assumption 9);
    - `/opt/zyggy` absent;
    - `~zyggy/.ssh/config` memory deploy key read/write (27).
-2. `scp artifacts/linux-x64/{zyggy,SHA256SUMS} azureadmin@central:/tmp/zyggy-<v>/`. Then as root:
+2. `scp artifacts/linux-x64/{zyggy,SHA256SUMS} <vm-admin>@central:/tmp/zyggy-<v>/`. Then as root:
    - `sha256sum -c` and compare with `instance/zyggy.json`;
    - `install -d -o root -g root -m 0755 /opt/zyggy/<v>`;
    - `install -o root -g root -m 0755 /tmp/zyggy-<v>/zyggy /opt/zyggy/<v>/zyggy`;
@@ -1148,7 +1148,7 @@ The order of evaluation follows this table. The first failing rule aborts the ba
 
 ## Notes for the executor
 
-1. **Binary transfer.** `az vm run-command` cannot carry a ~70 MB file. Copy it from the laptop with `scp` to `azureadmin@central:/tmp/` (Tailscale SSH, as in `runbooks/central-vm-setup.md`). Then verify and install through `az vm run-command` as root. If `scp` is not reachable from the agent's shell, that single copy is the owner's step (runbook 14 "Install" names it); everything else stays with the agent.
+1. **Binary transfer.** `az vm run-command` cannot carry a ~70 MB file. Copy it from the laptop with `scp` to `<vm-admin>@central:/tmp/` (Tailscale SSH, as in `runbooks/central-vm-setup.md`). Then verify and install through `az vm run-command` as root. If `scp` is not reachable from the agent's shell, that single copy is the owner's step (runbook 14 "Install" names it); everything else stays with the agent.
 2. **Order on Central.** Install the binary **before** the first `git pull` that brings the thin launcher, so sessions never lose the digest. The `index` section shows the sided layout only after the migration run. Between pull and migration (minutes) the index lists no legacy files. That is acceptable, and the migration run is triggered immediately.
 3. **Root-run git.** Always `runuser -u zyggy -- git -C …` (dubious-ownership rule from 27). Never `git config --global` on the VM; never run `claude` yourself; never edit `memory/` by hand. The dream is the only writer the agent triggers.
 4. **Timer-before-gate.** The Step 17 gate does not block the timer once it is armed (owner: no per-run action). If a run ends `aborted` or `failed`, the next run retries by design. Only a repeated `failed` with the same reason across two nights is escalated in the gate summary.
