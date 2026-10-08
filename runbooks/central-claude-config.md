@@ -1818,6 +1818,28 @@ products added), then "Connect LinkedIn"; `rejected: <LinkedIn's message>` (400/
 entries below. `published: …; fact not recorded: <reason>` — the post is published; only its memory line was refused
 (for example a phone-shaped number in the first sentence): nothing to undo, add a fact by hand if you want one.
 
+### Image refused or image upload failed [vm/zyggy]
+
+Since zyggy 0.4.1 (plan 36b) a post may carry one image from the media folder `~zyggy/.local/share/zyggy/linkedin/media/`
+(0700; `image.dir` in `instance/linkedin.json` moves it). Zyggy shows the image and the first 12 characters of its
+SHA-256; the prompt shows the path and the full hash. Nothing is sent before every local check passed:
+
+| Answer | Meaning | Fix |
+|---|---|---|
+| `refused: image outside image.dir` | The path is not inside the media folder (or not absolute and normalised) | Save the image in the media folder |
+| `refused: image not a regular file` | Missing, a directory, or a symbolic link on the way | Copy the real file into the folder |
+| `refused: image too large (<n> > <max>)` | Over `image.max_bytes` (10 MB, may only be lowered) | Export it smaller |
+| `refused: image not PNG, JPEG or GIF` / `image dimensions unreadable` | The first bytes are not one of those formats | Convert it |
+| `refused: image too many pixels (<n> ≥ 36152320)` | Over LinkedIn's limit | Scale it down |
+| `refused: image hash mismatch` | The file is not the one that was shown | Show it again, approve the new hash |
+| `refused: image.dir not configured` | Neither the key nor `HOME` gives a folder | Set `image.dir` (laptop: commit, push, pull) |
+
+`rejected: image upload: initialize: …`, `… upload: …` or `… upload address not allowed`: LinkedIn did not take the
+image — **nothing was published** (the post is only sent after a stored upload). Ask again later; a 401 there means
+"Connect LinkedIn". Between the upload and the post Zyggy waits `image.settle_ms` (3000) once, because this app cannot
+read an image's status; a post LinkedIn refuses because the image is not ready is `rejected: <message>` — ask again.
+Clean the media folder by hand when you like; published images stay on LinkedIn.
+
 ### Outcome unknown — check the profile [browser]
 
 `outcome_unknown: the post may exist — check your profile before asking again`: LinkedIn answered 5xx, the request

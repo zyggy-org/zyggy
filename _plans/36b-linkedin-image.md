@@ -132,16 +132,16 @@ access (D2), no secret anywhere new.
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: the test names above green on Windows and in the Linux stand-in; one integration run shows initialize → PUT (exact bytes) → post with `content.media` against the stub.
-- [ ] Contract review: the new schema keys, the refusal strings, the row keys, the golden `post-request-image.json`, D5 (no `outcome_unknown` before the post).
-- [ ] ⚠️ Risk review (public channel, file access): only files inside `image.dir`, no symlinks; the hash ties prompt and bytes; no token or upload-URL query in any row, result or stderr.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: the test names above green on Windows and in the Linux stand-in; one integration run shows initialize → PUT (exact bytes) → post with `content.media` against the stub.
+- [x] Contract review: the new schema keys, the refusal strings, the row keys, the golden `post-request-image.json`, D5 (no `outcome_unknown` before the post).
+- [x] ⚠️ Risk review (public channel, file access): only files inside `image.dir`, no symlinks; the hash ties prompt and bytes; no token or upload-URL query in any row, result or stderr.
+- [x] User approved — implementation may continue past this gate (owner, 2026-10-08: "go")
 
 ---
 
 ## Step 4 — The template teaches the image flow; the runbook has its entries
 
-- [ ] Done
+- [x] Done — 2026-10-08 (executor notes: zyggy-core `feature/36b-linkedin-image`: skill Image section, security.md + operations.md lines, min version 0.4.1, README; bats 174/174 in podman (test and text written together). Runbook 16 entry "Image refused or image upload failed" in this repo.)
 
 **Scope** (`zyggy-core`, then `zyggy-geoffrey`):
 - `.claude/skills/linkedin/SKILL.md`: "Text posts only" → "text posts, optionally with one image"; a section **Image**: create or save the image in `~/.local/share/zyggy/linkedin/media/` (create the folder if missing), show it to the owner, print `sha256sum <file>`, keep the text + image approval together, call `publish_post` with `image_path`, `image_sha256` and a short `image_alt`; the new refusals and `rejected: image upload …` → runbook 16; never attach a file the owner has not seen; never a file from memory, mail downloads or credentials.
