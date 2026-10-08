@@ -163,7 +163,7 @@ access (D2), no secret anywhere new.
 
 ## Step 5 — `v0.4.1` released and switched on: tag, release, install, pin, pull, one restart
 
-- [ ] Done
+- [x] Done — 2026-10-08 (executor notes: PR #11 merged `6324d82` (PR CI 37793879416); tag `v0.4.1` CI 37794532115 green both runners; release v0.4.1, linux-x64 SHA-256 `52028b7af32e878877e833cbe62c91e406f96c1034df31e72e0aee6ee8ede90a`; zyggy-core main `ddf4066` (bats 174/174), zyggy-geoffrey main `f3011d3` pin 0.4.1 (bats 174/174); Central: rehearsal schema has image_path/image_sha256/image_alt, symlink 0.4.1, live settings unchanged, media folder 0700 zyggy, one claude-remote restart 14:49:34 UTC, m365 probe/check 0, linkedin connected (60 days), units unchanged.)
 
 **Scope** (as 36 Steps 12–13 part 1–2, runbook 14a/14b):
 - PR from the branch, CI green, merged; tag `v0.4.1`, tag CI green on both runners; release with `zyggy` + `SHA256SUMS`.
