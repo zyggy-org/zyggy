@@ -91,7 +91,7 @@ Always start Claude in `/srv/agent/central`, never in `memory/` (hooks are per w
 | 13-D7a Pull D7, delete the consent files, restart, probe (AC-6) | pending | agent pull; owner restart and probe |
 | 13-D7b OneDrive grant `write` (AC-5) | not run (owner, Gate R-A: no OneDrive create with the pinned server) | — |
 | 13-D7c Send and file from the session, guard refusals (AC-7, AC-8, AC-11, AC-12) | pending | owner, phone and claude.ai |
-| 13g Units, five attended runs, the owner's go, timer (AC-12) | pending | agent unit install; owner runs |
+| 13g Units, five attended runs, the owner's go, timer (AC-12) | units installed and **timer enabled 2026-10-08** after run 2 (owner: "add timer"); next 06:30 Europe/Brussels; the path unit follows 0.3.3 | agent |
 | 13h Drills, canary, timer runs, audit reconciliation (AC-13..AC-16) | pending | owner |
 | 13i Mail backfill (AC-17, AC-18) | pending | owner, tmux |
 | 13j Files backfill (AC-19, AC-20) | pending | owner, tmux |
@@ -1098,8 +1098,9 @@ sweep of AC-29. Paste each.
 Agent, as root (authorised at the plan's Slice D gate):
 
 ```bash
-install -m 644 /srv/agent/central/instance/systemd/zyggy-morning-brief.service /srv/agent/central/instance/systemd/zyggy-morning-brief.timer /etc/systemd/system/
+install -m 644 /srv/agent/central/instance/systemd/zyggy-morning-brief.service /srv/agent/central/instance/systemd/zyggy-morning-brief.timer /srv/agent/central/instance/systemd/zyggy-morning-brief.path /etc/systemd/system/
 systemctl daemon-reload
+systemctl enable --now zyggy-morning-brief.path   # from 0.3.3: the brief on the session's request ("Run the brief by hand")
 systemctl is-enabled zyggy-morning-brief.timer
 systemctl show zyggy-morning-brief -p ExecStart -p LoadCredential -p InaccessiblePaths -p ReadWritePaths -p Environment -p TTYPath
 systemd-analyze security zyggy-morning-brief.service | tail -n 3
@@ -1443,8 +1444,12 @@ mv -f m365-app.key.bak m365-app.key; ls -la ~/.config/zyggy/                    
 rejected"`, exit 6, before `claude`; no Draft, receipt or proposal. After the restore: three files, the key `600`, no
 `.bak`; `zyggy m365 token-test` → `token ok: …`.
 
-### Run the brief by hand [vm/root]
+### Run the brief by hand [vm/root] — or from the session [browser]
 
+From 0.3.3 the session can ask for it: say "run the brief" (or `/morning-brief` with no argument) and Zyggy runs
+`zyggy brief request` — the file `~/.local/state/zyggy/brief.request` starts `zyggy-morning-brief.service` through
+`zyggy-morning-brief.path` (installed and enabled by 13g), the run deletes the file first; "brief" shows it a few
+minutes later (`no brief for <date>` = not yet). As root:
 `sudo systemctl start zyggy-morning-brief.service` (the unit runs `/usr/local/bin/zyggy m365 brief` with its
 environment and sandbox; never `zyggy m365 brief` from a session — the template's settings deny it there). From
 0.3.0 the run writes no Draft: it writes `~/.local/state/zyggy/brief/brief-<date>.md` and its item list
