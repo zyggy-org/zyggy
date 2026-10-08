@@ -20,6 +20,10 @@ internal sealed class BriefVerb(M365VerbContext context) : IM365Verb
             return 4;
         }
 
+        // A session's `zyggy brief request` first: the path unit starts this service while the file exists, so a run that fails
+        // before deleting it (configuration, pin, identity) would be restarted in a loop. The outcome is the run's as always.
+        ConsumeRequest(new Brief.BriefPaths(context.Environment).Request);
+
         var (setup, exit, error, warning) = RunPreflight.Load(context, principalFromSettings: false);
         if (warning is not null)
         {
@@ -36,6 +40,18 @@ internal sealed class BriefVerb(M365VerbContext context) : IM365Verb
         var outcome = await new BriefRun(setup.Session, setup.Partition, graph.Reader, setup.Model, context.Clock)
             .RunAsync(cancellationToken, context.SignalExit).ConfigureAwait(false);
         return await RunOutput.WriteAsync(io, outcome).ConfigureAwait(false);
+    }
+
+    private static void ConsumeRequest(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Not ours to delete (another owner, a read-only root): the run goes on; the unit's log shows a restart loop if any.
+        }
     }
 }
 

@@ -202,9 +202,9 @@ public sealed class BriefShowVerbTests : IDisposable
 
         // Assert
         exitNone.Should().Be(4);
-        none.Stderr.Should().Be("brief: no verb given (usage: zyggy brief show|items|idea …)\n");
+        none.Stderr.Should().Be("brief: no verb given (usage: zyggy brief show|items|idea|request …)\n");
         exitUnknown.Should().Be(4);
-        unknown.Stderr.Should().Be("brief: unknown verb 'inject' (usage: zyggy brief show|items|idea …)\n");
+        unknown.Stderr.Should().Be("brief: unknown verb 'inject' (usage: zyggy brief show|items|idea|request …)\n");
     }
 
     private sealed class ThrowingWriter : TextWriter
