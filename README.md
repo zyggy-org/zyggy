@@ -102,7 +102,6 @@ Zyggy is a working personal system, built in small deliverables, each with a spe
 | [`tests/`](tests) | Unit tests, integration tests against a local bare git repo, golden files |
 | [`tools/fake-claude`](tools/fake-claude) | Compiled stand-in for the `claude` CLI used by the tests |
 | [`_specs/`](_specs), [`_plans/`](_plans) | The founding specification, per-deliverable specs and step plans |
-| [`runbooks/`](runbooks) | How Central is set up and operated |
 
 Zyggy's Claude Code side (identity, skills, hooks) lives in the companion repository
 [`zyggy-core`](https://github.com/zyggy-org/zyggy-core).
