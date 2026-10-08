@@ -69,6 +69,18 @@ public sealed class MigratorTests : IDisposable
     }
 
     [Fact]
+    public async Task Request_DisallowsLinkedInToolAndVerbs_NoMcp()
+    {
+        // Act
+        await Migrate(Proposal(ValidMoves()));
+
+        // Assert: spec 36 AC-8
+        var request = _requests.Should().ContainSingle().Subject;
+        request.DisallowedTools.Should().Equal("mcp__linkedin__*", "Bash(zyggy linkedin *)");
+        global::Zyggy.Core.Models.ClaudeArguments.Build(request).Should().ContainInConsecutiveOrder("--disallowedTools", "mcp__*,mcp__linkedin__*,Bash(zyggy linkedin *)").And.Contain("--strict-mcp-config").And.NotContain("--mcp-config");
+    }
+
+    [Fact]
     public async Task Migrate_EveryFileMovedOnce_ContentByteIdenticalIndexesCreated()
     {
         // Act

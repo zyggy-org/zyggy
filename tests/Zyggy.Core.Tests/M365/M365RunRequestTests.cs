@@ -97,13 +97,14 @@ public sealed class M365RunRequestTests : IDisposable
     [InlineData("Brief")]
     [InlineData("MailBackfill")]
     [InlineData("FilesBackfill")]
-    public void For_McpConfigIsTheCheckoutsMcpJson(string kind)
+    public void For_EveryKind_McpConfigIsRunFile_DenyEndsWithLinkedInRules(string kind)
     {
         // Act
         var request = M365RunRequest.For(Enum.Parse<M365RunKind>(kind), "/x", _instance, _configuration, _partition, null);
 
-        // Assert
-        request.McpConfig.Should().Be(Path.Join(_instance.Checkout, ".mcp.json"));
+        // Assert: spec 36 AC-8 — the run loads the m365-only copy, and the linkedin tool and verbs are denied
+        request.McpConfig.Should().Be(Path.Join(_instance.Paths.StateDirectory, "run-mcp.json"));
+        request.DisallowedTools.Should().ContainInOrder("Bash(node *)", "mcp__linkedin__*", "Bash(zyggy linkedin *)");
     }
 
     [Fact]

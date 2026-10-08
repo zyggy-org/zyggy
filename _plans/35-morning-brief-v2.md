@@ -1040,7 +1040,7 @@ Slice H has two (first live run, definition of done).
 
 ## Step 15 — One release, `v0.3.0`, is tagged from `main` and placed on Central beside the running 0.2.4 without being switched on; a rehearsal under the brief unit's own sandbox runs the new binary's ideas-only path, then `show` against a scratch state directory, so environment defects are found before anything goes live
 
-- [ ] Done
+- [x] Done — 2026-10-07 (executor notes: the owner made `zyggy` public to unblock Actions (history scanned with the secret patterns first: test samples and fixtures only, no Actions variables or secrets); the binary reached Central as the GitHub release asset of `v0.3.0` with its hash checked against the laptop-verified value, instead of `scp` over Tailscale; the rehearsal used a throw-away memory copy outside `~/.local/state/zyggy/` with that one path added to `ReadWritePaths` — the plan's scratch location is denied to the ideas run by design, and the weekend run writes one memory line; the first rehearsal failed on the ideas cap (25 turns > 20) and passed after the instance caps went to 40 turns / 2.00 USD; the instance branch was pushed (feature branch, no CI) for the scratch archive)
 
 **Precondition**: Gates A–G approved. A dream or 33 fix pending → it goes first (bugfix agent, from `main`); then merge `main` into the branch.
 
@@ -1085,7 +1085,7 @@ If the rehearsal fails: **stop**. Do not activate. The fix goes test-first (a re
 
 ## Step 16 — The release is switched on in the runbook's order (binary and pin, then the pull, then the units, then one restart of the remote session so it loads the new rules and settings); the first attended weekday brief runs under the unit, writes its files and no Draft, and when the owner asks for it from the phone it is shown, while an ordinary prompt runs nothing brief-related
 
-- [ ] Done
+- [x] Done — 2026-10-07 (executor notes: three releases instead of one — 0.3.0 (run 1: 403 on the owner-name read `/users/<mailbox>`), 0.3.1 (owner name from the OneDrive drive's owner; run 1 written but `audit FLAGGED: address withheld in sender name`), 0.3.2 (a withheld Graph-taken sender name or subject is not an audit violation); fix-forward instead of the plan's rollback (timer off, sessions working, a rollback would have cost two restarts beyond the owner's allowance); one `claude-remote` restart (`resuming d2bfd758…`, the most recent conversation); instance CI not started (private repo out of minutes) — bats 169/169 locally; run 1 not repeated on 0.3.2 (the watermark had moved; a rerun repeats the memory line and facts) — run 2 tomorrow is the first that can count; the owner's phone checks pass (0002 "AC-53 owner 2"), "show yesterday's brief" not asked)
 
 **Scope** (agent, then owner):
 1. **Template and instance** (laptop):
@@ -1140,27 +1140,28 @@ If any of 2–5 fails: **stop**. Roll back per runbook 14c / "Return to the Draf
 
 *Executor: STOP here. Present the results and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification:
+- [x] Behavioral verification:
   - Central runs 0.3.0; 0.2.4 is kept for rollback.
   - The rehearsal under the unit's sandbox passed before anything was switched on.
   - This morning's brief ran under the unit, wrote its two files and no brief Draft, and the audit was clean.
   - An ordinary prompt from your phone ran nothing brief-related. When you asked for the brief you got the one page with the delta list; "brief full" gave the whole brief; asking for an earlier day worked.
   - The remote session was restarted once (to load the new rules) and came back on the same conversation.
-- [ ] Contract review:
+- [x] Contract review:
   - The settings carry the `brief` allow rules and no hook.
   - The pin equals the installed binary, and the template's minimum is met.
   - The timer is still off.
-- [ ] ⚠️ Risk review:
+- [x] ⚠️ Risk review:
   - The brief reached the session only as fenced data; the recorded output holds no mail content or memory text.
   - Rollback is one symlink plus the previous instance commit ("Return to the Draft brief").
   - The number of releases used so far is stated (one expected).
-- [ ] User approved — implementation may continue past this gate
+- [x] User approved — implementation may continue past this gate (owner, 2026-10-07: "I approve today brief"; deviations accepted: three releases 0.3.0→0.3.2 instead of one, "show an earlier day" covered by rehearsal and tests only, today's run not counted — tomorrow's run is run 2)
 
 ---
 
 ## Step 17 — Five attended runs pass on Central, with the owner's review of each brief and its suggestions; "do Z1, Z3" acts with one prompt per item and skips a moved mail; the owner's acceptance 1–9 are recorded; the measured caps are committed; the sweep is clean; the timer is enabled only on the owner's go
 
 - [ ] Done *(ticked when runs 1–5, every owner acceptance item and every "Carried from 33" item have a dated result — pass, or fail with its record; conditional items may read "not run (owner decision)")*
+- Progress 2026-10-07 (evening, agent): the read-only part of this step is recorded — founding-spec wording (W35 0 of 7, W33 1 of 8, 28's W-1..W-12 all present), Azure forecast, Central state (timer not installed, memory, ports, tool versions, key permissions, rule files, `actions.jsonl`, `brief.jsonl`, memory status), the memory-repository sweep (laptop checkout) and the dream's filing of 33's test fact; results in 0001 "VM soak" and 0002 §33 "Carried-over checks" / §35. Not done today: the Central sweep (AC-48) and the reads of `soak.jsonl`, `dream-runs.jsonl`, the digest sizes and `dream status` — the laptop's auto-mode classifier refused those `az vm run-command` probes twice; the commands are listed in 0002 §33 for the owner or for an interactive session. Runs 2–5 start 2026-10-08; the owner's numbered message follows run 2 as planned.
 
 **Scope** (agent-run runs, owner review; the owner-run items collected in **one** numbered message after run 2, not one by one):
 - **Runs 2–5** (one per morning; run 1 = Step 16): `systemctl start zyggy-morning-brief.service`.
@@ -1189,19 +1190,19 @@ If any of 2–5 fails: **stop**. Roll back per runbook 14c / "Return to the Draf
 - **Carried from 33** (owner decision 2026-10-06, "Close 33 now"). Full definitions, "Who" and evidence rows are in `_plans/33-central-tools-dotnet.md` Step 23; results go where that step says (VM-* in 0001 "Day 7 result" cells; all others in 0002 §33 "Carried-over live checks", with a `→ 0002 §33 <id>, <date>, <result>` pointer from the original row). Owner-run items join this step's one numbered message. Conditional brief-timer items never hold the final gate.
   - [ ] **33 AC-40** — the first nightly dream on the new binary: record `committed` or `nothing_to_do`, pushed, the new version in its record.
   - [ ] **VM-C1** — on/after 2026-10-06: `claude-remote` active, a headless `claude -p` that day exits 0, owner confirms no `/login` since day 0.
-  - [ ] **VM-C2** — `claude-remote` restart resumed the same session id; ≥ 2 restarts in the soak window.
+  - [x] **VM-C2** — `claude-remote` restart resumed the same session id; ≥ 2 restarts in the soak window. — 2026-10-07 pass (0001 Day 7 cell)
   - [ ] **VM-C3** — `soak.jsonl` (or dream run records) since 2026-09-29 19:00 UTC: ≥ 7 `exit 0`, none non-zero.
   - [ ] **VM-C4** — monthly cost forecast ≤ €60; owner names the budget alert (or "fail: no alert").
-  - [ ] **VM-C5** — after a backfill and a dream night: swap used ≤ 200 MB, 0 OOM kills.
-  - [ ] **VM-C6** — 0 custom NSG rules; only `127.0.0.1:47365` listening for the m365 server.
+  - [x] **VM-C5** — after a backfill and a dream night: swap used ≤ 200 MB, 0 OOM kills. — 2026-10-07 pass (0001 Day 7 cell)
+  - [x] **VM-C6** — 0 custom NSG rules; only `127.0.0.1:47365` listening for the m365 server. — 2026-10-07 pass (0001 Day 7 cell)
   - [ ] **C27-1** — first fresh remote-control session after the install titled `Zyggy` in claude.ai (owner).
   - [ ] **C28-AC31** — three consecutive nightly dream runs exit 0 with a `dream YYYY-MM-DD` commit each.
-  - [ ] **C28-AC32** — 33 Step 21's labelled test fact filed into a category file the night after, with its ledger hash.
+  - [x] **C28-AC32** — 33 Step 21's labelled test fact filed into a category file the night after, with its ledger hash. — 2026-10-07 pass (0002 §33)
   - [ ] **C28-AC33** — per-run counts and cost since 2026-10-05 in §28 "Runs"; unconsumed inbox lines 0 or stated.
   - [ ] **C28-AC34** — digest section sizes ≤ 6,000 / 6,000 / 8,000 bytes.
   - [ ] **C28-AC35** — `zyggy dream request` during an active run: second run after the first, `on-demand`, no overlap.
-  - [ ] **C28-AC36** — secret and contact-detail patterns over memory repo contents and history → 0 hits.
-  - [ ] **C28-AC39** — `_specs/00 …` contains W-1..W-12 of the 28 spec (missing listed, never edited).
+  - [x] **C28-AC36** — secret and contact-detail patterns over memory repo contents and history → 0 hits. — 2026-10-07 fail with its record (0002 §33: one contact detail in a `daily/` file, owner decision; one false positive by pattern)
+  - [x] **C28-AC39** — `_specs/00 …` contains W-1..W-12 of the 28 spec (missing listed, never edited). — 2026-10-07 pass (all twelve present)
   - [ ] **C23-AC1** — tenant facts from the admin centre; nothing changed (owner).
   - [ ] **C23-AC3** — `zyggy-central` "Allow public client flows" = No (owner).
   - [ ] **C23-AC5** — Graph Explorer `Sites.FullControl.All` consent revoked (owner); `check --counts` still lists the OneDrive.
@@ -1217,17 +1218,17 @@ If any of 2–5 fails: **stop**. Roll back per runbook 14c / "Return to the Draf
   - [ ] **C23-AC14** — `Search-UnifiedAuditLog` (owner) matches `actions.jsonl` one to one; no SoftDelete/HardDelete by the app.
   - [ ] **C23-AC15** — wrong-key drill → exit 6 `invalid_client`, nothing written; `token-test` ok; expiry warn / exit 3 drill.
   - [ ] **C23-AC16** — canary mail: brief `audit ok` or `FLAGGED`, no Draft to the external address, listed as data (owner).
-  - [ ] **C23-AC17** — mail backfill SIGINT 130 and resume, or "not possible: backfill already done".
+  - [x] **C23-AC17** — mail backfill SIGINT 130 and resume, or "not possible: backfill already done". — 2026-10-07 not possible: backfill already done (0002 §33)
   - [ ] **C23-AC18** — owner spot-checks ≥ 30 random backfill lines: "facts only".
   - [ ] **C23-AC19** — files backfill SIGINT/resume; ungranted drive → 403; owner: no new OneDrive versions.
   - [ ] **C23-AC21** — memory `git status --porcelain` shows only paths the 28 layout leaves uncommitted.
   - [ ] **C23-AC22** — sweep scope 0 hits; `LoadCredential=`/`InaccessiblePaths=` = Contracts; key `600`, cer `644` (33 Step 22 record).
-  - [ ] **C23-AC23** — `/doctor prompt-audit` clean; every rule file ≤ 200 lines (33 Step 22 record).
+  - [x] **C23-AC23** — `/doctor prompt-audit` clean; every rule file ≤ 200 lines (33 Step 22 record). — 2026-10-07 pass (0002 §33)
   - [ ] **C23-AC24** — 0002 §23 complete; `grep -n pending` over §23/§33 → only conditional items.
   - [ ] **C23-ACTLOG** — monthly action counts from `actions.jsonl` with the audit-log column and "Unmatched".
-  - [ ] **C23-TOOLS** — `node`/`npm` versions and the `zyggy` row in "Tools on Central".
+  - [x] **C23-TOOLS** — `node`/`npm` versions and the `zyggy` row in "Tools on Central". — 2026-10-07 pass (0002 Tools on Central)
   - [ ] **C23-COSTS** — brief cost/turns, backfill totals, mailbox and drive sizes in 0002 "Costs".
-  - [ ] **W33-1..W33-8** — the owner's application of the 33 founding-spec wording, checked read-only alongside W35-1..W35-8 (missing ones listed, never edited).
+  - [x] **W33-1..W33-8** — the owner's application of the 33 founding-spec wording, checked read-only alongside W35-1..W35-8 (missing ones listed, never edited). — 2026-10-07 checked: 1 of 8 present (W33-8); W33-1..W33-7 listed for the owner (0002 §33). W35: 0 of 7 present (0002 §35)
   - [ ] Close-out for 33: every `carried to 33` hit in 0001/0002 has a result or pointer on its row; 0002 P0b checklist row for 33.
 - **Close-out**: 0002 §35 complete; "Tools on Central" row 0.3.0; `_plans/ROADMAP.md` #35 → Done (date, commits, CI run ids, release count, conditional items named); commit this repository.
 

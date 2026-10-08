@@ -1,0 +1,5 @@
+{
+  "client_id": "clientid0001",
+  "redirect_uri": "https://localhost/zyggy/linkedin",
+  "actions": { "enabled": ["post"] }
+}

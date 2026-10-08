@@ -149,7 +149,7 @@ public sealed partial class BriefEndToEndTests : IDisposable
             "--disallowedTools", string.Join(',', [.. Lines("brief-deny.txt"), $"Read(//{Path.Join(_run.Fixture.Checkout, "memory").Replace('\\', '/').TrimStart('/')}/**)"]),
             "--json-schema", new Core.Brief.BriefPrompts().MailSchema,
             "--settings", """{"autoMemoryEnabled":false}""",
-            "--strict-mcp-config", "--mcp-config", Path.Join(_run.Fixture.Checkout, ".mcp.json"),
+            "--strict-mcp-config", "--mcp-config", Path.Join(_run.Fixture.StateDirectory, "m365", "run-mcp.json"),
         ];
         var capture = FakeClaude.ReadCapture(model.ArgumentsCapture(0));
         capture.Arguments.Should().Equal(expected);
@@ -157,6 +157,67 @@ public sealed partial class BriefEndToEndTests : IDisposable
         Path.GetFullPath(capture.WorkingDirectory).Should().Be(Path.GetFullPath(_run.Fixture.Checkout));
         var stdin = Encoding.UTF8.GetString(File.ReadAllBytes(model.StdinCapture(0)));
         stdin.Should().Be($"/morning-brief alice@acme.example AQMkInbox0001 attachments=on b!onedrive0001 b!ops0001 b!opsarchive0001 {runDirectory}");
+    }
+
+    [Fact]
+    public async Task Brief_CapturedArgs_RunMcpConfigOnlyM365_DenyIncludesLinkedIn()
+    {
+        // Arrange: spec 36 AC-8 — the fixture's .mcp.json names m365 and linkedin; the run's copy is read while the model runs
+        string? loaded = null;
+        var model = _run.Model(_ => "m365-brief-mail-ok", act: (request, _, _) => loaded = File.ReadAllText(request.McpConfig!));
+
+        // Act
+        var (exit, console) = await BriefAsync(model, TestContext.Current.CancellationToken);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr + console.Stdout);
+        var arguments = FakeClaude.ReadCapture(model.ArgumentsCapture(0)).Arguments;
+        arguments.Should().ContainInConsecutiveOrder("--strict-mcp-config", "--mcp-config", Path.Join(_run.Fixture.StateDirectory, "m365", "run-mcp.json"));
+        arguments[arguments.ToList().IndexOf("--disallowedTools") + 1].Split(',').Should().Contain(["mcp__linkedin__*", "Bash(zyggy linkedin *)"]);
+        loaded.Should().Be(File.ReadAllText(M365InstanceFixture.Golden("m365", "run-mcp.json"))).And.NotContain("linkedin");
+    }
+
+    [Fact]
+    public async Task Brief_RunMcpConfigPresentDuringRun_OnLinux0600()
+    {
+        // Arrange
+        string? mode = null;
+        var model = _run.Model(_ => "m365-brief-mail-ok", act: (request, _, _) =>
+            mode = OperatingSystem.IsWindows() ? "n/a" : Convert.ToString((int)File.GetUnixFileMode(request.McpConfig!) & 0x1FF, 8));
+
+        // Act
+        var (exit, console) = await BriefAsync(model, TestContext.Current.CancellationToken);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr + console.Stdout);
+        mode.Should().Be(OperatingSystem.IsWindows() ? "n/a" : "600");
+    }
+
+    [Theory]
+    [InlineData("""{"mcpServers":{"linkedin":{"type":"stdio","command":"zyggy","args":["linkedin","mcp-server"]}}}""")]
+    [InlineData(null)]
+    public async Task Brief_McpJsonWithoutM365_ExitThreeNoModelRun(string? mcpJson)
+    {
+        // Arrange
+        var path = Path.Combine(_run.Fixture.Checkout, ".mcp.json");
+        if (mcpJson is null)
+        {
+            File.Delete(path);
+        }
+        else
+        {
+            File.WriteAllText(path, mcpJson);
+        }
+
+        var model = _run.Model(_ => "m365-brief-mail-ok");
+
+        // Act
+        var (exit, console) = await BriefAsync(model, TestContext.Current.CancellationToken);
+
+        // Assert
+        exit.Should().Be(3);
+        console.Stderr.Should().Contain($"configuration error: {path}: no m365 server");
+        model.Requests.Should().BeEmpty();
     }
 
     [Fact]

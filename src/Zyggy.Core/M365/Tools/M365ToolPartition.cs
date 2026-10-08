@@ -18,13 +18,14 @@ internal sealed class M365ToolPartition
     private const string Facts = "Bash(zyggy m365 facts *)";
     private const string Parse = "Bash(zyggy m365 parse *)";
 
-    // What no run may ever use: the identity's own verbs and every outbound channel. Each deny list ends with these.
+    // What no run may ever use: the identity's own verbs, every outbound channel and LinkedIn (spec 36 AC-8). Each deny list ends with these.
     private static readonly string[] CommonDeny =
     [
         "Bash(zyggy m365 auth-header*)", "Bash(zyggy m365 token-test*)", "Bash(zyggy m365 cert-init*)", "Bash(zyggy m365 mcp-server*)",
         "Bash(zyggy m365 brief*)", "Bash(zyggy m365 mail-backfill*)", "Bash(zyggy m365 files-backfill*)",
         "WebFetch", "WebSearch", "mcp__plugin_playwright_playwright", "Edit", "Write", "NotebookEdit",
         "Bash(curl *)", "Bash(wget *)", "Bash(git *)", "Bash(npm *)", "Bash(npx *)", "Bash(node *)",
+        .. LinkedIn.LinkedInRunDeny.Rules,
     ];
 
     private M365ToolPartition(string[] enabled, string[] excluded, string[] actions, string[] auth, string serverVersion)

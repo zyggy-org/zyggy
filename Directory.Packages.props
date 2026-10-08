@@ -20,6 +20,8 @@
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
+    <!-- Deliverable 36: the official C# MCP SDK, for `zyggy linkedin mcp-server` (used only under src/Zyggy.Core/LinkedIn/Mcp/). -->
+    <PackageVersion Include="ModelContextProtocol" Version="2.2.0" />
     <!-- Test-only: the container implementation the DI resolution tests build. -->
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
   </ItemGroup>

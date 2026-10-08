@@ -65,6 +65,19 @@ public sealed class IdeasRunTests : IDisposable
     }
 
     [Fact]
+    public async Task Request_DenyRulesIncludeLinkedIn()
+    {
+        // Arrange
+        var capture = Capture();
+
+        // Act
+        await Run().RunAsync("x", 20, 1.0m, "sonnet", CancellationToken.None);
+
+        // Assert: spec 36 AC-8 — the deny list ends with the linkedin tool and verbs (the whole vector is the golden ideas-args.txt)
+        capture.Request!.DisallowedTools.TakeLast(2).Should().Equal("mcp__linkedin__*", "Bash(zyggy linkedin *)");
+    }
+
+    [Fact]
     public async Task Request_NoMcpHooksAutoMemorySlashCommands_HooksOffEnv()
     {
         // Arrange

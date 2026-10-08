@@ -143,3 +143,23 @@ to send (its draft d12 still in Drafts), Z2 a move (m13 in the Inbox), Z3 an old
 hand (m20 in Archive), Z5 a mail deleted by hand (m21 in Deleted Items), Z6 a mail gone for good (d7 answers 404), Z7 the "file the
 other mails" item over m13, d4 and m20; and two ideas. The two message fixtures answer the location reads for m20 and m21; their routes
 are appended to `routes.tsv`.
+
+## `linkedin/` — LinkedIn presence on Central (deliverable 36)
+
+Hand-written from spec 36's Contracts, never produced by the code under test; every value is synthetic (no real LinkedIn id, member or
+token). `linkedin.json` is the fixture instance file with only the required keys and `actions.enabled` (every other key takes its code
+default; the client id is alphanumeric because the instance rule is `^[A-Za-z0-9]{1,64}$`). `auth-start-url.txt` is the one line
+`zyggy linkedin auth start` prints for it, with `<state>` in place of the fresh random state. `token.json` is the shape of the token file
+`auth finish` writes (compact, no trailing newline, timestamps in UTC with `Z`; `scope` as LinkedIn returns it, comma-separated).
+
+Publishing (deliverable 36, Step 5): `post-request.json` is the exact `POST /rest/posts` body (spec 36 AC-2) for the text
+`Agents (part 1) [draft] {v2} <b> a|b @name *bold* _it_ ~x~ back\slash #dotnet # not` + `\n` + `Second line 🚀` + `\n` + `Third`: keys in the
+contract's order, every reserved `little` character escaped, `#dotnet` kept as a hashtag, `# not` escaped, compact JSON with
+non-ASCII kept except characters outside the BMP, which JSON writes as a `\uXXXX` surrogate pair (System.Text.Json always does).
+`little/cases.tsv` is one input → commentary case per escaping rule (AC-14). `inbox-linkedin.md` is the new inbox file after one published
+post. `http/post-*` are LinkedIn's answers: the 201's `x-restli-id` header, and the 400/422/426/429 bodies as the Posts API documents them.
+
+Unattended runs (deliverable 36, Steps 9–10): `m365/fixtures/mcp-with-linkedin.json` is a checkout `.mcp.json` naming the `m365` server
+(the template's HTTP entry) and the `linkedin` stdio server; `m365/run-mcp.json` is the m365-only file a brief or backfill writes from it
+(two-space indent, `\n`, final newline). The three `m365/run-lists/*-deny.txt` lists and `brief/ideas-args.txt` end their common part
+with `mcp__linkedin__*` and `Bash(zyggy linkedin *)` (spec 36 AC-8).

@@ -77,6 +77,7 @@ internal sealed class DreamFiler(IModelRunner model, DreamPrompts prompts, TimeP
                 MaxBudgetUsd = options.CallMaxBudgetUsd,
                 JsonSchema = prompts.FilingSchema,
                 Model = options.Model,
+                DisallowedTools = LinkedIn.LinkedInRunDeny.Rules,
                 Isolation = ModelSessionIsolation.NoMcp | ModelSessionIsolation.NoHooks | ModelSessionIsolation.NoAutoMemory
                     | ModelSessionIsolation.NoSlashCommands,
                 Environment = new Dictionary<string, string> { ["ZYGGY_HOOKS"] = "off" },

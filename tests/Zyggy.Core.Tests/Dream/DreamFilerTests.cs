@@ -86,6 +86,20 @@ public sealed class DreamFilerTests : IDisposable
     }
 
     [Fact]
+    public async Task Request_DisallowsLinkedInToolAndVerbs_NoMcp()
+    {
+        // Arrange
+        Returns(TestModelResults.Succeeded(ValidProposal()));
+
+        // Act
+        await FileAsync();
+
+        // Assert: spec 36 AC-8 — one deny list led by mcp__*, then the linkedin tool and verbs; no MCP server loaded
+        _request!.DisallowedTools.Should().Equal("mcp__linkedin__*", "Bash(zyggy linkedin *)");
+        global::Zyggy.Core.Models.ClaudeArguments.Build(_request).Should().ContainInConsecutiveOrder("--disallowedTools", "mcp__*,mcp__linkedin__*,Bash(zyggy linkedin *)").And.Contain("--strict-mcp-config").And.NotContain("--mcp-config");
+    }
+
+    [Fact]
     public async Task FileBatch_Request_IsolationNoMcpNoHooksNoAutoMemoryNoSlashCommands()
     {
         // Arrange

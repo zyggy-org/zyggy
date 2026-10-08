@@ -37,6 +37,24 @@ public sealed class FilesBackfillEndToEndTests : IDisposable
     }
 
     [Fact]
+    public async Task FilesBackfill_CapturedArgs_RunMcpConfigOnlyM365_DenyIncludesLinkedIn()
+    {
+        // Arrange: spec 36 AC-8
+        string? loaded = null;
+        var model = _run.Model(_ => "m365-files-batch", act: (request, _, _) => loaded ??= File.ReadAllText(request.McpConfig!));
+
+        // Act
+        var (exit, console) = await _run.RunAsync(model, ["files-backfill", "--drive", "OneDrive"], TestContext.Current.CancellationToken);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        var arguments = FakeClaude.ReadCapture(model.ArgumentsCapture(0)).Arguments;
+        arguments.Should().ContainInConsecutiveOrder("--strict-mcp-config", "--mcp-config", Path.Join(_run.Fixture.StateDirectory, "m365", "run-mcp.json"));
+        arguments[arguments.ToList().IndexOf("--disallowedTools") + 1].Split(',').Should().Contain(["mcp__linkedin__*", "Bash(zyggy linkedin *)"]);
+        loaded.Should().Be(File.ReadAllText(M365InstanceFixture.Golden("m365", "run-mcp.json")));
+    }
+
+    [Fact]
     public async Task FilesBackfill_Cancelled_RunDirRemovedCursorUnmoved()
     {
         // Arrange

@@ -19,7 +19,8 @@ internal static class CliApplication
         var memory = new Command("memory", "Read the owner's memory.") { MemoryDigestCommand.Create(environment), remember };
         var m365 = new Command("m365", "Microsoft 365 on Central: state, facts and the connector's tools (zyggy m365 <verb> ...).");
         var brief = new Command("brief", "The morning brief, shown when the owner asks for it (zyggy brief show [--full] [<date>]); zyggy brief request asks the unit for a run now.");
-        var root = new RootCommand("Zyggy: the personal agent platform command line.") { memory, DreamCommand.Create(environment), m365, brief };
+        var linkedin = new Command("linkedin", "LinkedIn on Central: connect (auth start|finish|status) and the publishing server (mcp-server).");
+        var root = new RootCommand("Zyggy: the personal agent platform command line.") { memory, DreamCommand.Create(environment), m365, brief, linkedin };
         var parseResult = root.Parse(args);
         if (parseResult.Errors.Count > 0)
         {

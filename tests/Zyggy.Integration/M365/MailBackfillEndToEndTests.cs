@@ -77,6 +77,27 @@ public sealed class MailBackfillEndToEndTests : IDisposable
     }
 
     [Fact]
+    public async Task MailBackfill_CapturedArgs_RunMcpConfigOnlyM365_DenyIncludesLinkedIn()
+    {
+        // Arrange: spec 36 AC-8
+        string? loaded = null;
+        var model = _run.Model(BatchThenEmpty, act: (request, result, call) =>
+        {
+            loaded ??= File.ReadAllText(request.McpConfig!);
+            MovesWatermark(request, result, call);
+        });
+
+        // Act
+        var (exit, console) = await _run.RunAsync(model, ["mail-backfill", "--folder", "Inbox"], TestContext.Current.CancellationToken);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        Lines("mail-backfill-deny.txt").Should().Contain(["mcp__linkedin__*", "Bash(zyggy linkedin *)"]);
+        FakeClaude.ReadCapture(model.ArgumentsCapture(0)).Arguments.Should().Contain(string.Join(',', Lines("mail-backfill-deny.txt")));
+        loaded.Should().Be(File.ReadAllText(M365InstanceFixture.Golden("m365", "run-mcp.json")));
+    }
+
+    [Fact]
     public async Task MailBackfill_CapturedArguments_MailListsPromptOnStdin()
     {
         // Arrange
@@ -88,7 +109,7 @@ public sealed class MailBackfillEndToEndTests : IDisposable
             "--allowedTools", string.Join(',', Lines("mail-backfill-allow.txt")),
             "--disallowedTools", string.Join(',', Lines("mail-backfill-deny.txt")),
             "--model", "sonnet",
-            "--strict-mcp-config", "--mcp-config", Path.Join(_run.Fixture.Checkout, ".mcp.json"),
+            "--strict-mcp-config", "--mcp-config", Path.Join(_run.Fixture.StateDirectory, "m365", "run-mcp.json"),
         ];
 
         // Act
