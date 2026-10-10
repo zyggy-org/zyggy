@@ -89,13 +89,13 @@ public sealed class ArchiveVerb(IReadOnlyDictionary<string, string?> environment
         var rest = args.Skip(1).ToArray();
         return verb switch
         {
-            "add" => await AddAsync(rest, io, memory.TimeZone!).ConfigureAwait(false),
+            "add" => await AddAsync(rest, io, new ArchiveContext(memory.Paths!, memory.TimeZone!, load.Patterns, configuration.Options)).ConfigureAwait(false),
             "remove" => await RemoveAsync(rest, io).ConfigureAwait(false),
             _ => await ListAsync(rest, io).ConfigureAwait(false),
         };
     }
 
-    private async Task<int> AddAsync(string[] args, VerbIo io, TimeZoneInfo timeZone)
+    private async Task<int> AddAsync(string[] args, VerbIo io, ArchiveContext context)
     {
         var (request, error) = ArchiveArguments.ParseAdd(args);
         if (request is null)
@@ -104,7 +104,7 @@ public sealed class ArchiveVerb(IReadOnlyDictionary<string, string?> environment
             return Usage;
         }
 
-        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(clock.GetUtcNow(), timeZone).DateTime);
+        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(clock.GetUtcNow(), context.TimeZone).DateTime);
         var longest = ArchiveIndexLine.Longest(today, request);
         if (longest.Length > ArchiveIndexLine.MaxLength)
         {
@@ -115,9 +115,20 @@ public sealed class ArchiveVerb(IReadOnlyDictionary<string, string?> environment
             return Usage;
         }
 
+        var deny = SourceDenyList.Build(environment, context.Options, context.Paths);
+        var check = ArchiveChecks.Check(request, context.Options, context.Paths, deny, context.Patterns, today);
+        if (check.Refusal is { } refusal)
+        {
+            await io.Error.WriteAsync(Prefix + "refused: " + Render(refusal, check.Detail) + "\n").ConfigureAwait(false);
+            return Refused;
+        }
+
         await io.Error.WriteAsync(Prefix + "refused: not implemented\n").ConfigureAwait(false);
         return Refused;
     }
+
+    private static string Render(ArchiveRefusal refusal, string? detail) =>
+        detail is null ? ArchiveRefusalWire.ToWire(refusal) : $"{ArchiveRefusalWire.ToWire(refusal)} ({detail})";
 
     private static async Task<int> RemoveAsync(string[] args, VerbIo io)
     {
@@ -150,3 +161,6 @@ public sealed class ArchiveVerb(IReadOnlyDictionary<string, string?> environment
         return Configuration;
     }
 }
+
+/// <summary>What a passed configuration gives the sub-verbs: the principal's paths, zone, secret patterns and archive options.</summary>
+internal sealed record ArchiveContext(MemoryPaths Paths, TimeZoneInfo TimeZone, SecretPatterns Patterns, ArchiveOptions Options);

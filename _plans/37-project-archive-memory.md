@@ -159,7 +159,7 @@ Gate placement: one per vertical slice, plus one extra after Step 11 (⚠️ fir
 
 ## Step 3 — `add` refuses a source that is missing, not a regular file, reached through a symbolic link, inside the memory repository or under a denied location; a type it cannot sniff or the instance disallows; an empty, too large or cap-breaking item; a text item with a secret-shaped line (named by pattern and line number, never by text); a name or description with a secret or a contact detail; and a slug already used — every refusal with the exact stderr line and the tree, index, inbox and remote byte-for-byte unchanged
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Memory/SecretPatterns.cs` *(modify, additive)*: `bool TryMatchLines(IReadOnlyList<string> lines, out string name, out int lineNumber)` — the first pattern in file order that matches any line (as `TryMatchAnyLine`), plus the 1-based number of the first line it matches. `TryMatch`, `TryMatchAnyLine`, `TryRedactNumberShaped` unchanged.

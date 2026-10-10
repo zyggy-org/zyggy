@@ -180,6 +180,32 @@ internal sealed partial class SecretPatterns
         return false;
     }
 
+    /// <summary>
+    /// The first pattern in file order that matches any of <paramref name="lines"/> (as <see cref="TryMatchAnyLine"/>) and the 1-based
+    /// number of the first line it matches (spec 37 AC-10). Nothing of the line itself is returned.
+    /// </summary>
+    public bool TryMatchLines(IReadOnlyList<string> lines, out string name, out int lineNumber)
+    {
+        ArgumentNullException.ThrowIfNull(lines);
+        foreach (var (patternName, pattern, flags) in _patterns)
+        {
+            var single = new SecretPatterns([(patternName, pattern, flags)]);
+            for (var i = 0; i < lines.Count; i++)
+            {
+                if (single.TryMatch(lines[i], out _))
+                {
+                    name = patternName;
+                    lineNumber = i + 1;
+                    return true;
+                }
+            }
+        }
+
+        name = string.Empty;
+        lineNumber = 0;
+        return false;
+    }
+
     // sed ':a; s/(x) (y)/\1\2/; ta' — repeat until nothing changes.
     private static string Collapse(string text, Regex join)
     {

@@ -63,4 +63,43 @@ public sealed class SecretPatternsTests
         load.Patterns.Should().BeNull();
         load.Error.Should().NotBeNullOrEmpty();
     }
+
+    [Fact]
+    public void TryMatchLines_SecretOnThirdLine_NamesPatternAndLineThree()
+    {
+        // Act
+        var matched = Patterns().TryMatchLines(["Quote for the roof.", "Total 1 234,00 EUR.", "key AKIAABCDEFGHIJKLMNOP"], out var name, out var line);
+
+        // Assert
+        matched.Should().BeTrue();
+        name.Should().Be("aws-access-key");
+        line.Should().Be(3);
+    }
+
+    [Fact]
+    public void TryMatchLines_BenignLines_False()
+    {
+        // Act
+        var matched = Patterns().TryMatchLines(["Quote for the roof.", "Total 1 234,00 EUR, valid 30 days."], out var name, out var line);
+
+        // Assert
+        matched.Should().BeFalse();
+        name.Should().BeEmpty();
+        line.Should().Be(0);
+    }
+
+    [Fact]
+    public void TryMatchLines_TwoPatternsMatch_FileOrderWins()
+    {
+        // Arrange: the IBAN (later in the file) is on line 1, the AWS key (earlier in the file) on line 2.
+        string[] lines = ["my IBAN is BE71 0961 2345 6769", "key AKIAABCDEFGHIJKLMNOP"];
+
+        // Act
+        var matched = Patterns().TryMatchLines(lines, out var name, out var line);
+
+        // Assert
+        matched.Should().BeTrue();
+        name.Should().Be("aws-access-key");
+        line.Should().Be(2);
+    }
 }
