@@ -98,8 +98,8 @@ public sealed class ArchiveVerb(IReadOnlyDictionary<string, string?> environment
         return verb switch
         {
             "add" => await AddAsync(rest, io, new ArchiveContext(memory.Paths!, memory.TimeZone!, load.Patterns, configuration.Options), cancellationToken).ConfigureAwait(false),
-            "remove" => await RemoveAsync(rest, io).ConfigureAwait(false),
-            _ => await ListAsync(rest, io).ConfigureAwait(false),
+            "remove" => await RemoveAsync(rest, io, new ArchiveContext(memory.Paths!, memory.TimeZone!, load.Patterns, configuration.Options), cancellationToken).ConfigureAwait(false),
+            _ => await ListAsync(rest, io, new ArchiveContext(memory.Paths!, memory.TimeZone!, load.Patterns, configuration.Options)).ConfigureAwait(false),
         };
     }
 
@@ -123,10 +123,30 @@ public sealed class ArchiveVerb(IReadOnlyDictionary<string, string?> environment
             return Usage;
         }
 
+        var outcome = await Service(context).AddAsync(request, cancellationToken).ConfigureAwait(false);
+        if (await FailedAsync(outcome, io).ConfigureAwait(false) is { } failed)
+        {
+            return failed;
+        }
+
+        if (outcome.Note is not null)
+        {
+            await io.Error.WriteAsync(Prefix + "note: " + outcome.Note + "\n").ConfigureAwait(false);
+        }
+
+        return await CommitLinesAsync($"archived: {outcome.Item}\nsidecar: {outcome.Sidecar}\n", outcome, io).ConfigureAwait(false);
+    }
+
+    private ArchiveService Service(ArchiveContext context)
+    {
         var deny = SourceDenyList.Build(environment, context.Options, context.Paths);
         var publisher = new MemoryPublisher(new GitClient(_processes, new GitClientOptions(), clock));
-        var service = new ArchiveService(context.Paths, context.TimeZone, clock, context.Patterns, context.Options, deny, publisher, context.Paths.RootDirectory);
-        var outcome = await service.AddAsync(request, cancellationToken).ConfigureAwait(false);
+        return new ArchiveService(context.Paths, context.TimeZone, clock, context.Patterns, context.Options, deny, publisher, context.Paths.RootDirectory);
+    }
+
+    // A refusal (exit 2) or a git error (exit 6) as one stderr line; null when the outcome wrote and committed.
+    private static async Task<int?> FailedAsync(ArchiveOutcome outcome, VerbIo io)
+    {
         switch (outcome.Kind)
         {
             case ArchiveOutcomeKind.Refused:
@@ -136,16 +156,15 @@ public sealed class ArchiveVerb(IReadOnlyDictionary<string, string?> environment
                 await io.Error.WriteAsync(Prefix + "git error: " + outcome.Detail + "\n").ConfigureAwait(false);
                 return GitError;
             default:
-                break;
+                return null;
         }
+    }
 
-        if (outcome.Note is not null)
-        {
-            await io.Error.WriteAsync(Prefix + "note: " + outcome.Note + "\n").ConfigureAwait(false);
-        }
-
+    // The path lines, the inbox line and the commit line on stdout; exit 7 with a stderr line when the push was deferred.
+    private static async Task<int> CommitLinesAsync(string pathLines, ArchiveOutcome outcome, VerbIo io)
+    {
         var push = outcome.Pushed ? "pushed" : "push deferred";
-        await io.Out.WriteAsync($"archived: {outcome.Item}\nsidecar: {outcome.Sidecar}\n{outcome.Line}\ncommit: {outcome.Sha} {push}\n").ConfigureAwait(false);
+        await io.Out.WriteAsync($"{pathLines}{outcome.Line}\ncommit: {outcome.Sha} {push}\n").ConfigureAwait(false);
         if (!outcome.Pushed)
         {
             await io.Error.WriteAsync($"{Prefix}committed {outcome.Sha}, push deferred\n").ConfigureAwait(false);
@@ -155,10 +174,13 @@ public sealed class ArchiveVerb(IReadOnlyDictionary<string, string?> environment
         return Archived;
     }
 
+    // secret_pattern's detail is "<pattern> (line <n>|name|description)" (spec 37 AC-10); every other detail goes in parentheses.
     private static string Render(ArchiveRefusal refusal, string? detail) =>
-        detail is null ? ArchiveRefusalWire.ToWire(refusal) : $"{ArchiveRefusalWire.ToWire(refusal)} ({detail})";
+        detail is null ? ArchiveRefusalWire.ToWire(refusal)
+        : refusal is ArchiveRefusal.SecretPattern ? $"{ArchiveRefusalWire.ToWire(refusal)} {detail}"
+        : $"{ArchiveRefusalWire.ToWire(refusal)} ({detail})";
 
-    private static async Task<int> RemoveAsync(string[] args, VerbIo io)
+    private async Task<int> RemoveAsync(string[] args, VerbIo io, ArchiveContext context, CancellationToken cancellationToken)
     {
         var (reference, error) = ArchiveArguments.ParseRemove(args);
         if (reference is null)
@@ -167,11 +189,17 @@ public sealed class ArchiveVerb(IReadOnlyDictionary<string, string?> environment
             return Usage;
         }
 
-        await io.Error.WriteAsync(Prefix + "refused: not implemented\n").ConfigureAwait(false);
-        return Refused;
+        var outcome = await Service(context).RemoveAsync(reference, cancellationToken).ConfigureAwait(false);
+        if (await FailedAsync(outcome, io).ConfigureAwait(false) is { } failed)
+        {
+            return failed;
+        }
+
+        var removed = string.Concat(new[] { outcome.Item, outcome.Sidecar }.OfType<string>().Select(path => $"removed: {path}\n"));
+        return await CommitLinesAsync(removed, outcome, io).ConfigureAwait(false);
     }
 
-    private static async Task<int> ListAsync(string[] args, VerbIo io)
+    private async Task<int> ListAsync(string[] args, VerbIo io, ArchiveContext context)
     {
         var (request, error) = ArchiveArguments.ParseList(args);
         if (request is null)
@@ -180,6 +208,8 @@ public sealed class ArchiveVerb(IReadOnlyDictionary<string, string?> environment
             return Usage;
         }
 
+        var rows = Service(context).List(request);
+        await io.Out.WriteAsync(request.Json ? ArchiveListFormat.Json(rows) : ArchiveListFormat.Text(rows)).ConfigureAwait(false);
         return Archived;
     }
 

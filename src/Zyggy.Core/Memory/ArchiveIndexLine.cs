@@ -31,8 +31,15 @@ internal static class ArchiveIndexLine
     public static string Removed(DateOnly date, Slug project, Slug slug, string extension, string name)
     {
         ArgumentNullException.ThrowIfNull(project);
+        return Prefix(date, project) + RemovedFact(project, slug, extension, name);
+    }
+
+    /// <summary>The fact part of <see cref="Removed"/>.</summary>
+    public static string RemovedFact(Slug project, Slug slug, string extension, string name)
+    {
+        ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(slug);
-        return $"- [stated] {Date(date)} (project:{project.Value}): Removed archived item archive/{project.Value}/{slug.Value}.{extension} (\"{name}\")";
+        return $"Removed archived item archive/{project.Value}/{slug.Value}.{extension} (\"{name}\")";
     }
 
     private static string Prefix(DateOnly date, Slug project) => $"- [stated] {Date(date)} (project:{project.Value}): ";

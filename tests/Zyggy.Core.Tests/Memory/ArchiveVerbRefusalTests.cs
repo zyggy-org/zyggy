@@ -41,7 +41,7 @@ public sealed class ArchiveVerbRefusalTests : IDisposable
         { "not_found", "archive: refused: source_refused (not_found)\n" },
         { "type_refused", "archive: refused: type_refused\n" },
         { "too_large", "archive: refused: too_large (68 > 10)\n" },
-        { "secret_pattern", "archive: refused: secret_pattern (aws-access-key (line 2))\n" },
+        { "secret_pattern", "archive: refused: secret_pattern aws-access-key (line 2)\n" },
         { "contact_detail", "archive: refused: contact_detail (description)\n" },
         { "slug_taken", "archive: refused: slug_taken\n" },
     };

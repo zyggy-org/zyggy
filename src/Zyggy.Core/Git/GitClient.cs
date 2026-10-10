@@ -47,6 +47,9 @@ internal sealed class GitClient(IProcessRunner processes, GitClientOptions optio
             ? Task.FromResult(new GitResult(0, string.Empty, string.Empty))
             : RunAsync(repository, ["add", "--", .. paths], null, cancellationToken);
 
+    public Task<GitResult> RemoveAsync(string repository, IReadOnlyList<string> paths, CancellationToken cancellationToken) =>
+        RunAsync(repository, ["rm", "--", .. paths], null, cancellationToken);
+
     public Task<GitResult> CommitOnlyAsync(string repository, string message, IReadOnlyList<string> paths, CancellationToken cancellationToken) =>
         RunAsync(repository, ["commit", "--only", "-F", "-", "--", .. paths], message, cancellationToken);
 

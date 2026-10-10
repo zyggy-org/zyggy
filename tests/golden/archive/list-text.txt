@@ -1,0 +1,3 @@
+archive/zyggy/quote-2026.txt  text/plain  68 B  indexed  — Roof repair quote
+archive/zyggy/roof-invoice.md  -  -  orphan  — Invoice for the roof repair
+archive/zyggy/roof-photo.png  image/png  65 B  unindexed  — Photo of the roof damage

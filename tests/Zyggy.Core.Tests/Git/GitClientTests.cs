@@ -51,6 +51,19 @@ public sealed class GitClientTests
     }
 
     [Fact]
+    public async Task Remove_ArgumentsAreRmDashDashPaths()
+    {
+        // Act
+        var result = await Client().RemoveAsync(Repo, ["acme/alice/archive/zyggy/quote-2026.md", "acme/alice/archive/zyggy/quote-2026.txt"],
+            TestContext.Current.CancellationToken);
+
+        // Assert
+        result.Succeeded.Should().BeTrue();
+        _processes.Calls.Should().ContainSingle().Which.Arguments.Should().Equal(
+            "rm", "--", "acme/alice/archive/zyggy/quote-2026.md", "acme/alice/archive/zyggy/quote-2026.txt");
+    }
+
+    [Fact]
     public async Task Push_OriginHeadToBranch()
     {
         // Act

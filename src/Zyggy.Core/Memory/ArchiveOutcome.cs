@@ -6,6 +6,9 @@ internal enum ArchiveOutcomeKind
     /// <summary>Item, sidecar and index line written and committed; <see cref="ArchiveOutcome.Pushed"/> says whether the push went through.</summary>
     Archived,
 
+    /// <summary>The item's files removed and the removal committed (<c>archive remove</c>); <see cref="ArchiveOutcome.Item"/> and <see cref="ArchiveOutcome.Sidecar"/> are the paths that existed.</summary>
+    Removed,
+
     /// <summary>A closed check refused the item (exit 2).</summary>
     Refused,
 
@@ -13,7 +16,7 @@ internal enum ArchiveOutcomeKind
     GitError,
 }
 
-/// <summary>The outcome of <see cref="ArchiveService.AddAsync"/>: what was written, where, and the commit — or why it stopped.</summary>
+/// <summary>The outcome of <see cref="ArchiveService.AddAsync"/> and <see cref="ArchiveService.RemoveAsync"/>: what was written, where, and the commit — or why it stopped.</summary>
 /// <param name="Kind">The kind.</param>
 /// <param name="Refusal">The refusal when <see cref="ArchiveOutcomeKind.Refused"/>.</param>
 /// <param name="Detail">The refusal's detail token, or the failed git step.</param>
@@ -42,4 +45,7 @@ internal sealed record ArchiveOutcome(
 
     public static ArchiveOutcome Archived(string item, string sidecar, string inboxPath, string line, string? sha, bool pushed, string? note) =>
         new(ArchiveOutcomeKind.Archived, null, null, item, sidecar, inboxPath, line, sha, pushed, note);
+
+    public static ArchiveOutcome Removed(string? item, string? sidecar, string inboxPath, string line, string? sha, bool pushed) =>
+        new(ArchiveOutcomeKind.Removed, null, null, item, sidecar, inboxPath, line, sha, pushed, null);
 }

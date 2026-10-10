@@ -277,7 +277,7 @@ Gate placement: one per vertical slice, plus one extra after Step 11 (⚠️ fir
 
 ## Step 5 — `zyggy memory archive add` runs from the built binary against a temporary memory repository with a local bare remote: a text, a PNG and a PDF each land on `origin/main` in one `archive add` commit of exactly two paths with the inbox line uncommitted; a refused item, a symlinked source and a source inside the repository leave tree, index, inbox and remote byte-for-byte unchanged; a rejected push is rebased once or deferred with exit 7 and pushed first by the next `add`
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Cli/RawVerbs.cs` *(modify)*: `args is ["memory", "archive", .. var rest]` → `new ArchiveVerb(environment.Variables, TimeProvider.System).RunAsync(rest, VerbIo.FromConsole(), CancellationToken.None)` (the production ctor builds `ProcessRunner` internally through `Zyggy.Core.Processes`).
@@ -331,16 +331,16 @@ Gate placement: one per vertical slice, plus one extra after Step 11 (⚠️ fir
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: `ArchiveAddCommandTests` green with `git log -1 --stat` and `git show main:…/quote-2026.md` of the bare repo shown; the sidecar golden; `inbox-after-archive.md` parity with `RememberService`; `ArchiveAddPushTests` (rebase once, exit 7, push-first next time); `ArchiveAddRefusalTests` fingerprints unchanged; `DreamRunnerGitTests` diff = one added fact.
-- [ ] Contract review: AC-13..AC-17 against the spec; sidecar keys and the index line against Contracts; commit subject/body/trailer; `inbox/` never committed; stdout lines in order; **Assumption A1** (sidecar key order follows `MemoryFileWriter`'s usual places: `name`, `description`, `updated`, then the six archive keys) accepted or the golden is re-derived by hand with the owner's chosen order.
-- [ ] ⚠️ Risk review (shared git path): `MemoryPublisher` is the only mover of 28's push logic — `DreamPushTests` and `DreamRunnerGitTests` unchanged and green; the dream's preflight widened to `archive ` only; no `--force` anywhere (`grep` in `src/`); the verb builds no host and never runs `claude`; the item bytes are what the owner handed over (SHA-256 shown in the commit body).
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `ArchiveAddCommandTests` green with `git log -1 --stat` and `git show main:…/quote-2026.md` of the bare repo shown; the sidecar golden; `inbox-after-archive.md` parity with `RememberService`; `ArchiveAddPushTests` (rebase once, exit 7, push-first next time); `ArchiveAddRefusalTests` fingerprints unchanged; `DreamRunnerGitTests` diff = one added fact.
+- [x] Contract review: AC-13..AC-17 against the spec; sidecar keys and the index line against Contracts; commit subject/body/trailer; `inbox/` never committed; stdout lines in order; **Assumption A1** (sidecar key order follows `MemoryFileWriter`'s usual places: `name`, `description`, `updated`, then the six archive keys) accepted or the golden is re-derived by hand with the owner's chosen order.
+- [x] ⚠️ Risk review (shared git path): `MemoryPublisher` is the only mover of 28's push logic — `DreamPushTests` and `DreamRunnerGitTests` unchanged and green; the dream's preflight widened to `archive ` only; no `--force` anywhere (`grep` in `src/`); the verb builds no host and never runs `claude`; the item bytes are what the owner handed over (SHA-256 shown in the commit body).
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 6 — `list` shows every archived item in path order with its type, size, `indexed`/`unindexed`/`orphan` state and description (text or JSON), filtered by project or to unindexed rows; `remove` plans the `git rm` of both files, one `archive remove` commit and one `Removed archived item …` inbox line, and refuses a missing item with `not_found` (fake process runner)
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Memory/ArchiveService.cs` *(modify)*:
@@ -374,7 +374,7 @@ Gate placement: one per vertical slice, plus one extra after Step 11 (⚠️ fir
 
 ## Step 7 — `zyggy memory archive list` and `remove` run from the built binary against the bare remote: `list` reports `unindexed` right after an `add` and `orphan` for a half-present item, `--json` parses; `remove` deletes both files on `origin/main` in one `archive remove` commit, writes its inbox line, exits 2 `not_found` for an unknown item and 2 `unattended` under `ZYGGY_HOOKS=off`
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `tests/Zyggy.Integration/Memory/ArchiveListCommandTests.cs`, `ArchiveRemoveCommandTests.cs` *(create)*.

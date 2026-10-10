@@ -62,16 +62,34 @@ internal sealed class MemoryPublisher(GitClient git)
         }
 
         var sha = await git.RevParseAsync(repository, "HEAD", cancellationToken).ConfigureAwait(false);
-        var pushed = await PushAsync(repository, branch, cancellationToken).ConfigureAwait(false);
+        var (pushed, rebased) = await PushCoreAsync(repository, branch, cancellationToken).ConfigureAwait(false);
+
+        // A clean rebase rewrote the commit: report the sha that is on the remote.
+        if (rebased)
+        {
+            sha = await git.RevParseAsync(repository, "HEAD", cancellationToken).ConfigureAwait(false);
+        }
+
         return new PublishResult(true, sha, pushed, null);
+    }
+
+    /// <summary><c>git rm</c> of exactly <paramref name="paths"/>; <see langword="null"/> on success, else <c>rm_failed</c> or <c>index_lock</c>.</summary>
+    public async Task<string?> RemoveAsync(string repository, IReadOnlyList<string> paths, CancellationToken cancellationToken)
+    {
+        var rm = await git.RemoveAsync(repository, paths, cancellationToken).ConfigureAwait(false);
+        return rm.Succeeded ? null : Step(rm, "rm_failed");
     }
 
     /// <summary>
     /// Pushes; when rejected, fetches, rebases the local commits once and pushes again; a conflict aborts the rebase and keeps the
     /// commits for the next writer. Any other push failure also defers the push. Never a force push.
     /// </summary>
-    public async Task<bool> PushAsync(string repository, string branch, CancellationToken cancellationToken)
+    public async Task<bool> PushAsync(string repository, string branch, CancellationToken cancellationToken) =>
+        (await PushCoreAsync(repository, branch, cancellationToken).ConfigureAwait(false)).Pushed;
+
+    private async Task<(bool Pushed, bool Rebased)> PushCoreAsync(string repository, string branch, CancellationToken cancellationToken)
     {
+        var rebased = false;
         var push = await git.PushAsync(repository, branch, cancellationToken).ConfigureAwait(false);
         if (!push.Succeeded && IsRejected(push.Stderr))
         {
@@ -79,6 +97,7 @@ internal sealed class MemoryPublisher(GitClient git)
             var rebase = fetch.Succeeded ? await git.RebaseAsync(repository, branch, cancellationToken).ConfigureAwait(false) : fetch;
             if (rebase.Succeeded)
             {
+                rebased = true;
                 push = await git.PushAsync(repository, branch, cancellationToken).ConfigureAwait(false);
             }
             else if (fetch.Succeeded)
@@ -87,7 +106,7 @@ internal sealed class MemoryPublisher(GitClient git)
             }
         }
 
-        return push.Succeeded;
+        return (push.Succeeded, rebased);
     }
 
     private static string Step(GitResult result, string step) => result.Stderr.Contains("index.lock", StringComparison.Ordinal) ? "index_lock" : step;

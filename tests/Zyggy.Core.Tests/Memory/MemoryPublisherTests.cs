@@ -142,6 +142,21 @@ public sealed class MemoryPublisherTests : IDisposable
     }
 
     [Fact]
+    public async Task CommitAndPush_PushRejectedRebaseClean_ShaIsTheRebasedHead()
+    {
+        // Arrange: the rebase rewrites the commit, so HEAD after the second push is a new sha.
+        _git.On("push", RecordingProcessRunner.Fail(1, Rejected), RecordingProcessRunner.Ok());
+        _git.On("rev-parse", RecordingProcessRunner.Ok("aaaa\n"), RecordingProcessRunner.Ok("bbbb\n"));
+
+        // Act
+        var result = await Publisher().CommitAndPushAsync(Repo, "main", "m", Paths, Paths, TestContext.Current.CancellationToken);
+
+        // Assert
+        result.Pushed.Should().BeTrue();
+        result.Sha.Should().Be("bbbb");
+    }
+
+    [Fact]
     public async Task CommitAndPush_PushRejectedRebaseConflict_AbortsRebaseKeepsCommitPushedFalse()
     {
         // Arrange

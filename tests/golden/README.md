@@ -183,3 +183,9 @@ The sidecar key order follows `MemoryFileWriter` (`name`, `description`, `update
 `inbox-after-archive.md` is `inbox/remember-2026-09-30.md` after one `add` of the text item and one `remove` of it, in the exact bytes
 `memory remember --scope project:zyggy -- "<fact>"` writes (front matter of `remember.sh`; the dash of the index line is U+2014).
 `commit-message-add.txt` and `commit-message-remove.txt` are the two commit messages (subject, body, trailer `Zyggy-Tool: memory archive`).
+`list-text.txt` and `list.json` are `archive list` and `archive list --json` (Step 6) over a fixed three-row tree: the text item with
+`sidecar-text.md` (named by a `[stated]` line in `business/areas/zyggy.md` → `indexed`), the PNG as `roof-photo.png` with
+`sidecar-png.md` (`unindexed`), and `sidecar-pdf.md` alone as `roof-invoice.md` (`orphan`: type and size `-` / null, the item being
+absent). Rows in ordinal path order, two spaces between columns, sizes as the index line prints them (`68 B`, `65 B`); JSON keys in the
+order `item`, `sidecar`, `project`, `slug`, `media_type`, `size_bytes`, `name`, `description`, `archived`, `state` (plan assumption A5),
+two-space indent, LF, final newline.
