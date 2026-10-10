@@ -1,0 +1,2 @@
+{"ts":"2026-10-10T06:11:35.4987569Z","session_id":"a598d1f4-5914-4a51-9bd7-7632928f7c36","signal":"usage","value":"planner","ref":"transcript:a598d1f4-5914-4a51-9bd7-7632928f7c36#toolu_01KvtE1K8cQgxg4VHVHA5Q53","tool":"Agent","kind":"agent"}
+{"ts":"2026-10-10T07:07:14.3778910Z","session_id":"a598d1f4-5914-4a51-9bd7-7632928f7c36","signal":"usage","value":"build-feature","ref":"transcript:a598d1f4-5914-4a51-9bd7-7632928f7c36#toolu_01GSu8w1yxdCbcmkLxcL9aKY","kind":"skill","tool":"Skill"}
