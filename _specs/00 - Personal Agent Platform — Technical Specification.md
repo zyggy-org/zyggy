@@ -64,7 +64,7 @@ Six deliverables. Four are .NET binaries; two are Claude Code configuration (Mar
 | Component | Kind | Where | Responsibility |
 | --- | --- | --- | --- |
 | `AgentBus.Node` | .NET Worker Service | every machine incl. Central | Poll GitHub, pull, claim, execute, report, push. Publish registry. |
-| `AgentBus.Cli` (`agentbus`) | .NET console, single-file | every machine | `submit`, `status`, `report`, `context`, `discover`, `verify`, `dream`, `dream request`, `dream status`, `memory digest`; `--version`. Called from Claude Code skills. |
+| `AgentBus.Cli` (`agentbus`) | .NET console, single-file | every machine | `submit`, `status`, `report`, `context`, `discover`, `verify`, `dream`, `dream request`, `dream status`, `memory digest`, `memory archive add | list | remove`; `--version`. Called from Claude Code skills. |
 | `AgentBus.Hub` | .NET MCP server (stdio) | Central | `get_context`, `remember`, `list_nodes`, `submit_job`, `job_status`. |
 | `AgentBus.Core` | .NET class library | shared | Envelope model, signing, git wrapper, GitHub poller, job runner, registry model. |
 | `agent-core` | git repo of Claude Code config | every machine | `CLAUDE.md` templates, `.claude/skills/*`, `.claude/agents/*`, `.claude/hooks/*`, `PROTOCOL.md`. |
@@ -88,6 +88,7 @@ Six deliverables. Four are .NET binaries; two are Claude Code configuration (Mar
 | `bus` | Central, Nodes | Wraps `agentbus submit/status/report`. Documents envelope fields and the DLP rule. |
 | `dream` | Central | Consolidate the tenant/user's `inbox/` and daily notes (`memory/<tenant>/<user>/…`) into durable files, condense, commit. Owner-requested trigger: `zyggy dream request` / `status`. The run itself — lock, batching, the model call through `IModelRunner`, checks, rollup, commit and push — is `zyggy dream`; the model only proposes structured edits. |
 | `remember` | Central, Nodes | Append a `[stated]` fact to `memory/<tenant>/<user>/inbox/` (Central) or emit a `context` envelope (Nodes). |
+| `archive` | Central | Keep a long text, a file or an image the owner hands over in the conversation as a project archive item (`zyggy memory archive add`), after showing him name, description and project; list and remove on request. Never from an unattended run, never content read from mail, drives, the web or a clone. |
 | `delegate` | Central | Pick machine/project/agent from the tenant's registry, build a job envelope, submit. |
 | `discover` | Nodes | Scan dev roots, write `tenants/<org>/registry/<machine>.yaml`, commit if changed. |
 | `morning-brief`, `mail-backfill`, `files-backfill`, `m365` | Central | The `m365` MCP server's tools, driven by owner-invoked skills: `morning-brief` (timer: new mail and changed files → one brief Draft with numbered suggested actions, at most N reply Drafts, facts to `inbox/`; never acts), `mail-backfill` and `files-backfill` (owner-started, batched, resumable, cost-capped, facts only), `m365` (status and the interactive rules). In the conversation, at the owner's request, Zyggy sends mail, files mail or creates a new OneDrive file, each only after the owner answers a permission prompt; a guard hook refuses attachments, hidden recipients, HTML, overwrites and foreign drives before the prompt; memory only through validated fact lines; a post-run audit checks every Draft. |
@@ -351,6 +352,8 @@ auto/                              committed as found, never written by the drea
 .dream/ledger.json                 consumed lines (committed with the edits)
 .dream/quarantine.md               lines given up after repeated failures (committed, never injected)
 .dream/pending.json                crash-recovery marker (exists only between write and commit; never committed)
+archive/<project>/<slug>.<ext>     a file the owner explicitly archived in a session (text, PDF, PNG, JPEG, GIF; closed type list and size caps in instance/archive.json); written only by zyggy memory archive, never by the dream
+archive/<project>/<slug>.md        its sidecar: name, description, project, media type, size, SHA-256, archived date, source name
 work/                 # exists only on the work node, in its own repo with the same <tenant>/<user>/ layout; never synced to Central
 ```
 
@@ -378,7 +381,7 @@ The `SessionStart` hook injects, as three separately capped sections (6,000 / 6,
 
 - Only `[stated]` and `[observed]` tags; no inferred personality or health lines.
 - Facts from nodes are `[observed]` until the user confirms them in a session.
-- Never store secrets, credentials, or mail bodies; the `remember` skill refuses lines matching secret patterns (keys, tokens, IBANs, card numbers).
+- Never store secrets, credentials, mail bodies or **harvested** file contents; the `remember` skill refuses lines matching secret patterns (keys, tokens, IBANs, card numbers). A file the owner explicitly archives in a conversation is the one exception: it is stored under `archive/<project>/` with a sidecar after closed checks (allowed type by content, size caps, secret-pattern scan on every line of a text item, no symbolic links, never from a credential or state location), indexed by one `[stated]` line the dream files into the project's file; contact details may appear inside an archived document but never in its name, description, sidecar or index line; the dream never opens or rewrites archived files.
 - Work facts stay in `memory/<tenant>/<user>/work/` on the work node. Only lines the work node explicitly marks `share: true` in a `context` envelope may reach Central, and only as summaries.
 - `[stated]` facts are never dropped; contact details are never stored; every proposal passes the automatic checks before it is written.
 
@@ -466,7 +469,7 @@ AgentBus.sln
       Memory/               MemoryPaths (per Principal), MemoryStore (read-only helpers for Hub), ContextRanker
       Secrets/              ISecretStore (keys namespaced by tenant) + Windows (CredentialManager), Linux (libsecret / file 0600), Systemd (LoadCredential)
     AgentBus.Node/          Worker Service: PollLoop (BackgroundService), JobDispatcher, DiscoveryTimer, Health endpoint (localhost:4711)
-    AgentBus.Cli/           System.CommandLine: submit | status | report | context | discover | verify | run | hub --proxy | dream | dream request | dream status | memory digest; --version
+    AgentBus.Cli/           System.CommandLine: submit | status | report | context | discover | verify | run | hub --proxy | dream | dream request | dream status | memory digest | memory archive add | list | remove; --version
     AgentBus.Hub/           MCP server (ModelContextProtocol SDK): stdio transport (HTTP is a §14 item)
   tests/
     AgentBus.Core.Tests/    xUnit: parser, signer, state machine, poller (mocked HttpMessageHandler), runner (fake claude)
