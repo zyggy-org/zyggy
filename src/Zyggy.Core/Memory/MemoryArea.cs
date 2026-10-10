@@ -30,6 +30,12 @@ public enum MemoryArea
     /// <summary>The 27 layout's root <c>areas/</c>, <c>people/</c> or <c>topics/</c>, migrated once.</summary>
     Legacy,
 
-    /// <summary>Any other path inside the principal directory, including side and category directories.</summary>
+    /// <summary>Any other path inside the principal directory, including side, category and archive project directories.</summary>
     Other,
+
+    /// <summary>An archived file <c>archive/&lt;project&gt;/&lt;slug&gt;.&lt;ext&gt;</c> (spec 37; founding spec §7 layout).</summary>
+    ArchiveItem,
+
+    /// <summary>An archived file's sidecar <c>archive/&lt;project&gt;/&lt;slug&gt;.md</c>.</summary>
+    ArchiveSidecar,
 }

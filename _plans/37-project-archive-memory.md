@@ -62,7 +62,7 @@ Gate placement: one per vertical slice, plus one extra after Step 11 (⚠️ fir
 
 ## Step 1 — `MemoryPaths` classifies `archive/<project>/<slug>.<ext>` as an archive item and `archive/<project>/<slug>.md` as its sidecar, refuses every other shape under `archive/`, builds the four archive paths for an explicit principal, and keeps every existing refusal and classification unchanged; a symlink under `archive/` leaving the principal is refused on Linux; the PNG/GIF/JPEG/PDF/UTF-8 sniffers live in one shared `MediaSniffer` that `PostImage` now calls
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Memory/MemoryArea.cs` *(modify)*: two members appended after `Other`: `ArchiveItem` (`archive/<project>/<slug>.<ext>`), `ArchiveSidecar` (`archive/<project>/<slug>.md`).

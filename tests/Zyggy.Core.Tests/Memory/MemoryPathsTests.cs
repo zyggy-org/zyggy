@@ -72,6 +72,8 @@ public sealed class MemoryPathsTests
     [InlineData("topics/tea.md", MemoryArea.Legacy)]
     [InlineData("README.md", MemoryArea.Other)]
     [InlineData("business\\clients\\acme-corp.md", MemoryArea.Durable)]
+    [InlineData("archive/zyggy/quote-2026.md", MemoryArea.ArchiveSidecar)]
+    [InlineData("archive/zyggy/quote-2026.pdf", MemoryArea.ArchiveItem)]
     public void TryResolve_Valid_ClassifiesArea(string relative, MemoryArea area)
     {
         // Act
@@ -88,7 +90,65 @@ public sealed class MemoryPathsTests
     public void TryResolve_EveryArea_HasAValidRow()
     {
         // Assert: TryResolve_Valid_ClassifiesArea covers every member.
-        Enum.GetValues<MemoryArea>().Should().HaveCount(10);
+        Enum.GetValues<MemoryArea>().Should().HaveCount(12);
+    }
+
+    [Theory]
+    [InlineData("archive", MemoryArea.Other, null)]
+    [InlineData("archive/zyggy", MemoryArea.Other, null)]
+    [InlineData("archive/zyggy/quote.txt", MemoryArea.ArchiveItem, null)]
+    [InlineData("archive/zyggy/quote.png", MemoryArea.ArchiveItem, null)]
+    [InlineData("archive/zyggy/quote.jpg", MemoryArea.ArchiveItem, null)]
+    [InlineData("archive/zyggy/quote.gif", MemoryArea.ArchiveItem, null)]
+    [InlineData("archive/zyggy/quote.pdf", MemoryArea.ArchiveItem, null)]
+    [InlineData("archive/zyggy/quote.md", MemoryArea.ArchiveSidecar, null)]
+    [InlineData("archive/zyggy/quote.docx", null, MemoryPathRefusal.InvalidSegment)]
+    [InlineData("archive/zyggy/sub/x.pdf", null, MemoryPathRefusal.InvalidSegment)]
+    [InlineData("archive/Bad Slug/x.pdf", null, MemoryPathRefusal.InvalidSegment)]
+    [InlineData("archive/zyggy/quote", null, MemoryPathRefusal.InvalidSegment)]
+    [InlineData("archive/zyggy/_index.md", null, MemoryPathRefusal.InvalidSegment)]
+    [InlineData("archive/x.md", null, MemoryPathRefusal.InvalidSegment)]
+    [InlineData("archive/zyggy/quote.PNG", null, MemoryPathRefusal.InvalidSegment)]
+    [InlineData("archive/../profile.md", null, MemoryPathRefusal.Traversal)]
+    [InlineData("/archive/zyggy/x.pdf", null, MemoryPathRefusal.Absolute)]
+    [InlineData("../../acme/bob/archive/zyggy/x.pdf", null, MemoryPathRefusal.OutsidePrincipal)]
+    public void TryResolve_ArchivePath_ClassifiesOrRefuses(string relative, MemoryArea? area, MemoryPathRefusal? refusal)
+    {
+        // Act
+        var resolution = Paths.TryResolve(relative);
+
+        // Assert
+        resolution.Succeeded.Should().Be(area is not null);
+        resolution.Refusal.Should().Be(refusal);
+        if (area is { } expected)
+        {
+            resolution.Area.Should().Be(expected);
+        }
+    }
+
+    [Fact]
+    public void ArchiveBuilders_AreUnderPrincipalAndRelativeRoundTrips()
+    {
+        // Arrange
+        var project = Slug.Parse("zyggy");
+        var slug = Slug.Parse("quote-2026");
+
+        // Act
+        var directory = Paths.ArchiveDirectory;
+        var projectDirectory = Paths.ArchiveProject(project);
+        var item = Paths.ArchiveItem(project, slug, ArchiveMediaType.Jpeg);
+        var sidecar = Paths.ArchiveSidecar(project, slug);
+
+        // Assert
+        directory.Should().Be(Path.Combine(Principal, "archive"));
+        projectDirectory.Should().Be(Path.Combine(Principal, "archive", "zyggy"));
+        item.Should().Be(Path.Combine(Principal, "archive", "zyggy", "quote-2026.jpg"));
+        sidecar.Should().Be(Path.Combine(Principal, "archive", "zyggy", "quote-2026.md"));
+        Paths.Relative(item).Should().Be("archive/zyggy/quote-2026.jpg");
+        Paths.Relative(sidecar).Should().Be("archive/zyggy/quote-2026.md");
+        Paths.TryResolve(Paths.Relative(item)).Area.Should().Be(MemoryArea.ArchiveItem);
+        Paths.TryResolve(Paths.Relative(sidecar)).Area.Should().Be(MemoryArea.ArchiveSidecar);
+        Paths.TryResolve(Paths.Relative(projectDirectory)).Area.Should().Be(MemoryArea.Other);
     }
 
     [Theory]

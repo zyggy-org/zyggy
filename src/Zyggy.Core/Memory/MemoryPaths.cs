@@ -142,6 +142,44 @@ public sealed partial class MemoryPaths
         return Join(MemorySideWire.ToWire(side), category.Value, slug.Value + ".md");
     }
 
+    /// <summary>Gets <c>archive/</c> (spec 37).</summary>
+    public string ArchiveDirectory => Join("archive");
+
+    /// <summary>Returns an archive project directory.</summary>
+    /// <param name="project">The project's slug.</param>
+    /// <returns><c>archive/&lt;project&gt;/</c>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="project"/> is null.</exception>
+    public string ArchiveProject(Slug project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        return Join("archive", project.Value);
+    }
+
+    /// <summary>Returns an archived item.</summary>
+    /// <param name="project">The project's slug.</param>
+    /// <param name="slug">The item's slug.</param>
+    /// <param name="type">The item's media type, which decides the extension.</param>
+    /// <returns><c>archive/&lt;project&gt;/&lt;slug&gt;.&lt;ext&gt;</c>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="project"/> or <paramref name="slug"/> is null.</exception>
+    public string ArchiveItem(Slug project, Slug slug, ArchiveMediaType type)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(slug);
+        return Join("archive", project.Value, slug.Value + "." + ArchiveMediaTypeWire.Extension(type));
+    }
+
+    /// <summary>Returns an archived item's sidecar.</summary>
+    /// <param name="project">The project's slug.</param>
+    /// <param name="slug">The item's slug.</param>
+    /// <returns><c>archive/&lt;project&gt;/&lt;slug&gt;.md</c>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="project"/> or <paramref name="slug"/> is null.</exception>
+    public string ArchiveSidecar(Slug project, Slug slug)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(slug);
+        return Join("archive", project.Value, slug.Value + ".md");
+    }
+
     /// <summary>
     /// Resolves a path relative to the principal directory (<c>/</c> or <c>\</c> separators) and classifies it. Never throws:
     /// rooted paths, <c>..</c>, malformed segments, another principal's tree and symbolic links leading out are refused.
@@ -259,6 +297,11 @@ public sealed partial class MemoryPaths
             return name.EndsWith(".md", StringComparison.Ordinal) && Slug.TryParse(name[..^3], out _) ? MemoryArea.Durable : null;
         }
 
+        if (first == "archive")
+        {
+            return ClassifyArchive(segments);
+        }
+
         return first switch
         {
             "daily" => MemoryArea.Daily,
@@ -269,6 +312,35 @@ public sealed partial class MemoryPaths
             "work" => null,
             _ => MemoryArea.Other,
         };
+    }
+
+    // archive/<project>/<slug>.<ext> is an item, archive/<project>/<slug>.md its sidecar; the project directory is Other; nothing else.
+    private static MemoryArea? ClassifyArchive(string[] segments)
+    {
+        if (segments.Length > 3 || (segments.Length >= 2 && !Slug.TryParse(segments[1], out _)))
+        {
+            return null;
+        }
+
+        if (segments.Length < 3)
+        {
+            return MemoryArea.Other;
+        }
+
+        var name = segments[2];
+        var dot = name.LastIndexOf('.');
+        if (dot <= 0 || !Slug.TryParse(name[..dot], out _))
+        {
+            return null;
+        }
+
+        var extension = name[(dot + 1)..];
+        if (extension == "md")
+        {
+            return MemoryArea.ArchiveSidecar;
+        }
+
+        return ArchiveMediaTypeWire.IsItemExtension(extension) ? MemoryArea.ArchiveItem : null;
     }
 
     private bool LeavesThroughLink(string[] segments)

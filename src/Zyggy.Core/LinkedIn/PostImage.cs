@@ -2,6 +2,8 @@ using System.Buffers.Binary;
 using System.Globalization;
 using System.Security.Cryptography;
 
+using Zyggy.Core.Media;
+
 namespace Zyggy.Core.LinkedIn;
 
 /// <summary>An image read once for upload: its bytes, media type, dimensions and SHA-256.</summary>
@@ -63,7 +65,7 @@ internal static class PostImage
             return Refuse(string.Create(CultureInfo.InvariantCulture, $"image too large ({bytes.Length} > {maxBytes})"));
         }
 
-        var mediaType = Kind(bytes);
+        var mediaType = MediaSniffer.ImageType(bytes);
         if (mediaType is null)
         {
             return Refuse("image not PNG, JPEG or GIF");
@@ -105,21 +107,6 @@ internal static class PostImage
         }
 
         return true;
-    }
-
-    private static string? Kind(byte[] b)
-    {
-        if (b.Length >= 24 && b.AsSpan(0, 8).SequenceEqual((byte[])[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))
-        {
-            return "image/png";
-        }
-
-        if (b.Length >= 10 && (b.AsSpan(0, 6).SequenceEqual("GIF87a"u8) || b.AsSpan(0, 6).SequenceEqual("GIF89a"u8)))
-        {
-            return "image/gif";
-        }
-
-        return b.Length >= 3 && b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF ? "image/jpeg" : null;
     }
 
     private static (int Width, int Height)? Dimensions(string mediaType, byte[] b) => mediaType switch
