@@ -71,6 +71,42 @@ public sealed class SourceDenyListTests : IDisposable
         Build().Covers(Path.Combine(Home, ".local", "share", "zyggy", "linkedin", "media", "x.png")).Should().BeNull();
     }
 
+    // Regression (Central, 2026-10-10): an image the owner sends in a session lands in ~/.claude/uploads/<session>/ and
+    // was refused as denied_location; the uploads folder holds only what the owner handed over, so it is exempt.
+    [Fact]
+    public void Covers_SessionUpload_Null()
+    {
+        // Act & Assert
+        Build().Covers(Path.Combine(Home, ".claude", "uploads", "e80198bf-5065-45d8-8599-a53a50e5caa6", "c5082833-image.png")).Should().BeNull();
+    }
+
+    public static TheoryData<string> ClaudeOutsideUploads() => new()
+    {
+        Path.Combine(Home, ".claude", ".credentials.json"),
+        Path.Combine(Home, ".claude", "projects", "x.jsonl"),
+        Path.Combine(Home, ".claude", "uploadsx", "x.png"),
+        Path.Combine(Home, ".claude", "uploads", "..", ".credentials.json"),
+        Path.Combine(Home, ".claude", "uploads"),
+    };
+
+    [Theory]
+    [MemberData(nameof(ClaudeOutsideUploads))]
+    public void Covers_ClaudeOutsideUploads_StillDenied(string path)
+    {
+        // Act & Assert
+        Build().Covers(path).Should().Be("denied_location");
+    }
+
+    [Fact]
+    public void Covers_UploadUnderInstanceSourceDeny_StillDenied()
+    {
+        // Arrange: the instance may still close the uploads folder (source_deny only tightens).
+        var uploads = Path.Combine(Home, ".claude", "uploads");
+
+        // Act & Assert
+        Build(new ArchiveOptions { SourceDeny = [uploads] }).Covers(Path.Combine(uploads, "s", "x.png")).Should().Be("denied_location");
+    }
+
     [Fact]
     public void Covers_PrefixLookalike_Null()
     {

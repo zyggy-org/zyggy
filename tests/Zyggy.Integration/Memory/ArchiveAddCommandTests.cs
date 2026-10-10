@@ -107,6 +107,23 @@ public sealed class ArchiveAddCommandTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Add_SessionUploadUnderClaudeUploads_Archived()
+    {
+        // Arrange: regression (Central, 2026-10-10) — an image sent in a session lands in ~/.claude/uploads/<session>/.
+        var upload = Path.Combine(_repo.HomeDir, ".claude", "uploads", "e80198bf", "c5082833-image.png");
+        Directory.CreateDirectory(Path.GetDirectoryName(upload)!);
+        await File.WriteAllBytesAsync(upload, Png(), Ct);
+
+        // Act
+        var run = await AddAsync(upload, name: "Roof photo", description: "Photo of the roof damage");
+
+        // Assert
+        run.ExitCode.Should().Be(0, run.Stderr + run.Stdout);
+        (await _repo.LastCommitSubjectAsync(Ct)).Should().Be("archive add zyggy/roof-photo.png");
+        MemoryFileReader.Parse(await _repo.ShowAsync("acme/alice/archive/zyggy/roof-photo.md", Ct) + "\n").UnknownKeys["source_name"].Should().Be("c5082833-image.png");
+    }
+
+    [Fact]
     public async Task Add_JpegBytesNamedPng_StoredAsJpg()
     {
         // Arrange
