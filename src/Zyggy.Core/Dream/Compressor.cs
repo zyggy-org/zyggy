@@ -57,7 +57,7 @@ internal sealed class Compressor(IModelRunner model, DreamPrompts prompts)
                 MaxBudgetUsd = options.CallMaxBudgetUsd,
                 JsonSchema = prompts.CompressionSchema,
                 Model = options.Model,
-                DisallowedTools = LinkedIn.LinkedInRunDeny.Rules,
+                DisallowedTools = DreamRunDeny.Rules(context.Paths),
                 Isolation = ModelSessionIsolation.NoMcp | ModelSessionIsolation.NoHooks | ModelSessionIsolation.NoAutoMemory
                     | ModelSessionIsolation.NoSlashCommands,
                 Environment = new Dictionary<string, string> { ["ZYGGY_HOOKS"] = "off" },

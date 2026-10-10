@@ -35,6 +35,22 @@ public sealed class DreamChecksRunLevelTests
     }
 
     [Fact]
+    public void CheckRun_ArchiveSidecarLines_NotCountedAsDurable()
+    {
+        // Arrange: 3 of 20 durable lines removed (15 %); 100 "- " lines in a sidecar would dilute it to 2.5 % if they counted.
+        using var tree = Tree();
+        tree.Write("archive/zyggy/long.md", "---\nname: Long\ndescription: long\nupdated: 2026-09-30\n---\n"
+            + string.Concat(Enumerable.Range(1, 100).Select(i => $"- [stated] 2026-09-18: sidecar {i}.\n")));
+        var set = RemoveLines(tree, 2, 1);
+
+        // Act
+        var check = DreamChecks.CheckRun(set.Snapshot, set, new DreamOptions());
+
+        // Assert
+        check.Should().Be(DreamCheck.RunRemovalLimit);
+    }
+
+    [Fact]
     public void CheckRun_AtLimit_Passes()
     {
         // Arrange: 2 of 20 durable lines (10 %).

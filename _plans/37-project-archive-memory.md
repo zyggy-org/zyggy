@@ -403,16 +403,16 @@ Gate placement: one per vertical slice, plus one extra after Step 11 (⚠️ fir
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: `list` text and JSON output from the integration run shown; `remove` commit (`git show --name-status`) and inbox line shown; `not_found` and `unattended` refusals.
-- [ ] Contract review: AC-18, AC-19 against the spec; `list` never runs git; `remove` never edits the project file; **Assumption A4** (`remove` of a half-present item removes what exists and writes `("-")` as the name) and **A5** (the `--json` key set) accepted or changed here before Slice E.
-- [ ] ⚠️ Risk review: `remove` is the only deletion path and deletes exactly two paths under `archive/`; `rm` arguments are the resolved archive paths only (no glob, no `-r`).
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `list` text and JSON output from the integration run shown; `remove` commit (`git show --name-status`) and inbox line shown; `not_found` and `unattended` refusals.
+- [x] Contract review: AC-18, AC-19 against the spec; `list` never runs git; `remove` never edits the project file; **Assumption A4** (`remove` of a half-present item removes what exists and writes `("-")` as the name) and **A5** (the `--json` key set) accepted or changed here before Slice E.
+- [x] ⚠️ Risk review: `remove` is the only deletion path and deletes exactly two paths under `archive/`; `rm` arguments are the resolved archive paths only (no glob, no `-r`).
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 8 — The dream never opens an archived file: the snapshot lists archive items by path and size without reading them, every filing/compression/migration session denies `Read(//<principal>/archive/**)`, a proposal that creates, edits or targets any archive path is refused with the existing checks (`path_refused` / `fact_not_found`) while **every existing `path_refused` row passes unchanged**, pass-through and carry ignore archive paths, compression never picks a sidecar, the filing prompt (version 2) names the archive rule, and the three digest sections are byte-identical with archive items present (fake model, fake process runner)
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Dream/MemorySnapshot.cs` *(modify)*: `Load` resolves each file's area through `paths.TryResolve(relative)`; an `ArchiveItem` is **not read**: it goes into a new `IReadOnlyDictionary<string, long> ArchiveItems` (relative path → `FileInfo.Length`) and is absent from `Files`. Sidecars (`ArchiveSidecar`) stay in `Files` as today (`.md`, parsed). Nothing else changes (`.zyggy-tmp-` skip, hashing of every other file).
@@ -450,7 +450,7 @@ Gate placement: one per vertical slice, plus one extra after Step 11 (⚠️ fir
 
 ## Step 9 — End to end: after `zyggy memory archive add`, one `zyggy dream` run through fake-claude files the index line as `[stated]` into `business/areas/zyggy.md` in one pushed `dream` commit that touches no archive path, the item bytes on `main` are unchanged, the model's argument vector carries the `Read(//…/archive/**)` deny rule, `list` now says `indexed`, a scenario that drops the line ends `stated_dropped` with nothing committed, a deferred `archive add` push is pushed first by the dream, and `zyggy memory digest index` stays within its cap and lists the project file
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `tools/fake-claude/Program.cs`, `README.md` *(modify, additive)*: optional `ZYGGY_FAKE_CLAUDE_SCENARIO_DIR` — when set, scenarios resolve as `<dir>/<name>.jsonl` instead of next to the executable (exit 3 `unknown scenario` as today when absent). Needed because the filed `[stated]` line must carry **today's** date (the `tag_upgrade` check); a hand-written scenario cannot know it, so the fixture materialises a `{today}` token into a temp copy (**Assumption A6**: a fake-claude contract extension, README row).
@@ -490,10 +490,10 @@ Gate placement: one per vertical slice, plus one extra after Step 11 (⚠️ fir
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: `DreamArchiveTests` green with `git log --stat` of the bare repo (archive commit, then dream commit touching only the project file and the ledger), the captured `--disallowedTools` value, `list` → `indexed`; the dropped scenario exit 5; `DigestBuilderGoldenTests` with archive files; `MemorySnapshotTests.Load_ItemBytesNeverRead`.
-- [ ] Contract review: AC-20..AC-24 against the spec; the filing prompt diff (version 2, one added bullet); `DreamChecksTests` diff = additions only; the fake-claude README row.
-- [ ] ⚠️ Risk review (shared contracts, injection): every pre-existing `path_refused` row green unchanged; no `DreamCheck` relaxed; the model never sees item or sidecar text (stdin capture) and cannot `Read` the archive directory (deny rule) even though `--add-dir` grants the principal; `MemorySnapshot` change is additive and hashes of every other file unchanged; **Assumption A6** accepted.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `DreamArchiveTests` green with `git log --stat` of the bare repo (archive commit, then dream commit touching only the project file and the ledger), the captured `--disallowedTools` value, `list` → `indexed`; the dropped scenario exit 5; `DigestBuilderGoldenTests` with archive files; `MemorySnapshotTests.Load_ItemBytesNeverRead`.
+- [x] Contract review: AC-20..AC-24 against the spec; the filing prompt diff (version 2, one added bullet); `DreamChecksTests` diff = additions only; the fake-claude README row.
+- [x] ⚠️ Risk review (shared contracts, injection): every pre-existing `path_refused` row green unchanged; no `DreamCheck` relaxed; the model never sees item or sidecar text (stdin capture) and cannot `Read` the archive directory (deny rule) even though `--add-dir` grants the principal; `MemorySnapshot` change is additive and hashes of every other file unchanged; **Assumption A6** accepted.
+- [x] User approved — implementation may continue past this gate
 
 ---
 

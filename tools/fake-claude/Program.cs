@@ -57,7 +57,11 @@ if (string.IsNullOrEmpty(scenario))
     scenario = "done";
 }
 
-var scenarioPath = Path.Combine(AppContext.BaseDirectory, "scenarios", $"{scenario}.jsonl");
+// A test that materialises a scenario (today's date in it) points here instead of the executable's own scenarios/ folder.
+var scenarioDirectory = Environment.GetEnvironmentVariable("ZYGGY_FAKE_CLAUDE_SCENARIO_DIR");
+var scenarioPath = Path.Combine(
+    string.IsNullOrEmpty(scenarioDirectory) ? Path.Combine(AppContext.BaseDirectory, "scenarios") : scenarioDirectory,
+    $"{scenario}.jsonl");
 if (!File.Exists(scenarioPath))
 {
     Console.Error.WriteLine($"fake-claude: unknown scenario '{scenario}'");

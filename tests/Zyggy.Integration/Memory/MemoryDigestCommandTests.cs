@@ -99,6 +99,36 @@ public sealed partial class MemoryDigestCommandTests : IDisposable
         NormaliseGenerated(run.Stdout).Should().Be(NormaliseGenerated(expected));
     }
 
+    [Fact]
+    public async Task Digest_IndexWithArchiveItems_WithinCapListsProjectFileNoArchiveLine()
+    {
+        // Arrange: plan 37 Step 9 — an archived item, then the dream files its index line.
+        var ct = TestContext.Current.CancellationToken;
+        var repo = new MemoryRepoFixture();
+        await repo.InitializeAsync();
+        try
+        {
+            await repo.SeedAsync("archive", ct);
+            repo.MaterialiseScenario("dream-archive-ok");
+            var source = await repo.WriteSourceAsync("quote.txt", "Quote for the Zyggy roof repair.\nTotal 1 234,00 EUR, valid 30 days.\n"u8.ToArray());
+            (await repo.ArchiveAsync(ct, null, ["add", "--project", "zyggy", "--name", "Quote 2026", "--description", "Roof repair quote", "--file", source]))
+                .ExitCode.Should().Be(0);
+            (await repo.DreamAsync("dream-archive-ok", ct)).ExitCode.Should().Be(0);
+
+            // Act
+            var run = await Digest("index", Env(repo.CloneDir), null);
+
+            // Assert
+            run.ExitCode.Should().Be(0, run.Stderr);
+            Encoding.UTF8.GetByteCount(run.Stdout).Should().BeLessThanOrEqualTo(6000);
+            run.Stdout.Should().Contain("- business/areas/zyggy.md — ").And.NotContain("archive/");
+        }
+        finally
+        {
+            await repo.DisposeAsync();
+        }
+    }
+
     [Theory]
     [InlineData("ZYGGY_MEMORY_ROOT")]
     [InlineData("ZYGGY_TENANT")]

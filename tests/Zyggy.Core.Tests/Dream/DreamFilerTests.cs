@@ -27,6 +27,8 @@ public sealed class DreamFilerTests : IDisposable
 
     public void Dispose() => _tree.Dispose();
 
+    private string ArchiveReadDeny => $"Read({ClaudeRules.Absolute(_tree.Paths.PrincipalDirectory)}/archive/**)";
+
     private string StateDirectory => Path.Combine(_tree.Root, "state");
 
     private DreamRunContext Context(DreamOptions? options = null) =>
@@ -95,8 +97,22 @@ public sealed class DreamFilerTests : IDisposable
         await FileAsync();
 
         // Assert: spec 36 AC-8 — one deny list led by mcp__*, then the linkedin tool and verbs; no MCP server loaded
-        _request!.DisallowedTools.Should().Equal("mcp__linkedin__*", "Bash(zyggy linkedin *)");
-        global::Zyggy.Core.Models.ClaudeArguments.Build(_request).Should().ContainInConsecutiveOrder("--disallowedTools", "mcp__*,mcp__linkedin__*,Bash(zyggy linkedin *)").And.Contain("--strict-mcp-config").And.NotContain("--mcp-config");
+        _request!.DisallowedTools.Take(2).Should().Equal("mcp__linkedin__*", "Bash(zyggy linkedin *)");
+        global::Zyggy.Core.Models.ClaudeArguments.Build(_request).Should().ContainInConsecutiveOrder("--disallowedTools", $"mcp__*,mcp__linkedin__*,Bash(zyggy linkedin *),{ArchiveReadDeny}").And.Contain("--strict-mcp-config").And.NotContain("--mcp-config");
+    }
+
+    [Fact]
+    public async Task FileBatch_Request_DisallowedToolsAreLinkedInRulesPlusArchiveRead()
+    {
+        // Arrange
+        Returns(TestModelResults.Succeeded(ValidProposal()));
+
+        // Act
+        await FileAsync();
+
+        // Assert: spec 37 AC-21 — the session may read the principal directory (--add-dir) but never archive/.
+        _request!.DisallowedTools.Should().Equal("mcp__linkedin__*", "Bash(zyggy linkedin *)", ArchiveReadDeny);
+        ArchiveReadDeny.Should().StartWith("Read(//").And.NotStartWith("Read(///").And.EndWith("/acme/alice/archive/**)");
     }
 
     [Fact]

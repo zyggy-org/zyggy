@@ -14,25 +14,30 @@ internal sealed record SnapshotFile(string RelativePath, byte[] Bytes, string Sh
     public MemoryFile? Parsed { get; init; }
 }
 
-/// <summary>Every file under the principal directory, read once into memory at the start of a run (or a batch).</summary>
+/// <summary>Every file under the principal directory, read once into memory at the start of a run (or a batch); archived items are listed by size only.</summary>
 internal sealed class MemorySnapshot
 {
     private readonly Dictionary<string, SnapshotFile> _files;
 
-    private MemorySnapshot(MemoryPaths paths, Dictionary<string, SnapshotFile> files)
+    private MemorySnapshot(MemoryPaths paths, Dictionary<string, SnapshotFile> files, Dictionary<string, long> archiveItems)
     {
         Paths = paths;
         _files = files;
+        ArchiveItems = archiveItems;
     }
 
     public MemoryPaths Paths { get; }
 
     public IReadOnlyDictionary<string, SnapshotFile> Files => _files;
 
+    /// <summary>Archived items (spec 37 AC-21) by relative path, with their size: listed, never read.</summary>
+    public IReadOnlyDictionary<string, long> ArchiveItems { get; }
+
     public static MemorySnapshot Load(MemoryPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
         var files = new Dictionary<string, SnapshotFile>(StringComparer.Ordinal);
+        var archiveItems = new Dictionary<string, long>(StringComparer.Ordinal);
         if (Directory.Exists(paths.PrincipalDirectory))
         {
             foreach (var full in Directory.EnumerateFiles(paths.PrincipalDirectory, "*", SearchOption.AllDirectories))
@@ -43,6 +48,12 @@ internal sealed class MemorySnapshot
                 }
 
                 var relative = paths.Relative(full);
+                if (paths.TryResolve(relative) is { Succeeded: true, Area: MemoryArea.ArchiveItem })
+                {
+                    archiveItems[relative] = new FileInfo(full).Length;
+                    continue;
+                }
+
                 var bytes = File.ReadAllBytes(full);
                 MemoryFile? parsed = null;
                 if (relative.EndsWith(".md", StringComparison.Ordinal))
@@ -61,7 +72,7 @@ internal sealed class MemorySnapshot
             }
         }
 
-        return new MemorySnapshot(paths, files);
+        return new MemorySnapshot(paths, files, archiveItems);
     }
 
     public static string Hash(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));

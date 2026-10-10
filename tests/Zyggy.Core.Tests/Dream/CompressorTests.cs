@@ -30,6 +30,8 @@ public sealed class CompressorTests : IDisposable
 
     public void Dispose() => _tree.Dispose();
 
+    private string ArchiveReadDeny => $"Read({ClaudeRules.Absolute(_tree.Paths.PrincipalDirectory)}/archive/**)";
+
     private DreamRunContext Context(DreamOptions? options = null) =>
         new(_tree.Paths, Path.Combine(_tree.Root, "state"), RunDate, options ?? new DreamOptions())
         {
@@ -103,8 +105,35 @@ public sealed class CompressorTests : IDisposable
 
         // Assert: spec 36 AC-8
         var request = (ModelRunRequest)_model.ReceivedCalls().Single().GetArguments()[0]!;
-        request.DisallowedTools.Should().Equal("mcp__linkedin__*", "Bash(zyggy linkedin *)");
-        global::Zyggy.Core.Models.ClaudeArguments.Build(request).Should().ContainInConsecutiveOrder("--disallowedTools", "mcp__*,mcp__linkedin__*,Bash(zyggy linkedin *)").And.Contain("--strict-mcp-config").And.NotContain("--mcp-config");
+        request.DisallowedTools.Take(2).Should().Equal("mcp__linkedin__*", "Bash(zyggy linkedin *)");
+        global::Zyggy.Core.Models.ClaudeArguments.Build(request).Should().ContainInConsecutiveOrder("--disallowedTools", $"mcp__*,mcp__linkedin__*,Bash(zyggy linkedin *),{ArchiveReadDeny}").And.Contain("--strict-mcp-config").And.NotContain("--mcp-config");
+    }
+
+    [Fact]
+    public async Task Compress_Request_DeniesArchiveRead()
+    {
+        // Act
+        await CompressAsync(Valid());
+
+        // Assert: spec 37 AC-21
+        var request = (ModelRunRequest)_model.ReceivedCalls().Single().GetArguments()[0]!;
+        request.DisallowedTools.Should().Equal("mcp__linkedin__*", "Bash(zyggy linkedin *)", ArchiveReadDeny);
+    }
+
+    [Fact]
+    public async Task Compress_SidecarOver300Lines_NeverACandidate()
+    {
+        // Arrange: an archive sidecar whose body has 310 "- " lines (never a memory file).
+        _tree.Write("archive/zyggy/long.md",
+            "---\nname: Long\ndescription: long\nupdated: 2026-09-30\n---\n" + string.Concat(Enumerable.Range(1, 310).Select(i => $"- [stated] 2026-09-18: sidecar {i}.\n")));
+
+        // Act
+        var (outcomes, set) = await CompressAsync(Valid());
+
+        // Assert: only the durable file over the limit is compressed.
+        outcomes.Should().ContainSingle();
+        _model.ReceivedCalls().Should().ContainSingle();
+        set.ChangedPaths.Should().NotContain(p => p.StartsWith("archive/", StringComparison.Ordinal));
     }
 
     public static TheoryData<string> InvalidCases() => ["over 300", "ratio", "no provenance", "stated unmapped", "other path"];

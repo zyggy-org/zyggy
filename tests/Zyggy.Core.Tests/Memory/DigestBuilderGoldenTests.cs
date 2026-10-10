@@ -62,6 +62,56 @@ public sealed class DigestBuilderGoldenTests
         output.StderrLines.Should().BeEmpty();
     }
 
+    // Spec 37 AC-23: archive items and sidecars change no digest section.
+    private static void AddArchiveFiles(MemoryTree tree)
+    {
+        tree.Write("archive/zyggy/quote-2026.txt", "Quote for the Zyggy roof repair.\nTotal 1 234,00 EUR, valid 30 days.\n");
+        tree.Write("archive/zyggy/quote-2026.md", Encoding.UTF8.GetString(File.ReadAllBytes(Path.Combine(Golden.Directory, "archive", "sidecar-text.md"))));
+    }
+
+    [Fact]
+    public void Build_Identity_WithArchiveFiles_IsByteIdenticalToWithout()
+    {
+        // Arrange
+        using var tree = MemoryTree.CopyOf(Path.Combine("digest", "27", "memory"));
+        AddArchiveFiles(tree);
+
+        // Act
+        var output = Builder(tree).Build(DigestSection.Identity, startDirectory: null);
+
+        // Assert
+        output.Text.Should().Be(Expected("27", "expected", "digest-identity.txt"));
+    }
+
+    [Fact]
+    public void Build_Index_WithArchiveFiles_EqualsHandDerivedGolden()
+    {
+        // Arrange
+        using var tree = MemoryTree.CopyOf(Path.Combine("digest", "sided"));
+        AddArchiveFiles(tree);
+
+        // Act
+        var output = Builder(tree).Build(DigestSection.Index, startDirectory: null);
+
+        // Assert
+        output.Text.Should().Be(Expected("sided", "expected-index.txt"));
+        output.StderrLines.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Build_Daily_WithArchiveFiles_IsByteIdenticalToWithout()
+    {
+        // Arrange
+        using var tree = MemoryTree.CopyOf(Path.Combine("digest", "27", "memory"));
+        AddArchiveFiles(tree);
+
+        // Act
+        var output = Builder(tree).Build(DigestSection.Daily, startDirectory: null);
+
+        // Assert
+        output.Text.Should().Be(Expected("27", "expected", "digest-daily.txt"));
+    }
+
     [Fact]
     public void Build_Identity_ClaudeMdAboveStartDirectory_AddsWarningLineAndStderr()
     {

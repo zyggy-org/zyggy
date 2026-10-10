@@ -81,6 +81,32 @@ public sealed class PassThroughTests : IDisposable
     }
 
     [Fact]
+    public void Classify_ArchiveChanges_NeverIncluded()
+    {
+        // Arrange: spec 37 AC-21 — archive files written by `archive add` and not yet committed.
+        _tree.Write("archive/zyggy/q.pdf", "%PDF-1.4\n");
+        _tree.Write("archive/zyggy/q.md", "---\nname: q\ndescription: q\nupdated: 2026-09-30\n---\nq\n");
+
+        // Act
+        var result = Classify("?? acme/alice/archive/zyggy/q.pdf\0?? acme/alice/archive/zyggy/q.md\0");
+
+        // Assert
+        result.Include.Should().BeEmpty();
+        result.Withheld.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Carried_ArchivePaths_NeverCarried()
+    {
+        // Act
+        var carried = PassThrough.Carried(GitStatus.Parse("?? acme/alice/archive/zyggy/q.pdf\0 M acme/alice/archive/zyggy/q.md\0"), MemoryTree.Alice, _tree.Paths);
+
+        // Assert
+        carried.ReadOnly.Should().BeEmpty();
+        carried.CommitAsFound.Should().BeEmpty();
+    }
+
+    [Fact]
     public void GitStatus_ParsesRenameRecords()
     {
         // Act

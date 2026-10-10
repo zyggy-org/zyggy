@@ -124,6 +124,53 @@ public sealed partial class DreamRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task Run_ArchiveFilesPresent_CommitPathsNeverContainArchive()
+    {
+        // Arrange: spec 37 AC-21 — an archived item and its sidecar on disk, uncommitted.
+        ArchiveFiles();
+        _tree.Write("inbox/remember-2026-09-29.md", StatedLine + "\n");
+        _responses.Enqueue(_ => TestModelResults.Succeeded(TestProposals.New()
+            .Disposition("L1", "filed", "private/people/carol.md")
+            .Edit("private/people/carol.md", append: [StatedLine]).Build()));
+
+        // Act
+        var record = await Runner().RunAsync(DreamTrigger.Manual, TestContext.Current.CancellationToken);
+
+        // Assert
+        record.Outcome.Should().Be("committed");
+        CommitPaths().Should().Equal("acme/alice/.dream/ledger.json", "acme/alice/private/people/carol.md");
+        _git.Calls.SelectMany(c => c.Arguments).Should().NotContain(a => a.Contains("archive/", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Run_ArchiveItemBytes_UnchangedAfterRun()
+    {
+        // Arrange
+        ArchiveFiles();
+        var item = File.ReadAllBytes(_tree.Full("archive/zyggy/q.pdf"));
+        var sidecar = File.ReadAllBytes(_tree.Full("archive/zyggy/q.md"));
+        _tree.Write("inbox/remember-2026-09-29.md", StatedLine + "\n");
+        _responses.Enqueue(_ => TestModelResults.Succeeded(TestProposals.New()
+            .Disposition("L1", "filed", "private/people/carol.md")
+            .Edit("private/people/carol.md", append: [StatedLine]).Build()));
+
+        // Act
+        await Runner().RunAsync(DreamTrigger.Manual, TestContext.Current.CancellationToken);
+
+        // Assert
+        File.ReadAllBytes(_tree.Full("archive/zyggy/q.pdf")).Should().Equal(item);
+        File.ReadAllBytes(_tree.Full("archive/zyggy/q.md")).Should().Equal(sidecar);
+    }
+
+    private void ArchiveFiles()
+    {
+        _tree.Write("archive/zyggy/q.pdf", "%PDF-1.4\n%%EOF\n");
+        _tree.Write("archive/zyggy/q.md",
+            "---\nname: Q\ndescription: q\nupdated: 2026-09-30\nproject: zyggy\nmedia_type: application/pdf\nsize_bytes: 15\nsha256: abc\n"
+            + "archived: 2026-09-30\nsource_name: q.pdf\n---\nq\n");
+    }
+
+    [Fact]
     public async Task Run_LedgerInSameCommitPaths()
     {
         // Arrange

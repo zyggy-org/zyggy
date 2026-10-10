@@ -122,7 +122,7 @@ public sealed class DreamEndToEndTests : IAsyncLifetime
         [
             "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "auto", "--permission-prompts", "none",
             "--no-session-persistence", "--max-turns", "30", "--max-budget-usd", "5", "--tools", "Read,Grep,Glob",
-            "--disallowedTools", "mcp__*,mcp__linkedin__*,Bash(zyggy linkedin *)",
+            "--disallowedTools", $"mcp__*,mcp__linkedin__*,Bash(zyggy linkedin *),Read(//{_repo.PrincipalDir.Replace('\\', '/').TrimStart('/')}/archive/**)",
             "--add-dir", _repo.PrincipalDir, "--json-schema", prompts.FilingSchema, "--append-system-prompt", prompts.FilingPrompt,
             "--strict-mcp-config", "--settings", """{"disableAllHooks":true,"autoMemoryEnabled":false}""",
             "--disable-slash-commands",

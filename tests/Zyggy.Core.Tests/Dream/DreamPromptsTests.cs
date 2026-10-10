@@ -87,7 +87,8 @@ public sealed class DreamPromptsTests
         var prompts = new DreamPrompts();
 
         // Assert
-        foreach (var prompt in new[] { prompts.FilingPrompt, prompts.CompressionPrompt, prompts.MigrationPrompt })
+        prompts.FilingPrompt.Should().StartWith("prompt-version: 2\n", "spec 37 added the archive rule");
+        foreach (var prompt in new[] { prompts.CompressionPrompt, prompts.MigrationPrompt })
         {
             prompt.Should().StartWith("prompt-version: 1\n");
         }
@@ -96,6 +97,16 @@ public sealed class DreamPromptsTests
         {
             schema.Should().Contain("\"$schema\"");
         }
+    }
+
+    [Fact]
+    public void FilingPrompt_StatesArchiveRule()
+    {
+        // Act
+        var prompt = new DreamPrompts().FilingPrompt;
+
+        // Assert
+        prompt.Should().Contain("`archive/<project>/`").And.Contain("never targets").And.Contain("Archived \"");
     }
 
     [Fact]

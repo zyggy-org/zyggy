@@ -6,8 +6,8 @@ A compiled stand-in for the `claude` CLI, used by `tests/Zyggy.Integration`. It 
 
 | Aspect | Contract |
 |--------|----------|
-| Location | Source in `tools/fake-claude/`; scenarios are resolved at `<AppContext.BaseDirectory>/scenarios/<name>.jsonl`, next to the running executable, never relative to the current directory |
-| Inputs | Any argument vector (never parsed, never validated); env `ZYGGY_FAKE_CLAUDE_SCENARIO` (scenario name without extension, default `done`); env `ZYGGY_FAKE_CLAUDE_CAPTURE` (absolute path of the capture file; unset means no capture); env `ZYGGY_FAKE_CLAUDE_STDIN_CAPTURE` (absolute path; stdin is read to the end and written there byte-exact; unset means stdin is never read); env `ZYGGY_FAKE_CLAUDE_DELAY_MS` (milliseconds to sleep before streaming, the "hang" scenario); env `ZYGGY_FAKE_CLAUDE_EXIT` (exit code after streaming, default 0) |
+| Location | Source in `tools/fake-claude/`; scenarios are resolved at `<AppContext.BaseDirectory>/scenarios/<name>.jsonl`, next to the running executable, never relative to the current directory — or at `<ZYGGY_FAKE_CLAUDE_SCENARIO_DIR>/<name>.jsonl` when that variable is set (plan 37 assumption A6: a test materialises a scenario holding today's date there) |
+| Inputs | Any argument vector (never parsed, never validated); env `ZYGGY_FAKE_CLAUDE_SCENARIO` (scenario name without extension, default `done`); env `ZYGGY_FAKE_CLAUDE_SCENARIO_DIR` (absolute directory to resolve the scenario in instead of the executable's `scenarios/`; unset or empty means the default); env `ZYGGY_FAKE_CLAUDE_CAPTURE` (absolute path of the capture file; unset means no capture); env `ZYGGY_FAKE_CLAUDE_STDIN_CAPTURE` (absolute path; stdin is read to the end and written there byte-exact; unset means stdin is never read); env `ZYGGY_FAKE_CLAUDE_DELAY_MS` (milliseconds to sleep before streaming, the "hang" scenario); env `ZYGGY_FAKE_CLAUDE_EXIT` (exit code after streaming, default 0) |
 | Order of operations | 0. validate `ZYGGY_FAKE_CLAUDE_DELAY_MS` and `ZYGGY_FAKE_CLAUDE_EXIT` (non-negative integers) 1. write the capture file (if requested) 2. write the stdin capture (if requested) 3. sleep `ZYGGY_FAKE_CLAUDE_DELAY_MS` 4. resolve the scenario 5. stream the scenario file's bytes to stdout **unchanged** (no re-encoding, no BOM, no line-ending translation) 6. exit `ZYGGY_FAKE_CLAUDE_EXIT` (default 0) |
 | Stdin | read only when `ZYGGY_FAKE_CLAUDE_STDIN_CAPTURE` is set |
 | Stderr | empty on success; one line `fake-claude: <message>` on failure |
@@ -30,6 +30,9 @@ A compiled stand-in for the `claude` CLI, used by `tests/Zyggy.Integration`. It 
 | `scenarios/m365-mail-batch.jsonl` | `system/init`, a success `result` ending `mail-backfill batch: messages 25, facts 4 (0 dup, 0 refused)`, `total_cost_usd: 0.42`, `num_turns: 9` (spec 33) |
 | `scenarios/m365-mail-empty.jsonl` | `system/init`, a success `result` `mail-backfill batch: messages 0, facts 0 (0 dup, 0 refused)`, `total_cost_usd: 0.03`, `num_turns: 2` (spec 33) |
 | `scenarios/m365-files-batch.jsonl` | `system/init`, a success `result` ending `files-backfill batch: listed 16, parsed 14, skipped 2 (type 0, size 0, path 0, parse error 2, secret pattern 0), facts 4 (0 dup, 0 refused)`, `total_cost_usd: 0.38`, `num_turns: 14` (spec 33) |
+| `scenarios/dream-archive-ok.jsonl` | a filing `result` for the `archive` integration fixture: `L1` (the `archive add` index line) `filed` into `business/areas/zyggy.md` by appending the line verbatim; `{today}` in the text is replaced by the test before use (spec 37 AC-22) |
+| `scenarios/dream-archive-new-file-ok.jsonl` | as `dream-archive-ok` for project `house-move`: `creates` `private/areas/house-move.md` holding the line (spec 37 AC-22) |
+| `scenarios/dream-archive-dropped.jsonl` | `L1` `dropped` (`transient`), no edits: the dream must refuse it as `stated_dropped` (spec 37 AC-22) |
 | `scenarios/done.jsonl` | Three JSON lines (`system`/`init`, `assistant` with a `REPORT` section, `result` with `cost_usd`, `duration_ms`, `num_turns`, `is_error: false`), LF endings, final LF |
 
 Test-side helper: `tests/Zyggy.Integration/Infrastructure/FakeClaude.cs` (`ExecutablePath`, `ScenarioDirectory`, `ReadCapture`).
@@ -53,7 +56,7 @@ Or the built apphost directly: `tests/Zyggy.Integration/bin/Debug/net10.0/fake-c
 
 ### Exit codes
 
-- `3` with `fake-claude: unknown scenario '<name>'`: no `scenarios/<name>.jsonl` next to the executable. Check `ZYGGY_FAKE_CLAUDE_SCENARIO` and that the scenario file has `CopyToOutputDirectory` (the `Content` item in `FakeClaude.csproj`). The capture file is still written.
+- `3` with `fake-claude: unknown scenario '<name>'`: no `scenarios/<name>.jsonl` next to the executable (or in `ZYGGY_FAKE_CLAUDE_SCENARIO_DIR` when set). Check `ZYGGY_FAKE_CLAUDE_SCENARIO` and that the scenario file has `CopyToOutputDirectory` (the `Content` item in `FakeClaude.csproj`). The capture file is still written.
 - `4` with `fake-claude: cannot write capture '<path>': …`: the capture path is a directory, unwritable, or its parent does not exist. Nothing is written to stdout.
 
 ### `ZYGGY_FAKE_CLAUDE_CAPTURE` unset

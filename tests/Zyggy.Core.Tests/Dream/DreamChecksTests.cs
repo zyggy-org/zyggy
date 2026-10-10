@@ -26,6 +26,10 @@ public sealed class DreamChecksTests : IDisposable
     private const string FiledObserved = Observed;
     private static readonly DateOnly RunDate = new(2026, 10, 4);
 
+    private const string ArchiveSidecar =
+        "---\nname: Quote\ndescription: Roof quote\nupdated: 2026-09-30\nproject: zyggy\nmedia_type: text/plain\nsize_bytes: 46\n"
+        + "sha256: abc\narchived: 2026-09-30\nsource_name: quote.txt\n---\nRoof quote\n";
+
     private static readonly string[] ProfileLines = Enumerable.Range(1, 10).Select(i => $"- [stated] 2026-09-18: profile fact {i}.").ToArray();
     private static readonly string[] ZyggyLines = Enumerable.Range(1, 10).Select(i => $"- [observed] 2026-09-20 [github-inventory 2026-09-20]: zyggy fact {i}.").ToArray();
 
@@ -148,6 +152,54 @@ public sealed class DreamChecksTests : IDisposable
 
     [Fact]
     public Task CheckBatch_AgentsMd_AbortsPathRefused() => Aborts(DreamCheck.PathRefused, Valid().Edit("agents.md", append: [FiledStated]));
+
+    // path_refused and fact_not_found for archive paths (spec 37 AC-20): the dream never writes, creates or targets one.
+    [Fact]
+    public Task CheckBatch_CreateArchiveSidecar_AbortsPathRefused() =>
+        Aborts(DreamCheck.PathRefused, Valid().Create("archive/zyggy/quote.md", "quote", "quote", [FiledStated]));
+
+    [Fact]
+    public Task CheckBatch_CreateArchiveItem_AbortsPathRefused() =>
+        Aborts(DreamCheck.PathRefused, Valid().Create("archive/zyggy/quote.pdf", "quote", "quote", [FiledStated]));
+
+    [Fact]
+    public Task CheckBatch_CreateArchiveIndex_AbortsPathRefused() =>
+        Aborts(DreamCheck.PathRefused, Valid().Create("archive/zyggy/_index.md", "zyggy", "zyggy", [FiledStated]));
+
+    [Fact]
+    public Task CheckBatch_CreateArchiveRootFile_AbortsPathRefused() =>
+        Aborts(DreamCheck.PathRefused, Valid().Create("archive/x.md", "x", "x", [FiledStated]));
+
+    [Fact]
+    public Task CheckBatch_EditArchiveSidecar_AbortsPathRefused()
+    {
+        // Arrange
+        _tree.Write("archive/zyggy/quote.md", ArchiveSidecar);
+
+        // Act + Assert
+        return Aborts(DreamCheck.PathRefused, Valid().Edit("archive/zyggy/quote.md", append: [FiledStated]));
+    }
+
+    [Fact]
+    public Task CheckBatch_TargetArchiveSidecar_AbortsFactNotFound()
+    {
+        // Arrange: the sidecar's body even holds text that looks like L1's provenance.
+        _tree.Write("archive/zyggy/quote.md", ArchiveSidecar + FiledStated + "\n");
+
+        // Act + Assert
+        return Aborts(DreamCheck.FactNotFound, Valid(withL1: false).Disposition("L1", "filed", "archive/zyggy/quote.md"));
+    }
+
+    [Fact]
+    public Task CheckBatch_TargetArchiveItem_AbortsFactNotFound()
+    {
+        // Arrange: a text item whose bytes hold L1's line.
+        _tree.Write("archive/zyggy/quote.txt", FiledStated + "\n");
+        _tree.Write("archive/zyggy/quote.md", ArchiveSidecar);
+
+        // Act + Assert
+        return Aborts(DreamCheck.FactNotFound, Valid(withL1: false).Disposition("L1", "filed", "archive/zyggy/quote.txt"));
+    }
 
     // slug_invalid, slug_duplicate
     [Fact]

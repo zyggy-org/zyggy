@@ -89,6 +89,40 @@ public sealed class FakeClaudeTests
     }
 
     [Fact]
+    public async Task Run_ScenarioDirSet_ResolvesScenarioThere()
+    {
+        // Arrange: plan 37 assumption A6 — a materialised scenario outside the executable's directory.
+        var ct = TestContext.Current.CancellationToken;
+        using var scratch = new ScratchDirectory();
+        var dir = Path.Combine(scratch.Path, "scenarios");
+        Directory.CreateDirectory(dir);
+        var bytes = "{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"materialised\"}\n"u8.ToArray();
+        await File.WriteAllBytesAsync(Path.Combine(dir, "only-here.jsonl"), bytes, ct);
+
+        // Act
+        var result = await RunAsync("only-here", null, [], scratch.Path, ct, new Dictionary<string, string> { ["ZYGGY_FAKE_CLAUDE_SCENARIO_DIR"] = dir });
+
+        // Assert
+        result.ExitCode.Should().Be(0, result.Stderr);
+        result.Stdout.Should().Equal(bytes);
+    }
+
+    [Fact]
+    public async Task Run_ScenarioDirSetNameMissing_ExitsThree()
+    {
+        // Arrange: "done" exists next to the executable, but not in the given directory.
+        var ct = TestContext.Current.CancellationToken;
+        using var scratch = new ScratchDirectory();
+
+        // Act
+        var result = await RunAsync("done", null, [], scratch.Path, ct, new Dictionary<string, string> { ["ZYGGY_FAKE_CLAUDE_SCENARIO_DIR"] = scratch.Path });
+
+        // Assert
+        result.ExitCode.Should().Be(3);
+        result.Stderr.Should().Contain("fake-claude: unknown scenario 'done'");
+    }
+
+    [Fact]
     public async Task Run_UnknownScenario_ExitsThreeWritesDiagnosticAndStillCaptures()
     {
         // Arrange

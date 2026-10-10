@@ -210,6 +210,12 @@ internal static partial class DreamChecks
                 return Fail(DreamCheck.FactNotFound, $"{disposition.Line} {disposition.Outcome} without a target");
             }
 
+            // Spec 37 AC-20: an archived item or sidecar is never a target, whatever its bytes hold.
+            if (paths.TryResolve(disposition.Target) is { Succeeded: true, Area: MemoryArea.ArchiveSidecar or MemoryArea.ArchiveItem })
+            {
+                return Fail(DreamCheck.FactNotFound, $"{disposition.Line} {disposition.Outcome} into archive {Safe(disposition.Target)}");
+            }
+
             if (paths.TryResolve(disposition.Target) is not { Succeeded: true } target || after.Text(target.RelativePath!) is not { } text)
             {
                 return Fail(DreamCheck.FactNotFound, $"{disposition.Line} {disposition.Outcome} into missing {Safe(disposition.Target)}");

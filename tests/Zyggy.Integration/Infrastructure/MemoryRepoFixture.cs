@@ -118,12 +118,30 @@ public sealed class MemoryRepoFixture : IAsyncLifetime
             ["ZYGGY_FAKE_CLAUDE_SCENARIO"] = scenario,
             ["GIT_CONFIG_GLOBAL"] = GlobalConfigPath,
         };
+        if (Directory.Exists(ScenarioDir))
+        {
+            env["ZYGGY_FAKE_CLAUDE_SCENARIO_DIR"] = ScenarioDir;
+        }
+
         foreach (var (key, value) in extra ?? new Dictionary<string, string?>())
         {
             env[key] = value;
         }
 
         return env;
+    }
+
+    public string ScenarioDir => Path.Combine(RootDir, "scenarios");
+
+    /// <summary>
+    /// Copies fake-claude's <c>scenarios/&lt;name&gt;.jsonl</c> into <see cref="ScenarioDir"/> with <c>{today}</c> replaced by the UTC date
+    /// (plan 37 assumption A6); from then on <see cref="DreamEnv"/> points fake-claude there.
+    /// </summary>
+    public void MaterialiseScenario(string name)
+    {
+        var text = File.ReadAllText(Path.Combine(FakeClaude.ScenarioDirectory, name + ".jsonl"), Encoding.UTF8);
+        Directory.CreateDirectory(ScenarioDir);
+        File.WriteAllText(Path.Combine(ScenarioDir, name + ".jsonl"), Materialise(text), new UTF8Encoding(false));
     }
 
     public Task<ZyggyRun> DreamAsync(string scenario, CancellationToken ct, IReadOnlyDictionary<string, string?>? extra = null, params string[] args) =>

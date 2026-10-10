@@ -36,6 +36,8 @@ public sealed class MigratorTests : IDisposable
 
     public void Dispose() => _tree.Dispose();
 
+    private string ArchiveReadDeny => $"Read({ClaudeRules.Absolute(_tree.Paths.PrincipalDirectory)}/archive/**)";
+
     private static JsonElement Proposal(IEnumerable<(string From, string To)> moves, params (string Side, string Name, string Description)[] categories) =>
         JsonSerializer.SerializeToElement(new JsonObject
         {
@@ -76,8 +78,18 @@ public sealed class MigratorTests : IDisposable
 
         // Assert: spec 36 AC-8
         var request = _requests.Should().ContainSingle().Subject;
-        request.DisallowedTools.Should().Equal("mcp__linkedin__*", "Bash(zyggy linkedin *)");
-        global::Zyggy.Core.Models.ClaudeArguments.Build(request).Should().ContainInConsecutiveOrder("--disallowedTools", "mcp__*,mcp__linkedin__*,Bash(zyggy linkedin *)").And.Contain("--strict-mcp-config").And.NotContain("--mcp-config");
+        request.DisallowedTools.Take(2).Should().Equal("mcp__linkedin__*", "Bash(zyggy linkedin *)");
+        global::Zyggy.Core.Models.ClaudeArguments.Build(request).Should().ContainInConsecutiveOrder("--disallowedTools", $"mcp__*,mcp__linkedin__*,Bash(zyggy linkedin *),{ArchiveReadDeny}").And.Contain("--strict-mcp-config").And.NotContain("--mcp-config");
+    }
+
+    [Fact]
+    public async Task Migrate_Request_DeniesArchiveRead()
+    {
+        // Act
+        await Migrate(Proposal(ValidMoves()));
+
+        // Assert: spec 37 AC-21
+        _requests.Should().ContainSingle().Which.DisallowedTools.Should().Equal("mcp__linkedin__*", "Bash(zyggy linkedin *)", ArchiveReadDeny);
     }
 
     [Fact]
