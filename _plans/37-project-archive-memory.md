@@ -499,7 +499,7 @@ Gate placement: one per vertical slice, plus one extra after Step 11 (⚠️ fir
 
 ## Step 10 — The template teaches the `archive` skill and names archived items as data in its rules, allows exactly `zyggy memory archive add *` and `list *`, bumps its minimum binary version, and its bats prove it; the instance carries `instance/archive.json` and runbook section 17 "Memory archive"; 0002 gains a §37 skeleton — nothing on Central changes yet
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done — 2026-10-10 (executor notes: zyggy-core PR #5 CI 38044447651 green, merged `4c95177`; bats 176/176 in podman; zyggy-geoffrey `c54a540` archive.json + runbook 17 (17a–17j), CI not started — GitHub billing on the private repo — bats 174/174 then 176/176 after the merge in podman; 0002 §37 skeleton. Template merged into the instance only after the 0.5.0 pin, per runbook 14n.)
 
 **Scope**:
 - `d:\source\zyggy-core` (template):
@@ -530,7 +530,7 @@ Gate placement: one per vertical slice, plus one extra after Step 11 (⚠️ fir
 
 ## Step 11 — A tagged release exists with checksummed artefacts; on Central the pinned binary is installed root-owned beside the running one, the template and instance are pulled, `instance/zyggy.json` pins it, and a rehearsal on a scratch instance shows `zyggy memory archive list` exit 0 and `add` refusing under `ZYGGY_HOOKS=off` — no real item yet
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done — 2026-10-10 (executor notes: tag `v0.5.0` CI 38044886737; release SHA-256 `babd539b…37e7dd`; installed root-owned, rehearsal, pin `153f1e8`, merge `25bce42`, pull, symlink, staging folder, one restart of each service; checks green — 0002 Release/Rehearsal/Switch-on rows. Assumption A7: v0.5.0.)
 
 **Scope** *(agent; the 36b Step 5 / 28 Step 16–17 procedure, runbook 14a/14b)*:
 - This repo: PR from the branch, CI green, merged; tag `v<next>` (the next minor: a new verb family — **Assumption A7**, e.g. `v0.5.0`), tag CI green on both runners; release with `zyggy` + `SHA256SUMS`; `sha256sum -c` locally.
