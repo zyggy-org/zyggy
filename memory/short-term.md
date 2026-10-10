@@ -6,3 +6,4 @@
      long-term memory and clears this file. Limit: 200 lines / 25 KB; the Stop hook asks you to compress it when over. -->
 
 - 2026-10-10: `DreamRunner` records the commit sha read *before* the push, so after a clean rebase the dream's run record names a sha that is not on the remote; `MemoryPublisher.CommitAndPushAsync` (archive) now re-reads HEAD after a rebase, the dream does not yet (plan 37 forbids dream changes) — candidate bugfix.
+- 2026-10-10: zyggy-core bats run locally with `MSYS_NO_PATHCONV=1 podman run --rm -v 'D:\source\zyggy-core:/w' -w /w zyggy-core-test bash -c "trap '' PIPE; bats tests/"` (image `zyggy-core-test` exists on the laptop); `ZYGGY_HYGIENE_FORBIDDEN` must be passed with `-e` for the hygiene rows.

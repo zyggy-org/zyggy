@@ -504,6 +504,36 @@ item (not part of 36).
 | AC-29 | A1–A5, AC-10, AC-11, AC-28 recorded | | | |
 | P0b | proposed clause: "an owner-requested LinkedIn post, shown first and approved in the session, appears on the owner's profile; a refused prompt or an unattended run publishes nothing; the token never appears outside its credential file" | | | |
 
+## 37 — Project archive in memory
+
+Spec `_specs/37-project-archive-memory.md`, plan `_plans/37-project-archive-memory.md`. In a session the owner hands
+over a long text, a PDF or an image and asks to keep it for a project; after his go `zyggy memory archive add` stores
+it under `archive/<project>/` with a sidecar, writes one `[stated]` index line to the inbox and commits the two files.
+The next dream files the line into the project's memory file without ever opening the item; the digest is unchanged.
+
+### Accepted risk (OQ-1 (b), owner, 2026-10-10)
+
+Text items are scanned for secret patterns only; contact details inside an archived document are accepted (the owner's
+own quotes, contracts and notes legitimately hold third parties' e-mail addresses and phone numbers, and the item's
+bytes never reach a memory line, a sidecar or the digest). PDFs and images are not content-scanned at all (a
+screenshot of a password, EXIF location data). The data-protection surface therefore widens to the item bytes in the
+memory repository on GitHub. Controls: the owner sees project, name, description, type and size and gives his go for
+each item; the built-in deny-list of credential and state locations plus `source_deny`; the size caps; the sweep of
+AC-30 (secrets over all tracked text, contact details over every tracked `.md`); erasure = `remove` plus a history
+rewrite on request (runbook 17j).
+
+### Evidence on Central (Steps 11–12; empty until then)
+
+| Row | What | Date | Command / excerpt | Result |
+|-----|------|------|-------------------|--------|
+| Release | `v0.5.0` tagged from `main`, artefact hash, installed beside the running 0.4.1 | | | |
+| Rehearsal | scratch instance: `archive list` exit 0; `ZYGGY_HOOKS=off archive add` → 2 `unattended`; a deny-listed `--file` → 2 `source_refused` | | | |
+| Switch-on | 0.5.0 live in the runbook order (binary and pin, pull, staging folder, one restart; `poppler-utils` state) | | | |
+| AC-28 (owner-run) | one text, one PDF and one image archived for a real project; three `archive add` commits of exactly two paths on `origin/main`; a refused item (a secret-shaped line) → exit 2, no commit, `git status` clean | | | |
+| AC-29 | after the next nightly dream: a `[stated]` line per item in the project's file; `list` → `indexed` ×3; the `index` digest names the project file within its cap | | | |
+| AC-30 | secret sweep over tracked text and `git log -p`, e-mail/phone sweep over tracked `.md` (archive `*.txt` excluded, OQ-1 (b)); `git count-objects -vH` | | | |
+| AC-31 | O39 (1)–(3) decided (2026-10-10); W37-1..W37-4 in the founding spec; this section opened | 2026-10-10 | spec Decisions log; founding spec §3/§7; this section | open until the rows above are filled |
+
 ## Repositories
 
 | repo | role (template/instance/memory) | owner | visibility | laptop checkout + remotes | VM clone path | remote alias | key (name, scope) |
