@@ -8,7 +8,7 @@ Zyggy is a personal AI agent platform built on Claude Code: one always-on **Cent
 
 The authoritative design is `_specs/00 - Personal Agent Platform — Technical Specification.md`. Read the relevant section before building anything; §4 (bus protocol), §5 (poller), §6 (job runner), §7 (memory/Hub) and §9 (solution structure and design rules) are the contracts. §13 lists decisions that must not be reopened. The spec uses the working name `AgentBus.*`; code uses the product name `Zyggy.*` (CLI `zyggy`, repos `zyggy-bus` / `zyggy-core`).
 
-The solution, its project references, shared props and central packages, `tools/fake-claude`, the integration harness (`BusRepoFixture`) and CI exist; `src/Zyggy.Core` itself stays empty until deliverable 03.
+The solution, its project references, shared props and central packages, `tools/fake-claude`, the integration harness (`BusRepoFixture`) and CI exist. `src/Zyggy.Core` and `src/Zyggy.Cli` now carry the live product (envelope signing, memory, dream, M365, brief, LinkedIn, archive); `src/Zyggy.Node` and `src/Zyggy.Hub` are still the empty hosts described above. Check `_plans/ROADMAP.md` for what is actually built before assuming this file's architecture is live.
 
 ## Build and test
 
@@ -48,7 +48,7 @@ Runbook notes:
 
 ## Design rules from the spec (§9) that shape every change
 
-- **Five seams are interfaces from the first commit**, one implementation each in v1: `IBusProvider` (GitHub), `IModelRunner` (Claude Code CLI), `ISecretStore` (per OS), `INotifier` (Telegram), `IPolicySource` (signed `policy.yaml`). Nothing outside the implementation references GitHub, `claude`, Telegram or a secret store directly.
+- **Five seams are interfaces from the first commit**, one implementation each in v1: `IBusProvider` (GitHub), `IModelRunner` (Claude Code CLI), `ISecretStore` (per OS), `INotifier` (Telegram), `IPolicySource` (`node.json` in v1, per the MVP-scope decision). Nothing outside the implementation references GitHub, `claude`, Telegram or a secret store directly.
 - Git and `claude` run through `IProcessRunner`; tests substitute it. No test may invoke the real `claude`. Never LibGit2Sharp.
 - All bus paths go through `BusPaths`; no string-concatenated paths elsewhere. Paths are tenant-prefixed (`tenants/<org>/...`) from day one.
 - `EnvelopeSigner.Canonicalize` is the single source of truth for the signing input (front matter minus `sig`, sorted keys, `\n` endings, then `\n---\n`, then body). It has golden-file tests under `tests/golden/`.
@@ -68,7 +68,7 @@ _plans/ROADMAP.md         _specs/<NN>-<Deliverable>.md   _plans/<NN>-<Deliverabl
 (backlog, order, DoD)     (contracts, decisions, OQs)    (RGR steps, gates)             (RGR-Proof loop)
 ```
 
-- **Founding spec** = `_specs/00 - …Technical Specification.md`. Only the user edits it; agents raise conflicts as Open Questions.
+- **Founding spec** = `_specs/00 - …Technical Specification.md`. Only the user edits it; agents raise conflicts as Open Questions. Once the user has approved exact replacement wording (at a spec gate or in chat), the orchestrating session — never the technical-analyst or planner — may paste that text into the founding spec itself, listing every edit in the journal so the user can revert any of them.
 - **Planning Gate**: any change touching ≥ 3 files, a shared contract (§4 envelope, §5 poller, §6 runner I/O, §7 Hub tools), or a ⚠️ Risk Area (signing, secrets, work boundary, new package) needs an approved plan before code. Smaller fixes use the `bugfix` agent (regression test first, ≤ 2 production files).
 - **Human Gates**: a plan's steps run back-to-back; execution stops **only** at 🛑 HUMAN GATE blocks (one per vertical slice). The executor checks a step's `Done` box when VERIFY passes and a gate's boxes only after the user approves. First unchecked `[ ]` = where to resume.
 - **Vertical slices, no UI**: each slice is *Fake* (behavior proven through a seam interface with substitutes, unit tests) then *Wire* (real edge against a local bare git repo and `tools/fake-claude`, integration tests). Never the real `claude`, never GitHub, in any test.
