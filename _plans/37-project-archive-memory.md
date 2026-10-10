@@ -106,16 +106,16 @@ Gate placement: one per vertical slice, plus one extra after Step 11 (⚠️ fir
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: `MemoryPathsTests` green with the diff shown (only additions and the member count); `TryResolve_ArchivePath_ClassifiesOrRefuses` rows; `MediaSnifferTests`; `PostImageTests` untouched and green; the Linux symlink fact green in CI.
-- [ ] Contract review: AC-1, AC-2, AC-3 against the spec; `ArchiveMediaType` wire strings and extensions against Contracts; `archive/<project>/<slug>.md` is the only `.md` under `archive/`; depth exactly three.
-- [ ] ⚠️ Risk review (shared contract): every pre-existing `MemoryArea` classification and `MemoryPathRefusal` row unchanged; **Assumption A2** accepted (the enum-count fact must change from 10 to 12 — AC-3's "without edits" cannot hold for that one row; every refusal and classification row is unedited); no tenant literal in `src/`.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `MemoryPathsTests` green with the diff shown (only additions and the member count); `TryResolve_ArchivePath_ClassifiesOrRefuses` rows; `MediaSnifferTests`; `PostImageTests` untouched and green; the Linux symlink fact green in CI.
+- [x] Contract review: AC-1, AC-2, AC-3 against the spec; `ArchiveMediaType` wire strings and extensions against Contracts; `archive/<project>/<slug>.md` is the only `.md` under `archive/`; depth exactly three.
+- [x] ⚠️ Risk review (shared contract): every pre-existing `MemoryArea` classification and `MemoryPathRefusal` row unchanged; **Assumption A2** accepted (the enum-count fact must change from 10 to 12 — AC-3's "without edits" cannot hold for that one row; every refusal and classification row is unedited); no tenant literal in `src/`.
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 2 — `zyggy memory archive add` refuses an unattended run (exit 2), a missing or invalid configuration including `archive.json` above a ceiling (exit 3, naming the key, before the source is opened), and every usage fault including a slug that cannot be derived and an index line that would exceed 400 characters (exit 4, one usage line) — nothing is read, nothing is written
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Memory/ArchiveOptions.cs` *(create, public sealed record)*: `AllowedTypes` (`IReadOnlySet<ArchiveMediaType>`, default all six), `ItemMaxBytes` = 10_485_760, `ProjectMaxBytes` = 52_428_800, `TotalMaxBytes` = 209_715_200, `SourceDeny` (`IReadOnlyList<string>`, default empty); `Validate()` → offending keys: `item_max_bytes` (1 ..= 26_214_400), `project_max_bytes` (≥ `item_max_bytes`, ≤ 209_715_200), `total_max_bytes` (≥ `project_max_bytes`, ≤ 524_288_000), `allowed_types` (non-empty, ⊆ the built-in set), `source_deny` (every entry absolute after `~` expansion).
