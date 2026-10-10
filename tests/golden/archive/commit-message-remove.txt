@@ -1,0 +1,3 @@
+archive remove zyggy/quote-2026.txt
+
+Zyggy-Tool: memory archive

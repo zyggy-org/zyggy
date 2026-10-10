@@ -33,6 +33,7 @@ public sealed partial class DreamRunner
     private readonly TimeProvider _clock;
     private readonly ILogger<DreamRunner> _logger;
     private readonly Migrator? _migrator;
+    private readonly MemoryPublisher _publisher;
 
     internal DreamRunner(
         DreamEnvironment environment,
@@ -42,7 +43,8 @@ public sealed partial class DreamRunner
         GitClient git,
         TimeProvider clock,
         ILogger<DreamRunner> logger,
-        Migrator? migrator = null)
+        Migrator? migrator = null,
+        MemoryPublisher? publisher = null)
     {
         _environment = environment;
         _options = options;
@@ -52,6 +54,7 @@ public sealed partial class DreamRunner
         _clock = clock;
         _logger = logger;
         _migrator = migrator;
+        _publisher = publisher ?? new MemoryPublisher(git);
     }
 
     /// <summary>Runs the dream once and appends its record to <c>dream-runs.jsonl</c>.</summary>
@@ -111,20 +114,15 @@ public sealed partial class DreamRunner
         var repository = _environment.MemoryRoot;
 
         run.Phase = Phase.Git;
-        var branch = await _git.CurrentBranchAsync(repository, cancellationToken).ConfigureAwait(false);
-        if (branch is null || await _git.OperationInProgressAsync(repository, cancellationToken).ConfigureAwait(false))
+        // AC-20 (and 37 AC-16): a dream or archive commit an earlier writer could not push goes out before anything else.
+        var preflight = await _publisher.PreflightAsync(repository, cancellationToken).ConfigureAwait(false);
+        if (preflight.Detail is { } blocked)
         {
-            return record with
-            {
-                Reason = RunFailureReasonWire.ToWire(RunFailureReason.GitError),
-                Detail = branch is null ? "not_on_branch" : "operation_in_progress",
-            };
+            return record with { Reason = RunFailureReasonWire.ToWire(RunFailureReason.GitError), Detail = blocked };
         }
 
-        // AC-20: a dream commit the last run could not push goes out before anything else.
-        var unpushed = await _git.UnpushedCommitSubjectsAsync(repository, branch, cancellationToken).ConfigureAwait(false);
-        if (unpushed.Any(s => s.StartsWith("dream ", StringComparison.Ordinal))
-            && !await PushAsync(repository, branch, cancellationToken).ConfigureAwait(false))
+        var branch = preflight.Branch!;
+        if (preflight.PushPending)
         {
             return record with
             {
@@ -417,31 +415,10 @@ public sealed partial class DreamRunner
         var sha = await _git.RevParseAsync(repository, "HEAD", cancellationToken).ConfigureAwait(false);
         DreamWriter.DeleteMarker(paths);
         LogCommitted(run.Id, sha ?? "?");
-        var pushed = await PushAsync(repository, branch, cancellationToken).ConfigureAwait(false);
+        // AC-20: the push with one fetch-and-rebase retry lives in MemoryPublisher (shared with archive add since 37).
+        var pushed = await _publisher.PushAsync(repository, branch, cancellationToken).ConfigureAwait(false);
+        LogPushed(pushed);
         return record with { Commit = sha, Pushed = pushed };
-    }
-
-    // AC-20: push; when rejected, fetch, rebase the run's commit once and push again; a conflict aborts the rebase and keeps the
-    // commit for the next run. Any other push failure also defers the push (Assumption 7). Never a force push.
-    private async Task<bool> PushAsync(string repository, string branch, CancellationToken cancellationToken)
-    {
-        var push = await _git.PushAsync(repository, branch, cancellationToken).ConfigureAwait(false);
-        if (!push.Succeeded && IsRejected(push.Stderr))
-        {
-            var fetch = await _git.FetchAsync(repository, cancellationToken).ConfigureAwait(false);
-            var rebase = fetch.Succeeded ? await _git.RebaseAsync(repository, branch, cancellationToken).ConfigureAwait(false) : fetch;
-            if (rebase.Succeeded)
-            {
-                push = await _git.PushAsync(repository, branch, cancellationToken).ConfigureAwait(false);
-            }
-            else if (fetch.Succeeded)
-            {
-                await _git.RebaseAbortAsync(repository, cancellationToken).ConfigureAwait(false);
-            }
-        }
-
-        LogPushed(push.Succeeded);
-        return push.Succeeded;
     }
 
     private static void RemoveEmptyLegacyDirectories(MemoryPaths paths)
@@ -463,10 +440,6 @@ public sealed partial class DreamRunner
             ? !File.Exists(full) || MemorySnapshot.Hash(File.ReadAllBytes(full)) != file.Sha256
             : File.Exists(full);
     }
-
-    private static bool IsRejected(string stderr) =>
-        stderr.Contains("[rejected]", StringComparison.Ordinal) || stderr.Contains("non-fast-forward", StringComparison.Ordinal)
-        || stderr.Contains("fetch first", StringComparison.Ordinal);
 
     // AC-12: after quarantineAfter failures at the minimum size with the same first line, the batch's lines leave the backlog.
     private bool Quarantine(ref BatchSizeState state, DreamBatch batch, WorkingSet set, HashSet<string> quarantine, List<DreamBatchLine> quarantined)

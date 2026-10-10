@@ -163,3 +163,23 @@ Unattended runs (deliverable 36, Steps 9–10): `m365/fixtures/mcp-with-linkedin
 (the template's HTTP entry) and the `linkedin` stdio server; `m365/run-mcp.json` is the m365-only file a brief or backfill writes from it
 (two-space indent, `\n`, final newline). The three `m365/run-lists/*-deny.txt` lists and `brief/ideas-args.txt` end their common part
 with `mcp__linkedin__*` and `Bash(zyggy linkedin *)` (spec 36 AC-8).
+
+## `archive/` — the project archive (deliverable 37, Step 4)
+
+Hand-derived from spec 37's Contracts ("Sidecar format", "Index line", AC-15), never produced by the code under test. Fixed inputs,
+all at the local date 2026-09-30 (`ZYGGY_NOW=2026-09-30T10:00:00Z`, `Europe/Brussels`), project `zyggy`:
+
+- the text item is the 68 UTF-8 bytes `Quote for the Zyggy roof repair.\nTotal 1 234,00 EUR, valid 30 days.\n` (`wc -c`), SHA-256
+  `c5f2cab5d3b4d46c44bee6f1ee037d471c419b739908f4a05251745fb4794f88` (`sha256sum`), source `quote.txt`, name `Quote 2026`,
+  description `Roof repair quote`, slug `quote-2026` → `sidecar-text.md`;
+- the PNG item is the 65 bytes `ImageBytes.Png(2, 2)` of the LinkedIn tests, materialised with `printf` (signature, IHDR length 13,
+  2×2, depth 8, colour type 2, zero padding), SHA-256 `6ebc44920b939cfbce21e4ec5710357c44156b9afad130783806a4983a53b8af`, source
+  `roof.png`, name `Roof photo`, description `Photo of the roof damage` → `sidecar-png.md`;
+- the PDF item is the 45 bytes `%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n`, SHA-256
+  `5a838678058f6de375e8635b5f2fea47a4e5f07cb1a882a44b10f39abc6f34ff`, source `invoice.pdf`, name `Roof invoice`, description
+  `Invoice for the roof repair` → `sidecar-pdf.md`.
+
+The sidecar key order follows `MemoryFileWriter` (`name`, `description`, `updated`, then the six archive keys — plan assumption A1).
+`inbox-after-archive.md` is `inbox/remember-2026-09-30.md` after one `add` of the text item and one `remove` of it, in the exact bytes
+`memory remember --scope project:zyggy -- "<fact>"` writes (front matter of `remember.sh`; the dash of the index line is U+2014).
+`commit-message-add.txt` and `commit-message-remove.txt` are the two commit messages (subject, body, trailer `Zyggy-Tool: memory archive`).

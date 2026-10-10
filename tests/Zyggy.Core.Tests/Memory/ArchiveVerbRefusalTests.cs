@@ -131,7 +131,7 @@ public sealed class ArchiveVerbRefusalTests : IDisposable
     private async Task<(int Exit, VerbConsole Console)> RunAsync(string[] args)
     {
         var console = new VerbConsole();
-        var exit = await new ArchiveVerb(_environment, _clock, FindTimeZone).RunAsync(args, console.Io, TestContext.Current.CancellationToken);
+        var exit = await new ArchiveVerb(_environment, _clock, FindTimeZone, new RecordingProcessRunner()).RunAsync(args, console.Io, TestContext.Current.CancellationToken);
         return (exit, console);
     }
 

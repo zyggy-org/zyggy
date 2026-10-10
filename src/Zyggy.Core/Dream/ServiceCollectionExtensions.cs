@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
 using Zyggy.Core.Git;
+using Zyggy.Core.Memory;
 using Zyggy.Core.Models;
 using Zyggy.Core.Processes;
 
@@ -39,6 +40,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(sp => new DreamFiler(sp.GetRequiredService<IModelRunner>(), sp.GetRequiredService<DreamPrompts>(), sp.GetRequiredService<TimeProvider>()));
         services.AddSingleton(sp => new Compressor(sp.GetRequiredService<IModelRunner>(), sp.GetRequiredService<DreamPrompts>()));
         services.AddSingleton(sp => new GitClient(sp.GetRequiredService<IProcessRunner>(), new GitClientOptions(), sp.GetRequiredService<TimeProvider>()));
+        services.AddSingleton(sp => new MemoryPublisher(sp.GetRequiredService<GitClient>()));
         services.AddSingleton(sp => new DreamRunner(
             environment,
             options,
@@ -47,7 +49,8 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<GitClient>(),
             sp.GetRequiredService<TimeProvider>(),
             sp.GetRequiredService<ILogger<DreamRunner>>(),
-            new Migrator(sp.GetRequiredService<IModelRunner>(), sp.GetRequiredService<DreamPrompts>())));
+            new Migrator(sp.GetRequiredService<IModelRunner>(), sp.GetRequiredService<DreamPrompts>()),
+            sp.GetRequiredService<MemoryPublisher>()));
         return services;
     }
 }

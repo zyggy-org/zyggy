@@ -1,5 +1,7 @@
 using System.Globalization;
 
+using Zyggy.Core.Git;
+using Zyggy.Core.Processes;
 using Zyggy.Core.Verbs;
 
 namespace Zyggy.Core.Memory;
@@ -8,7 +10,7 @@ namespace Zyggy.Core.Memory;
 /// <c>zyggy memory archive add | list | remove</c> (spec 37): keeps a file the owner hands over in a session as a project archive item
 /// with a sidecar and one <c>[stated]</c> index line. Exit 0 archived, 2 refused (<see cref="ArchiveRefusal"/>), 3 configuration error,
 /// 4 usage, 6 git error, 7 committed but push deferred. <c>ZYGGY_HOOKS=off</c> refuses <c>add</c> and <c>remove</c> before anything is read.
-/// Builds no host.
+/// Git runs through <see cref="IProcessRunner"/>; never <c>claude</c>. Builds no host.
 /// </summary>
 /// <param name="environment">The process environment.</param>
 /// <param name="clock">The clock for the local date.</param>
@@ -36,9 +38,15 @@ public sealed class ArchiveVerb(IReadOnlyDictionary<string, string?> environment
 
     private readonly Func<string, TimeZoneInfo> _findTimeZone = TimeZoneInfo.FindSystemTimeZoneById;
 
-    // Tests: IANA ids need ICU off Linux, and the build is invariant-globalization.
-    internal ArchiveVerb(IReadOnlyDictionary<string, string?> environment, TimeProvider clock, Func<string, TimeZoneInfo> findTimeZone)
-        : this(environment, clock) => _findTimeZone = findTimeZone;
+    private readonly IProcessRunner _processes = new ProcessRunner(clock);
+
+    // Tests: IANA ids need ICU off Linux, and the build is invariant-globalization; git is a recording fake.
+    internal ArchiveVerb(IReadOnlyDictionary<string, string?> environment, TimeProvider clock, Func<string, TimeZoneInfo> findTimeZone, IProcessRunner? processes = null)
+        : this(environment, clock)
+    {
+        _findTimeZone = findTimeZone;
+        _processes = processes ?? _processes;
+    }
 
     /// <summary>Runs the verb.</summary>
     /// <param name="args">The arguments after <c>memory archive</c>.</param>
@@ -89,13 +97,13 @@ public sealed class ArchiveVerb(IReadOnlyDictionary<string, string?> environment
         var rest = args.Skip(1).ToArray();
         return verb switch
         {
-            "add" => await AddAsync(rest, io, new ArchiveContext(memory.Paths!, memory.TimeZone!, load.Patterns, configuration.Options)).ConfigureAwait(false),
+            "add" => await AddAsync(rest, io, new ArchiveContext(memory.Paths!, memory.TimeZone!, load.Patterns, configuration.Options), cancellationToken).ConfigureAwait(false),
             "remove" => await RemoveAsync(rest, io).ConfigureAwait(false),
             _ => await ListAsync(rest, io).ConfigureAwait(false),
         };
     }
 
-    private async Task<int> AddAsync(string[] args, VerbIo io, ArchiveContext context)
+    private async Task<int> AddAsync(string[] args, VerbIo io, ArchiveContext context, CancellationToken cancellationToken)
     {
         var (request, error) = ArchiveArguments.ParseAdd(args);
         if (request is null)
@@ -116,15 +124,35 @@ public sealed class ArchiveVerb(IReadOnlyDictionary<string, string?> environment
         }
 
         var deny = SourceDenyList.Build(environment, context.Options, context.Paths);
-        var check = ArchiveChecks.Check(request, context.Options, context.Paths, deny, context.Patterns, today);
-        if (check.Refusal is { } refusal)
+        var publisher = new MemoryPublisher(new GitClient(_processes, new GitClientOptions(), clock));
+        var service = new ArchiveService(context.Paths, context.TimeZone, clock, context.Patterns, context.Options, deny, publisher, context.Paths.RootDirectory);
+        var outcome = await service.AddAsync(request, cancellationToken).ConfigureAwait(false);
+        switch (outcome.Kind)
         {
-            await io.Error.WriteAsync(Prefix + "refused: " + Render(refusal, check.Detail) + "\n").ConfigureAwait(false);
-            return Refused;
+            case ArchiveOutcomeKind.Refused:
+                await io.Error.WriteAsync(Prefix + "refused: " + Render(outcome.Refusal!.Value, outcome.Detail) + "\n").ConfigureAwait(false);
+                return Refused;
+            case ArchiveOutcomeKind.GitError:
+                await io.Error.WriteAsync(Prefix + "git error: " + outcome.Detail + "\n").ConfigureAwait(false);
+                return GitError;
+            default:
+                break;
         }
 
-        await io.Error.WriteAsync(Prefix + "refused: not implemented\n").ConfigureAwait(false);
-        return Refused;
+        if (outcome.Note is not null)
+        {
+            await io.Error.WriteAsync(Prefix + "note: " + outcome.Note + "\n").ConfigureAwait(false);
+        }
+
+        var push = outcome.Pushed ? "pushed" : "push deferred";
+        await io.Out.WriteAsync($"archived: {outcome.Item}\nsidecar: {outcome.Sidecar}\n{outcome.Line}\ncommit: {outcome.Sha} {push}\n").ConfigureAwait(false);
+        if (!outcome.Pushed)
+        {
+            await io.Error.WriteAsync($"{Prefix}committed {outcome.Sha}, push deferred\n").ConfigureAwait(false);
+            return PushDeferred;
+        }
+
+        return Archived;
     }
 
     private static string Render(ArchiveRefusal refusal, string? detail) =>

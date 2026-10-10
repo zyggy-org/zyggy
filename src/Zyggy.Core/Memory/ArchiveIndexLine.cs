@@ -11,14 +11,21 @@ internal static class ArchiveIndexLine
     public static string Added(DateOnly date, ArchiveAddRequest request, ArchiveMediaType type, long sizeBytes)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return Added(date, request, ArchiveMediaTypeWire.ToWire(type), ArchiveSize.Format(sizeBytes), ArchiveMediaTypeWire.Extension(type));
+        return Prefix(date, request.Project) + AddedFact(request, type, sizeBytes);
+    }
+
+    /// <summary>The fact part of <see cref="Added"/>: what <c>memory remember --scope project:&lt;project&gt; -- "&lt;fact&gt;"</c> is given.</summary>
+    public static string AddedFact(ArchiveAddRequest request, ArchiveMediaType type, long sizeBytes)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return Fact(request, ArchiveMediaTypeWire.ToWire(type), ArchiveSize.Format(sizeBytes), ArchiveMediaTypeWire.Extension(type));
     }
 
     /// <summary>The longest line this request can produce: the longest media type, a three-digit megabyte size, a three-letter extension.</summary>
     public static string Longest(DateOnly date, ArchiveAddRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return Added(date, request, ArchiveMediaTypeWire.ToWire(ArchiveMediaType.Pdf), "999.9 MB", "pdf");
+        return Prefix(date, request.Project) + Fact(request, ArchiveMediaTypeWire.ToWire(ArchiveMediaType.Pdf), "999.9 MB", "pdf");
     }
 
     public static string Removed(DateOnly date, Slug project, Slug slug, string extension, string name)
@@ -28,8 +35,10 @@ internal static class ArchiveIndexLine
         return $"- [stated] {Date(date)} (project:{project.Value}): Removed archived item archive/{project.Value}/{slug.Value}.{extension} (\"{name}\")";
     }
 
-    private static string Added(DateOnly date, ArchiveAddRequest r, string mediaType, string size, string extension) =>
-        $"- [stated] {Date(date)} (project:{r.Project.Value}): Archived \"{r.Name}\" ({mediaType}, {size}) at archive/{r.Project.Value}/{r.Slug.Value}.{extension} — {r.Description}";
+    private static string Prefix(DateOnly date, Slug project) => $"- [stated] {Date(date)} (project:{project.Value}): ";
+
+    private static string Fact(ArchiveAddRequest r, string mediaType, string size, string extension) =>
+        $"Archived \"{r.Name}\" ({mediaType}, {size}) at archive/{r.Project.Value}/{r.Slug.Value}.{extension} — {r.Description}";
 
     private static string Date(DateOnly date) => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 }

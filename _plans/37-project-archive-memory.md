@@ -208,16 +208,16 @@ Gate placement: one per vertical slice, plus one extra after Step 11 (⚠️ fir
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: `ArchiveVerbUsageTests` and `ArchiveVerbRefusalTests` green (show three stderr lines verbatim: a usage error, a configuration error, `secret_pattern <name> (line 2)`); `EveryRefusal_HasAProducingTest`; the Linux symlink fact in CI.
-- [ ] Contract review: AC-4..AC-12 against the spec; check order AC-5 → AC-6 → AC-4 (line length) → AC-7 → AC-8 → AC-9 → AC-10 → AC-11; `ArchiveRefusal` wire strings and detail tokens; `archive.json` keys, defaults 10/50/200 MiB and ceilings 25/200/500 MiB (OQ-2); `DeriveSlug` rule; the index line format and the `<size>` format.
-- [ ] ⚠️ Risk review (secrets, source deny-list, data protection): the built-in deny-list entries; `~/.cache/zyggy/archive-staging/` and the 36b media folder are **not** denied (by design); text items scanned for secrets only, contact details allowed inside items (OQ-1 (b)); name/description refuse both; binary items unscanned (accepted residual risk, Risks); no item text in any stderr line; **Assumption A3** (project and total caps count sidecars too).
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `ArchiveVerbUsageTests` and `ArchiveVerbRefusalTests` green (show three stderr lines verbatim: a usage error, a configuration error, `secret_pattern <name> (line 2)`); `EveryRefusal_HasAProducingTest`; the Linux symlink fact in CI.
+- [x] Contract review: AC-4..AC-12 against the spec; check order AC-5 → AC-6 → AC-4 (line length) → AC-7 → AC-8 → AC-9 → AC-10 → AC-11; `ArchiveRefusal` wire strings and detail tokens; `archive.json` keys, defaults 10/50/200 MiB and ceilings 25/200/500 MiB (OQ-2); `DeriveSlug` rule; the index line format and the `<size>` format.
+- [x] ⚠️ Risk review (secrets, source deny-list, data protection): the built-in deny-list entries; `~/.cache/zyggy/archive-staging/` and the 36b media folder are **not** denied (by design); text items scanned for secrets only, contact details allowed inside items (OQ-1 (b)); name/description refuse both; binary items unscanned (accepted residual risk, Risks); no item text in any stderr line; **Assumption A3** (project and total caps count sidecars too).
+- [x] User approved — implementation may continue past this gate *(the owner committed Steps 2–3 as c119577/1b171b7 and asked for the next task on 2026-10-10)*
 
 ---
 
 ## Step 4 — A passed `add` writes the item and its sidecar atomically (sidecar bytes equal the golden), appends the `[stated]` index line through `RememberService` (bytes equal what `memory remember` writes), and makes exactly one `commit --only` of the two archive paths with the spec's message, pushed with the one-rebase rule through a `MemoryPublisher` extracted from `DreamRunner` — which now also pushes an unpushed `archive …` commit first; the dream's git behaviour is otherwise unchanged (fake process runner)
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Memory/ArchiveSidecar.cs` *(create, internal)*: `record ArchiveSidecar(string Name, string Description, Slug Project, ArchiveMediaType MediaType, long SizeBytes, string Sha256, DateOnly Archived, string SourceName, DateOnly Updated)`; `MemoryFile ToMemoryFile()` (Name, Description, no aliases, Updated, `UnknownKeys` in the order `project`, `media_type`, `size_bytes`, `sha256`, `archived`, `source_name`, `HasFrontMatter = true`, `BodyLines = [Description]`); `static ArchiveSidecar? TryParse(MemoryFile)`; `string ItemExtension` from the media type.

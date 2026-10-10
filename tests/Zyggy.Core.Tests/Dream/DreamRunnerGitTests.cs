@@ -156,6 +156,21 @@ public sealed partial class DreamRunnerGitTests : IDisposable
     }
 
     [Fact]
+    public async Task Run_UnpushedArchiveCommitAtStart_PushesBeforeAnythingElse()
+    {
+        // Arrange
+        _git.On("rev-list", RecordingProcessRunner.Ok("commit 1111\narchive add zyggy/quote-2026.txt\n"));
+
+        // Act
+        var record = await Run();
+
+        // Assert
+        record.Outcome.Should().Be("committed");
+        _events.IndexOf("push").Should().BeLessThan(_events.IndexOf("model"));
+        _git.CallsOf("push").Should().HaveCount(2);
+    }
+
+    [Fact]
     public async Task Run_OtherStagedChanges_NotInCommitPaths()
     {
         // Arrange
