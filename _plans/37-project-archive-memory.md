@@ -555,10 +555,10 @@ Gate placement: one per vertical slice, plus one extra after Step 11 (⚠️ fir
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: template bats and both CI run ids; release row (tag, CI ids, SHA-256); rehearsal outputs (`list` exit 0, `unattended`, `denied_location`); restart time; `poppler-utils` state.
-- [ ] Contract review: the `archive` skill text (owner's go before `add`; never retry another way; `remove` only on explicit request), the two rule lines, the two allow rules, `instance/archive.json` values (OQ-2), runbook 17 entries complete (AC-27 checklist), 0002 §37 skeleton with the accepted-risk paragraph (AC-31's "0002 section 37 opened").
-- [ ] ⚠️ Risk review (first live writer besides the dream): binary root-owned and hash-pinned; the staging folder 0700 and outside the repository; the instance carries no secret; nothing archived yet.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: template bats and both CI run ids; release row (tag, CI ids, SHA-256); rehearsal outputs (`list` exit 0, `unattended`, `denied_location`); restart time; `poppler-utils` state.
+- [x] Contract review: the `archive` skill text (owner's go before `add`; never retry another way; `remove` only on explicit request), the two rule lines, the two allow rules, `instance/archive.json` values (OQ-2), runbook 17 entries complete (AC-27 checklist), 0002 §37 skeleton with the accepted-risk paragraph (AC-31's "0002 section 37 opened").
+- [x] ⚠️ Risk review (first live writer besides the dream): binary root-owned and hash-pinned; the staging folder 0700 and outside the repository; the instance carries no secret; nothing archived yet.
+- [x] User approved — implementation may continue past this gate
 
 ---
 
