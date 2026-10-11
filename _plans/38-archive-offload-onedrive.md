@@ -556,7 +556,7 @@ the dependency gate on 37's final gate (owner instruction 2026-10-11). 38 does n
 
 ## Step 13 — *(depends on 37's final gate)* The owner creates `Zyggy/archive`, grants the app one `write` permission on that folder only and verifies it before enabling; then, with `offload.enabled: true` in the instance but no `OnSuccess=` on the dream unit, one manual run from a shell with the owner present creates the project folder, uploads one indexed 37 item, verifies it (AC-11) and removes its bytes from `origin/main` in one commit — or, by the stop rule, the offload stays disabled and the owner is asked to choose
 
-- [ ] Done
+- [x] Done — 2026-10-11 (folder grant 201; probe ok; attended run moved reading/audible-library-screenshot-1 in memory commit eb5f25b; 0002 §38 AC-37, AC-42)
 
 **Scope** *(owner-run in the browser and Graph Explorer; agent runs the binary on Central and records; runbook "Grant OneDrive write for the archive folder")*:
 - AC-37 (owner): create the folder `Zyggy/archive` in the OneDrive; admin consent for `ListItems.SelectedOperations.Selected`; `POST …/drives/<onedrive>/items/<Zyggy/archive id>/permissions` with role `write` for the app; Graph Explorer `GET …/permissions` of the OneDrive site (`read` only) and of `Zyggy/archive` (one `write` grant for the app) — outputs recorded with ids redacted to their first 6 characters.
