@@ -583,16 +583,16 @@ the dependency gate on 37's final gate (owner instruction 2026-10-11). 38 does n
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: release row (tag, CI ids, SHA-256); `systemd-analyze verify` output; rehearsal outputs; the manual run's stdout, commit (`git show --stat`), sidecar keys, two `ok` rows; the owner opened `drive_url`.
-- [ ] Contract review: AC-34 (C part), AC-37, AC-42 against the spec; the grant listings show one folder-scoped `write` and nothing site-wide.
-- [ ] ⚠️ Risk review (first unattended write ahead; credentials/grant): a key holder can write only inside `Zyggy/archive`; the dream unit still has no credential and no `OnSuccess=` yet; if the stop rule fired, the offload is disabled and the owner's choice is recorded as outside this plan.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: release row (tag, CI ids, SHA-256); `systemd-analyze verify` output; rehearsal outputs; the manual run's stdout, commit (`git show --stat`), sidecar keys, two `ok` rows; the owner opened `drive_url`.
+- [x] Contract review: AC-34 (C part), AC-37, AC-42 against the spec; the grant listings show one folder-scoped `write` and nothing site-wide.
+- [x] ⚠️ Risk review (first unattended write ahead; credentials/grant): a key holder can write only inside `Zyggy/archive`; the dream unit still has no credential and no `OnSuccess=` yet; if the stop rule fired, the offload is disabled and the owner's choice is recorded as outside this plan.
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 14 — *(depends on 37's final gate)* With `OnSuccess=zyggy-archive-offload.service` added to the dream unit, the first nightly run with no owner present moves one real indexed item and the tenant audit matches its rows; a session the next day finds it through the digest, the sidecar and the m365 read tools; a forced failure (root folder renamed for one run) leaves every item in git, fails the unit and shows the `[warning]` line, and the next run after the rename back clears it; the secret sweep is clean; 0002 §38 and the roadmap record it
 
-- [ ] Done
+- [ ] Done *(2026-10-11 progress: instance `5772f6d` — `OnSuccess=zyggy-archive-offload.service` on the dream unit, installed on Central, `systemd-analyze verify` ok, no credential on the dream unit; next nightly dream Mon 2026-10-12 01:00 UTC. Open: AC-38 (first unattended run), AC-39 (session retrieval), AC-40 (forced failure), AC-41 (sweep), then `max_items_per_run` back to 20)*
 
 **Scope** *(agent via `az vm run-command`, read-mostly; owner in the session and the tenant)*:
 - Instance: `zyggy-dream.service` gains `OnSuccess=zyggy-archive-offload.service` (its only change; no credential) + bats row; commit, pull, install, `daemon-reload`, `systemd-analyze verify` (AC-34).
