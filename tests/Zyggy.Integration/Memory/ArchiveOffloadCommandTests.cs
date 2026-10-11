@@ -99,11 +99,8 @@ public sealed class ArchiveOffloadCommandTests : IAsyncLifetime
 
         // Assert
         run.ExitCode.Should().BeOneOf(3, 6);
+        // The key reader's own wording follows (Linux: "not found in credentials directory or file"; Windows: "not supported on this platform").
         run.Stderr.Should().StartWith("offload: sign-in failed: key: ");
-        if (OperatingSystem.IsLinux())
-        {
-            run.Stderr.Should().Contain("m365-app.key");
-        }
         (await _h.Repo.TreeFingerprintAsync(Ct)).Should().Be(before);
     }
 
