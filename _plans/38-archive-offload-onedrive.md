@@ -532,7 +532,7 @@ the dependency gate on 37's final gate (owner instruction 2026-10-11). 38 does n
 
 ## Step 12 — *(depends on 37's final gate)* A tagged release exists with checksummed artefacts; on Central the pinned binary is installed root-owned, template and instance are merged and pulled, the offload unit is installed but nothing starts it, `offload.enabled` is still `false`, and a rehearsal shows `zyggy memory archive offload` exit 0 `disabled`, `--probe` reading drive and root (or exit 6 `root_missing` while the owner has not created the folder), `--dry-run` listing 37's indexed items, `list` unchanged, and `add` still refused under `ZYGGY_HOOKS=off`
 
-- [ ] Done
+- [x] Done — 2026-10-11 (v0.6.0 released and installed on Central, offload disabled; rehearsal: disabled exit 0, probe/dry-run exit 6 root_missing before the folder exists; 0002 §38 Release row)
 
 **Scope** *(agent; the 37 Step 11 procedure, runbook 14a/14b)*:
 - This repo: merge Steps 1–11 (PR, CI green), tag `v<next>` (the next minor — Assumption A14), tag CI green on both runners; release with `zyggy` + `SHA256SUMS`; `sha256sum -c` locally.
