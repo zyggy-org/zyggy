@@ -564,7 +564,7 @@ Gate placement: one per vertical slice, plus one extra after Step 11 (⚠️ fir
 
 ## Step 12 — In one attended session the owner archives one text, one PDF and one image for a real project and sees three `archive add` commits of exactly two paths on `origin/main`; a deliberately refused secret-shaped text leaves the repository clean; after the next nightly dream each item has its `[stated]` line in the project's file, `list` shows `indexed` for all three, the next session's digest names the project file within its cap; the secret and contact-detail sweeps are clean and the repository size is recorded; 0002 §37 and the roadmap record it
 
-- [ ] Done
+- [x] Done — 2026-10-11 (owner-checked on Central; evidence from the memory repository in 0002 §37; gaps accepted by the owner: images only, two e-mail addresses in older memory files to remove separately)
 
 **Scope** *(owner-run in the session on the phone or desktop; agent checks read-only via `az vm run-command` as in 28 Step 18; edits in this repo only)*:
 - AC-28 (owner, one session): "archive this for project <real project>" with a pasted text, an owner-provided PDF and an image; the skill shows project/name/description/type/size and waits; the owner says go three times. Then a text file containing a credential line (`token=abcdef123456`) → exit 2 `secret_pattern credential-assignment (line n)` (the IBAN sample of the original plan is no longer a secret: owner decision 2026-10-10, template PR #6), the skill names the reason and stops. Agent: `git -C memory log origin/main --format='%h %s' -4` shows three `archive add` commits with exactly two paths each (`git show --name-only`); `git -C memory status --porcelain` clean apart from `inbox/`; the three sidecars' `sha256` equal `sha256sum` of the items on `main`.
@@ -592,10 +592,10 @@ Gate placement: one per vertical slice, plus one extra after Step 11 (⚠️ fir
 
 *Executor: STOP here. Present the results and WAIT for user approval.*
 
-- [ ] Behavioral verification: 0002 §37 table with every AC-28..AC-31 row dated and sourced (commit shas, `list` output, digest byte count, sweep output with count 0, `count-objects`); the three archive commits and the dream commit on `origin/main`; the refused item's stderr line (pattern name and line number only).
-- [ ] Contract review: AC-1..AC-31 → step map below all ticked; `ROADMAP.md` #37 definition of done ticked item by item (noting the spec's reshapes: no describe stage, `[stated]` not `[observed]`, no relaxed `DreamChecks`); W37-1..W37-4 present in the founding spec.
-- [ ] ⚠️ Risk review: secrets and personal data at rest (text items secret-scanned; contact details allowed inside items by OQ-1 (b); binaries unscanned — the owner approved each item; the sweep clean); repository growth within the caps; injection surface (the dream never read an item: stdin capture proven in Step 9, the deny rule in the live argument vector of the nightly run's journal); work boundary intact (nothing from the employer's laptop archived — owner statement at the gate); no secret in the first commits.
-- [ ] User approved — deliverable 37 is done
+- [x] Behavioral verification: 0002 §37 table with every AC-28..AC-31 row dated and sourced (commit shas, `list` output, digest byte count, sweep output with count 0, `count-objects`); the three archive commits and the dream commit on `origin/main`; the refused item's stderr line (pattern name and line number only).
+- [x] Contract review: AC-1..AC-31 → step map below all ticked; `ROADMAP.md` #37 definition of done ticked item by item (noting the spec's reshapes: no describe stage, `[stated]` not `[observed]`, no relaxed `DreamChecks`); W37-1..W37-4 present in the founding spec.
+- [x] ⚠️ Risk review: secrets and personal data at rest (text items secret-scanned; contact details allowed inside items by OQ-1 (b); binaries unscanned — the owner approved each item; the sweep clean); repository growth within the caps; injection surface (the dream never read an item: stdin capture proven in Step 9, the deny rule in the live argument vector of the nightly run's journal); work boundary intact (nothing from the employer's laptop archived — owner statement at the gate); no secret in the first commits.
+- [x] User approved — deliverable 37 is done
 
 ---
 

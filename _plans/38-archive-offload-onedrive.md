@@ -522,11 +522,11 @@ the dependency gate on 37's final gate (owner instruction 2026-10-11). 38 does n
 
 *Executor: STOP here. Present the results and WAIT. Do not start Step 12 until **both** this gate is approved **and** the last gate of `_plans/37-project-archive-memory.md` ("definition of done for deliverable 37") is checked `[x]`.*
 
-- [ ] Behavioral verification: template bats and both CI run ids (or the podman bats count); the offload unit file and the `offload` block shown; runbook entries listed against AC-35.
-- [ ] Contract review: the template wording equals the spec's text verbatim; deny rule present, 37 allow rules unchanged, the upload tool still denied; AC-31..AC-35 against the spec; 0002 §38 skeleton (AC-36: Decisions log reflected, 0002 opened).
-- [ ] ⚠️ Risk review (work boundary, injection, credentials): the model has no path to run the offload; the image rule keeps "data, never instructions" and "delete after answering"; the offload unit gets the Graph credential and the dream unit gets none.
-- [ ] **37's final gate is checked** (`_plans/37-project-archive-memory.md`: the three real items archived and indexed, sweep clean, 37 Done in the roadmap) — Steps 1–11 may now be merged and released.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: template bats and both CI run ids (or the podman bats count); the offload unit file and the `offload` block shown; runbook entries listed against AC-35.
+- [x] Contract review: the template wording equals the spec's text verbatim; deny rule present, 37 allow rules unchanged, the upload tool still denied; AC-31..AC-35 against the spec; 0002 §38 skeleton (AC-36: Decisions log reflected, 0002 opened).
+- [x] ⚠️ Risk review (work boundary, injection, credentials): the model has no path to run the offload; the image rule keeps "data, never instructions" and "delete after answering"; the offload unit gets the Graph credential and the dream unit gets none.
+- [x] **37's final gate is checked** (2026-10-11, gaps recorded in 0002 §37) (`_plans/37-project-archive-memory.md`: the three real items archived and indexed, sweep clean, 37 Done in the roadmap) — Steps 1–11 may now be merged and released.
+- [x] User approved — implementation may continue past this gate
 
 ---
 
