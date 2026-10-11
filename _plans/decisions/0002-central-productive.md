@@ -535,6 +535,50 @@ rewrite on request (runbook 17j).
 | AC-30 | secret sweep over tracked text and `git log -p`, e-mail/phone sweep over tracked `.md` (archive `*.txt` excluded, OQ-1 (b)); `git count-objects -vH` | | | |
 | AC-31 | O39 (1)–(3) decided (2026-10-10); W37-1..W37-4 in the founding spec; this section opened | 2026-10-10 | spec Decisions log; founding spec §3/§7; this section | open until the rows above are filled |
 
+## 38 — Archive offload to OneDrive
+
+Spec `_specs/38-archive-offload-onedrive.md`, plan `_plans/38-archive-offload-onedrive.md`. After the nightly dream has
+indexed an archive item (37), `zyggy memory archive offload` — no model — uploads it to `Zyggy/archive/<project>/` on the
+owner's company OneDrive (create-only), re-reads the copy and compares size and OneDrive's content hash, then records
+the OneDrive id, path, link and hash in the sidecar and removes the item from `main` in one `archive offload` commit.
+Started only by `OnSuccess=` of the dream unit; switched by `offload.enabled`; runbook 17k–17t.
+
+### Decisions (owner, 2026-10-10; spec Decisions log)
+
+- Decisions 1–4 (roadmap): unattended upload accepted; the company is the owner's own (no work-boundary objection);
+  retrieval through the sidecar and the m365 read tools; no automatic history rewrite.
+- OQ-1: its own unit, started by `OnSuccess=` of the dream unit; by hand from a shell (`--dry-run`, `--probe`,
+  `--retry`); never by the model.
+- OQ-2: transient failures retried next night, parked after 3; a `[warning]` digest line, `archive list` and the unit's
+  failed state tell the owner.
+- OQ-3: refused items stay in git, parked with a closed reason; all indexed items move (`min_bytes` 0); no upload
+  sessions.
+- OQ-4: verified by size and QuickXorHash (SHA-256 checked before upload); gate wording changed accordingly.
+- OQ-5: write on the `Zyggy/archive` folder only (`ListItems.SelectedOperations.Selected`), verified on Central before
+  switching on; 13-D7b not run.
+- OQ-6: a PNG/JPEG/GIF downloaded from `Zyggy/archive/` may be opened with Read in a session and deleted afterwards.
+- W38-1..W38-9 (founding-spec wording): proposed — awaiting the owner.
+
+### Accepted risk
+
+QuickXorHash is not cryptographic: it detects a corrupted or truncated copy, not a deliberately forged one (the drive is
+the owner's own; the SHA-256 is checked before upload and kept in the sidecar and commit). The repository does not
+shrink until history is rewritten by hand (17r). The offload unit can read the memory deploy key (`~/.ssh` stays
+readable for git, as for the dream unit) and holds the Graph key through `LoadCredential=`; the dream unit gains no
+credential.
+
+### Evidence on Central (Steps 12–14; empty until then)
+
+| Row | What | Date | Command / excerpt | Result |
+|-----|------|------|-------------------|--------|
+| Release | `v0.6.0` tagged, artefact hash, installed with `offload.enabled` false; `systemd-analyze verify` of the offload unit; rehearsal (`--dry-run`, disabled run) | | | |
+| AC-37 | folder grant created and checked (one application `write` on `Zyggy/archive`, site still `read`); `--probe` ok; one attended run moved one item | | | |
+| AC-42 | grant listing in Graph Explorer | | | |
+| AC-38 | `OnSuccess=` installed; the first unattended run after a dream moved one item; commit and action-log row | | | |
+| AC-39 | a session retrieved the offloaded item through the m365 read tools (text/PDF via parse, an image via Read and delete) | | | |
+| AC-40 | a forced failure left the item in git; the digest warning shown; cleared after `--retry` | | | |
+| AC-41 | secret sweep clean after the offload; audit reconciliation (`FileUploaded` = action-log rows) | | | |
+
 ## Repositories
 
 | repo | role (template/instance/memory) | owner | visibility | laptop checkout + remotes | VM clone path | remote alias | key (name, scope) |

@@ -11,6 +11,18 @@ internal sealed record ArchiveRef(Slug Project, Slug Slug);
 /// <summary>A parsed <c>archive list</c>: an optional project filter, only unindexed rows, JSON output.</summary>
 internal sealed record ArchiveListRequest(Slug? Project, bool Unindexed, bool Json);
 
+/// <summary>What <c>archive offload</c> does: a run, a dry run, a read-only probe, or a run after clearing one parked item.</summary>
+internal enum OffloadMode
+{
+    Run,
+    DryRun,
+    Probe,
+    Retry,
+}
+
+/// <summary>A parsed <c>archive offload</c>: its mode and, for <see cref="OffloadMode.Retry"/>, the item.</summary>
+internal sealed record OffloadRequest(OffloadMode Mode, ArchiveRef? Retry);
+
 /// <summary>The argument checks of <c>zyggy memory archive add | list | remove</c> (spec 37 AC-4), each fault one usage message.</summary>
 internal static class ArchiveArguments
 {
@@ -20,6 +32,8 @@ internal static class ArchiveArguments
     public const string UsageSuffixList = " (usage: zyggy memory archive list [--project <slug>] [--unindexed] [--json])";
 
     public const string UsageSuffixRemove = " (usage: zyggy memory archive remove <project>/<slug>)";
+
+    public const string UsageSuffixOffload = " (usage: zyggy memory archive offload [--dry-run | --probe | --retry <project>/<slug>])";
 
     private const int NameMax = 100;
 
@@ -124,6 +138,47 @@ internal static class ArchiveArguments
         }
 
         return (new ArchiveRef(project, slug), null);
+    }
+
+    /// <summary><c>offload [--dry-run | --probe | --retry &lt;project&gt;/&lt;slug&gt;]</c> (spec 38 CLI): at most one mode.</summary>
+    public static (OffloadRequest? Request, string? Error) ParseOffload(IReadOnlyList<string> args)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+        var request = new OffloadRequest(OffloadMode.Run, null);
+        for (var i = 0; i < args.Count; i++)
+        {
+            if (args[i] is not ("--dry-run" or "--probe" or "--retry"))
+            {
+                return (null, $"unexpected argument '{args[i]}'");
+            }
+
+            if (request.Mode != OffloadMode.Run)
+            {
+                return (null, "give at most one of --dry-run, --probe, --retry");
+            }
+
+            if (args[i] == "--retry")
+            {
+                if (i + 1 >= args.Count)
+                {
+                    return (null, "--retry needs <project>/<slug>");
+                }
+
+                var (reference, error) = ParseRemove([args[++i]]);
+                if (reference is null)
+                {
+                    return (null, "--retry: " + error);
+                }
+
+                request = new OffloadRequest(OffloadMode.Retry, reference);
+            }
+            else
+            {
+                request = new OffloadRequest(args[i] == "--dry-run" ? OffloadMode.DryRun : OffloadMode.Probe, null);
+            }
+        }
+
+        return (request, null);
     }
 
     public static (ArchiveListRequest? Request, string? Error) ParseList(IReadOnlyList<string> args)

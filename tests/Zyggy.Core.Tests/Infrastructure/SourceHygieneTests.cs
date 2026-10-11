@@ -131,6 +131,40 @@ public sealed partial class SourceHygieneTests
         createPost[..createPost.IndexOf("\n    }\n", StringComparison.Ordinal)].Should().Contain("routes.PostsUrl");
     }
 
+    [Fact]
+    public void Src_GraphWriteMethods_OnlyInDriveWriterAndTokenClient()
+    {
+        // Arrange: spec 38 — the token POST, the offload's two writes, and the loopback MCP probe (not Graph) are the only non-GET requests
+        string[] allowed =
+        [
+            "src/Zyggy.Core/M365/Graph/GraphDriveWriter.cs",
+            "src/Zyggy.Core/M365/Graph/GraphTokenClient.cs",
+            "src/Zyggy.Core/M365/Mcp/McpProbe.cs",
+        ];
+
+        // Act
+        var holders = SourceFiles()
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .Where(f => f.StartsWith("src/Zyggy.Core/M365/", StringComparison.Ordinal))
+            .Where(f => WriteMethod().IsMatch(File.ReadAllText(Path.Combine(RepoRoot(), f))))
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        // Assert
+        holders.Should().Equal(allowed);
+    }
+
+    [Fact]
+    public void Src_GraphReader_GetOnly()
+    {
+        // Act
+        var methods = Regex.Matches(File.ReadAllText(Path.Combine(RepoRoot(), "src", "Zyggy.Core", "M365", "Graph", "GraphReader.cs")), @"HttpMethod\.\w+")
+            .Select(m => m.Value).Distinct().ToList();
+
+        // Assert
+        methods.Should().Equal("HttpMethod.Get");
+    }
+
     private static List<string> SourceFiles() =>
         Directory.EnumerateFiles(Path.Combine(RepoRoot(), "src"), "*.cs", SearchOption.AllDirectories)
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
@@ -148,6 +182,9 @@ public sealed partial class SourceHygieneTests
 
     [GeneratedRegex(@"new (ProcessSpec|ProcessStartInfo)\(\s*""(claude|markitdown|ms-365-mcp-server)""")]
     private static partial Regex BareProgram();
+
+    [GeneratedRegex(@"HttpMethod\.(Put|Post|Patch|Delete)\b")]
+    private static partial Regex WriteMethod();
 
     [GeneratedRegex(@"\bModelContextProtocol\.")]
     private static partial Regex McpSdk();

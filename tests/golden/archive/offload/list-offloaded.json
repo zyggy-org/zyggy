@@ -1,0 +1,57 @@
+[
+  {
+    "item": "archive/zyggy/fence-quote.txt",
+    "sidecar": "archive/zyggy/fence-quote.md",
+    "project": "zyggy",
+    "slug": "fence-quote",
+    "media_type": "text/plain",
+    "size_bytes": 68,
+    "name": "Quote 2026",
+    "description": "Roof repair quote",
+    "archived": "2026-09-30",
+    "state": "indexed",
+    "offload_failures": 2,
+    "offload_reason": "throttled",
+    "parked": false
+  },
+  {
+    "item": "archive/zyggy/quote-2026.txt",
+    "sidecar": "archive/zyggy/quote-2026.md",
+    "project": "zyggy",
+    "slug": "quote-2026",
+    "media_type": "text/plain",
+    "size_bytes": 68,
+    "name": "Quote 2026",
+    "description": "Roof repair quote",
+    "archived": "2026-09-30",
+    "state": "offloaded",
+    "drive_path": "Zyggy/archive/zyggy/quote-2026.txt"
+  },
+  {
+    "item": null,
+    "sidecar": "archive/zyggy/roof-invoice.md",
+    "project": "zyggy",
+    "slug": "roof-invoice",
+    "media_type": null,
+    "size_bytes": null,
+    "name": "Roof invoice",
+    "description": "Invoice for the roof repair",
+    "archived": "2026-09-30",
+    "state": "orphan"
+  },
+  {
+    "item": "archive/zyggy/roof-photo.png",
+    "sidecar": "archive/zyggy/roof-photo.md",
+    "project": "zyggy",
+    "slug": "roof-photo",
+    "media_type": "image/png",
+    "size_bytes": 65,
+    "name": "Roof photo",
+    "description": "Photo of the roof damage",
+    "archived": "2026-09-30",
+    "state": "unindexed",
+    "offload_failures": 1,
+    "offload_reason": "target_conflict",
+    "parked": true
+  }
+]

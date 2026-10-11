@@ -16,6 +16,9 @@ internal enum ArchiveIndexState
 
     /// <summary>An item without a sidecar, or a sidecar without an item.</summary>
     Orphan,
+
+    /// <summary>The item's bytes moved to OneDrive (spec 38): the sidecar carries the offload part and the item file is gone.</summary>
+    Offloaded,
 }
 
 /// <summary>One row of <c>archive list</c>; paths relative to the principal directory, <see langword="null"/> where unknown.</summary>
@@ -31,6 +34,18 @@ internal sealed record ArchiveListRow(
     DateOnly? Archived,
     ArchiveIndexState State)
 {
+    /// <summary>Gets the OneDrive path of an offloaded item (spec 38).</summary>
+    public string? DrivePath { get; init; }
+
+    /// <summary>Gets the item's consecutive offload failures, when it has any.</summary>
+    public int? OffloadFailures { get; init; }
+
+    /// <summary>Gets the reason of the item's last offload failure (wire form), when it has any.</summary>
+    public string? OffloadReason { get; init; }
+
+    /// <summary>Gets whether the offload parked the item.</summary>
+    public bool Parked { get; init; }
+
     /// <summary>The path the row is sorted and printed by: the item, else the sidecar.</summary>
     public string Path => ItemPath ?? SidecarPath!;
 }
@@ -57,7 +72,11 @@ internal static class ArchiveListFormat
         {
             var type = row.Type is { } t ? ArchiveMediaTypeWire.ToWire(t) : "-";
             var size = row.Size is { } s ? ArchiveSize.Format(s) : "-";
-            builder.Append(CultureInfo.InvariantCulture, $"{row.Path}  {type}  {size}  {State(row.State)}  — {row.Description ?? "-"}\n");
+            var state = row.State == ArchiveIndexState.Offloaded ? $"offloaded → {row.DrivePath}" : State(row.State);
+            var offload = row.Parked ? $"  parked: {row.OffloadReason}"
+                : row.OffloadFailures is { } n ? string.Create(CultureInfo.InvariantCulture, $"  offload_failed({n}): {row.OffloadReason}")
+                : string.Empty;
+            builder.Append(CultureInfo.InvariantCulture, $"{row.Path}  {type}  {size}  {state}{offload}  — {row.Description ?? "-"}\n");
         }
 
         return builder.ToString();
@@ -91,6 +110,20 @@ internal static class ArchiveListFormat
                 writer.WriteString("description", row.Description);
                 writer.WriteString("archived", row.Archived?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
                 writer.WriteString("state", State(row.State));
+
+                // Spec 38 (plan assumption A7): written only on rows that have them, so every 37 row stays byte-identical.
+                if (row.DrivePath is not null)
+                {
+                    writer.WriteString("drive_path", row.DrivePath);
+                }
+
+                if (row.OffloadFailures is { } failures)
+                {
+                    writer.WriteNumber("offload_failures", failures);
+                    writer.WriteString("offload_reason", row.OffloadReason);
+                    writer.WriteBoolean("parked", row.Parked);
+                }
+
                 writer.WriteEndObject();
             }
 
@@ -105,6 +138,7 @@ internal static class ArchiveListFormat
         ArchiveIndexState.Indexed => "indexed",
         ArchiveIndexState.Unindexed => "unindexed",
         ArchiveIndexState.Orphan => "orphan",
+        ArchiveIndexState.Offloaded => "offloaded",
         _ => throw new ArgumentOutOfRangeException(nameof(state), state, null),
     };
 }

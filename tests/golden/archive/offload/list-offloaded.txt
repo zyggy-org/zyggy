@@ -1,0 +1,4 @@
+archive/zyggy/fence-quote.txt  text/plain  68 B  indexed  offload_failed(2): throttled  — Roof repair quote
+archive/zyggy/quote-2026.txt  text/plain  68 B  offloaded → Zyggy/archive/zyggy/quote-2026.txt  — Roof repair quote
+archive/zyggy/roof-invoice.md  -  -  orphan  — Invoice for the roof repair
+archive/zyggy/roof-photo.png  image/png  65 B  unindexed  parked: target_conflict  — Photo of the roof damage

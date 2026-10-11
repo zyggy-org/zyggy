@@ -10,7 +10,7 @@ namespace Zyggy.Core.Tests.Infrastructure;
 /// body). Records a violation — never a network call — for any host other than the two contracted ones, any <c>/me</c> path, any
 /// method other than GET (and the one token POST), and any non-HTTPS URI. No test may leave a violation.
 /// </summary>
-internal sealed class StubGraphHandler : HttpMessageHandler
+internal sealed partial class StubGraphHandler : HttpMessageHandler
 {
     private const string Login = "login.microsoftonline.com";
     private const string Graph = "graph.microsoft.com";
@@ -21,6 +21,8 @@ internal sealed class StubGraphHandler : HttpMessageHandler
     public List<RecordedRequest> Requests { get; } = [];
 
     public List<string> Violations { get; } = [];
+
+    private bool _driveWrites;
 
     /// <summary>The routes of <c>golden/m365/graph/routes.tsv</c>, bodies from the same folder.</summary>
     public static StubGraphHandler FromGoldenRoutes()
@@ -53,14 +55,43 @@ internal sealed class StubGraphHandler : HttpMessageHandler
         return this;
     }
 
+    /// <summary>
+    /// Spec 38: stops reporting exactly the archive offload's two writes as violations — <c>POST /v1.0/drives/{id}/items/{id}/children</c>
+    /// and <c>PUT /v1.0/drives/{id}/items/{id}:/{name}:/content</c>. Every other non-GET stays a violation.
+    /// </summary>
+    public StubGraphHandler AllowDriveWrites()
+    {
+        _driveWrites = true;
+        return this;
+    }
+
+    /// <summary>Gets the in-memory OneDrive that answers the archive offload's reads and writes ahead of the golden routes (plan 38).</summary>
+    public StubOneDrive? Drive { get; private set; }
+
+    /// <summary>Answers drive requests from <paramref name="drive"/> (one-shot scenario answers still come first) and allows its two writes.</summary>
+    public StubGraphHandler UseDrive(StubOneDrive drive)
+    {
+        Drive = drive;
+        return AllowDriveWrites();
+    }
+
     public IEnumerable<RecordedRequest> To(string urlPattern) => Requests.Where(r => Regex.IsMatch(r.Uri.ToString(), urlPattern, RegexOptions.CultureInvariant));
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var uri = request.RequestUri!;
         var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var bytes = request.Content is null ? null : await request.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
         var headers = request.Headers.ToDictionary(h => h.Key, h => string.Join(", ", h.Value), StringComparer.OrdinalIgnoreCase);
-        Requests.Add(new RecordedRequest(request.Method, uri, headers, body));
+        if (request.Content is not null)
+        {
+            foreach (var header in request.Content.Headers)
+            {
+                headers.TryAdd(header.Key, string.Join(", ", header.Value));
+            }
+        }
+
+        Requests.Add(new RecordedRequest(request.Method, uri, headers, body, bytes));
 
         if (uri.Scheme != Uri.UriSchemeHttps)
         {
@@ -78,7 +109,10 @@ internal sealed class StubGraphHandler : HttpMessageHandler
             Violations.Add("/me: " + uri);
         }
 
-        if (!isToken && request.Method != HttpMethod.Get)
+        var isDriveWrite = _driveWrites && uri.Host == Graph
+            && ((request.Method == HttpMethod.Post && DriveFolderCreate().IsMatch(uri.AbsolutePath))
+                || (request.Method == HttpMethod.Put && DriveFileCreate().IsMatch(uri.AbsolutePath)));
+        if (!isToken && !isDriveWrite && request.Method != HttpMethod.Get)
         {
             Violations.Add($"{request.Method}: {uri}");
         }
@@ -88,6 +122,11 @@ internal sealed class StubGraphHandler : HttpMessageHandler
         if (scenario is not null)
         {
             _scenario.Remove(scenario);
+        }
+
+        if (scenario is null && Drive?.Handle(request.Method, uri, bytes) is { } fromDrive)
+        {
+            return fromDrive;
         }
 
         var route = scenario ?? _routes.FirstOrDefault(r => r.Matches(request.Method.Method, url));
@@ -111,6 +150,12 @@ internal sealed class StubGraphHandler : HttpMessageHandler
 
         return response;
     }
+
+    [GeneratedRegex(@"\A/v1\.0/drives/[^/]+/items/[^/:]+/children\z", RegexOptions.CultureInvariant)]
+    private static partial Regex DriveFolderCreate();
+
+    [GeneratedRegex(@"\A/v1\.0/drives/[^/]+/items/[^/:]+:/[^/:]+:/content\z", RegexOptions.CultureInvariant)]
+    private static partial Regex DriveFileCreate();
 
     private StubGraphHandler Add(List<Route> list, Route route)
     {

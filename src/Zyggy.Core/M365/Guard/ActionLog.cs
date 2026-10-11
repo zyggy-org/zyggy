@@ -48,6 +48,35 @@ internal sealed partial class ActionLog(string stateDirectory)
         return Encoding.UTF8.GetString(buffer.ToArray());
     }
 
+    /// <summary>
+    /// The row for one OneDrive write of the archive offload (spec 38 AC-15): the binary's write, not a tool call, in the same log so the
+    /// monthly reconciliation sees it. <paramref name="tool"/> is <c>archive-offload-folder</c> or <c>archive-offload-upload</c>;
+    /// <paramref name="errorCode"/> <see langword="null"/> is <c>ok</c>. Never the content.
+    /// </summary>
+    /// <exception cref="ArgumentException">Thrown for another tool name.</exception>
+    public static string BuildOffloadRow(
+        DateTimeOffset now, DateTimeOffset runStart, string tool, string driveId, string parentId, string name, long size, string? errorCode)
+    {
+        if (tool is not ("archive-offload-folder" or "archive-offload-upload"))
+        {
+            throw new ArgumentException("Not an archive offload tool.", nameof(tool));
+        }
+
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer, Compact))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("ts", Iso(now));
+            writer.WriteString("session_id", "archive-offload " + Iso(runStart));
+            writer.WriteString("tool", tool);
+            writer.WriteString("summary", $"drive {Flat(driveId)} parent {Flat(parentId)} name {Flat(name)} size {size.ToString(CultureInfo.InvariantCulture)}");
+            writer.WriteString("status", errorCode is null ? "ok" : "error: " + Code(errorCode));
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(buffer.ToArray());
+    }
+
     /// <summary><c>zy_m365_append</c>: one line, 0600, the state directory 0700, an exclusive lock held for the append.</summary>
     /// <exception cref="IOException">Thrown when the row cannot be appended.</exception>
     public void Append(string row)
@@ -163,6 +192,8 @@ internal sealed partial class ActionLog(string stateDirectory)
 
         return "ok";
     }
+
+    private static string Iso(DateTimeOffset time) => time.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
 
     private static string CodeOrStatus(JsonElement error) =>
         error.TryGetProperty("code", out var code) && JsonView.IsTruthy(code) ? ToText(code)

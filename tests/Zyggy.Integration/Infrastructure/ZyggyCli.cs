@@ -129,14 +129,21 @@ public static class ZyggyCli
         using var process = Process.Start(info) ?? throw new InvalidOperationException("zyggy did not start.");
         var stdout = process.StandardOutput.ReadToEndAsync(cancellationToken);
         var stderr = process.StandardError.ReadToEndAsync(cancellationToken);
-        if (stdin is not null)
+        // A verb that refuses its arguments may exit before it reads stdin; the closed pipe is then not the test's concern, its exit and output are.
+        try
         {
-            await process.StandardInput.WriteAsync(stdin.AsMemory(), cancellationToken);
-        }
+            if (stdin is not null)
+            {
+                await process.StandardInput.WriteAsync(stdin.AsMemory(), cancellationToken);
+            }
 
-        if (!keepStdinOpen)
+            if (!keepStdinOpen)
+            {
+                process.StandardInput.Close();
+            }
+        }
+        catch (IOException)
         {
-            process.StandardInput.Close();
         }
 
         await process.WaitForExitAsync(cancellationToken);

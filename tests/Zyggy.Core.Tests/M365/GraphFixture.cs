@@ -49,11 +49,15 @@ internal sealed class GraphFixture : IDisposable
             Waits.Add(wait);
             return Task.CompletedTask;
         });
-        var tokens = new GraphTokenClient(
+        Tokens = new GraphTokenClient(
             new CredentialFileSecretStore(TenantId.Parse("acme"), new Dictionary<string, string?>(), _pair.KeyFile, checkOwnership: false),
             TenantId.Parse("acme"), Configuration, _pair.CertificateFile, _http, Clock);
-        Reader = new GraphReader(tokens, _http, Configuration, Clock);
+        Reader = new GraphReader(Tokens, _http, Configuration, Clock);
     }
+
+    public GraphTokenClient Tokens { get; }
+
+    public GraphHttp Http => _http;
 
     public StubGraphHandler Stub { get; } = StubGraphHandler.FromGoldenRoutes();
 
