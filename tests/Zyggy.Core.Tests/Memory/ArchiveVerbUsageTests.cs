@@ -168,7 +168,7 @@ public sealed class ArchiveVerbUsageTests : IDisposable
 
         // Assert
         exit.Should().Be(4);
-        console.Stderr.Should().Be("archive: unknown verb 'show' (usage: zyggy memory archive add|list|remove ...)\n");
+        console.Stderr.Should().Be("archive: unknown verb 'show' (usage: zyggy memory archive add|list|remove|offload ...)\n");
     }
 
     private static string[] ValidAdd() =>

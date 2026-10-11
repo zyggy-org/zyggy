@@ -16,7 +16,7 @@ internal static class CliApplication
 
         // Listed for --help only: RawVerbs runs it with its own argument parser.
         var remember = new Command("remember", "Keep a fact the owner stated in the memory inbox (remember skill).");
-        var archive = new Command("archive", "Keep, list or remove a project's archived file beside its facts (zyggy memory archive add|list|remove ...).");
+        var archive = new Command("archive", "Keep, list, remove or offload to OneDrive a project's archived file beside its facts (zyggy memory archive add|list|remove|offload ...).");
         var memory = new Command("memory", "Read the owner's memory.") { MemoryDigestCommand.Create(environment), remember, archive };
         var m365 = new Command("m365", "Microsoft 365 on Central: state, facts and the connector's tools (zyggy m365 <verb> ...).");
         var brief = new Command("brief", "The morning brief, shown when the owner asks for it (zyggy brief show [--full] [<date>]); zyggy brief request asks the unit for a run now.");

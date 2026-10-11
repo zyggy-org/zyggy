@@ -40,12 +40,25 @@ public sealed class ArchiveVerb(IReadOnlyDictionary<string, string?> environment
 
     private readonly IProcessRunner _processes = new ProcessRunner(clock);
 
-    // Tests: IANA ids need ICU off Linux, and the build is invariant-globalization; git is a recording fake.
-    internal ArchiveVerb(IReadOnlyDictionary<string, string?> environment, TimeProvider clock, Func<string, TimeZoneInfo> findTimeZone, IProcessRunner? processes = null)
+    private readonly HttpMessageHandler? _graphHandler;
+
+    private readonly bool _checkKeyOwnership = true;
+
+    // Tests: IANA ids need ICU off Linux, and the build is invariant-globalization; git is a recording fake; Graph is the stub handler
+    // (the binary has no test switch for it).
+    internal ArchiveVerb(
+        IReadOnlyDictionary<string, string?> environment,
+        TimeProvider clock,
+        Func<string, TimeZoneInfo> findTimeZone,
+        IProcessRunner? processes = null,
+        HttpMessageHandler? graphHandler = null,
+        bool checkKeyOwnership = true)
         : this(environment, clock)
     {
         _findTimeZone = findTimeZone;
         _processes = processes ?? _processes;
+        _graphHandler = graphHandler;
+        _checkKeyOwnership = checkKeyOwnership;
     }
 
     /// <summary>Runs the verb.</summary>
@@ -60,10 +73,17 @@ public sealed class ArchiveVerb(IReadOnlyDictionary<string, string?> environment
         ArgumentNullException.ThrowIfNull(io);
 
         var verb = args.Count > 0 ? args[0] : string.Empty;
-        if (verb is not ("add" or "list" or "remove"))
+        if (verb is not ("add" or "list" or "remove" or "offload"))
         {
-            await io.Error.WriteAsync($"{Prefix}unknown verb '{verb}' (usage: zyggy memory archive add|list|remove ...)\n").ConfigureAwait(false);
+            await io.Error.WriteAsync($"{Prefix}unknown verb '{verb}' (usage: zyggy memory archive add|list|remove|offload ...)\n").ConfigureAwait(false);
             return Usage;
+        }
+
+        // Spec 38: the offload is the one archive sub-verb an unattended run may start (AC-4); it has its own prefix and order.
+        if (verb == "offload")
+        {
+            return await new OffloadVerb(environment, clock, _findTimeZone, _processes, _graphHandler, _checkKeyOwnership)
+                .RunAsync(args.Skip(1).ToArray(), io, cancellationToken).ConfigureAwait(false);
         }
 
         if (verb is not "list" && environment.TryGetValue("ZYGGY_HOOKS", out var hooks) && hooks == "off")
@@ -195,6 +215,11 @@ public sealed class ArchiveVerb(IReadOnlyDictionary<string, string?> environment
             return failed;
         }
 
+        if (outcome.Note is not null)
+        {
+            await io.Error.WriteAsync(Prefix + "note: " + outcome.Note + "\n").ConfigureAwait(false);
+        }
+
         var removed = string.Concat(new[] { outcome.Item, outcome.Sidecar }.OfType<string>().Select(path => $"removed: {path}\n"));
         return await CommitLinesAsync(removed, outcome, io).ConfigureAwait(false);
     }
@@ -208,7 +233,14 @@ public sealed class ArchiveVerb(IReadOnlyDictionary<string, string?> environment
             return Usage;
         }
 
-        var rows = Service(context).List(request);
+        // Spec 38: the offload's failure data; list never fails on the state file.
+        var state = OffloadState.Load(new ArchiveStatePaths(environment));
+        if (state.Error is not null)
+        {
+            await io.Error.WriteAsync($"{Prefix}note: {state.Error}; offload failures are not shown\n").ConfigureAwait(false);
+        }
+
+        var rows = Service(context).List(request, state.State);
         await io.Out.WriteAsync(request.Json ? ArchiveListFormat.Json(rows) : ArchiveListFormat.Text(rows)).ConfigureAwait(false);
         return Archived;
     }

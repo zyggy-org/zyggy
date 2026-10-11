@@ -74,8 +74,10 @@ internal sealed class ArchiveService(
     /// <summary>
     /// Every archived item in ordinal path order (spec 37 AC-18): sidecars paired with items by slug, <c>indexed</c> when any <c>.md</c>
     /// file under a side directory contains the item's path, <c>orphan</c> when one of the two files is missing. Reads files only; never git.
+    /// Spec 38: a sidecar with the offload part and no item file is <c>offloaded</c> (never <c>orphan</c>); <paramref name="state"/> adds
+    /// each item's offload failures.
     /// </summary>
-    public IReadOnlyList<ArchiveListRow> List(ArchiveListRequest request)
+    public IReadOnlyList<ArchiveListRow> List(ArchiveListRequest request, OffloadState? state = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         if (!Directory.Exists(paths.ArchiveDirectory))
@@ -97,13 +99,32 @@ internal sealed class ArchiveService(
                 var item = group.FirstOrDefault(f => f.Type is not null);
                 var sidecarFile = group.FirstOrDefault(f => f.Type is null);
                 var sidecar = sidecarFile is null ? null : ArchiveSidecar.TryParse(MemoryFileReader.Read(sidecarFile.FullPath));
+                var sidecarRelative = sidecarFile is null ? null : paths.Relative(sidecarFile.FullPath);
+                var failures = state is not null && state.Items.TryGetValue(OffloadState.Key(project, group.Key), out var f) ? f : null;
+                if (item is null && sidecar?.Offload is { } offload)
+                {
+                    rows.Add(new ArchiveListRow(
+                        paths.Relative(paths.ArchiveItem(project, group.Key, sidecar.MediaType)),
+                        sidecarRelative,
+                        project,
+                        group.Key,
+                        sidecar.MediaType,
+                        sidecar.SizeBytes,
+                        sidecar.Name,
+                        sidecar.Description,
+                        sidecar.Archived,
+                        ArchiveIndexState.Offloaded)
+                    { DrivePath = offload.DrivePath });
+                    continue;
+                }
+
                 var itemRelative = item is null ? null : paths.Relative(item.FullPath);
-                var state = item is null || sidecar is null ? ArchiveIndexState.Orphan
+                var index = item is null || sidecar is null ? ArchiveIndexState.Orphan
                     : sideTexts.Any(text => text.Contains(itemRelative!, StringComparison.Ordinal)) ? ArchiveIndexState.Indexed
                     : ArchiveIndexState.Unindexed;
                 rows.Add(new ArchiveListRow(
                     itemRelative,
-                    sidecarFile is null ? null : paths.Relative(sidecarFile.FullPath),
+                    sidecarRelative,
                     project,
                     group.Key,
                     item is null ? null : sidecar?.MediaType ?? item.Type,
@@ -111,7 +132,12 @@ internal sealed class ArchiveService(
                     sidecar?.Name,
                     sidecar?.Description,
                     sidecar?.Archived,
-                    state));
+                    index)
+                {
+                    OffloadFailures = failures?.Failures,
+                    OffloadReason = failures is null ? null : OffloadReasonWire.ToWire(failures.Reason),
+                    Parked = failures?.Parked ?? false,
+                });
             }
         }
 
@@ -165,9 +191,14 @@ internal sealed class ArchiveService(
 
         var message = ArchiveCommitMessage.Remove(reference.Project, reference.Slug, extension);
         var publish = await publisher.CommitAndPushAsync(repository, preflight.Branch!, message, [], repoPaths, cancellationToken).ConfigureAwait(false);
-        return publish.Committed
-            ? ArchiveOutcome.Removed(itemRelative, sidecarRelative, remember.Path!, remember.Line!, publish.Sha, publish.Pushed)
-            : ArchiveOutcome.GitError(publish.GitStep!);
+        if (!publish.Committed)
+        {
+            return ArchiveOutcome.GitError(publish.GitStep!);
+        }
+
+        // Spec 38 AC-25: the OneDrive copy is never deleted by the binary.
+        var note = sidecar?.Offload is { } offload ? $"the OneDrive copy at {offload.DrivePath} stays; delete it in OneDrive if wanted" : null;
+        return ArchiveOutcome.Removed(itemRelative, sidecarRelative, remember.Path!, remember.Line!, publish.Sha, publish.Pushed) with { Note = note };
     }
 
     // The files directly under archive/<project>/ named <slug>.md (sidecar, Type null) or <slug>.<item extension> (item).

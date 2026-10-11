@@ -76,5 +76,8 @@ internal sealed record M365Session(
 /// <summary>The HTTP exchange, the token client and the reader of one run; dispose to release the connection pool.</summary>
 internal sealed record GraphParts(GraphHttp Http, GraphTokenClient Tokens, GraphReader Reader) : IDisposable
 {
+    /// <summary>Gets the archive offload's writer over the same exchange and token client, behind a given scope (spec 38).</summary>
+    public Func<DriveWriteScope, IGraphDriveWriter> DriveWriter => scope => new GraphDriveWriter(Tokens, Http, scope);
+
     public void Dispose() => Http.Dispose();
 }

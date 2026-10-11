@@ -60,7 +60,9 @@ internal static class MemoryDigestCommand
         };
         var cwd = await HookCwdAsync(cancellationToken).ConfigureAwait(false);
         var start = cwd ?? environment.Get("CLAUDE_PROJECT_DIR") ?? Environment.CurrentDirectory;
-        var output = new DigestBuilder(paths, options, TimeProvider.System).Build(section.Value, start);
+        // Spec 38 AC-23: the archive offload's warning, identity only; a missing or unreadable state file adds nothing.
+        string[] warnings = section == DigestSection.Identity && OffloadDigestWarning.Line(environment.Variables) is { } offload ? [offload] : [];
+        var output = new DigestBuilder(paths, options, TimeProvider.System) { IdentityWarnings = warnings }.Build(section.Value, start);
 
         await using (var stdout = Console.OpenStandardOutput())
         {

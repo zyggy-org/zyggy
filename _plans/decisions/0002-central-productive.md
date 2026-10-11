@@ -530,10 +530,54 @@ rewrite on request (runbook 17j).
 | Rehearsal | scratch instance: `archive list` exit 0; `ZYGGY_HOOKS=off archive add` → 2 `unattended`; a deny-listed `--file` → 2 `source_refused` | 2026-10-10 | as `zyggy` with the live settings' `ZYGGY_*`, binary `/opt/zyggy/0.5.0/zyggy` before the switch: `list` on the real memory → exit 0, empty; `ZYGGY_HOOKS=off … add --file /etc/hostname` → `archive: refused: unattended run` exit 2; `add --file ~/.config/zyggy/x` against a scratch memory repository → `archive: refused: source_refused (denied_location)` exit 2, scratch repo unchanged; live memory unchanged (its 2 pre-existing changes, HEAD `2ad80a0`) | pass |
 | Switch-on | 0.5.0 live in the runbook order (binary and pin, pull, staging folder, one restart; `poppler-utils` state) | 2026-10-10 | symlink `/opt/zyggy/0.4.1` → `/opt/zyggy/0.5.0`; checkout `f3011d3` → `25bce42` (pin 0.5.0 = min 0.5.0); live `settings.local.json` sha `cc913517aa6b` unchanged (= instance copy); `~zyggy/.cache/zyggy/archive-staging` zyggy:zyggy 700; `poppler-utils` already installed; `zyggy-m365-mcp` restarted → active, then one `claude-remote` restart 10:38:13 UTC → active; dream timer/path active; afterwards `dream status` exit 0, `m365 check` exit 0, `linkedin auth status` connected (58 days), `archive list` exit 0, index digest 5,899 bytes, skill and the two allow rules on the VM | pass |
 | Fix 0.5.1 | session uploads refused: the owner's first images (`~/.claude/uploads/<session>/…png`) → `source_refused (denied_location)`; `~/.claude/uploads/` exempted from the `~/.claude` entry (owner decision; spec 37 AC-7 amended) | 2026-10-10 | `7f79ed7` (regression tests `SourceDenyListTests` + `Add_SessionUploadUnderClaudeUploads_Archived`), `main` CI 38049404959, tag `v0.5.1` CI 38049715180, linux-x64 SHA-256 `aa5a046e3a6ee95ace2f32b7b84e17d4ce56b1b59cf5a5081c9cf8d3effafe62`; `/opt/zyggy/0.5.1/zyggy` root:root 755; rehearsal as `zyggy` against a scratch repo: a PNG under `~/.claude/uploads/rehearsal-051/` → archived (exit 7, scratch repo has no remote), `~/.claude/.credentials.json` → `source_refused (denied_location)`; live memory unchanged; pin `b4c7b27`, symlink 0.5.1, `dream status` exit 0; no service restart (no unit, skill or settings change) | pass |
-| AC-28 (owner-run) | one text, one PDF and one image archived for a real project; three `archive add` commits of exactly two paths on `origin/main`; a refused item (a secret-shaped line) → exit 2, no commit, `git status` clean | | | |
-| AC-29 | after the next nightly dream: a `[stated]` line per item in the project's file; `list` → `indexed` ×3; the `index` digest names the project file within its cap | | | |
-| AC-30 | secret sweep over tracked text and `git log -p`, e-mail/phone sweep over tracked `.md` (archive `*.txt` excluded, OQ-1 (b)); `git count-objects -vH` | | | |
+| AC-28 (owner-run) | one text, one PDF and one image archived for a real project; three `archive add` commits of exactly two paths on `origin/main`; a refused item (a secret-shaped line) → exit 2, no commit, `git status` clean | 2026-10-10 | memory `origin/main` (fetched 2026-10-11, read-only): `e3a8826` and `b0dd267` `archive add reading/audible-library-screenshot-{1,2}-october-2026.png`, each `A` of exactly the item and its sidecar, trailer `Zyggy-Tool: memory archive` (image/png, 1,496,294 and 1,513,601 bytes) | **partial, accepted by the owner 2026-10-11**: two images only — no text and no PDF item archived live (those paths are proven by the 37 integration tests); the refused-item check is owner-reported, not visible in git |
+| AC-29 | after the next nightly dream: a `[stated]` line per item in the project's file; `list` → `indexed` ×3; the `index` digest names the project file within its cap | 2026-10-11 | dream `72ac7ba` filed both `[stated] 2026-10-10 (project:reading): Archived …` lines into `private/topics/reading.md` (lines 14–15); neither `72ac7ba` nor `7a171f1` touches `archive/` | pass for the two items (`list` and digest owner-checked on Central) |
+| AC-30 | secret sweep over tracked text and `git log -p`, e-mail/phone sweep over tracked `.md` (archive `*.txt` excluded, OQ-1 (b)); `git count-objects -vH` | 2026-10-11 | template `secret-patterns.txt` over 86 tracked text files and `git log -p` (images excluded): 1 hit `card-number` in `.dream/ledger.json` — a 16-character line hash that is all digits (false positive); `ContactDetailPatterns` over 83 `.md`: 2 e-mail addresses, in `business/areas/calizr-founding-salons.md` and `daily/2026-10-05.md` (not from the archive); `size-pack` 3.00 MiB, 126 loose objects | **finding, accepted by the owner 2026-10-11**: the two e-mail addresses predate 37 and are to be removed separately (memory rule: no contact details); the ledger hit is not a secret |
 | AC-31 | O39 (1)–(3) decided (2026-10-10); W37-1..W37-4 in the founding spec; this section opened | 2026-10-10 | spec Decisions log; founding spec §3/§7; this section | open until the rows above are filled |
+
+## 38 — Archive offload to OneDrive
+
+Spec `_specs/38-archive-offload-onedrive.md`, plan `_plans/38-archive-offload-onedrive.md`. After the nightly dream has
+indexed an archive item (37), `zyggy memory archive offload` — no model — uploads it to `Zyggy/archive/<project>/` on the
+owner's company OneDrive (create-only), re-reads the copy and compares size and OneDrive's content hash, then records
+the OneDrive id, path, link and hash in the sidecar and removes the item from `main` in one `archive offload` commit.
+Started only by `OnSuccess=` of the dream unit; switched by `offload.enabled`; runbook 17k–17t.
+
+### Decisions (owner, 2026-10-10; spec Decisions log)
+
+- Decisions 1–4 (roadmap): unattended upload accepted; the company is the owner's own (no work-boundary objection);
+  retrieval through the sidecar and the m365 read tools; no automatic history rewrite.
+- OQ-1: its own unit, started by `OnSuccess=` of the dream unit; by hand from a shell (`--dry-run`, `--probe`,
+  `--retry`); never by the model.
+- OQ-2: transient failures retried next night, parked after 3; a `[warning]` digest line, `archive list` and the unit's
+  failed state tell the owner.
+- OQ-3: refused items stay in git, parked with a closed reason; all indexed items move (`min_bytes` 0); no upload
+  sessions.
+- OQ-4: verified by size and QuickXorHash (SHA-256 checked before upload); gate wording changed accordingly.
+- OQ-5: write on the `Zyggy/archive` folder only (`ListItems.SelectedOperations.Selected`), verified on Central before
+  switching on; 13-D7b not run.
+- OQ-6: a PNG/JPEG/GIF downloaded from `Zyggy/archive/` may be opened with Read in a session and deleted afterwards.
+- W38-1..W38-9 (founding-spec wording): proposed — awaiting the owner.
+
+### Accepted risk
+
+QuickXorHash is not cryptographic: it detects a corrupted or truncated copy, not a deliberately forged one (the drive is
+the owner's own; the SHA-256 is checked before upload and kept in the sidecar and commit). The repository does not
+shrink until history is rewritten by hand (17r). The offload unit can read the memory deploy key (`~/.ssh` stays
+readable for git, as for the dream unit) and holds the Graph key through `LoadCredential=`; the dream unit gains no
+credential.
+
+### Evidence on Central (Steps 12–14; empty until then)
+
+| Row | What | Date | Command / excerpt | Result |
+|-----|------|------|-------------------|--------|
+| Release | `v0.6.0` tagged, artefact hash, installed with `offload.enabled` false; `systemd-analyze verify` of the offload unit; rehearsal (`--dry-run`, disabled run) | | | |
+| AC-37 | folder grant created and checked (one application `write` on `Zyggy/archive`, site still `read`); `--probe` ok; one attended run moved one item | | | |
+| AC-42 | grant listing in Graph Explorer | | | |
+| AC-38 | `OnSuccess=` installed; the first unattended run after a dream moved one item; commit and action-log row | | | |
+| AC-39 | a session retrieved the offloaded item through the m365 read tools (text/PDF via parse, an image via Read and delete) | | | |
+| AC-40 | a forced failure left the item in git; the digest warning shown; cleared after `--retry` | | | |
+| AC-41 | secret sweep clean after the offload; audit reconciliation (`FileUploaded` = action-log rows) | | | |
 
 ## Repositories
 

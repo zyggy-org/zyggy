@@ -48,6 +48,18 @@ internal interface IGraphReader
 
     /// <summary>The owner's display name from the OneDrive drive — the name a file the owner changed carries as "modified by" (spec 35 AC-66).</summary>
     Task<GraphRead<string>> OwnerDisplayNameAsync(CancellationToken cancellationToken);
+
+    /// <summary>The id of the owner's OneDrive drive — resolved from the mailbox, never configured (spec 38).</summary>
+    Task<GraphRead<string>> OneDriveIdAsync(CancellationToken cancellationToken);
+
+    /// <summary>The item at <paramref name="path"/> below the drive root (each segment escaped), or <see langword="null"/> for a 404.</summary>
+    Task<GraphRead<DriveItemInfo?>> ItemByPathAsync(string driveId, string path, CancellationToken cancellationToken);
+
+    /// <summary>The item <paramref name="itemId"/>, or <see langword="null"/> for a 404.</summary>
+    Task<GraphRead<DriveItemInfo?>> ItemByIdAsync(string driveId, string itemId, CancellationToken cancellationToken);
+
+    /// <summary>The child <paramref name="name"/> of folder <paramref name="parentId"/>, or <see langword="null"/> for a 404.</summary>
+    Task<GraphRead<DriveItemInfo?>> ChildAsync(string driveId, string parentId, string name, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -393,6 +405,55 @@ internal sealed partial class GraphReader(GraphTokenClient tokens, GraphHttp htt
         var root = document.RootElement;
         var user = root.TryGetProperty("owner", out var owner) && owner.ValueKind == JsonValueKind.Object && owner.TryGetProperty("user", out var u) ? u : default;
         return GraphRead<string>.Ok(Str(user, "displayName"));
+    }
+
+    public async Task<GraphRead<string>> OneDriveIdAsync(CancellationToken cancellationToken)
+    {
+        var drive = await CallAsync($"{Mailbox}/drive?$select=id", None, cancellationToken).ConfigureAwait(false);
+        if (drive.Failure is not null)
+        {
+            return GraphRead<string>.Fail(drive.Failure);
+        }
+
+        using var document = JsonDocument.Parse(drive.Value!.Body);
+        return Text(document.RootElement, "id") is { } id && M365Grammar.DriveId().IsMatch(id)
+            ? GraphRead<string>.Ok(id)
+            : GraphRead<string>.Fail(new GraphFailure(6, "Graph returned an unexpected drive id"));
+    }
+
+    public Task<GraphRead<DriveItemInfo?>> ItemByPathAsync(string driveId, string path, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        var escaped = string.Join('/', path.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(Uri.EscapeDataString));
+        return ItemAsync($"{GraphEndpoints.Graph}/drives/{driveId}/root:/{escaped}?$select={DriveItemInfo.Select}", cancellationToken);
+    }
+
+    public Task<GraphRead<DriveItemInfo?>> ItemByIdAsync(string driveId, string itemId, CancellationToken cancellationToken) =>
+        ItemAsync($"{GraphEndpoints.Graph}/drives/{driveId}/items/{itemId}?$select={DriveItemInfo.Select}", cancellationToken);
+
+    public Task<GraphRead<DriveItemInfo?>> ChildAsync(string driveId, string parentId, string name, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        return ItemAsync($"{GraphEndpoints.Graph}/drives/{driveId}/items/{parentId}:/{Uri.EscapeDataString(name)}?$select={DriveItemInfo.Select}", cancellationToken);
+    }
+
+    private async Task<GraphRead<DriveItemInfo?>> ItemAsync(string url, CancellationToken cancellationToken)
+    {
+        var item = await CallAsync(url, status => status == 404, cancellationToken).ConfigureAwait(false);
+        if (item.Failure is not null)
+        {
+            return GraphRead<DriveItemInfo?>.Fail(item.Failure);
+        }
+
+        if (item.Value!.Status == 404)
+        {
+            return GraphRead<DriveItemInfo?>.Ok(null);
+        }
+
+        using var document = JsonDocument.Parse(item.Value.Body);
+        return DriveItemInfo.Parse(document.RootElement) is { } info
+            ? GraphRead<DriveItemInfo?>.Ok(info)
+            : GraphRead<DriveItemInfo?>.Fail(new GraphFailure(6, "Graph returned an unexpected item id"));
     }
 
     private static string Str(JsonElement element, string name) =>

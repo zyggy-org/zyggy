@@ -61,6 +61,18 @@ internal static class ArchiveConfiguration
             foreach (var property in document.RootElement.EnumerateObject())
             {
                 var value = property.Value;
+                if (property.Name == "offload")
+                {
+                    var offload = Offload(value, options.Offload);
+                    if (offload.Key is not null)
+                    {
+                        return (null, offload.Key, offload.Message);
+                    }
+
+                    options = options with { Offload = offload.Options! };
+                    continue;
+                }
+
                 try
                 {
                     options = property.Name switch
@@ -81,6 +93,44 @@ internal static class ArchiveConfiguration
                 {
                     return (null, property.Name, "has the wrong type");
                 }
+            }
+        }
+
+        return (options, null, null);
+    }
+
+    // Spec 38: the nested `offload` block; an unknown or mistyped key is named `offload.<key>`.
+    private static (OffloadOptions? Options, string? Key, string? Message) Offload(JsonElement block, OffloadOptions options)
+    {
+        if (block.ValueKind != JsonValueKind.Object)
+        {
+            return (null, "offload", "has the wrong type");
+        }
+
+        foreach (var property in block.EnumerateObject())
+        {
+            var value = property.Value;
+            try
+            {
+                options = property.Name switch
+                {
+                    "enabled" => options with { Enabled = value.GetBoolean() },
+                    "root_folder" => options with { RootFolder = value.GetString() ?? throw new InvalidOperationException("null") },
+                    "min_bytes" => options with { MinBytes = value.GetInt64() },
+                    "max_items_per_run" => options with { MaxItemsPerRun = value.GetInt32() },
+                    "max_bytes_per_run" => options with { MaxBytesPerRun = value.GetInt64() },
+                    "max_failures" => options with { MaxFailures = value.GetInt32() },
+                    "exclude" => options with { Exclude = Strings(value) },
+                    _ => throw new KeyNotFoundException(),
+                };
+            }
+            catch (KeyNotFoundException)
+            {
+                return (null, "offload." + property.Name, "is not an archive.json key");
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or FormatException)
+            {
+                return (null, "offload." + property.Name, "has the wrong type");
             }
         }
 

@@ -53,6 +53,46 @@ public sealed partial class MemoryDigestCommandTests : IDisposable
         ZyggyCli.RunAsync(["memory", "digest", section], env, stdin, _scratch.Path, TestContext.Current.CancellationToken);
 
     [Fact]
+    public async Task Digest_Identity_ParkedItemInState_WarningLine()
+    {
+        // Arrange: spec 38 AC-23 — a parked offload item in the machine's state
+        var root = CopyTree(Path.Combine("27", "memory"));
+        var env = Env(root);
+        env["ZYGGY_STATE_DIR"] = Path.Combine(_scratch.Path, "state");
+        var state = new Zyggy.Core.Memory.OffloadState();
+        state.Park("zyggy/quote-2026", Zyggy.Core.Memory.OffloadReason.TargetConflict, new DateOnly(2026, 10, 1));
+        state.Save(new Zyggy.Core.Memory.ArchiveStatePaths(env));
+
+        // Act
+        var run = await Digest("identity", env, HookJson(Project()));
+
+        // Assert
+        run.ExitCode.Should().Be(0, run.Stderr);
+        run.Stderr.Should().BeEmpty();
+        run.Stdout.Split('\n')[1].Should().Be("[warning] archive offload: 1 item(s) need attention — zyggy memory archive list; runbook \"Offload upload failed\"");
+    }
+
+    [Fact]
+    public async Task Digest_Identity_StateCleared_NoWarningByteIdentical()
+    {
+        // Arrange: the item was retried and moved — the state file is empty again
+        var root = CopyTree(Path.Combine("27", "memory"));
+        var env = Env(root);
+        env["ZYGGY_STATE_DIR"] = Path.Combine(_scratch.Path, "state");
+        var state = new Zyggy.Core.Memory.OffloadState();
+        state.RecordRun(DateTimeOffset.UtcNow, false, null);
+        state.Save(new Zyggy.Core.Memory.ArchiveStatePaths(env));
+        var expected = Encoding.UTF8.GetString(File.ReadAllBytes(GoldenPath("27", "expected", "digest-identity.txt")));
+
+        // Act
+        var run = await Digest("identity", env, HookJson(Project()));
+
+        // Assert
+        run.ExitCode.Should().Be(0, run.Stderr);
+        NormaliseGenerated(run.Stdout).Should().Be(NormaliseGenerated(expected));
+    }
+
+    [Fact]
     public async Task Digest_IdentityOn27Fixture_EqualsGoldenExceptGeneratedAttribute()
     {
         // Arrange

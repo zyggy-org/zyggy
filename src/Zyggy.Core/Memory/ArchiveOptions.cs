@@ -30,6 +30,9 @@ public sealed record ArchiveOptions
     /// <summary>Gets the instance's extra denied source locations, absolute paths after <c>~</c> expansion.</summary>
     public IReadOnlyList<string> SourceDeny { get; init; } = [];
 
+    /// <summary>Gets the archive offload's settings (spec 38); off by default.</summary>
+    public OffloadOptions Offload { get; init; } = new();
+
     /// <summary>Returns the <c>archive.json</c> keys whose value is above its ceiling or below its minimum.</summary>
     /// <returns>The offending keys in table order; empty when valid.</returns>
     public IReadOnlyList<string> Validate()
@@ -48,6 +51,7 @@ public sealed record ArchiveOptions
         Check(TotalMaxBytes >= ProjectMaxBytes && TotalMaxBytes <= TotalCeiling, "total_max_bytes");
         Check(AllowedTypes.Count > 0 && AllowedTypes.All(Enum.IsDefined), "allowed_types");
         Check(SourceDeny.All(Path.IsPathFullyQualified), "source_deny");
+        offending.AddRange(Offload.Validate());
         return offending;
     }
 }
