@@ -44,6 +44,7 @@ public sealed class EnvelopeWireTests
         { EnvelopeRejectionReason.MissingSignature, "missing_signature" },
         { EnvelopeRejectionReason.UnknownKey, "unknown_key" },
         { EnvelopeRejectionReason.InvalidSignature, "invalid_signature" },
+        { EnvelopeRejectionReason.WrongRecipient, "wrong_recipient" },
     };
 
     [Theory]
@@ -137,9 +138,32 @@ public sealed class EnvelopeWireTests
     }
 
     [Fact]
+    public void ToWire_WrongRecipient_IsWrongRecipient()
+    {
+        // Act: spec 04 ex-OQ1 — the tenth rejection reason, appended last so 03's values are unchanged
+        string text = EnvelopeWire.ToWire(EnvelopeRejectionReason.WrongRecipient);
+
+        // Assert
+        text.Should().Be("wrong_recipient");
+        ((int)EnvelopeRejectionReason.WrongRecipient).Should().Be(9);
+    }
+
+    [Fact]
+    public void TryFromWire_wrong_recipient_RoundTrips()
+    {
+        // Act
+        bool ok = EnvelopeWire.TryFromWire("wrong_recipient", out EnvelopeRejectionReason back);
+
+        // Assert
+        ok.Should().BeTrue();
+        back.Should().Be(EnvelopeRejectionReason.WrongRecipient);
+    }
+
+    [Fact]
     public void EveryMember_HasATestRow()
     {
         // Assert
+        Reasons.Count.Should().Be(10);
         Types.Count.Should().Be(Enum.GetValues<EnvelopeType>().Length);
         Priorities.Count.Should().Be(Enum.GetValues<EnvelopePriority>().Length);
         Statuses.Count.Should().Be(Enum.GetValues<ReportStatus>().Length);

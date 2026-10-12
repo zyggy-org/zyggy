@@ -2,7 +2,7 @@ using Zyggy.Integration.Infrastructure;
 
 namespace Zyggy.Integration.Bus;
 
-public sealed class BusRepoFixtureSmokeTests(BusRepoFixture bus) : IClassFixture<BusRepoFixture>
+public sealed class BusRepoFixtureSmokeTests(AcmeBusRepoFixture bus) : IClassFixture<AcmeBusRepoFixture>
 {
     [Fact]
     public async Task ShowAsync_AfterCommitAndPush_ReturnsContentFromBareRepository()
@@ -83,7 +83,7 @@ public sealed class BusRepoFixtureSmokeTests(BusRepoFixture bus) : IClassFixture
     public async Task InitializeAsync_FreshFixture_CloneContainsOnlyGitMetadata()
     {
         // Arrange
-        await using var fresh = new BusRepoFixture();
+        await using var fresh = new AcmeBusRepoFixture();
 
         // Act
         await fresh.InitializeAsync();
@@ -93,16 +93,20 @@ public sealed class BusRepoFixtureSmokeTests(BusRepoFixture bus) : IClassFixture
     }
 
     [Fact]
-    public void Fixture_PublicSurface_HasNoTenantMember()
+    public void Fixture_RequiresATenant()
     {
-        // Arrange
-        var members = typeof(BusRepoFixture).GetMembers();
+        // Arrange: spec 04 (the brief's rule, superseding 01's "no tenant member"): the fixture takes its tenant as a
+        // required parameter — no parameterless constructor, no default tenant; `acme` lives in AcmeBusRepoFixture only.
+        var constructors = typeof(BusRepoFixture).GetConstructors();
 
         // Act
-        var tenantMembers = members.Where(m => m.Name.Contains("Tenant", StringComparison.OrdinalIgnoreCase));
+        var parameterless = constructors.Where(c => c.GetParameters().Length == 0).ToList();
+        var tenantTyped = constructors.Where(c => c.GetParameters().Length == 1 && c.GetParameters()[0].ParameterType == typeof(Zyggy.Core.Tenancy.TenantId)).ToList();
 
         // Assert
-        tenantMembers.Should().BeEmpty();
+        parameterless.Should().BeEmpty();
+        tenantTyped.Should().ContainSingle();
+        bus.Tenant.Should().Be(Zyggy.Core.Tenancy.TenantId.Parse("acme"));
     }
 
     [Fact]
@@ -121,7 +125,7 @@ public sealed class BusRepoFixtureSmokeTests(BusRepoFixture bus) : IClassFixture
     public async Task DisposeAsync_AfterInitialize_DeletesRootDir()
     {
         // Arrange
-        var fixture = new BusRepoFixture();
+        var fixture = new AcmeBusRepoFixture();
         await fixture.InitializeAsync();
 
         // Act

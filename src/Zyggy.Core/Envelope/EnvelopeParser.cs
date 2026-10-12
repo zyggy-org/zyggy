@@ -34,6 +34,27 @@ public static class EnvelopeParser
             : Interpret(map, body, expectedTenant);
     }
 
+    /// <summary>
+    /// Reads the sender of a file leniently, so a rejection report can be addressed even when the envelope itself is
+    /// refused (§4 "Signature", deliverable 04): the top-level <c>from</c> scalar when the front matter can be read and the
+    /// value is a machine label; otherwise <see langword="null"/>. Never throws for any byte input.
+    /// </summary>
+    /// <param name="file">The file bytes, read as-is from the bus.</param>
+    /// <returns>The sender, or <see langword="null"/> when it cannot be read.</returns>
+    internal static MachineName? PeekFrom(ReadOnlyMemory<byte> file)
+    {
+        if (FrontMatterReader.Read(file, out FrontMatterMapping map, out _) is not null)
+        {
+            return null;
+        }
+
+        return map.Entries.TryGetValue("from", out FrontMatterNode? node)
+            && node is FrontMatterScalar scalar
+            && MachineName.TryParse(scalar.Value, out MachineName? from)
+            ? from
+            : null;
+    }
+
     /// <summary>Interprets a front-matter tree; <paramref name="signed"/> false skips <c>key_id</c> and <c>sig</c> (factories).</summary>
     internal static EnvelopeResult Interpret(FrontMatterMapping map, ReadOnlyMemory<byte> body, TenantId expectedTenant, bool signed = true)
     {

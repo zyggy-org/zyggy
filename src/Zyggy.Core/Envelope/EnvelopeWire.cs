@@ -69,6 +69,7 @@ public static class EnvelopeWire
         EnvelopeRejectionReason.MissingSignature => "missing_signature",
         EnvelopeRejectionReason.UnknownKey => "unknown_key",
         EnvelopeRejectionReason.InvalidSignature => "invalid_signature",
+        EnvelopeRejectionReason.WrongRecipient => "wrong_recipient",
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 
