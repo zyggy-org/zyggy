@@ -8,8 +8,8 @@ public abstract record PushResult
     }
 }
 
-/// <summary>The local commits are on the remote branch.</summary>
-public sealed record Pushed : PushResult;
+/// <summary>The local commits are on the remote branch. (Named apart from the write outcome <c>Pushed(int Attempts)</c>, which the spec gave the same name.)</summary>
+public sealed record PushSucceeded : PushResult;
 
 /// <summary>The remote branch moved on (non-fast-forward): the §5 retry rule applies — <c>pull --rebase</c> and push again.</summary>
 /// <param name="Detail">A short, redacted detail from git's error output.</param>

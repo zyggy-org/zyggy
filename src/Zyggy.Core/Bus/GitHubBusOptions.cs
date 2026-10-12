@@ -27,4 +27,10 @@ public sealed class GitHubBusOptions
 
     /// <summary>A test-only replacement for the HTTP handler (spec 04 Step 5): the integration harness answers the head check from a bare repository.</summary>
     internal Func<HttpMessageHandler>? HandlerFactory { get; set; }
+
+    /// <summary>Test-only environment additions for every git process (the harness isolates git from the machine's configuration).</summary>
+    internal IReadOnlyDictionary<string, string?>? GitEnvironment { get; set; }
+
+    /// <summary>Test-only jitter source for the §5 push retry delay (<c>1 s + jitter × 2 s</c>); <see cref="Random.Shared"/> when null.</summary>
+    internal Func<double>? Jitter { get; set; }
 }

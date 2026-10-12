@@ -24,6 +24,6 @@ public interface IBusProvider
 
     /// <summary>Pushes the local branch once (<c>push origin HEAD:&lt;branch&gt;</c>); the retry rule belongs to the repository layer (§5).</summary>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns><see cref="Pushed"/>, <see cref="Rejected"/> (non-fast-forward: rebase and retry) or <see cref="PushFailed"/>.</returns>
+    /// <returns><see cref="PushSucceeded"/>, <see cref="Rejected"/> (non-fast-forward: rebase and retry) or <see cref="PushFailed"/>.</returns>
     Task<PushResult> PushAsync(CancellationToken ct);
 }

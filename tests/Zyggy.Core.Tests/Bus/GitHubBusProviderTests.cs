@@ -300,7 +300,7 @@ public sealed class GitHubBusProviderTests : IDisposable
     [InlineData(1, "! [rejected] main -> main (fetch first)", typeof(Rejected))]
     [InlineData(1, "error: failed to push some refs\nhint: Updates were rejected because the tip is behind (non-fast-forward)", typeof(Rejected))]
     [InlineData(128, "fatal: Authentication failed for 'https://example.invalid/acme-org/acme-bus.git/'", typeof(PushFailed))]
-    [InlineData(0, "", typeof(Pushed))]
+    [InlineData(0, "", typeof(PushSucceeded))]
     public async Task PushAsync_Stderr_Classifies(int exitCode, string stderr, Type expected)
     {
         // Arrange

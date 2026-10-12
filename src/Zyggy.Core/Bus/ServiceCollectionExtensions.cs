@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
+using Zyggy.Core.Envelope;
 using Zyggy.Core.Git;
 using Zyggy.Core.Processes;
 using Zyggy.Core.Secrets;
@@ -17,9 +18,11 @@ namespace Zyggy.Core.Bus;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the GitHub implementation of <see cref="IBusProvider"/> as a singleton. Requires <see cref="ISecretStore"/>,
-    /// <see cref="IProcessRunner"/> and <see cref="TimeProvider"/> to be registered, and <see cref="GitHubBusOptions.Remote"/>,
-    /// <see cref="GitHubBusOptions.Identity"/> and <see cref="GitHubBusOptions.CheckoutRoot"/> to be set — there is no hidden default.
+    /// Registers the GitHub implementation of <see cref="IBusProvider"/>, the git client with this machine's commit identity
+    /// (<c>zyggy (&lt;machine&gt;) &lt;machine&gt;@zyggy.org</c>, §5) and the <see cref="BusRepository"/> as singletons. Requires
+    /// <see cref="ISecretStore"/>, <see cref="IProcessRunner"/>, <see cref="TimeProvider"/> and the envelope signer to be
+    /// registered, and <see cref="GitHubBusOptions.Remote"/>, <see cref="GitHubBusOptions.Identity"/> and
+    /// <see cref="GitHubBusOptions.CheckoutRoot"/> to be set — there is no hidden default.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">The options; normally filled from <c>node.json</c>.</param>
@@ -34,7 +37,33 @@ public static class ServiceCollectionExtensions
             services.Configure(configure);
         }
 
-        services.TryAddSingleton(sp => new GitClient(sp.GetRequiredService<IProcessRunner>(), new GitClientOptions(), sp.GetRequiredService<TimeProvider>()));
+        services.TryAddSingleton(sp =>
+        {
+            GitHubBusOptions options = sp.GetRequiredService<IOptions<GitHubBusOptions>>().Value;
+            BusIdentity identity = options.Identity ?? throw Missing(nameof(GitHubBusOptions.Identity));
+            var gitOptions = new GitClientOptions
+            {
+                Identity = new GitIdentity("zyggy (" + identity.Machine.Value + ")", identity.Machine.Value + "@zyggy.org"),
+                Environment = options.GitEnvironment ?? new Dictionary<string, string?>(),
+            };
+            return new GitClient(sp.GetRequiredService<IProcessRunner>(), gitOptions, sp.GetRequiredService<TimeProvider>());
+        });
+        services.TryAddSingleton(sp =>
+        {
+            GitHubBusOptions options = sp.GetRequiredService<IOptions<GitHubBusOptions>>().Value;
+            BusIdentity identity = options.Identity ?? throw Missing(nameof(GitHubBusOptions.Identity));
+            string checkoutRoot = options.CheckoutRoot ?? throw Missing(nameof(GitHubBusOptions.CheckoutRoot));
+            ILogger<BusRepository> log = sp.GetService<ILoggerFactory>()?.CreateLogger<BusRepository>() ?? NullLogger<BusRepository>.Instance;
+            return new BusRepository(
+                sp.GetRequiredService<GitClient>(),
+                sp.GetRequiredService<IBusProvider>(),
+                identity,
+                checkoutRoot,
+                sp.GetRequiredService<EnvelopeSigner>(),
+                sp.GetRequiredService<TimeProvider>(),
+                options.Jitter ?? Random.Shared.NextDouble,
+                log);
+        });
         services.TryAddSingleton<IBusProvider>(sp =>
         {
             GitHubBusOptions options = sp.GetRequiredService<IOptions<GitHubBusOptions>>().Value;

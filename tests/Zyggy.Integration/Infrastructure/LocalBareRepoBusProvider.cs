@@ -34,7 +34,7 @@ internal sealed class LocalBareRepoBusProvider(GitClient git, string bareDirecto
         GitResult result = await git.PushAsync(cloneDirectory, branch, ct).ConfigureAwait(false);
         if (result.Succeeded)
         {
-            return new Pushed();
+            return new PushSucceeded();
         }
 
         return result.Stderr.Contains("[rejected]", StringComparison.Ordinal) || result.Stderr.Contains("non-fast-forward", StringComparison.Ordinal)

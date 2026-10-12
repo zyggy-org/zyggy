@@ -103,7 +103,7 @@ public abstract class BusProviderContractTests : IAsyncLifetime
         PushResult result = await Provider.PushAsync(ct);
 
         // Assert
-        result.Should().BeOfType<Pushed>();
+        result.Should().BeOfType<PushSucceeded>();
         (await Bus.ExistsOnMainAsync(path, ct)).Should().BeTrue();
         (await Bus.LastCommitSubjectAsync(ct)).Should().Be("local note");
     }

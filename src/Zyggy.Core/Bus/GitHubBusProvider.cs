@@ -115,7 +115,7 @@ internal sealed partial class GitHubBusProvider : IBusProvider, IDisposable
         GitResult result = await _git.PushAsync(_checkoutRoot, Remote.Branch, ct).ConfigureAwait(false);
         if (result.Succeeded)
         {
-            return new Pushed();
+            return new PushSucceeded();
         }
 
         if (result.ExitCode is null)
