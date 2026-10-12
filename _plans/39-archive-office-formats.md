@@ -328,10 +328,10 @@ offload over the stub Graph handler; integration tests. Steps are named by what 
 
 *Executor: STOP here. Present the results and WAIT for user approval — do not start Step 8.*
 
-- [ ] Behavioral verification: release row (tag, CI ids, SHA-256); the single instance commit with pin + `allowed_types`; rehearsal outputs (exit 7 docx, exit 2 docm, `m365 parse` exit 0, old binary exit 3); restart time; live memory unchanged.
-- [ ] Contract review: AC-20, AC-22 against the spec; `instance/archive.json` lists exactly nine wire strings; the template min-version equals the pin; AC-13 route proven on Central.
-- [ ] ⚠️ Risk review (live binary, version skew): binary root-owned and hash-pinned; `allowed_types` widened only after the binary; the offload unit (started by the dream's `OnSuccess=`) runs the new binary and read the new `archive.json` without exit 3 (`systemd-analyze verify` + a `--dry-run` as `zyggy` → exit 0 or `nothing to do`); nothing archived yet.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: release row (tag, CI ids, SHA-256); the single instance commit with pin + `allowed_types`; rehearsal outputs (exit 7 docx, exit 2 docm, `m365 parse` exit 0, old binary exit 3); restart time; live memory unchanged.
+- [x] Contract review: AC-20, AC-22 against the spec; `instance/archive.json` lists exactly nine wire strings; the template min-version equals the pin; AC-13 route proven on Central.
+- [x] ⚠️ Risk review (live binary, version skew): binary root-owned and hash-pinned; `allowed_types` widened only after the binary; the offload unit (started by the dream's `OnSuccess=`) runs the new binary and read the new `archive.json` without exit 3 (`systemd-analyze verify` + a `--dry-run` as `zyggy` → exit 0 or `nothing to do`); nothing archived yet.
+- [x] User approved — implementation may continue past this gate
 
 ---
 
