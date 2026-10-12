@@ -110,10 +110,67 @@ public sealed class ArchiveVerbAddTests : IDisposable
         console.Stderr.Should().Be("archive: note: no memory file named zyggy yet; the dream will create it\n");
     }
 
-    private async Task<(int Exit, VerbConsole Console)> RunAsync()
+    [Fact]
+    public async Task Run_Docx_StdoutFourLinesLabelLine()
+    {
+        // Arrange
+        var source = Path.Combine(_home, "Downloads", "sample.docx");
+        File.Copy(Path.Combine(Golden.Directory, "office", "sample.docx"), source);
+        string[] args = ["add", "--project", "zyggy", "--name", "Roof offer", "--description", "Contractor offer for the roof repair", "--file", source];
+
+        // Act
+        var (exit, console) = await RunAsync(args);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        console.Stdout.Should().Be(
+            "archived: archive/zyggy/roof-offer.docx\nsidecar: archive/zyggy/roof-offer.md\n"
+            + "- [stated] 2026-09-30 (project:zyggy): Archived \"Roof offer\" (Word document, 1.3 KB) at archive/zyggy/roof-offer.docx — Contractor offer for the roof repair\n"
+            + $"commit: {Sha} pushed\n");
+        console.Stderr.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Run_PptxLongestExactly400_ArchivedWithLine399AndPreCheckRefuses401()
+    {
+        // Arrange: plan assumption A2 at the verb — Longest is exactly 400 for this request; the committed deck's line is 399 and is
+        // archived, while one more character fails the usage-time pre-check with the message the composed-line check reuses. A deck whose
+        // line would reach 401 needs an eight-character size (100 MB or more), which too_large refuses first under the 25 MiB ceiling.
+        var source = Path.Combine(_home, "Downloads", "deck.pptx");
+        File.Copy(Path.Combine(Golden.Directory, "office", "sample.pptx"), source);
+        var name = Words(100);
+        var slug = "roof-pitch-" + new string('a', 49);
+        var bare = new ArchiveAddRequest(Slug.Parse("zyggy"), name, string.Empty, source, Slug.Parse(slug));
+        var description = Words(400 - ArchiveIndexLine.Longest(new DateOnly(2026, 9, 30), bare).Length);
+        var preCheck = Words(description.Length + 1);
+        var (preExit, preConsole) = await RunAsync(["add", "--project", "zyggy", "--name", name, "--description", preCheck, "--slug", slug, "--file", source]);
+
+        // Act
+        var (exit, console) = await RunAsync(["add", "--project", "zyggy", "--name", name, "--description", description, "--slug", slug, "--file", source]);
+
+        // Assert
+        preExit.Should().Be(4);
+        preConsole.Stderr.Should().Be("archive: the index line would exceed 400 characters (401): shorten --name or --description\n");
+        exit.Should().Be(0, console.Stderr);
+        console.Stdout.Split('\n')[2].Should().HaveLength(399).And.Contain("(PowerPoint deck, 1.3 KB)");
+    }
+
+    // A description of the given length that no secret pattern matches: runs of nine letters separated by spaces, never ending in one.
+    private static string Words(int length) =>
+        string.Create(length, 0, (span, _) =>
+        {
+            for (var i = 0; i < span.Length; i++)
+            {
+                span[i] = i % 10 == 9 && i != span.Length - 1 ? ' ' : 'x';
+            }
+        });
+
+    private Task<(int Exit, VerbConsole Console)> RunAsync() => RunAsync(_args);
+
+    private async Task<(int Exit, VerbConsole Console)> RunAsync(string[] args)
     {
         var console = new VerbConsole();
-        var exit = await new ArchiveVerb(_environment, _clock, FindTimeZone, _git).RunAsync(_args, console.Io, TestContext.Current.CancellationToken);
+        var exit = await new ArchiveVerb(_environment, _clock, FindTimeZone, _git).RunAsync(args, console.Io, TestContext.Current.CancellationToken);
         return (exit, console);
     }
 

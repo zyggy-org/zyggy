@@ -1280,7 +1280,9 @@ If any of 2–5 fails: **stop**. Roll back per runbook 14c / "Return to the Draf
   - The mail run never read memory; the ideas run only read it.
   - Brief files are 0600, outside every repository, pruned after 14 days.
   - Number of releases: one (or two with a fix release, named).
-- [ ] User approved — deliverable 35 is done
+- [x] User approved — deliverable 35 is done
+
+> **Closed by owner decision 2026-10-12** — owner: "morning brief was okay for last 5 days". The "Carried from 33" items still open are not run (owner decision). Boxes above left unticked were not verified by the agent; 0002 records each as owner-reported or not run.
 
 ---
 

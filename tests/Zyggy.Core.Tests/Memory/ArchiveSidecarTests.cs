@@ -10,7 +10,7 @@ public sealed class ArchiveSidecarTests
 {
     private static readonly DateOnly Date = new(2026, 9, 30);
 
-    public static TheoryData<string> Cases() => new() { "sidecar-text", "sidecar-png", "sidecar-pdf" };
+    public static TheoryData<string> Cases() => new() { "sidecar-text", "sidecar-png", "sidecar-pdf", "sidecar-docx", "sidecar-xlsx", "sidecar-pptx" };
 
     [Theory]
     [MemberData(nameof(Cases))]
@@ -70,6 +70,12 @@ public sealed class ArchiveSidecarTests
             "6ebc44920b939cfbce21e4ec5710357c44156b9afad130783806a4983a53b8af", Date, "roof.png", Date),
         "sidecar-pdf" => new ArchiveSidecar("Roof invoice", "Invoice for the roof repair", Slug.Parse("zyggy"), ArchiveMediaType.Pdf, 45,
             "5a838678058f6de375e8635b5f2fea47a4e5f07cb1a882a44b10f39abc6f34ff", Date, "invoice.pdf", Date),
+        "sidecar-docx" => new ArchiveSidecar("Roof offer", "Contractor offer for the roof repair", Slug.Parse("zyggy"), ArchiveMediaType.Docx, 1289,
+            "fa0d4998a5b647d23edf5ec41eaa6a1192341017c46d5f465a4208fc5345e0ca", Date, "sample.docx", Date),
+        "sidecar-xlsx" => new ArchiveSidecar("Roof budget", "Cost lines for the roof repair", Slug.Parse("zyggy"), ArchiveMediaType.Xlsx, 2262,
+            "3c6625560fa0b5b60c3c704353460a841f34938af9701bc423f4ac0cb1ffa2f9", Date, "sample.xlsx", Date),
+        "sidecar-pptx" => new ArchiveSidecar("Roof pitch", "Slides shown to the contractor", Slug.Parse("zyggy"), ArchiveMediaType.Pptx, 1335,
+            "aa100f3a2150a877f29c06db427e70bd53e65759d9e80c1e493bd90a7a4e25b5", Date, "sample.pptx", Date),
         _ => throw new ArgumentOutOfRangeException(nameof(golden)),
     };
 }

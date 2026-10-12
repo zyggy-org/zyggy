@@ -3,6 +3,7 @@ using System.Text;
 using Zyggy.Core.Memory;
 using Zyggy.Core.Tests.Infrastructure;
 using Zyggy.Core.Tests.LinkedIn;
+using Zyggy.Core.Tests.Media;
 
 namespace Zyggy.Core.Tests.Memory;
 
@@ -148,13 +149,198 @@ public sealed class ArchiveChecksTests : IDisposable
     }
 
     [Fact]
-    public void Check_DocxBytes_TypeRefused()
+    public void Check_ZipHeaderOnly_OfficeRefusedZipMalformed()
     {
-        // Act
+        // Act: spec 39 — a ZIP signature without an archive behind it is an Office-shaped file that cannot be opened (the 37 deviation).
         var result = Check(Request(Write(Path.Combine(_sources, "report.docx"), [0x50, 0x4B, 0x03, 0x04, 0x14, 0x00, 0x06, 0x00])));
 
         // Assert
-        result.Refusal.Should().Be(ArchiveRefusal.TypeRefused);
+        result.Refusal.Should().Be(ArchiveRefusal.OfficeRefused);
+        result.Detail.Should().Be("zip_malformed");
+    }
+
+    [Theory]
+    [InlineData("sample.docx", ArchiveMediaType.Docx, "fa0d4998a5b647d23edf5ec41eaa6a1192341017c46d5f465a4208fc5345e0ca")]
+    [InlineData("sample.xlsx", ArchiveMediaType.Xlsx, "3c6625560fa0b5b60c3c704353460a841f34938af9701bc423f4ac0cb1ffa2f9")]
+    [InlineData("sample.pptx", ArchiveMediaType.Pptx, "aa100f3a2150a877f29c06db427e70bd53e65759d9e80c1e493bd90a7a4e25b5")]
+    public void Check_CommittedOffice_CandidateTypeAndSha256Hand(string sample, ArchiveMediaType type, string sha256)
+    {
+        // Act: the digests are those of tests/golden/README.md (sha256sum), never the code's.
+        var result = Check(Request(Write(Path.Combine(_sources, sample), Sample(sample))));
+
+        // Assert
+        result.Refusal.Should().BeNull();
+        result.Candidate!.Type.Should().Be(type);
+        result.Candidate.Sha256.Should().Be(sha256);
+        result.Candidate.SourceName.Should().Be(sample);
+    }
+
+    [Fact]
+    public void Check_DocxRenamedZip_CandidateDocxSourceNameKept()
+    {
+        // Act
+        var result = Check(Request(Write(Path.Combine(_sources, "report.zip"), Sample("sample.docx"))));
+
+        // Assert
+        result.Candidate!.Type.Should().Be(ArchiveMediaType.Docx);
+        result.Candidate.SourceName.Should().Be("report.zip");
+    }
+
+    [Fact]
+    public void Check_DocxRenamedPdf_CandidateDocx()
+    {
+        // Act
+        var result = Check(Request(Write(Path.Combine(_sources, "report.pdf"), Sample("sample.docx"))));
+
+        // Assert
+        result.Candidate!.Type.Should().Be(ArchiveMediaType.Docx);
+    }
+
+    [Fact]
+    public void Check_DocmRenamedDocx_OfficeRefusedMacroEnabled()
+    {
+        // Act
+        var result = Check(Request(Write(Path.Combine(_sources, "report.docx"), Sample("sample.docm"))));
+
+        // Assert
+        result.Refusal.Should().Be(ArchiveRefusal.OfficeRefused);
+        result.Detail.Should().Be("macro_enabled");
+    }
+
+    [Theory]
+    [InlineData("macro_enabled")]
+    [InlineData("active_content")]
+    [InlineData("legacy_binary")]
+    [InlineData("encrypted")]
+    [InlineData("opendocument")]
+    [InlineData("office_variant")]
+    [InlineData("not_office")]
+    [InlineData("zip_malformed")]
+    [InlineData("zip_bounds")]
+    public void Check_OfficeRefusal_DetailIsTheClosedWord(string detail)
+    {
+        // Arrange: one sample per detail.
+        byte[] bytes = detail switch
+        {
+            "macro_enabled" => Sample("sample.docm"),
+            "active_content" => OfficeBytes.Docx(OfficeBytes.Stored("word/vbaProject.bin", new byte[8])),
+            "legacy_binary" => Sample("sample.doc"),
+            "encrypted" => OfficeBytes.Cfb(true),
+            "opendocument" => Sample("sample.odt"),
+            "office_variant" => OfficeBytes.WithMainType("application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml"),
+            "not_office" => Sample("plain.zip"),
+            "zip_malformed" => [0x50, 0x4B, 0x03, 0x04, 1, 2, 3, 4, 5, 6, 7, 8],
+            "zip_bounds" => OfficeBytes.Zip(Enumerable.Range(0, 10_001).Select(i => OfficeBytes.Stored($"e{i}", ""))),
+            _ => throw new ArgumentOutOfRangeException(nameof(detail)),
+        };
+
+        // Act
+        var result = Check(Request(Write(Path.Combine(_sources, "handed-over.docx"), bytes)));
+
+        // Assert
+        result.Refusal.Should().Be(ArchiveRefusal.OfficeRefused);
+        result.Detail.Should().Be(detail);
+        result.Detail.Should().NotContainAny("/", ".xml", "+");
+    }
+
+    [Fact]
+    public void Check_DocxNotInAllowList_TypeNotAllowedNamesWire()
+    {
+        // Arrange: the six 37 members only — the instance that has not opted in.
+        var options = new ArchiveOptions
+        {
+            AllowedTypes = new HashSet<ArchiveMediaType>
+            {
+                ArchiveMediaType.TextPlain, ArchiveMediaType.TextMarkdown, ArchiveMediaType.Pdf, ArchiveMediaType.Png, ArchiveMediaType.Jpeg, ArchiveMediaType.Gif,
+            },
+        };
+
+        // Act
+        var result = Check(Request(Write(Path.Combine(_sources, "sample.docx"), Sample("sample.docx"))), options);
+
+        // Assert
+        result.Refusal.Should().Be(ArchiveRefusal.TypeNotAllowed);
+        result.Detail.Should().Be("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    }
+
+    [Fact]
+    public void Check_DocxWithSecretShapedText_AcceptedNotScanned()
+    {
+        // Arrange: AC-11 — the AWS sample of secret-samples.txt inside word/document.xml; Office content is not scanned (OQ-1 (b)).
+        var document = Encoding.UTF8.GetBytes("<w:document xmlns:w=\"x\"><w:body><w:p><w:r><w:t>key AKIAABCDEFGHIJKLMNOP</w:t></w:r></w:p></w:body></w:document>");
+        var bytes = OfficeBytes.Package(
+            OfficeBytes.ContentTypes([("/word/document.xml", OfficeBytes.DocxMain)]),
+            OfficeBytes.Stored("_rels/.rels", OfficeBytes.Rels("word/document.xml")),
+            OfficeBytes.Stored("word/document.xml", document));
+
+        // Act
+        var result = Check(Request(Write(Path.Combine(_sources, "notes.docx"), bytes)));
+
+        // Assert
+        result.Refusal.Should().BeNull();
+        result.Detail.Should().BeNull();
+        result.Candidate!.Type.Should().Be(ArchiveMediaType.Docx);
+    }
+
+    [Fact]
+    public void Check_DocxNameWithSecret_SecretPatternName()
+    {
+        // Act: the name and description scans still apply to an Office item.
+        var result = Check(Request(Write(Path.Combine(_sources, "sample.docx"), Sample("sample.docx"))) with { Name = "key AKIAABCDEFGHIJKLMNOP" });
+
+        // Assert
+        result.Refusal.Should().Be(ArchiveRefusal.SecretPattern);
+        result.Detail.Should().Be("aws-access-key (name)");
+    }
+
+    [Fact]
+    public void Check_OfficeOrder_SourceBeforeTypeBeforeSize()
+    {
+        // Arrange
+        var deniedDocm = Write(Path.Combine(_home, ".ssh", "macros.docm"), Sample("sample.docm"));
+        var docx = Write(Path.Combine(_sources, "sample.docx"), Sample("sample.docx"));
+
+        // Act
+        var denied = Check(Request(deniedDocm));
+        var tooLarge = Check(Request(docx), new ArchiveOptions { ItemMaxBytes = 1000, ProjectMaxBytes = 2000, TotalMaxBytes = 3000 });
+
+        // Assert
+        denied.Refusal.Should().Be(ArchiveRefusal.SourceRefused);
+        tooLarge.Refusal.Should().Be(ArchiveRefusal.TooLarge);
+        tooLarge.Detail.Should().Be("1289 > 1000");
+    }
+
+    [Fact]
+    public void Check_PptxLineExactlyOneOver400_UsageBeforeAnyWrite()
+    {
+        // Arrange: plan assumption A2 — Longest is exactly 400 for this request, but a 100 MB PowerPoint deck composes 401 characters.
+        var request = RequestWithLongestOf400(Write(Path.Combine(_sources, "deck.pptx"), HundredMegabytePptx()));
+        var options = new ArchiveOptions { ItemMaxBytes = 200_000_000, ProjectMaxBytes = 300_000_000, TotalMaxBytes = 400_000_000 };
+
+        // Act
+        var result = Check(request, options);
+
+        // Assert
+        ArchiveIndexLine.Longest(Today, request).Length.Should().Be(400);
+        result.Refusal.Should().BeNull($"{result.Refusal}: {result.Detail}");
+        result.UsageError.Should().Be("the index line would exceed 400 characters (401): shorten --name or --description");
+        result.Refusal.Should().BeNull();
+        result.Candidate.Should().BeNull();
+    }
+
+    [Fact]
+    public void Check_PptxLineExactly400_Candidate()
+    {
+        // Arrange: the same request with the committed 1335-byte deck — "1.3 KB" is two characters shorter than the placeholder.
+        var request = RequestWithLongestOf400(Write(Path.Combine(_sources, "deck.pptx"), Sample("sample.pptx")));
+
+        // Act
+        var result = Check(request);
+
+        // Assert
+        result.Refusal.Should().BeNull($"{result.Refusal}: {result.Detail}");
+        result.UsageError.Should().BeNull();
+        result.Candidate!.IndexLine.Length.Should().Be(399);
     }
 
     [Fact]
@@ -401,13 +587,36 @@ public sealed class ArchiveChecksTests : IDisposable
         {
             ArchiveRefusal.SourceRefused, ArchiveRefusal.TypeRefused, ArchiveRefusal.TypeNotAllowed, ArchiveRefusal.Empty,
             ArchiveRefusal.TooLarge, ArchiveRefusal.ProjectCap, ArchiveRefusal.TotalCap, ArchiveRefusal.SecretPattern,
-            ArchiveRefusal.ContactDetail, ArchiveRefusal.SlugTaken,
+            ArchiveRefusal.ContactDetail, ArchiveRefusal.SlugTaken, ArchiveRefusal.OfficeRefused,
         };
         Enum.GetValues<ArchiveRefusal>().Except(produced).Should().BeEquivalentTo([ArchiveRefusal.Unattended, ArchiveRefusal.NotFound]);
     }
 
     private static ArchiveAddRequest Request(string source) =>
         new(Slug.Parse("zyggy"), "Quote 2026", "Roof repair quote", source, Slug.Parse("quote-2026"));
+
+    // A pptx request whose description pads ArchiveIndexLine.Longest to exactly 400 characters.
+    private static ArchiveAddRequest RequestWithLongestOf400(string source)
+    {
+        var bare = new ArchiveAddRequest(Slug.Parse("zyggy"), "Roof pitch", string.Empty, source, Slug.Parse("roof-pitch"));
+        var pad = 400 - ArchiveIndexLine.Longest(Today, bare).Length;
+        return bare with { Description = Words(pad) };
+    }
+
+    // A description of the given length that no secret pattern matches: runs of nine letters separated by spaces, never ending in one.
+    private static string Words(int length) =>
+        string.Create(length, 0, (span, _) =>
+        {
+            for (var i = 0; i < span.Length; i++)
+            {
+                span[i] = i % 10 == 9 && i != span.Length - 1 ? ' ' : 'x';
+            }
+        });
+
+    private static byte[] Sample(string name) => File.ReadAllBytes(Path.Combine(Golden.Directory, "office", name));
+
+    // A valid pptx of at least 100 MB (size prints as "100.0 MB", the placeholder's eight characters): one stored part of zeros.
+    private static byte[] HundredMegabytePptx() => OfficeBytes.Pptx(OfficeBytes.Stored("ppt/media/image1.bin", new byte[104_857_600]));
 
     private static string Write(string path, string text) => Write(path, new UTF8Encoding(false).GetBytes(text));
 

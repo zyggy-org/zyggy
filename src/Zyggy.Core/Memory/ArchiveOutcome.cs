@@ -14,12 +14,15 @@ internal enum ArchiveOutcomeKind
 
     /// <summary>Git refused before or after the write (exit 6); <see cref="ArchiveOutcome.Detail"/> names the step.</summary>
     GitError,
+
+    /// <summary>The composed index line is too long (exit 4, plan 39 assumption A2); <see cref="ArchiveOutcome.Detail"/> is the usage message. Nothing written.</summary>
+    Usage,
 }
 
 /// <summary>The outcome of <see cref="ArchiveService.AddAsync"/> and <see cref="ArchiveService.RemoveAsync"/>: what was written, where, and the commit — or why it stopped.</summary>
 /// <param name="Kind">The kind.</param>
 /// <param name="Refusal">The refusal when <see cref="ArchiveOutcomeKind.Refused"/>.</param>
-/// <param name="Detail">The refusal's detail token, or the failed git step.</param>
+/// <param name="Detail">The refusal's detail token, the failed git step, or the usage message.</param>
 /// <param name="Item">The item's path relative to the principal directory.</param>
 /// <param name="Sidecar">The sidecar's path relative to the principal directory.</param>
 /// <param name="InboxPath">The full path of the inbox file the index line went to.</param>
@@ -42,6 +45,8 @@ internal sealed record ArchiveOutcome(
     public static ArchiveOutcome Refused(ArchiveRefusal refusal, string? detail) => new(ArchiveOutcomeKind.Refused, refusal, detail, null, null, null, null, null, false, null);
 
     public static ArchiveOutcome GitError(string step) => new(ArchiveOutcomeKind.GitError, null, step, null, null, null, null, null, false, null);
+
+    public static ArchiveOutcome Usage(string message) => new(ArchiveOutcomeKind.Usage, null, message, null, null, null, null, null, false, null);
 
     public static ArchiveOutcome Archived(string item, string sidecar, string inboxPath, string line, string? sha, bool pushed, string? note) =>
         new(ArchiveOutcomeKind.Archived, null, null, item, sidecar, inboxPath, line, sha, pushed, note);

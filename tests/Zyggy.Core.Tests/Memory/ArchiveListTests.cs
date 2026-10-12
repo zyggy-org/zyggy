@@ -105,6 +105,36 @@ public sealed class ArchiveListTests : IDisposable
     }
 
     [Fact]
+    public async Task List_DocxItemWithSidecar_RowTypeIsWireStringStateUnindexed()
+    {
+        // Arrange
+        WriteBytes("archive/zyggy/roof-offer.docx", File.ReadAllBytes(Path.Combine(Golden.Directory, "office", "sample.docx")));
+        _tree.Write("archive/zyggy/roof-offer.md", GoldenText("sidecar-docx.md"));
+
+        // Act
+        var rows = await RowsAsync();
+        var (jsonExit, json) = await RunAsync("--json");
+
+        // Assert
+        rows.Should().Equal("archive/zyggy/roof-offer.docx  application/vnd.openxmlformats-officedocument.wordprocessingml.document  1.3 KB  unindexed  — Contractor offer for the roof repair");
+        jsonExit.Should().Be(ArchiveVerb.Archived);
+        json.Stdout.Should().Contain("\"media_type\": \"application/vnd.openxmlformats-officedocument.wordprocessingml.document\"");
+    }
+
+    [Fact]
+    public async Task List_OrphanDocxWithoutSidecar_TypeFromExtension()
+    {
+        // Arrange
+        WriteBytes("archive/zyggy/loose.docx", File.ReadAllBytes(Path.Combine(Golden.Directory, "office", "sample.docx")));
+
+        // Act
+        var rows = await RowsAsync();
+
+        // Assert
+        rows.Should().Equal("archive/zyggy/loose.docx  application/vnd.openxmlformats-officedocument.wordprocessingml.document  1.3 KB  orphan  — -");
+    }
+
+    [Fact]
     public async Task List_Indexed_WhenAnySideFileContainsItemPath()
     {
         // Arrange: the path is named in a private file, not the project's own.

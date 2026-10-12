@@ -315,6 +315,115 @@ public sealed class ArchiveServiceTests : IDisposable
         _git.CallsOf("commit").Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData("sample.docx", "sidecar-docx.md", "roof-offer", "Roof offer", "Contractor offer for the roof repair")]
+    [InlineData("sample.xlsx", "sidecar-xlsx.md", "roof-budget", "Roof budget", "Cost lines for the roof repair")]
+    [InlineData("sample.pptx", "sidecar-pptx.md", "roof-pitch", "Roof pitch", "Slides shown to the contractor")]
+    public async Task Add_Office_ItemBytesEqualSampleSidecarEqualsGolden(string sample, string golden, string slug, string name, string description)
+    {
+        // Arrange
+        var source = OfficeSource(sample);
+        var request = new ArchiveAddRequest(Slug.Parse("zyggy"), name, description, source, Slug.Parse(slug));
+        var extension = Path.GetExtension(sample);
+
+        // Act
+        var outcome = await Service().AddAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert
+        outcome.Kind.Should().Be(ArchiveOutcomeKind.Archived);
+        outcome.Item.Should().Be($"archive/zyggy/{slug}{extension}");
+        (await File.ReadAllBytesAsync(_tree.Full($"archive/zyggy/{slug}{extension}"), TestContext.Current.CancellationToken))
+            .Should().Equal(await File.ReadAllBytesAsync(source, TestContext.Current.CancellationToken));
+        (await File.ReadAllBytesAsync(_tree.Full($"archive/zyggy/{slug}.md"), TestContext.Current.CancellationToken))
+            .Should().Equal(await File.ReadAllBytesAsync(Path.Combine(Golden.Directory, "archive", golden), TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Add_Docx_InboxLineUsesLabelAndIsByteIdenticalToRememberService()
+    {
+        // Arrange
+        const string Line = "- [stated] 2026-09-30 (project:zyggy): Archived \"Roof offer\" (Word document, 1.3 KB) at archive/zyggy/roof-offer.docx — Contractor offer for the roof repair";
+        using var other = new MemoryTree();
+        new RememberService(other.Paths, Zone, _clock, Patterns()).Remember(new RememberRequest("stated", " (project:zyggy)", "", Line[(Line.IndexOf(": ", StringComparison.Ordinal) + 2)..]));
+
+        // Act
+        var outcome = await Service().AddAsync(DocxRequest(), TestContext.Current.CancellationToken);
+
+        // Assert
+        outcome.Line.Should().Be(Line);
+        (await File.ReadAllBytesAsync(Inbox, TestContext.Current.CancellationToken))
+            .Should().Equal(await File.ReadAllBytesAsync(other.Full("inbox/remember-2026-09-30.md"), TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Add_Docx_CommitMessageSubjectDocxBodyWireString()
+    {
+        // Act
+        await Service().AddAsync(DocxRequest(), TestContext.Current.CancellationToken);
+
+        // Assert
+        var commit = _git.CallsOf("commit").Single();
+        commit.StandardInput.Should().Be(
+            "archive add zyggy/roof-offer.docx\n\nmedia: application/vnd.openxmlformats-officedocument.wordprocessingml.document; size: 1289 bytes; "
+            + "sha256: fa0d4998a5b647d23edf5ec41eaa6a1192341017c46d5f465a4208fc5345e0ca\n\nZyggy-Tool: memory archive\n");
+        commit.Arguments.Should().Equal("commit", "--only", "-F", "-", "--", "acme/alice/archive/zyggy/roof-offer.docx", "acme/alice/archive/zyggy/roof-offer.md");
+    }
+
+    [Fact]
+    public async Task Add_Docm_RefusedNothingWrittenNoGitAfterPreflight()
+    {
+        // Arrange
+        var request = DocxRequest() with { SourcePath = OfficeSource("sample.docm") };
+        var before = Disk();
+
+        // Act
+        var outcome = await Service().AddAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert
+        outcome.Kind.Should().Be(ArchiveOutcomeKind.Refused);
+        outcome.Refusal.Should().Be(ArchiveRefusal.OfficeRefused);
+        outcome.Detail.Should().Be("macro_enabled");
+        Disk().Should().Equal(before);
+        _git.Calls.Select(RecordingProcessRunner.SubCommand).Should().Equal("symbolic-ref", "rev-parse", "rev-list");
+    }
+
+    [Fact]
+    public async Task Add_PptxLineOver400_UsageNothingWrittenNoGitAfterPreflight()
+    {
+        // Arrange: the service has no usage-time pre-check; the composed line's post-check (plan assumption A2) stops it before any write.
+        var request = new ArchiveAddRequest(Slug.Parse("zyggy"), "Roof pitch", Words(300), OfficeSource("sample.pptx"), Slug.Parse("roof-pitch"));
+        var before = Disk();
+
+        // Act
+        var outcome = await Service().AddAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert
+        outcome.Kind.Should().Be(ArchiveOutcomeKind.Usage);
+        outcome.Detail.Should().StartWith("the index line would exceed 400 characters (");
+        Disk().Should().Equal(before);
+        _git.Calls.Select(RecordingProcessRunner.SubCommand).Should().Equal("symbolic-ref", "rev-parse", "rev-list");
+    }
+
+    // A description of the given length that no secret pattern matches: runs of nine letters separated by spaces, never ending in one.
+    private static string Words(int length) =>
+        string.Create(length, 0, (span, _) =>
+        {
+            for (var i = 0; i < span.Length; i++)
+            {
+                span[i] = i % 10 == 9 && i != span.Length - 1 ? ' ' : 'x';
+            }
+        });
+
+    private string OfficeSource(string sample)
+    {
+        var path = Path.Combine(_home, "Downloads", sample);
+        File.Copy(Path.Combine(Golden.Directory, "office", sample), path, overwrite: true);
+        return path;
+    }
+
+    private ArchiveAddRequest DocxRequest() =>
+        new(Slug.Parse("zyggy"), "Roof offer", "Contractor offer for the roof repair", OfficeSource("sample.docx"), Slug.Parse("roof-offer"));
+
     private static SecretPatterns Patterns() => SecretPatterns.Load(Path.Combine(Golden.Directory, "secret-patterns", "secret-patterns.txt")).Patterns!;
 
     private ArchiveAddRequest Request() => new(Slug.Parse("zyggy"), "Quote 2026", "Roof repair quote", _source, Slug.Parse("quote-2026"));

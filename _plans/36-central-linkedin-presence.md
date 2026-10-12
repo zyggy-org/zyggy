@@ -1048,7 +1048,7 @@ If any of parts 2–7 fails without a listed fallback: **stop**.
   - Number of releases used (one expected; a `v0.4.1` named with its cause).
   - Rollback is one symlink, the previous instance commit and the live settings copy.
   - The OQ-4 residual risk stays as you accepted it (recorded in 0002 §36).
-- [ ] User approved — implementation may continue past this gate
+- [x] User approved — implementation may continue past this gate (2026-10-12, owner decision; see the final gate)
 
 ---
 
@@ -1114,7 +1114,9 @@ If any of parts 2–7 fails without a listed fallback: **stop**.
   - Nothing can publish without your Allow on the exact text.
   - The residual risk you accepted (OQ-4) is recorded, and the Bash-sandbox hardening is handed to the project-manager as a separate item.
   - Number of releases: one (or two, named).
-- [ ] User approved — deliverable 36 is done
+- [x] User approved — deliverable 36 is done
+
+> **Closed by owner decision 2026-10-12** — owner: "I already posted 3 post with you" (three owner-approved posts on 0.4.1, 36b). AC-11 and the AC-28 sweep not run. Boxes above left unticked were not verified by the agent; 0002 records each as owner-reported or not run.
 
 ---
 

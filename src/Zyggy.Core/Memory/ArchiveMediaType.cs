@@ -23,4 +23,13 @@ public enum ArchiveMediaType
 
     /// <summary>A GIF image (<c>image/gif</c>).</summary>
     Gif,
+
+    /// <summary>A Word document (<c>application/vnd.openxmlformats-officedocument.wordprocessingml.document</c>, stored as <c>.docx</c>; spec 39).</summary>
+    Docx,
+
+    /// <summary>An Excel workbook (<c>application/vnd.openxmlformats-officedocument.spreadsheetml.sheet</c>, stored as <c>.xlsx</c>; spec 39).</summary>
+    Xlsx,
+
+    /// <summary>A PowerPoint presentation (<c>application/vnd.openxmlformats-officedocument.presentationml.presentation</c>, stored as <c>.pptx</c>; spec 39).</summary>
+    Pptx,
 }

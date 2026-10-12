@@ -165,6 +165,36 @@ public sealed partial class SourceHygieneTests
         methods.Should().Equal("HttpMethod.Get");
     }
 
+    [Fact]
+    public void Src_MemoryAndMedia_NeverNameTextExtraction()
+    {
+        // Arrange: spec 39 AC-11/AC-13 — the archive never reads Office text; extraction stays in M365 (`zyggy m365 parse`).
+        string[] forbidden = ["markitdown", "prlimit", "DocumentParser", "ParseVerb"];
+
+        // Act
+        var offenders = SourceFiles()
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .Where(f => f.StartsWith("src/Zyggy.Core/Memory/", StringComparison.Ordinal) || f.StartsWith("src/Zyggy.Core/Media/", StringComparison.Ordinal))
+            .Where(f => forbidden.Any(word => File.ReadAllText(Path.Combine(RepoRoot(), f)).Contains(word, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        // Assert
+        offenders.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("src/Zyggy.Core/Memory/ArchiveChecks.cs")]
+    [InlineData("src/Zyggy.Core/Media/MediaSniffer.cs")]
+    [InlineData("src/Zyggy.Core/Media/OfficeSniffer.cs")]
+    public void Src_ArchiveChecksAndMedia_NoProcessRunner(string file)
+    {
+        // Act: spec 39 AC-11 — `add` starts no process other than git, and the checks and sniffers start none at all.
+        var text = File.ReadAllText(Path.Combine(RepoRoot(), file));
+
+        // Assert
+        text.Should().NotContainAny("IProcessRunner", "System.Diagnostics.Process");
+    }
+
     private static List<string> SourceFiles() =>
         Directory.EnumerateFiles(Path.Combine(RepoRoot(), "src"), "*.cs", SearchOption.AllDirectories)
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)

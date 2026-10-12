@@ -9,10 +9,19 @@ namespace Zyggy.Core.Memory;
 /// <summary>An item that passed every check: the bytes read once, their type, hash, the source's file name and the index line to append.</summary>
 internal sealed record ArchiveCandidate(byte[] Bytes, ArchiveMediaType Type, string Sha256, string SourceName, string IndexLine);
 
-/// <summary>The outcome of <see cref="ArchiveChecks.Check"/>: a candidate, or the refusal with its detail token (never item text).</summary>
+/// <summary>
+/// The outcome of <see cref="ArchiveChecks.Check"/>: a candidate, or the refusal with its detail token (never item text), or — plan 39
+/// assumption A2 — the usage message of a composed index line over <see cref="ArchiveIndexLine.MaxLength"/> that the usage-time
+/// pre-check could not foresee.
+/// </summary>
 internal sealed record ArchiveCheckResult(ArchiveCandidate? Candidate, ArchiveRefusal? Refusal, string? Detail)
 {
+    /// <summary>Gets the usage error (exit 4) when the composed line is too long; <see langword="null"/> otherwise.</summary>
+    public string? UsageError { get; init; }
+
     public static ArchiveCheckResult Refuse(ArchiveRefusal refusal, string? detail = null) => new(null, refusal, detail);
+
+    public static ArchiveCheckResult Usage(string message) => new(null, null, null) { UsageError = message };
 }
 
 /// <summary>
@@ -76,10 +85,16 @@ internal static class ArchiveChecks
             return ArchiveCheckResult.Refuse(ArchiveRefusal.Empty);
         }
 
-        // 3. Type (AC-8).
+        // 3. Type (AC-8; spec 39 AC-5: an Office-shaped file is judged by its content and refused with the closed detail word).
         var extension = Path.GetExtension(source);
         var markdownName = extension.Equals(".md", StringComparison.OrdinalIgnoreCase) || extension.Equals(".markdown", StringComparison.OrdinalIgnoreCase);
-        if (MediaSniffer.Sniff(bytes, markdownName) is not { } wire || !ArchiveMediaTypeWire.TryFromWire(wire, out var type))
+        var sniff = MediaSniffer.Sniff(bytes, markdownName);
+        if (sniff.OfficeRefusal is { } officeDetail)
+        {
+            return ArchiveCheckResult.Refuse(ArchiveRefusal.OfficeRefused, OfficeRefusalDetailWire.ToWire(officeDetail));
+        }
+
+        if (sniff.MediaType is not { } wire || !ArchiveMediaTypeWire.TryFromWire(wire, out var type))
         {
             return ArchiveCheckResult.Refuse(ArchiveRefusal.TypeRefused);
         }
@@ -142,6 +157,15 @@ internal static class ArchiveChecks
         if (ContactDetailPatterns.Contains(indexLine))
         {
             return ArchiveCheckResult.Refuse(ArchiveRefusal.ContactDetail, "line");
+        }
+
+        // 5b. The composed line's length (plan 39 assumption A2): the usage-time bound composes `application/pdf` + `.pdf`; a
+        // `PowerPoint deck` + `.pptx` line is one character longer, so the real line is checked before anything is written.
+        if (indexLine.Length > ArchiveIndexLine.MaxLength)
+        {
+            return ArchiveCheckResult.Usage(string.Create(
+                CultureInfo.InvariantCulture,
+                $"the index line would exceed {ArchiveIndexLine.MaxLength} characters ({indexLine.Length}): shorten --name or --description"));
         }
 
         // 6. Slug (AC-11): any archive/<project>/<slug>.* already present.

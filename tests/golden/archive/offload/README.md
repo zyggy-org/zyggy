@@ -9,6 +9,7 @@ The expected values never come from `QuickXorHash.cs`:
 
 - `rclone-*`: the 70 test vectors of rclone's `backend/onedrive/quickxorhash/quickxorhash_test.go` (MIT), copied verbatim
   (inputs re-joined where the Go raw string wraps).
+- `docx-item` (plan 39): the 1289-byte `../../office/sample.docx`, computed on 2026-10-12 with a Python port of the same algorithm that first reproduced every other row of this file (76 of 76) — an implementation independent of the code under test.
 - `gen-*`, `text-item` and `png-2x2`: computed on 2026-10-11 with rclone's `quickxorhash.go` (a port of namazso's C implementation,
   BSD-0) under `golang:1.23` in podman — an implementation independent of the code under test. `text-item` is the 68-byte item
   of `../sidecar-text.md` (`sha256` c5f2cab5…4f88); `png-2x2` is the 65-byte PNG of `../sidecar-png.md` (`ImageBytes.Png(2, 2)`).

@@ -38,6 +38,13 @@ public enum ArchiveRefusal
 
     /// <summary>The item to remove does not exist.</summary>
     NotFound,
+
+    /// <summary>
+    /// An Office-shaped file (a ZIP or an OLE compound file) refused by its content (spec 39): macro-enabled, active content, an older
+    /// binary or password-protected file, an OpenDocument file, a template or slideshow variant, not an Office package, or a malformed
+    /// or out-of-bounds archive. The detail is the closed word of <c>OfficeRefusalDetailWire</c>.
+    /// </summary>
+    OfficeRefused,
 }
 
 /// <summary>The single mapping between <see cref="ArchiveRefusal"/> and its snake_case reason on stderr.</summary>
@@ -61,6 +68,7 @@ public static class ArchiveRefusalWire
         ArchiveRefusal.ContactDetail => "contact_detail",
         ArchiveRefusal.SlugTaken => "slug_taken",
         ArchiveRefusal.NotFound => "not_found",
+        ArchiveRefusal.OfficeRefused => "office_refused",
         _ => throw new ArgumentOutOfRangeException(nameof(refusal)),
     };
 

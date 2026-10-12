@@ -189,7 +189,7 @@ access (D2), no secret anywhere new.
 - [ ] Behavioral verification: release row (tag, CI ids, SHA-256), rehearsal output, restart time, `tools/list` schema with the image keys.
 - [ ] Contract review: the skill's image section; runbook 16 entries.
 - [ ] ⚠️ Risk review: nothing published yet; the media folder 0700; the instance carries no secret.
-- [ ] User approved — implementation may continue past this gate
+- [x] User approved — implementation may continue past this gate (2026-10-12, owner decision)
 
 ---
 
@@ -219,4 +219,6 @@ access (D2), no secret anywhere new.
 - [ ] Behavioral verification: the post on the profile with the image; the rows; the sweep clean.
 - [ ] Contract review: 0002 §36 complete for Step 13.
 - [ ] ⚠️ Risk review: nothing published that the owner did not approve; the image was the one shown (hash match).
-- [ ] User approved — 36b done; 36 continues with its Step 14 (definition of done)
+- [x] User approved — 36b done; 36 continues with its Step 14 (definition of done)
+
+> **Closed by owner decision 2026-10-12** — owner: three posts published with Zyggy; the sweep not run. Boxes above left unticked were not verified by the agent; 0002 records each as owner-reported or not run.
