@@ -223,23 +223,12 @@ internal sealed class ArchiveService(
             {
                 yield return new ArchiveFile(full, slug, null);
             }
-            else if (ItemType(extension) is { } type)
+            else if (ArchiveMediaTypeWire.TryFromExtension(extension, out var type))
             {
                 yield return new ArchiveFile(full, slug, type);
             }
         }
     }
-
-    // An item's type from its stored extension alone (an orphan item has no sidecar); txt reads as text/plain.
-    private static ArchiveMediaType? ItemType(string extension) => extension switch
-    {
-        "txt" => ArchiveMediaType.TextPlain,
-        "pdf" => ArchiveMediaType.Pdf,
-        "png" => ArchiveMediaType.Png,
-        "jpg" => ArchiveMediaType.Jpeg,
-        "gif" => ArchiveMediaType.Gif,
-        _ => null,
-    };
 
     private List<string> SideFileTexts() =>
         Enum.GetValues<MemorySide>()

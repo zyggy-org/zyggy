@@ -189,3 +189,26 @@ The sidecar key order follows `MemoryFileWriter` (`name`, `description`, `update
 absent). Rows in ordinal path order, two spaces between columns, sizes as the index line prints them (`68 B`, `65 B`); JSON keys in the
 order `item`, `sidecar`, `project`, `slug`, `media_type`, `size_bytes`, `name`, `description`, `archived`, `state` (plan assumption A5),
 two-space indent, LF, final newline.
+
+## `office/` and `archive/sidecar-{docx,xlsx,pptx}.md` — Office formats in the archive (deliverable 39, Steps 1–2)
+
+`office/` holds seven **hand-built, metadata-free** packages (no `docProps/*`, no author, no real text; stored entries, DOS timestamp
+1980-01-01; `binary` in `.gitattributes`), produced once by a throwaway script and committed as bytes. Lengths (`wc -c`) and SHA-256
+(`sha256sum`), never from the code under test:
+
+| File | What it is | Bytes | SHA-256 |
+|------|-----------|-------|---------|
+| `sample.docx` | `[Content_Types].xml` with the `wordprocessingml.document.main+xml` override, `_rels/.rels`, `word/document.xml` ("Sample document") | 1289 | `fa0d4998a5b647d23edf5ec41eaa6a1192341017c46d5f465a4208fc5345e0ca` |
+| `sample.xlsx` | the `spreadsheetml.sheet.main+xml` override, `xl/workbook.xml`, its `.rels`, `xl/worksheets/sheet1.xml` (one inline cell) | 2262 | `3c6625560fa0b5b60c3c704353460a841f34938af9701bc423f4ac0cb1ffa2f9` |
+| `sample.pptx` | the `presentationml.presentation.main+xml` override, `_rels/.rels`, `ppt/presentation.xml` (no slide) | 1335 | `aa100f3a2150a877f29c06db427e70bd53e65759d9e80c1e493bd90a7a4e25b5` |
+| `sample.docm` | the docx with the `ms-word.document.macroEnabled.main+xml` main type and a 16-byte `word/vbaProject.bin` (`ms-office.vbaProject`) | 1487 | `5e64e64ac1518e562132eeadf956fe92a06d2e729e106857a71f0a0d64b49352` |
+| `sample.doc` | a 512-byte OLE compound-file header (sector shift 9, first directory sector 0) + one empty 512-byte sector | 1024 | `55c3aab7fe2f94de31678429a6b861f7fafe73506ad049879f27574bc2847617` |
+| `sample.odt` | a ZIP whose first entry is `mimetype` = `application/vnd.oasis.opendocument.text`, then `content.xml` and `META-INF/manifest.xml` | 625 | `64f7e7402c14f8228498302c6c84516a0ace663485aea5fce31de019990e0196` |
+| `plain.zip` | one `readme.txt` entry (`Just a zip.`) | 130 | `f3f752371d88bf6ca6f794beb188d85d4ca323795da60801b8788dd4268da7a5` |
+
+`archive/sidecar-docx.md`, `sidecar-xlsx.md` and `sidecar-pptx.md` are hand-derived from spec 39's Contracts ("Sidecar", the 37 key set
+and order, `media_type` = the IANA wire string) for the three accepted samples at the local date 2026-09-30, project `zyggy`: docx →
+name `Roof offer`, slug `roof-offer`, description `Contractor offer for the roof repair`, source `sample.docx`; xlsx → `Roof budget` /
+`roof-budget` / `Cost lines for the roof repair`; pptx → `Roof pitch` / `roof-pitch` / `Slides shown to the contractor`. The sizes and
+digests are the table's. The index line of each carries the short label (owner decision OQ-4 (b)): `Word document`, `Excel workbook`,
+`PowerPoint deck`, with the size as the line prints it (`1.3 KB`, `2.2 KB`, `1.3 KB`).

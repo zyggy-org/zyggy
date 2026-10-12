@@ -15,7 +15,7 @@ public sealed record ArchiveOptions
     /// <summary>The ceiling of <see cref="TotalMaxBytes"/> (500 MiB).</summary>
     public const long TotalCeiling = 524_288_000;
 
-    /// <summary>Gets the media types an item may have; the instance may only remove from the built-in six.</summary>
+    /// <summary>Gets the media types an item may have; the instance may only remove from the built-in nine (six of 37, the three Office types of 39).</summary>
     public IReadOnlySet<ArchiveMediaType> AllowedTypes { get; init; } = new HashSet<ArchiveMediaType>(Enum.GetValues<ArchiveMediaType>());
 
     /// <summary>Gets the largest item in bytes (10 MiB).</summary>

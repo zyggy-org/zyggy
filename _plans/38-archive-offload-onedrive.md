@@ -626,7 +626,9 @@ the dependency gate on 37's final gate (owner instruction 2026-10-11). 38 does n
 - [ ] Behavioral verification: 0002 §38 with every AC-37..AC-42 row dated and sourced; the unattended `archive offload` commit and its rows; the audit reconciliation counts; the forced failure's exit, unit state and digest warning; sweep count 0.
 - [ ] Contract review: AC-1..AC-42 → step map below all ticked; `ROADMAP.md` #38 definition of done ticked item by item, noting the spec's reshapes (folder grant instead of 13-D7b; size + QuickXorHash instead of a post-upload SHA-256; runbook "Grant OneDrive write for the archive folder" instead of "Re-grant OneDrive write (13-D7b)"); W38-1..W38-9 status.
 - [ ] ⚠️ Risk review: first unattended M365 write is narrow (two operations, folder-scoped in code and by the grant), logged and reconciled; data protection (documents in the company tenant; erasure needs OneDrive + history rewrite — runbook); repository size not reduced until a history rewrite (decision 4); no secret anywhere.
-- [ ] User approved — deliverable 38 is done
+- [x] User approved — deliverable 38 is done
+
+> **Closed by owner decision 2026-10-12** — owner: the first unattended run after the 2026-10-12 01:00 UTC dream moved the files to OneDrive. AC-39 (session retrieval), AC-40 (forced failure) and AC-41 (sweep, audit reconciliation) not run. Follow-up: `max_items_per_run` back to 20 in the instance if it is still lowered. Boxes above left unticked were not verified by the agent; 0002 records each as owner-reported or not run.
 
 ---
 

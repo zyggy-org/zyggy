@@ -21,6 +21,50 @@ public sealed class MemorySnapshotTests : IDisposable
     public void Dispose() => _tree.Dispose();
 
     [Fact]
+    public void Load_OfficeItem_ListedWithSizeNotInFiles()
+    {
+        // Arrange
+        var docx = File.ReadAllBytes(Path.Combine(Golden.Directory, "office", "sample.docx"));
+        File.WriteAllBytes(_tree.Full("archive/zyggy/roof-offer.docx"), docx);
+
+        // Act
+        var snapshot = MemorySnapshot.Load(_tree.Paths);
+
+        // Assert
+        snapshot.ArchiveItems.Should().Contain("archive/zyggy/roof-offer.docx", docx.LongLength);
+        snapshot.Files.Should().NotContainKey("archive/zyggy/roof-offer.docx");
+    }
+
+    [Fact]
+    public void Load_OfficeItemBytesNeverRead()
+    {
+        // Arrange: the item cannot be opened for reading while the snapshot loads.
+        var item = _tree.Full("archive/zyggy/roof-offer.docx");
+        File.WriteAllBytes(item, File.ReadAllBytes(Path.Combine(Golden.Directory, "office", "sample.docx")));
+        using var locked = OperatingSystem.IsWindows() ? new FileStream(item, FileMode.Open, FileAccess.ReadWrite, FileShare.None) : null;
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(item, UnixFileMode.None);
+        }
+
+        try
+        {
+            // Act
+            var snapshot = MemorySnapshot.Load(_tree.Paths);
+
+            // Assert
+            snapshot.ArchiveItems.Should().ContainKey("archive/zyggy/roof-offer.docx");
+        }
+        finally
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(item, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+        }
+    }
+
+    [Fact]
     public void Load_ArchiveItem_NotInFilesListedWithSize()
     {
         // Act

@@ -29,7 +29,12 @@ public sealed class DriveWriteScopeTests
         { "file_name", nameof(DriveWriteKind.CreateFile), Drive, Project, "a/b.txt", "fail", 68 },
         { "file_name", nameof(DriveWriteKind.CreateFile), Drive, Project, "x\u0007.txt", "fail", 68 },
         { "file_name", nameof(DriveWriteKind.CreateFile), Drive, Project, "quote.txt.", "fail", 68 },
-        { "extension", nameof(DriveWriteKind.CreateFile), Drive, Project, "quote.docx", "fail", 68 },
+        { "extension", nameof(DriveWriteKind.CreateFile), Drive, Project, "quote.docm", "fail", 68 },
+        { "extension", nameof(DriveWriteKind.CreateFile), Drive, Project, "quote.xlsm", "fail", 68 },
+        { "extension", nameof(DriveWriteKind.CreateFile), Drive, Project, "quote.pptm", "fail", 68 },
+        { "extension", nameof(DriveWriteKind.CreateFile), Drive, Project, "quote.doc", "fail", 68 },
+        { "extension", nameof(DriveWriteKind.CreateFile), Drive, Project, "quote.odt", "fail", 68 },
+        { "extension", nameof(DriveWriteKind.CreateFile), Drive, Project, "quote.zip", "fail", 68 },
         { "extension", nameof(DriveWriteKind.CreateFile), Drive, Project, "quote.PNG", "fail", 68 },
         { "extension", nameof(DriveWriteKind.CreateFile), Drive, Project, "quote.md", "fail", 68 },
         { "replace_form", nameof(DriveWriteKind.ReplaceById), Drive, Project, "quote-2026.txt", "fail", 68 },
@@ -54,6 +59,19 @@ public sealed class DriveWriteScopeTests
     {
         // Act
         var rule = Scope().Check(new DriveWriteRequest(DriveWriteKind.CreateFile, Drive, Project, "quote-2026.txt", "fail", 250_000_000));
+
+        // Assert
+        rule.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("roof-offer.docx")]
+    [InlineData("roof-budget.xlsx")]
+    [InlineData("roof-pitch.pptx")]
+    public void Check_OfficeFileInProjectFolder_Null(string name)
+    {
+        // Act
+        var rule = Scope().Check(new DriveWriteRequest(DriveWriteKind.CreateFile, Drive, Project, name, "fail", 1289));
 
         // Assert
         rule.Should().BeNull();

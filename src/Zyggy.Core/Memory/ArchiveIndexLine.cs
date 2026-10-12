@@ -14,14 +14,21 @@ internal static class ArchiveIndexLine
         return Prefix(date, request.Project) + AddedFact(request, type, sizeBytes);
     }
 
-    /// <summary>The fact part of <see cref="Added"/>: what <c>memory remember --scope project:&lt;project&gt; -- "&lt;fact&gt;"</c> is given.</summary>
+    /// <summary>
+    /// The fact part of <see cref="Added"/>: what <c>memory remember --scope project:&lt;project&gt; -- "&lt;fact&gt;"</c> is given. The type
+    /// prints as <see cref="ArchiveMediaTypeWire.Label"/>: the media-type string for the 37 types, a short label for an Office document.
+    /// </summary>
     public static string AddedFact(ArchiveAddRequest request, ArchiveMediaType type, long sizeBytes)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return Fact(request, ArchiveMediaTypeWire.ToWire(type), ArchiveSize.Format(sizeBytes), ArchiveMediaTypeWire.Extension(type));
+        return Fact(request, ArchiveMediaTypeWire.Label(type), ArchiveSize.Format(sizeBytes), ArchiveMediaTypeWire.Extension(type));
     }
 
-    /// <summary>The longest line this request can produce: the longest media type, a three-digit megabyte size, a three-letter extension.</summary>
+    /// <summary>
+    /// The usage-time bound of the line this request can produce: the longest media type, a three-digit megabyte size, a three-letter
+    /// extension — unchanged since 37 (spec 39 AC-4). A <c>PowerPoint deck</c> line with its four-letter extension is one character longer,
+    /// which <c>ArchiveChecks</c> catches on the composed line before anything is written (plan 39 assumption A2).
+    /// </summary>
     public static string Longest(DateOnly date, ArchiveAddRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);

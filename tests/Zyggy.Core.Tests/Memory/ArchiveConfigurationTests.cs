@@ -16,7 +16,35 @@ public sealed class ArchiveConfigurationTests
         { """{"item_max_bytes": "big"}""", "item_max_bytes" },
         { """{"foo": 1}""", "foo" },
         { """{"item_max_bytes": 99999999999}""", "item_max_bytes" },
+        { """{"allowed_types": ["text/plain", "application/msword"]}""", "allowed_types" },
     };
+
+    private const string SixOldWireStrings =
+        """{"allowed_types": ["text/plain", "text/markdown", "application/pdf", "image/png", "image/jpeg", "image/gif"]}""";
+
+    [Fact]
+    public void Load_AllowedTypesWithOfficeWire_Accepted()
+    {
+        // Act
+        var result = ArchiveConfiguration.Load(
+            Env(("ZYGGY_INSTANCE_DIR", Instance)),
+            _ => """{"allowed_types": ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.openxmlformats-officedocument.presentationml.presentation"]}""");
+
+        // Assert
+        result.Error.Should().BeNull();
+        result.Options!.AllowedTypes.Should().BeEquivalentTo([ArchiveMediaType.Docx, ArchiveMediaType.Xlsx, ArchiveMediaType.Pptx]);
+    }
+
+    [Fact]
+    public void Load_SixOldWireStringsOnly_OfficeTypesOff()
+    {
+        // Act
+        var result = ArchiveConfiguration.Load(Env(("ZYGGY_INSTANCE_DIR", Instance)), _ => SixOldWireStrings);
+
+        // Assert
+        result.Error.Should().BeNull();
+        result.Options!.AllowedTypes.Should().HaveCount(6).And.NotContain([ArchiveMediaType.Docx, ArchiveMediaType.Xlsx, ArchiveMediaType.Pptx]);
+    }
 
     [Fact]
     public void Load_NoInstanceDirNoVariable_Defaults()

@@ -26,7 +26,7 @@ public sealed class ArchiveOptionsTests
         options.ItemMaxBytes.Should().Be(10_485_760);
         options.ProjectMaxBytes.Should().Be(52_428_800);
         options.TotalMaxBytes.Should().Be(209_715_200);
-        options.AllowedTypes.Should().BeEquivalentTo(Enum.GetValues<ArchiveMediaType>());
+        options.AllowedTypes.Should().BeEquivalentTo(Enum.GetValues<ArchiveMediaType>()).And.HaveCount(9);
         options.SourceDeny.Should().BeEmpty();
         options.Validate().Should().BeEmpty();
     }
