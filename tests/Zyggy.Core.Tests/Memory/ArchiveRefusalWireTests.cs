@@ -17,6 +17,7 @@ public sealed class ArchiveRefusalWireTests
     [InlineData(ArchiveRefusal.ContactDetail, "contact_detail")]
     [InlineData(ArchiveRefusal.SlugTaken, "slug_taken")]
     [InlineData(ArchiveRefusal.NotFound, "not_found")]
+    [InlineData(ArchiveRefusal.OfficeRefused, "office_refused")]
     public void ToWire_Member_ReturnsSnakeCase(ArchiveRefusal refusal, string wire)
     {
         // Act
@@ -39,7 +40,7 @@ public sealed class ArchiveRefusalWireTests
     [Fact]
     public void EveryMember_HasATestRow()
     {
-        // Assert: the theory above lists twelve members.
-        Enum.GetValues<ArchiveRefusal>().Should().HaveCount(12);
+        // Assert: the theory above lists thirteen members.
+        Enum.GetValues<ArchiveRefusal>().Should().HaveCount(13);
     }
 }

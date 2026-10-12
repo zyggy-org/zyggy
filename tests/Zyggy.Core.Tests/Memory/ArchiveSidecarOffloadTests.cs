@@ -34,6 +34,25 @@ public sealed class ArchiveSidecarOffloadTests
         new UTF8Encoding(false).GetBytes(rendered).Should().Equal(Golden("offload/sidecar-offloaded-no-url.md"));
     }
 
+    [Fact]
+    public void ToMemoryFile_DocxWithOffload_EqualsGolden()
+    {
+        // Arrange: spec 39 AC-18 — the 37 keys with the Office wire string, then the 38 offload part (plan 39 assumption A9).
+        var sidecar = new ArchiveSidecar("Roof offer", "Contractor offer for the roof repair", Slug.Parse("zyggy"), ArchiveMediaType.Docx, 1289,
+            "fa0d4998a5b647d23edf5ec41eaa6a1192341017c46d5f465a4208fc5345e0ca", Archived, "sample.docx", Offloaded)
+        {
+            Offload = new ArchiveOffload(Offloaded, "01ITEMOFFER", "Zyggy/archive/zyggy/roof-offer.docx",
+                "https://acme-my.example.invalid/personal/alice/Documents/Zyggy/archive/zyggy/roof-offer.docx", "KUrXgAMRB/tsuE7mg8tmakHsOVo="),
+        };
+
+        // Act
+        var rendered = MemoryFileWriter.Render(sidecar.ToMemoryFile());
+
+        // Assert
+        new UTF8Encoding(false).GetBytes(rendered).Should().Equal(Golden("offload/sidecar-docx-offloaded.md"));
+        ArchiveSidecar.TryParse(MemoryFileReader.Parse(rendered)).Should().Be(sidecar);
+    }
+
     [Theory]
     [InlineData("offload/sidecar-offloaded.md", Url)]
     [InlineData("offload/sidecar-offloaded-no-url.md", null)]

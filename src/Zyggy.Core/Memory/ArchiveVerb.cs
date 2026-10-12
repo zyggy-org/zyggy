@@ -164,7 +164,8 @@ public sealed class ArchiveVerb(IReadOnlyDictionary<string, string?> environment
         return new ArchiveService(context.Paths, context.TimeZone, clock, context.Patterns, context.Options, deny, publisher, context.Paths.RootDirectory);
     }
 
-    // A refusal (exit 2) or a git error (exit 6) as one stderr line; null when the outcome wrote and committed.
+    // A refusal (exit 2), a git error (exit 6) or the composed line's usage error (exit 4, the pre-check's text) as one stderr line;
+    // null when the outcome wrote and committed.
     private static async Task<int?> FailedAsync(ArchiveOutcome outcome, VerbIo io)
     {
         switch (outcome.Kind)
@@ -175,6 +176,9 @@ public sealed class ArchiveVerb(IReadOnlyDictionary<string, string?> environment
             case ArchiveOutcomeKind.GitError:
                 await io.Error.WriteAsync(Prefix + "git error: " + outcome.Detail + "\n").ConfigureAwait(false);
                 return GitError;
+            case ArchiveOutcomeKind.Usage:
+                await io.Error.WriteAsync(Prefix + outcome.Detail + "\n").ConfigureAwait(false);
+                return Usage;
             default:
                 return null;
         }

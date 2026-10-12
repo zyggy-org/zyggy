@@ -212,3 +212,5 @@ name `Roof offer`, slug `roof-offer`, description `Contractor offer for the roof
 `roof-budget` / `Cost lines for the roof repair`; pptx → `Roof pitch` / `roof-pitch` / `Slides shown to the contractor`. The sizes and
 digests are the table's. The index line of each carries the short label (owner decision OQ-4 (b)): `Word document`, `Excel workbook`,
 `PowerPoint deck`, with the size as the line prints it (`1.3 KB`, `2.2 KB`, `1.3 KB`).
+
+`archive/offload/sidecar-docx-offloaded.md` (plan 39 Step 5, assumption A9) is `sidecar-docx.md` with `updated` set to 2026-10-01 and the five 38 offload keys appended (drive item `01ITEMOFFER`, `Zyggy/archive/zyggy/roof-offer.docx`, the fixture web URL, and the docx's QuickXorHash `KUrXgAMRB/tsuE7mg8tmakHsOVo=` from the new `docx-item` row of `quickxor-vectors.tsv`); derived by hand, never from the code under test.

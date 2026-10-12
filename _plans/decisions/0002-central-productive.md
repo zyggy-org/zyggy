@@ -577,6 +577,49 @@ credential.
 | AC-40 | a forced failure left the item in git; the digest warning shown; cleared after `--retry` | 2026-10-12 | — | not run (forced failure covered by the Step 6–8 tests); 38 closed (owner decision 2026-10-12) |
 | AC-41 | secret sweep clean after the offload; audit reconciliation (`FileUploaded` = action-log rows) | 2026-10-12 | — | not run; 38 closed (owner decision 2026-10-12) |
 
+## 39 — Office formats in the memory archive
+
+Spec `_specs/39-archive-office-formats.md`, plan `_plans/39-archive-office-formats.md`. `zyggy memory archive add` keeps a
+Word, Excel or PowerPoint document (.docx, .xlsx, .pptx) like a PDF — judged by the content types inside the ZIP, never by
+the file name — with the 37 sidecar (`media_type` = the IANA wire string), commit and index line (short label `Word
+document` / `Excel workbook` / `PowerPoint deck`); the dream indexes it and the 38 offload moves it with no code change. A
+macro-enabled, active-content, older binary, password-protected, OpenDocument, template/slideshow, non-Office or
+malformed/out-of-bounds file is refused `office_refused (<detail>)` before anything is written. A session reads an Office
+item by copying it into the session download directory and running `zyggy m365 parse` (no new verb). Runbook 17u–17w.
+
+### Decisions (owner, 2026-10-12; spec Decisions log)
+
+- OQ-1 (b): Office item content is not scanned at `add` (as a PDF's is not); name, description and the composed line are.
+- OQ-2 (b): only macros and the closed active-content list are refused; OLE embedded objects, external relationships
+  (remote templates), fields, links and data connections are accepted — `.rels` parts are never read.
+- OQ-3 (b): no `text` verb; a session reads an Office item through the copy-and-`zyggy m365 parse` route (template wording).
+- OQ-4 (b): the index line carries a short label for the three Office types; sidecar, commit body, `list` and
+  `archive.json` keep the wire string; the six 37 types' lines stay byte-identical.
+- W39-1, W39-2, W39-4 (founding-spec wording): accepted by the owner 2026-10-12 and pasted into `_specs/00 …` (§7 Layout, §7 Rules, §8 Injection and abuse) by the orchestrating session; W39-3 withdrawn with OQ-3 (b).
+
+### Accepted risk
+
+The content of an archived Office document is not scanned at `add` (OQ-1 (b)); Office documents are a likelier carrier of
+credentials and third-party data than images, and the owner saw and approved each item. OLE embedded objects and remote
+template links are not refused (OQ-2 (b)). Mitigations: no component of Central opens an Office document with Office;
+`zyggy m365 parse` extracts text only, under `prlimit`, from a copy it deletes; the dream never loads item bytes and cannot
+`Read` the archive directory; the owner approves each item in the session and opens the OneDrive copy in his own Office.
+Macro-enabled files and active content are refused by content (a renamed .docm is still refused), the sniffer extracts
+nothing to disk, decompresses at most two small entries with counted reads, prohibits DTDs and bounds the entry count and
+the declared sizes.
+
+### Evidence on Central (Steps 7–9; empty until then)
+
+| Row | What | Date | Command / excerpt | Result |
+|-----|------|------|-------------------|--------|
+| Release | tag, CI run ids, SHA-256; install; the single instance commit pin + `allowed_types`; `OnSuccess=` unit still runs | | | |
+| AC-22 | rehearsal as `zyggy` against a scratch repository: docx archived (exit 7, no remote), docm refused `office_refused (macro_enabled)`, live memory untouched; old binary under the new instance → exit 3 (17w symptom) | | | |
+| AC-13 | `zyggy m365 parse` of a copy of the sample docx in a run directory → exit 0 (the reading route) | | | |
+| AC-23 | one attended session: a real docx, xlsx and pptx archived (three `archive add` commits of two paths, sidecar types = the wire strings), one macro-enabled file refused, download directory empty afterwards | | | |
+| AC-24 | the nightly dream filed the three label lines; the offload moved the three (`offloaded` ×3, three commits, `ok` rows); one read back through the m365 download and `zyggy m365 parse` | | | |
+| AC-25 | the 37 AC-30 secret and contact-detail sweeps clean (Office items excluded by `media_type`/`file --mime`); `git count-objects -vH` | | | |
+| AC-26 | W39-1, W39-2, W39-4 present or absent in `_specs/00 …`; 0002 §39 complete | | | |
+
 ## Repositories
 
 | repo | role (template/instance/memory) | owner | visibility | laptop checkout + remotes | VM clone path | remote alias | key (name, scope) |

@@ -1,5 +1,7 @@
 using System.Text;
 
+using Zyggy.Core.Memory;
+
 namespace Zyggy.Core.Media;
 
 /// <summary>
@@ -65,21 +67,44 @@ internal static class MediaSniffer
     }
 
     /// <summary>
-    /// Returns the media type of the bytes: an image type, <c>application/pdf</c>, <c>text/markdown</c> when they are text and
-    /// <paramref name="markdownName"/> is set, <c>text/plain</c> for other text, or <see langword="null"/>.
+    /// Returns the media type of the bytes (spec 39 AC-5 order): an image type, <c>application/pdf</c>, an Office Open XML type or the
+    /// Office refusal detail for a ZIP, the detail for an OLE compound file, <c>text/markdown</c> when they are text and
+    /// <paramref name="markdownName"/> is set, <c>text/plain</c> for other text, or neither.
     /// </summary>
-    public static string? Sniff(ReadOnlySpan<byte> bytes, bool markdownName)
+    public static MediaSniff Sniff(byte[] bytes, bool markdownName)
     {
+        ArgumentNullException.ThrowIfNull(bytes);
         if (ImageType(bytes) is { } image)
         {
-            return image;
+            return new MediaSniff(image, null);
         }
 
         if (IsPdf(bytes))
         {
-            return "application/pdf";
+            return new MediaSniff("application/pdf", null);
         }
 
-        return IsUtf8Text(bytes) ? (markdownName ? "text/markdown" : "text/plain") : null;
+        if (OfficeSniffer.IsZip(bytes))
+        {
+            return Office(OfficeSniffer.SniffZip(bytes));
+        }
+
+        if (OfficeSniffer.IsCompoundFile(bytes))
+        {
+            return Office(OfficeSniffer.SniffCompoundFile(bytes));
+        }
+
+        return IsUtf8Text(bytes) ? new MediaSniff(markdownName ? "text/markdown" : "text/plain", null) : default;
     }
+
+    private static MediaSniff Office(OfficeSniff sniff) => sniff.Kind switch
+    {
+        OfficeKind.Docx => new MediaSniff(ArchiveMediaTypeWire.ToWire(ArchiveMediaType.Docx), null),
+        OfficeKind.Xlsx => new MediaSniff(ArchiveMediaTypeWire.ToWire(ArchiveMediaType.Xlsx), null),
+        OfficeKind.Pptx => new MediaSniff(ArchiveMediaTypeWire.ToWire(ArchiveMediaType.Pptx), null),
+        _ => new MediaSniff(null, sniff.Detail),
+    };
 }
+
+/// <summary>What <see cref="MediaSniffer.Sniff"/> found: a media-type string, or why an Office-shaped file was refused, or neither.</summary>
+internal readonly record struct MediaSniff(string? MediaType, OfficeRefusalDetail? OfficeRefusal);

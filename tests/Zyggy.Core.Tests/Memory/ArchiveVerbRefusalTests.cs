@@ -44,7 +44,35 @@ public sealed class ArchiveVerbRefusalTests : IDisposable
         { "secret_pattern", "archive: refused: secret_pattern aws-access-key (line 2)\n" },
         { "contact_detail", "archive: refused: contact_detail (description)\n" },
         { "slug_taken", "archive: refused: slug_taken\n" },
+        { "office:sample.docm", "archive: refused: office_refused (macro_enabled)\n" },
+        { "office:sample.doc", "archive: refused: office_refused (legacy_binary)\n" },
+        { "office:sample.odt", "archive: refused: office_refused (opendocument)\n" },
+        { "office:plain.zip", "archive: refused: office_refused (not_office)\n" },
+        { "type_not_allowed", "archive: refused: type_not_allowed (application/vnd.openxmlformats-officedocument.wordprocessingml.document)\n" },
     };
+
+    [Theory]
+    [InlineData("office:sample.docm")]
+    [InlineData("office:sample.doc")]
+    [InlineData("office:sample.odt")]
+    [InlineData("office:plain.zip")]
+    [InlineData("type_not_allowed")]
+    public async Task Run_RefusedOffice_StderrNeverNamesPartOrContentType(string scenario)
+    {
+        // Arrange
+        var args = await ArrangeAsync(scenario);
+
+        // Act
+        var (exit, console) = await RunAsync(args);
+
+        // Assert: the detail word only — never a part name or a content type beyond type_not_allowed's wire string.
+        exit.Should().Be(2);
+        console.Stderr.Should().NotContainAny(".xml", "+xml", "vbaProject", "mimetype", "[Content_Types]");
+        if (scenario != "type_not_allowed")
+        {
+            console.Stderr.Should().NotContain("/vnd.");
+        }
+    }
 
     public void Dispose()
     {
@@ -116,6 +144,16 @@ public sealed class ArchiveVerbRefusalTests : IDisposable
             case "slug_taken":
                 await File.WriteAllBytesAsync(source, new UTF8Encoding(false).GetBytes(text), token);
                 _tree.Write("archive/zyggy/quote-2026.md", "---\nname: Quote 2026\n---\n");
+                break;
+            case "type_not_allowed":
+                // The instance's six-only archive.json (spec 39 AC-3): Office types stay off until the owner widens the list.
+                File.Copy(Path.Combine(Golden.Directory, "office", "sample.docx"), source, overwrite: true);
+                var sixOnly = Path.Combine(_home, "archive.json");
+                await File.WriteAllTextAsync(sixOnly, """{"allowed_types": ["text/plain", "text/markdown", "application/pdf", "image/png", "image/jpeg", "image/gif"]}""", token);
+                _environment["ZYGGY_ARCHIVE_CONFIG"] = sixOnly;
+                break;
+            case var office when office.StartsWith("office:", StringComparison.Ordinal):
+                File.Copy(Path.Combine(Golden.Directory, "office", office["office:".Length..]), source, overwrite: true);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(scenario));

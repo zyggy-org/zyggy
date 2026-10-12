@@ -38,6 +38,11 @@ internal sealed class ArchiveService(
             return ArchiveOutcome.Refused(refusal, check.Detail);
         }
 
+        if (check.UsageError is { } usage)
+        {
+            return ArchiveOutcome.Usage(usage);
+        }
+
         // 3. Item and sidecar, atomically.
         var candidate = check.Candidate!;
         var itemPath = paths.ArchiveItem(request.Project, request.Slug, candidate.Type);

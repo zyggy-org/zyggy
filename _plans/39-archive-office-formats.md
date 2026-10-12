@@ -109,7 +109,7 @@ offload over the stub Graph handler; integration tests. Steps are named by what 
 
 ## Step 2 — The sniffer tells a Word, Excel or PowerPoint document from every other ZIP or OLE file by its content alone and names why it refused with one of nine closed details: `macro_enabled` (any content type containing `macroEnabled`, checked first), `active_content` (the closed VBA/ActiveX/macro-sheet list by content type or entry name), `legacy_binary` / `encrypted` (OLE compound file, with or without an `EncryptedPackage` directory entry), `opendocument` (`mimetype` first entry), `office_variant` (dotx/xltx/potx/ppsx main types), `not_office` (no `[Content_Types].xml`, zero or several accepted main types, missing main part), `zip_malformed` (unopenable, encrypted entry, duplicate or unsafe names, ill-formed XML or a DTD) and `zip_bounds` (> 10,000 entries, > 1 GiB declared, an XML part inflating past 4 MiB — counted while reading); a renamed docm is refused, a renamed docx accepted; nothing extracted to disk, at most two entries decompressed, a zip bomb refused in under a second; `ArchiveRefusal.OfficeRefused` exists with wire `office_refused`
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Media/OfficeSniffer.cs` *(create, `internal static`, namespace `Zyggy.Core.Media`)*:
@@ -147,7 +147,7 @@ offload over the stub Graph handler; integration tests. Steps are named by what 
 
 ## Step 3 — `zyggy memory archive add` accepts a Word, Excel or PowerPoint document by content and writes it like a PDF (item bytes exact, sidecar equal to the golden, index line with the short label, one `archive add` commit with the wire string in its body — proven over a fake process runner), refuses every Office-shaped input of Step 2 with exit 2 `archive: refused: office_refused (<detail>)` and nothing written, refuses an Office type the instance has not allowed with `type_not_allowed (<wire>)`, never scans Office content, starts no process, and refuses with exit 4 — before any write — the one composed line that would exceed 400 characters although the usage-time pre-check passed
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Media/MediaSniffer.cs` *(modify)*: `internal readonly record struct MediaSniff(string? MediaType, OfficeRefusalDetail? OfficeRefusal)`; `public static MediaSniff Sniff(byte[] bytes, bool markdownName)` (Assumption A6) in the order image magic → `%PDF-` → `OfficeSniffer.IsZip` → `SniffZip` (kind → the Office wire string through `ArchiveMediaTypeWire.ToWire`; detail → `OfficeRefusal`) → `OfficeSniffer.IsCompoundFile` → `SniffCompoundFile` (always a detail) → strict UTF-8 text → `default` (both null). `ImageType`, `IsPdf`, `IsUtf8Text` unchanged (`PostImage` untouched).
@@ -179,7 +179,7 @@ offload over the stub Graph handler; integration tests. Steps are named by what 
 
 ## Step 4 — From the built `zyggy` binary against a temporary memory repository with a local bare remote: a docx, an xlsx and a pptx each land on `origin/main` as `archive/zyggy/<slug>.<ext>` with byte-equal content, a sidecar whose `media_type` is the wire string, the label index line in the uncommitted inbox file and one `archive add` commit of exactly two paths with the wire string in its body; a docx renamed `.zip` is stored as `.docx`; a docm, a doc, an odt and a plain zip exit 2 with their detail and leave tree, index, inbox and remote byte-for-byte unchanged; with the instance's six-only `archive.json` a docx exits 2 `type_not_allowed`
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `tests/Zyggy.Integration/Memory/ArchiveAddOfficeCommandTests.cs` *(create; fixture `archive`, samples read from `AppContext.BaseDirectory/golden/office/`, written into the source directory with `WriteSourceAsync`)*; `tests/Zyggy.Integration/Memory/ArchiveAddOfficeRefusalTests.cs` *(create)*. No production change expected; fixes, if any, within `Media/` and `Memory/Archive*`.
@@ -207,16 +207,16 @@ offload over the stub Graph handler; integration tests. Steps are named by what 
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: `OfficeSnifferTests` with the detail table (one producing test per detail shown), the zip-bomb timing, `SniffZip_OnlyTwoEntriesEverOpened`; `ArchiveChecksTests.Check_DocxWithSecretShapedText_AcceptedNotScanned` and the renamed `Check_ZipHeaderOnly_OfficeRefusedZipMalformed`; `ArchiveAddOfficeCommandTests` with `git log --stat` of the bare repo (three `archive add` commits of two paths) and the inbox line with `Word document`; `ArchiveAddOfficeRefusalTests` fingerprints; the Windows and Linux CI run ids.
-- [ ] Contract review: AC-5..AC-11, AC-14 (sidecar/commit/line), AC-15 against the spec; the accepted main-type table, the active-content list and the entry-name rule verbatim; the check order (signature → open/bounds/names → opendocument → `[Content_Types].xml` → `macro_enabled` → active content → main type); `office_refused` wire and the nine details; `type_not_allowed (<wire>)` rendering (A8); the Office goldens.
-- [ ] ⚠️ Risk review (macros/active content, ZIP parsing, unscanned content, injection, public-repository hygiene): a docm renamed `.docx` is refused and a docx renamed `.zip` accepted (content, not name); `.rels` never read and OLE objects/remote templates accepted as the owner decided (OQ-2 (b)); nothing extracted to disk, at most two entries decompressed, DTDs prohibited, bounds as constants; Office content not scanned (OQ-1 (b)) while name, description and the composed line still are; `add` starts no process other than git (`SourceHygieneTests`); no new package (`Directory.Packages.props` diff empty); every committed sample is hand-built with placeholder metadata (`unzip -l` + `docProps` shown); **Assumptions A3, A4, A6, A7, A10** accepted; the Step 3 post-check (A2) proven by `Run_PptxLineOneOver400_ExitFourSameMessageAsPreCheck`.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `OfficeSnifferTests` with the detail table (one producing test per detail shown), the zip-bomb timing, `SniffZip_OnlyTwoEntriesEverOpened`; `ArchiveChecksTests.Check_DocxWithSecretShapedText_AcceptedNotScanned` and the renamed `Check_ZipHeaderOnly_OfficeRefusedZipMalformed`; `ArchiveAddOfficeCommandTests` with `git log --stat` of the bare repo (three `archive add` commits of two paths) and the inbox line with `Word document`; `ArchiveAddOfficeRefusalTests` fingerprints; the Windows and Linux CI run ids.
+- [x] Contract review: AC-5..AC-11, AC-14 (sidecar/commit/line), AC-15 against the spec; the accepted main-type table, the active-content list and the entry-name rule verbatim; the check order (signature → open/bounds/names → opendocument → `[Content_Types].xml` → `macro_enabled` → active content → main type); `office_refused` wire and the nine details; `type_not_allowed (<wire>)` rendering (A8); the Office goldens.
+- [x] ⚠️ Risk review (macros/active content, ZIP parsing, unscanned content, injection, public-repository hygiene): a docm renamed `.docx` is refused and a docx renamed `.zip` accepted (content, not name); `.rels` never read and OLE objects/remote templates accepted as the owner decided (OQ-2 (b)); nothing extracted to disk, at most two entries decompressed, DTDs prohibited, bounds as constants; Office content not scanned (OQ-1 (b)) while name, description and the composed line still are; `add` starts no process other than git (`SourceHygieneTests`); no new package (`Directory.Packages.props` diff empty); every committed sample is hand-built with placeholder metadata (`unzip -l` + `docProps` shown); **Assumptions A3, A4, A6, A7, A10** accepted; the Step 3 post-check (A2) proven by `Run_PptxLineOneOver400_ExitFourSameMessageAsPreCheck`.
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 5 — With no dream or offload code change: after `archive add` of the docx sample, one `zyggy dream` run through fake-claude (`dream-archive-office-ok`) files the label line as `[stated]` into `business/areas/zyggy.md` in one `dream` commit touching no archive path, the model's argument vector still denies `Read(//<principal>/archive/**)`, the stdin capture never contains the item or sidecar text, and `list` says `indexed`; then the in-process offload over the stub OneDrive uploads `roof-offer.docx` as `application/octet-stream` with `conflictBehavior=fail`, verifies size and QuickXorHash, writes the offload keys into the sidecar (unit golden `sidecar-docx-offloaded.md`), removes the item in one `archive offload` commit and `list` says `offloaded`
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `tools/fake-claude/scenarios/dream-archive-office-ok.jsonl` *(create: the `dream-archive-ok.jsonl` shape with `edits[0].append[0]` = `- [stated] {today} (project:zyggy): Archived "Roof offer" (Word document, <size of sample.docx formatted by hand>) at archive/zyggy/roof-offer.docx — Contractor offer for the roof repair`; `dispositions` L1 filed to `business/areas/zyggy.md`)*; `tools/fake-claude/README.md` *(modify: one scenario row)*.
@@ -249,16 +249,16 @@ offload over the stub Graph handler; integration tests. Steps are named by what 
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: `git log --stat` of the bare repo from `DreamArchiveOfficeTests` (archive commit, dream commit touching only the project file and the ledger, offload commit); the captured `--disallowedTools` value; the stdin-capture assertion; `list` → `indexed` then `offloaded`; the recorded PUT of `ArchiveOffloadOfficeTests`; `sidecar-docx-offloaded.md` beside `sidecar-offloaded.md`.
-- [ ] Contract review: AC-16, AC-18 against the spec; `git diff --stat` of `Dream/`, `M365/`, `Offload*`, `DriveWriteScope.cs` empty since Step 1; the fake-claude scenario's line equals the label form of Contracts "Index line".
-- [ ] ⚠️ Risk review (injection, shared contracts): the model never saw an Office byte or sidecar key (stdin capture) and cannot `Read` the archive directory; the offload still sends only the two folder-scoped writes; QuickXorHash verification covers the new bytes as any item.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `git log --stat` of the bare repo from `DreamArchiveOfficeTests` (archive commit, dream commit touching only the project file and the ledger, offload commit); the captured `--disallowedTools` value; the stdin-capture assertion; `list` → `indexed` then `offloaded`; the recorded PUT of `ArchiveOffloadOfficeTests`; `sidecar-docx-offloaded.md` beside `sidecar-offloaded.md`.
+- [x] Contract review: AC-16, AC-18 against the spec; `git diff --stat` of `Dream/`, `M365/`, `Offload*`, `DriveWriteScope.cs` empty since Step 1; the fake-claude scenario's line equals the label form of Contracts "Index line".
+- [x] ⚠️ Risk review (injection, shared contracts): the model never saw an Office byte or sidecar key (stdin capture) and cannot `Read` the archive directory; the offload still sends only the two folder-scoped writes; QuickXorHash verification covers the new bytes as any item.
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 6 — The template teaches the `archive` skill the three kept Office types, the refusals in plain words, "never convert, rename, re-save, unzip or re-encode a refused file", and the copy-and-`zyggy m365 parse` reading route for a handed-over or still-archived Office file; `memory.md`, `security.md` and the `m365` skill name Word, Excel and PowerPoint; the template's minimum binary version is this release; the instance runbook gains 17u–17w; 0002 gains a §39 skeleton with the accepted-risk paragraph — `settings.json` and the instance `allowed_types` are **unchanged**, nothing on Central changes yet
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `d:\source\zyggy-core` (template; branch, PR, CI green; merged into the instance only after the release pin of Step 7 — 37 Step 10 rule):
@@ -292,11 +292,11 @@ offload over the stub Graph handler; integration tests. Steps are named by what 
 
 *Executor: STOP here. Present the results and WAIT for user approval — do not start Step 7.*
 
-- [ ] Behavioral verification: template bats and CI run id (or podman count); instance bats count; the runbook entries 17u–17w listed against AC-21; the 0002 §39 skeleton shown.
-- [ ] Contract review: the template wording equals the spec's text verbatim (five blocks); `settings.json` untouched and the deny list free of `cp`/`mkdir`; the min version equals the planned release; `instance/archive.json` untouched (AC-20 order); AC-12, AC-19, AC-21, AC-26 (Decisions log reflected; 0002 §39 opened).
-- [ ] **W39-1, W39-2, W39-4** (spec Contracts "Founding-spec amendments"): the owner accepts, amends or declines each; if accepted, the orchestrating session — never this plan's executor — pastes them into `_specs/00 …` with a journal line per edit. Recorded as present/absent in 0002 §39 at Step 9.
-- [ ] ⚠️ Risk review (injection, work boundary): the skill tells the session to treat parsed text as data, never to copy the file anywhere but the session download directory, never to keep the copy, never to unzip; the original and the archive item are never moved or edited; "never convert … to get it accepted" present; the `m365 parse` fallbacks do not let the session guess content.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: template bats and CI run id (or podman count); instance bats count; the runbook entries 17u–17w listed against AC-21; the 0002 §39 skeleton shown.
+- [x] Contract review: the template wording equals the spec's text verbatim (five blocks); `settings.json` untouched and the deny list free of `cp`/`mkdir`; the min version equals the planned release; `instance/archive.json` untouched (AC-20 order); AC-12, AC-19, AC-21, AC-26 (Decisions log reflected; 0002 §39 opened).
+- [x] **W39-1, W39-2, W39-4** (spec Contracts "Founding-spec amendments"): the owner accepts, amends or declines each; if accepted, the orchestrating session — never this plan's executor — pastes them into `_specs/00 …` with a journal line per edit. Recorded as present/absent in 0002 §39 at Step 9.
+- [x] ⚠️ Risk review (injection, work boundary): the skill tells the session to treat parsed text as data, never to copy the file anywhere but the session download directory, never to keep the copy, never to unzip; the original and the archive item are never moved or edited; "never convert … to get it accepted" present; the `m365 parse` fallbacks do not let the session guess content.
+- [x] User approved — implementation may continue past this gate
 
 ---
 
