@@ -376,6 +376,29 @@ public sealed class GitHubBusProviderTests : IDisposable
     }
 
     [Fact]
+    public void Remote_NoHttpsUrl_DerivesGitHubForms()
+    {
+        // Act: the only place that may name github.com (AC-2)
+        GitHubBusProvider provider = new(_http, new GitClient(_processes, new GitClientOptions(), _clock), new BusRemote("acme-org", "acme-bus", "main", null, null), new InMemorySecretStore(), Me, "/bus", Version, null, _clock, _log);
+
+        // Assert
+        provider.Remote.HttpsUrl.Should().Be(new Uri("https://github.com/acme-org/acme-bus.git"));
+        provider.Remote.SshUrl.Should().Be(new Uri("ssh://git@github.com/acme-org/acme-bus.git"));
+        provider.ApiBaseUri.Should().Be(new Uri("https://api.github.com"));
+    }
+
+    [Fact]
+    public void Remote_OtherHost_NoSshDefault()
+    {
+        // Act: a test's bare repository or another host gets no SSH URL unless configured
+        GitHubBusProvider provider = Provider(new InMemorySecretStore());
+
+        // Assert
+        provider.Remote.HttpsUrl.Should().Be(Remote.HttpsUrl);
+        provider.Remote.SshUrl.Should().BeNull();
+    }
+
+    [Fact]
     public void Remote_IsTheConfiguredOne()
     {
         // Act

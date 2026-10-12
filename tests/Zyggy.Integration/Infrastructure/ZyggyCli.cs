@@ -68,6 +68,53 @@ public static class ZyggyCli
         return process;
     }
 
+    /// <summary>Starts <c>zyggy</c> without waiting and captures both streams line by line (for a listener the test stops later).</summary>
+    public static CapturedProcess StartCapturing(IReadOnlyList<string> args, IReadOnlyDictionary<string, string?> env, string workingDirectory)
+    {
+        var info = new ProcessStartInfo(ExecutablePath)
+        {
+            UseShellExecute = false,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+            WorkingDirectory = workingDirectory,
+        };
+        foreach (var arg in args)
+        {
+            info.ArgumentList.Add(arg);
+        }
+
+        foreach (var name in info.Environment.Keys.Where(k => k.StartsWith("ZYGGY_", StringComparison.OrdinalIgnoreCase)).ToList())
+        {
+            info.Environment.Remove(name);
+        }
+
+        info.Environment["GIT_CONFIG_NOSYSTEM"] = "1";
+        info.Environment["GIT_TERMINAL_PROMPT"] = "0";
+        foreach (var (name, value) in env)
+        {
+            if (value is null)
+            {
+                info.Environment.Remove(name);
+            }
+            else
+            {
+                info.Environment[name] = value;
+            }
+        }
+
+        var process = Process.Start(info) ?? throw new InvalidOperationException("zyggy did not start.");
+        var captured = new CapturedProcess(process);
+        process.OutputDataReceived += (_, e) => captured.AddStdout(e.Data);
+        process.ErrorDataReceived += (_, e) => captured.AddStderr(e.Data);
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+        process.StandardInput.Close();
+        return captured;
+    }
+
     /// <summary>A <c>zyggy.json</c> pin that matches the test build of <c>zyggy</c> on this runtime.</summary>
     public static string MatchingPin()
     {
@@ -153,3 +200,73 @@ public static class ZyggyCli
 
 /// <summary>The outcome of one <c>zyggy</c> run.</summary>
 public sealed record ZyggyRun(int ExitCode, string Stdout, string Stderr);
+
+/// <summary>A running <c>zyggy</c> whose output is captured line by line; <see cref="StopAsync"/> kills it and returns what it printed.</summary>
+public sealed class CapturedProcess(Process process) : IDisposable
+{
+    private readonly List<string> _stdout = [];
+    private readonly List<string> _stderr = [];
+
+    public IReadOnlyList<string> Stdout
+    {
+        get
+        {
+            lock (_stdout)
+            {
+                return [.. _stdout];
+            }
+        }
+    }
+
+    public IReadOnlyList<string> Stderr
+    {
+        get
+        {
+            lock (_stderr)
+            {
+                return [.. _stderr];
+            }
+        }
+    }
+
+    public bool HasExited => process.HasExited;
+
+    internal void AddStdout(string? line)
+    {
+        if (line is null)
+        {
+            return;
+        }
+
+        lock (_stdout)
+        {
+            _stdout.Add(line);
+        }
+    }
+
+    internal void AddStderr(string? line)
+    {
+        if (line is null)
+        {
+            return;
+        }
+
+        lock (_stderr)
+        {
+            _stderr.Add(line);
+        }
+    }
+
+    /// <summary>Kills the process tree (if still running) and waits for it to exit.</summary>
+    public async Task StopAsync(CancellationToken ct)
+    {
+        if (!process.HasExited)
+        {
+            process.Kill(entireProcessTree: true);
+        }
+
+        await process.WaitForExitAsync(ct);
+    }
+
+    public void Dispose() => process.Dispose();
+}

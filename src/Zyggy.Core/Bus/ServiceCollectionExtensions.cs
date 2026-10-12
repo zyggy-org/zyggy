@@ -64,6 +64,27 @@ public static class ServiceCollectionExtensions
                 options.Jitter ?? Random.Shared.NextDouble,
                 log);
         });
+        services.TryAddSingleton(sp =>
+        {
+            GitHubBusOptions options = sp.GetRequiredService<IOptions<GitHubBusOptions>>().Value;
+            string checkoutRoot = options.CheckoutRoot ?? throw Missing(nameof(GitHubBusOptions.CheckoutRoot));
+            ILogger<Probe.ReachabilityCheck> log = sp.GetService<ILoggerFactory>()?.CreateLogger<Probe.ReachabilityCheck>() ?? NullLogger<Probe.ReachabilityCheck>.Instance;
+            return new Probe.ReachabilityCheck(sp.GetRequiredService<IBusProvider>(), sp.GetRequiredService<GitClient>(), checkoutRoot, log);
+        });
+        services.TryAddTransient(sp =>
+        {
+            GitHubBusOptions options = sp.GetRequiredService<IOptions<GitHubBusOptions>>().Value;
+            ILogger<BusListener> log = sp.GetService<ILoggerFactory>()?.CreateLogger<BusListener>() ?? NullLogger<BusListener>.Instance;
+            return new BusListener(
+                sp.GetRequiredService<IBusProvider>(),
+                sp.GetRequiredService<BusRepository>(),
+                sp.GetService<PollOptions>() ?? PollOptions.Default,
+                sp.GetRequiredService<KeyId>(),
+                sp.GetRequiredService<TimeProvider>(),
+                sp.GetService<Random>() ?? Random.Shared,
+                sp.GetRequiredService<JobHandler>(),
+                log);
+        });
         services.TryAddSingleton<IBusProvider>(sp =>
         {
             GitHubBusOptions options = sp.GetRequiredService<IOptions<GitHubBusOptions>>().Value;

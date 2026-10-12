@@ -54,17 +54,24 @@ internal sealed partial class GitHubBusProvider : IBusProvider, IDisposable
         ArgumentException.ThrowIfNullOrEmpty(version);
         _http = new HttpClient(handler, disposeHandler: true) { Timeout = Timeout.InfiniteTimeSpan };
         _git = git ?? throw new ArgumentNullException(nameof(git));
-        Remote = remote;
         _secrets = secrets ?? throw new ArgumentNullException(nameof(secrets));
         _me = me ?? throw new ArgumentNullException(nameof(me));
         _checkoutRoot = checkoutRoot;
         _version = version;
         _apiBaseUri = apiBaseUri ?? DefaultApiBaseUri;
+        Uri https = remote.HttpsUrl ?? new Uri(string.Create(CultureInfo.InvariantCulture, $"https://github.com/{remote.Owner}/{remote.Repository}.git"));
+        Uri? ssh = remote.SshUrl ?? (string.Equals(https.Host, "github.com", StringComparison.OrdinalIgnoreCase)
+            ? new UriBuilder("ssh", "github.com") { UserName = "git", Path = string.Create(CultureInfo.InvariantCulture, $"/{remote.Owner}/{remote.Repository}.git") }.Uri
+            : null);
+        Remote = remote with { HttpsUrl = https, SshUrl = ssh };
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _log = log ?? throw new ArgumentNullException(nameof(log));
     }
 
+    /// <summary>Gets the remote with GitHub's URL forms filled in: the configured HTTPS URL or <c>https://github.com/&lt;owner&gt;/&lt;repo&gt;.git</c>; the configured SSH URL or GitHub's SSH form when the HTTPS host is GitHub (a non-GitHub host, such as a test's bare repository, gets no SSH URL).</summary>
     public BusRemote Remote { get; }
+
+    public Uri ApiBaseUri => _apiBaseUri;
 
     public async Task<HeadProbe> ProbeHeadAsync(string? etag, CancellationToken ct)
     {

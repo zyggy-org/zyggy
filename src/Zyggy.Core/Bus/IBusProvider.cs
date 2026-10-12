@@ -8,8 +8,11 @@ namespace Zyggy.Core.Bus;
 /// </summary>
 public interface IBusProvider
 {
-    /// <summary>Gets the description of the remote (owner, repository, branch, URLs); never a credential.</summary>
+    /// <summary>Gets the description of the remote (owner, repository, branch, URLs — both filled in by the provider); never a credential.</summary>
     BusRemote Remote { get; }
+
+    /// <summary>Gets the base address the doorbell is rung at (the host's API), for the reachability report; never a credential.</summary>
+    Uri ApiBaseUri { get; }
 
     /// <summary>Rings the doorbell: asks the host whether the branch moved since <paramref name="etag"/> (§5 items 1–2).</summary>
     /// <param name="etag">The validator from the last <see cref="Changed"/> answer, or <see langword="null"/> before the first.</param>

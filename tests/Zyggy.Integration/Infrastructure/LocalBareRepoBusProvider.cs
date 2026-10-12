@@ -12,6 +12,8 @@ internal sealed class LocalBareRepoBusProvider(GitClient git, string bareDirecto
 {
     public BusRemote Remote { get; } = new("local", Path.GetFileName(bareDirectory), branch, new Uri(new Uri(bareDirectory + Path.DirectorySeparatorChar).AbsoluteUri), null);
 
+    public Uri ApiBaseUri => Remote.HttpsUrl!;
+
     public async Task<HeadProbe> ProbeHeadAsync(string? etag, CancellationToken ct)
     {
         string? sha = Directory.Exists(bareDirectory) ? await git.RevParseAsync(bareDirectory, branch, ct).ConfigureAwait(false) : null;
