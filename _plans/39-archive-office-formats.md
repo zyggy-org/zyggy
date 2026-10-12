@@ -302,7 +302,7 @@ offload over the stub Graph handler; integration tests. Steps are named by what 
 
 ## Step 7 — A tagged release exists with checksummed artefacts; on Central the pinned binary is installed root-owned, the template is merged and pulled, and **one instance commit** pins the release and adds the three Office wire strings to `allowed_types`; a rehearsal as `zyggy` against a scratch memory repository archives a sample docx (exit 7 — the scratch repository has no remote), refuses a docm with `office_refused (macro_enabled)` leaving the scratch repository unchanged, and the live memory, the dream timer and the offload unit are untouched
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done — 2026-10-12 (v0.7.0 released and installed on Central; instance `e7def86` pins and widens `allowed_types` in one commit; rehearsal: docx exit 7, docm exit 2 macro_enabled, parse exit 0, old binary exit 3; 0002 §39 Release, AC-22, AC-13 rows) *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope** *(agent; the 38 Step 12 procedure, runbook 14a/14b and 17w)*:
 - This repo: merge Steps 1–6 (PR, CI green on both runners); tag `v<next>` (the next minor after 0.6.0 — **Assumption A1**, `v0.7.0` if nothing else shipped); tag CI green; release with `zyggy` + `SHA256SUMS`; `sha256sum -c` locally.
