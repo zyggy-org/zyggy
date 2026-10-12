@@ -337,7 +337,7 @@ offload over the stub Graph handler; integration tests. Steps are named by what 
 
 ## Step 8 — In one attended session the owner hands over one real Word, one Excel and one PowerPoint document for a real project; the session reads each through the copy-and-`zyggy m365 parse` route (the copy deleted afterwards, the session download directory empty at the end), proposes a name and description, gets the go, and `add` archives each in one `archive add` commit of two paths on `origin/main`; one macro-enabled file handed over is refused with `office_refused (macro_enabled)` and `git status` stays clean
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done — 2026-10-12 (owner session: pptx, docx, xlsx + a second docx archived, one with push deferred (ac3b284, pushed by tonight's dream); macro-enabled refusal owner-reported; 0002 §39 AC-23) *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope** *(owner-run in the session; agent checks read-only via `az vm run-command` as 37 Step 12)*:
 - AC-23 (owner): "archive this for project <real project>" with a docx, an xlsx and a pptx; the skill copies each into `~/.cache/zyggy-m365-downloads/<session>/`, runs `zyggy m365 parse` on the copy, shows project/name/description/type/size and waits; the owner says go three times. Then one macro-enabled file (a `.docm`, or a `.xlsm` the owner has) → exit 2 `office_refused (macro_enabled)`; the skill names the reason in plain words and stops, never re-saves or renames it.
