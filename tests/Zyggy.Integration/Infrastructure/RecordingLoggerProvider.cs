@@ -5,11 +5,11 @@ namespace Zyggy.Integration.Infrastructure;
 /// <summary>An <see cref="ILoggerProvider"/> that records every entry of every category (level, category, rendered message) for the §11 counts and the secret sweep.</summary>
 internal sealed class RecordingLoggerProvider : ILoggerProvider
 {
-    public List<(LogLevel Level, string Category, string Message)> Entries { get; } = [];
+    public List<(LogLevel Level, string Category, string Message, IReadOnlyDictionary<string, object>? Scope)> Entries { get; } = [];
 
     public IEnumerable<string> Messages => Entries.Select(e => e.Message);
 
-    public IEnumerable<(LogLevel Level, string Category, string Message)> AtLevel(LogLevel level) => Entries.Where(e => e.Level == level);
+    public IEnumerable<(LogLevel Level, string Category, string Message, IReadOnlyDictionary<string, object>? Scope)> AtLevel(LogLevel level) => Entries.Where(e => e.Level == level);
 
     public ILogger CreateLogger(string categoryName) => new Logger(this, categoryName);
 
@@ -19,8 +19,15 @@ internal sealed class RecordingLoggerProvider : ILoggerProvider
 
     private sealed class Logger(RecordingLoggerProvider owner, string category) : ILogger
     {
+        private readonly AsyncLocal<IReadOnlyDictionary<string, object>?> _scope = new();
+
         public IDisposable BeginScope<TState>(TState state)
-            where TState : notnull => NullScope.Instance;
+            where TState : notnull
+        {
+            var previous = _scope.Value;
+            _scope.Value = state as IReadOnlyDictionary<string, object>;
+            return new Scope(() => _scope.Value = previous);
+        }
 
         public bool IsEnabled(LogLevel logLevel) => logLevel != LogLevel.None;
 
@@ -28,17 +35,13 @@ internal sealed class RecordingLoggerProvider : ILoggerProvider
         {
             lock (owner.Entries)
             {
-                owner.Entries.Add((logLevel, category, formatter(state, exception)));
+                owner.Entries.Add((logLevel, category, formatter(state, exception), _scope.Value));
             }
         }
     }
 
-    private sealed class NullScope : IDisposable
+    private sealed class Scope(Action restore) : IDisposable
     {
-        public static NullScope Instance { get; } = new();
-
-        public void Dispose()
-        {
-        }
+        public void Dispose() => restore();
     }
 }

@@ -56,6 +56,29 @@ public sealed partial class BusRepository
     /// <summary>Gets this node's identity on the bus.</summary>
     public BusIdentity Me => _me;
 
+    /// <summary>Whether this node's secret store holds a usable signing key for <paramref name="signWith"/> (the listener's start-up check).</summary>
+    /// <param name="signWith">The key id.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns><see langword="true"/> when the key is present and long enough.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="signWith"/> is null.</exception>
+    public Task<bool> SignerCanSignAsync(KeyId signWith, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(signWith);
+        return _signer.CanSignAsync(signWith, ct);
+    }
+
+    /// <summary>The checkout's current branch, or <see langword="null"/> when it is not a repository or HEAD is detached — a read that touches nothing (for a verb's pre-flight).</summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The branch name or null.</returns>
+    public Task<string?> CheckoutBranchAsync(CancellationToken ct) =>
+        Directory.Exists(_checkoutRoot) ? _git.CurrentBranchAsync(_checkoutRoot, ct) : Task.FromResult<string?>(null);
+
+    /// <summary>How many local commits the remote branch lacks (deferred writes waiting for the next push, §5).</summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The count; 0 when git cannot tell.</returns>
+    public async Task<int> UnpushedCommitCountAsync(CancellationToken ct) =>
+        (await _git.UnpushedCommitSubjectsAsync(_checkoutRoot, _provider.Remote.Branch, ct).ConfigureAwait(false)).Count;
+
     /// <summary>
     /// The §5 start-up rule: the checkout must be a repository on the bus branch with no rebase in progress and this tenant's
     /// prefix; a dirty tree is parked under <c>zyggy-&lt;machine&gt;-&lt;timestamp&gt;</c> with one warning, never reset.

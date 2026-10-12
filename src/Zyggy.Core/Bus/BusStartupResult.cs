@@ -20,4 +20,7 @@ public enum BusStartupResult
 
     /// <summary>A rebase or merge is in progress; nothing was touched.</summary>
     RebaseInProgress,
+
+    /// <summary>The signing key this node writes with is absent from its secret store (spec 04 Assumption A4): run <c>zyggy secret set</c> first.</summary>
+    KeyMissing,
 }
