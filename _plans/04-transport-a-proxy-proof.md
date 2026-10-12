@@ -125,16 +125,16 @@ Steps are named by what the system can do. One gate per slice (E and G carry two
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: `BusPathsTests` (ten exact paths, round trips, refusals), `EnvelopeParserTests.PeekFrom_*`, `SourceHygieneTests` AC-2 facts, `BusLayoutTests` (the `ls-tree` of the seeded bare repository shown beside the §4 layout block).
-- [ ] Contract review: AC-1, AC-2 against the spec; the `BusPaths` table member by member; `wrong_recipient` wire string; `PeekFrom` null cases (ex-OQ10); the fixture seeds through `BusPaths` and asserts on the bare repository.
-- [ ] ⚠️ Risk review (§4 protocol change): `EnvelopeRejectionReason.WrongRecipient` appended last (existing values unchanged); 03's golden files byte-identical; A1/A2 wording for the founding spec acknowledged as pending (Step 15); the one sanctioned test edit (`Fixture_PublicSurface_HasNoTenantMember` → `Fixture_RequiresATenant`).
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `BusPathsTests` (ten exact paths, round trips, refusals), `EnvelopeParserTests.PeekFrom_*`, `SourceHygieneTests` AC-2 facts, `BusLayoutTests` (the `ls-tree` of the seeded bare repository shown beside the §4 layout block).
+- [x] Contract review: AC-1, AC-2 against the spec; the `BusPaths` table member by member; `wrong_recipient` wire string; `PeekFrom` null cases (ex-OQ10); the fixture seeds through `BusPaths` and asserts on the bare repository.
+- [x] ⚠️ Risk review (§4 protocol change): `EnvelopeRejectionReason.WrongRecipient` appended last (existing values unchanged); 03's golden files byte-identical; A1/A2 wording for the founding spec acknowledged as pending (Step 15); the one sanctioned test edit (`Fixture_PublicSurface_HasNoTenantMember` → `Fixture_RequiresATenant`).
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 3 — The poller decides when to wake without any I/O: on a fake clock a `304` keeps the ETag and schedules the next tick at 10 s ± 2 s (60 s idle), a `200` stores the new ETag and says "pull", a rate-limit answer backs off until the later of 120 s, `x-ratelimit-reset` and `retry-after`, `x-poll-interval` raises the interval, a network error doubles from 10 s to a 5-minute cap, and the phase change is reported exactly once
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Bus/HeadProbe.cs` *(create)*: `public abstract record HeadProbe { public TimeSpan? MinimumInterval { get; init; } }` with `Unchanged(int? RateLimitRemaining)`, `Changed(string ETag, int? RateLimitRemaining)`, `Throttled(DateTimeOffset? ResetUtc, TimeSpan? RetryAfter, int? RateLimitRemaining)`, `Unreachable(string Detail)` (closed: private protected constructor).
@@ -165,7 +165,7 @@ Steps are named by what the system can do. One gate per slice (E and G carry two
 
 ## Step 4 — The doorbell is rung the §5 way: `GitHubBusProvider` sends exactly one conditional `GET` with the PAT read from `ISecretStore` on every request, `User-Agent: zyggy/<version>`, `Accept` and `X-GitHub-Api-Version`, maps `304`/`200`/`403`/`429`/`401`/`5xx`/exceptions/timeouts to `HeadProbe` without ever throwing or leaking the token, refuses to call out when the PAT is absent, and its handler keeps the system proxy with default credentials
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Bus/IBusProvider.cs` *(create)*: the spec's interface (`Remote`, `ProbeHeadAsync(string? etag, ct)`, `PullAsync(ct)`, `PushAsync(ct)`), XML docs citing §5 items 1–2 and the §9 seam rule; `BusRemote.cs` (`(string Owner, string Repository, string Branch, Uri HttpsUrl, Uri? SshUrl)`), `BusSyncResult.cs` (`(bool Succeeded, string Detail)`), `PushResult.cs` (`Pushed`, `Rejected(Detail)`, `PushFailed(Detail)`, closed) *(create, public)*.
@@ -202,7 +202,7 @@ Steps are named by what the system can do. One gate per slice (E and G carry two
 
 ## Step 5 — The provider's `pull` brings a foreign commit into the checkout and its `push` lands a local commit on the bare repository's `main` through the real `git`; a push against a remote that moved on is a `Rejected` result, never an exception; and both the product provider (head check answered from the bare repository's `rev-parse main`) and the test double `LocalBareRepoBusProvider` pass the same contract suite
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Git/GitClient.cs` *(modify, additive)*: `PullRebaseAsync(string repository, string branch, ct)` → `pull --rebase origin <branch>`.

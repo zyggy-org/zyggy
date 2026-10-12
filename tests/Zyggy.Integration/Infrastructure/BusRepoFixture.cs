@@ -51,6 +51,24 @@ public class BusRepoFixture : IAsyncLifetime
     /// <summary>The sender's clone — jobs and foreign commits are pushed from here, never from <see cref="CloneDir"/>.</summary>
     public string SenderDir { get; }
 
+    /// <summary>The environment that isolates git from the machine's configuration; the production <c>GitClient</c> gets it through its options in tests.</summary>
+    public IReadOnlyDictionary<string, string?> GitEnvironment => new Dictionary<string, string?>
+    {
+        ["GIT_CONFIG_GLOBAL"] = _globalConfigPath,
+        ["GIT_CONFIG_NOSYSTEM"] = "1",
+    };
+
+    /// <summary>Removes the bare repository, so every remote operation fails (the "remote vanished" scenario).</summary>
+    public void DeleteBare()
+    {
+        foreach (var file in Directory.EnumerateFiles(BareDir, "*", SearchOption.AllDirectories))
+        {
+            File.SetAttributes(file, FileAttributes.Normal);
+        }
+
+        Directory.Delete(BareDir, recursive: true);
+    }
+
     public async ValueTask InitializeAsync()
     {
         Directory.CreateDirectory(RootDir);

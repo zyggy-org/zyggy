@@ -64,6 +64,20 @@ public sealed class GitClientTests
     }
 
     [Fact]
+    public async Task PullRebaseAsync_BuildsSpecArguments()
+    {
+        // Act: spec 04 §5 write sequence step 1
+        var result = await Client().PullRebaseAsync(Repo, "main", TestContext.Current.CancellationToken);
+
+        // Assert
+        result.Succeeded.Should().BeTrue();
+        var call = _processes.Calls.Should().ContainSingle().Subject;
+        call.FileName.Should().Be("git");
+        call.Arguments.Should().Equal("pull", "--rebase", "origin", "main");
+        call.Environment.Should().Contain("GIT_TERMINAL_PROMPT", "0");
+    }
+
+    [Fact]
     public async Task Push_OriginHeadToBranch()
     {
         // Act

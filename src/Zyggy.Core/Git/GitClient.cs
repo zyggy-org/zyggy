@@ -56,6 +56,10 @@ internal sealed class GitClient(IProcessRunner processes, GitClientOptions optio
     public Task<GitResult> PushAsync(string repository, string branch, CancellationToken cancellationToken) =>
         RunAsync(repository, ["push", "origin", "HEAD:" + branch], null, cancellationToken);
 
+    /// <summary>Step 1 of the §5 write sequence: <c>pull --rebase origin &lt;branch&gt;</c> (deliverable 04).</summary>
+    public Task<GitResult> PullRebaseAsync(string repository, string branch, CancellationToken cancellationToken) =>
+        RunAsync(repository, ["pull", "--rebase", "origin", branch], null, cancellationToken);
+
     public async Task<string?> RevParseAsync(string repository, string revision, CancellationToken cancellationToken)
     {
         var result = await RunAsync(repository, ["rev-parse", revision], null, cancellationToken).ConfigureAwait(false);
