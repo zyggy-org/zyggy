@@ -337,16 +337,16 @@ Steps are named by what the system can do. One gate per slice (E and G carry two
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: `GitClientTests` new rows; `BusRepositoryWriteTests` (the recorded command order of AC-13 and AC-14 shown verbatim); `BusRepositoryIntakeTests`; the integration classes — show `git log --format='%s | %an' main` of one bare repository after claim + report, the `jobs/rejected/` listing and one rejection report file, the `rev-list origin/main..HEAD = 1` + clean status after the deferral.
-- [ ] Contract review: AC-12..AC-23 against the spec; commit subjects `<tenant> <action> <id> <from>→<to>` (A3/A4); the rejection report fields (A1); the write-rule guard; `ListNewJobsAsync` lists top level only; `Deferred` leaves no dirty tree and no `reset`.
-- [ ] ⚠️ Risk review (§4/§5 shared contracts, additive `GitClient`, work boundary): `git diff` of every Dream/Memory/Offload test file empty and the live-path registrations untouched (`CommitOnlyAsync` without identity byte-identical); no secret in any recorded spec/log (`SecretSweep`); report and rejection bodies are fixed strings; `BusRepository` is public but `GitClient` stays internal; the fixture never uses the production client for setup/assertions.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `GitClientTests` new rows; `BusRepositoryWriteTests` (the recorded command order of AC-13 and AC-14 shown verbatim); `BusRepositoryIntakeTests`; the integration classes — show `git log --format='%s | %an' main` of one bare repository after claim + report, the `jobs/rejected/` listing and one rejection report file, the `rev-list origin/main..HEAD = 1` + clean status after the deferral.
+- [x] Contract review: AC-12..AC-23 against the spec; commit subjects `<tenant> <action> <id> <from>→<to>` (A3/A4); the rejection report fields (A1); the write-rule guard; `ListNewJobsAsync` lists top level only; `Deferred` leaves no dirty tree and no `reset`.
+- [x] ⚠️ Risk review (§4/§5 shared contracts, additive `GitClient`, work boundary): `git diff` of every Dream/Memory/Offload test file empty and the live-path registrations untouched (`CommitOnlyAsync` without identity byte-identical); no secret in any recorded spec/log (`SecretSweep`); report and rejection bodies are fixed strings; `BusRepository` is public but `GitClient` stays internal; the fixture never uses the production client for setup/assertions.
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 9 — Over substitutes and a fake clock, the listen loop does the whole receiver's work: `StartAsync` refuses a dirty start the §5 way, pulls once and processes what is already waiting; `ProcessOnceAsync` verifies, claims, calls the handler only for an accepted and claimed job, writes its report, and rejects everything else; `RunAsync` waits until the poller's `NextDueUtc`, rings the doorbell, pulls only when told, never overlaps requests, logs one `Information` per state change and nothing on a silent tick, with `tenant`, `machine` and `phase` on every scope
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Bus/JobHandler.cs` *(create, public delegate `Task<JobReply> JobHandler(Envelope job, CancellationToken ct)`)*; `JobReply.cs` *(create, public record `(ReportStatus Status, string? Reason, ReadOnlyMemory<byte> Body, DateTimeOffset Started, DateTimeOffset Finished)`)*.
@@ -376,7 +376,7 @@ Steps are named by what the system can do. One gate per slice (E and G carry two
 
 ## Step 10 — On the bare repository, one tick of the real loop with the probe handler takes a job from `jobs/` to a verified `done` report on `main` (doorbell → pull → claim → handler → report → push), a second tick is silent, the four rejection cases and the malformed file go through `ProcessOnceAsync` with the handler never invoked, and a deferred claim is carried by the next write with the "pushed 1 deferred commit" line
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Bus/Probe/ProbeHandler.cs` *(create, public static)*: `public static JobHandler For(MachineName machine, TimeProvider clock)` — replies `done`, body `zyggy transport probe acknowledged by <machine>\n`, `Started`/`Finished` from the clock (the fixed text of the spec; the first `Probe/` type).
@@ -407,16 +407,16 @@ Steps are named by what the system can do. One gate per slice (E and G carry two
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: `BusListenerTests` (handler-never-called, deferred-then-pushed, once-per-phase logging, one in-flight request), `BusListenerRoundTripTests` — show the captured log of one round trip (two `Information` lines, scopes) and `git log main` of the bare repository.
-- [ ] Contract review: AC-19, AC-20, AC-22 (second half), AC-25 against the spec; `JobHandler`/`JobReply` shapes; the §11 logging rule (a `304` silent; claim/report/reject/phase change once); **Assumption A4** (`BusStartupResult.KeyMissing`) and the "handler throws → job stays claimed" decision reviewed.
-- [ ] ⚠️ Risk review (§5 host contract for 07, §8): the handler is invoked only after verification **and** a claim; rejection never reaches it; the probe body is the fixed text; no secret in logs.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `BusListenerTests` (handler-never-called, deferred-then-pushed, once-per-phase logging, one in-flight request), `BusListenerRoundTripTests` — show the captured log of one round trip (two `Information` lines, scopes) and `git log main` of the bare repository.
+- [x] Contract review: AC-19, AC-20, AC-22 (second half), AC-25 against the spec; `JobHandler`/`JobReply` shapes; the §11 logging rule (a `304` silent; claim/report/reject/phase change once); **Assumption A4** (`BusStartupResult.KeyMissing`) and the "handler throws → job stays claimed" decision reviewed.
+- [x] ⚠️ Risk review (§5 host contract for 07, §8): the handler is invoked only after verification **and** a claim; rejection never reaches it; the probe body is the fixed text; no secret in logs.
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 11 — A machine's `node.json` is read into typed configuration with the §10 refusals (no `tenant` → refuse; `signWith` of another tenant → refuse; a key named `pat`/`token`/`hmac`/`secret`/`password` anywhere → refuse; unknown keys ignored; `bus.branch` defaults to `main`; `--config` → `ZYGGY_NODE_JSON` → the per-OS default path), the probe ledger appends and reads JSONL records, `stats` aggregates them per target with nearest-rank percentiles, and git's stderr is classified into the `reach` statuses
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Configuration/NodeConfiguration.cs` (`(TenantId Tenant, MachineName Machine, KeyId? SignWith, BusSettings Bus, PollSettings Poll, SecretsSettings Secrets)`), `BusSettings.cs` (`Owner`, `Repo`, `Branch`, `LocalPath`, `Remote` as raw strings — no URL derivation here, because `https://github.com/…` may only be built inside `GitHubBusProvider` (AC-2); the provider derives `BusRemote` from `GitHubBusOptions`, Step 14), `PollSettings.cs` (`ActiveSeconds = 10`, `IdleSeconds = 60` → `ToPollOptions()` over `PollOptions.Default`), `SecretsSettings.cs` (`Root?`), `NodeConfigurationError.cs` (`FileMissing, Malformed, MissingField, InvalidField`), `NodeConfigurationResult.cs` (`Ok(NodeConfiguration)` / `Error(NodeConfigurationError, string? Field, string Detail)`), `NodeConfigurationReader.cs` (`public static NodeConfigurationResult Read(string path)`; `public static string ResolvePath(string? configOption, IReadOnlyDictionary<string, string?> environment)` — `--config` → `ZYGGY_NODE_JSON` → `%LOCALAPPDATA%\zyggy\node.json` on Windows, `$XDG_CONFIG_HOME/zyggy/node.json` or `~/.config/zyggy/node.json` elsewhere (**Assumption A5**); parsing with `JsonDocument` for the secret-key walk and the source-generated `NodeConfigurationJsonContext` for binding; `signWith` optional at read time — `listen`/`send` require it, `reach` does not) *(create, public except the JSON context)*.
@@ -446,7 +446,7 @@ Steps are named by what the system can do. One gate per slice (E and G carry two
 
 ## Step 12 — `zyggy secret set hmac/1 --hex` stores the key read from stdin under `<root>/acme/hmac/1` with 03's permissions and echoes only `stored acme/hmac/1 (32 bytes)` (a value on the command line is a usage error); `zyggy probe listen` with a `node.json` lacking `tenant`, with `tenant: Acme`, with a `bus.localPath` that is not a checkout or a checkout on `dev` exits 3 with one stderr line naming the condition before stashing or pulling anything; and the production composition `AddProcessRunner + AddFileSecretStore + AddEnvelopeSigning + AddGitHubBus` resolves provider, repository, listener and client
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Cli/Commands/BusHost.cs` *(create, internal static)*: `LoadConfiguration(ParseResult, CliEnvironment) → (NodeConfiguration?, int exitCode)` (prints `zyggy: configuration error: <key>: <detail>` → exit 3); `BuildServices(NodeConfiguration, bool verbose, string version, CliEnvironment)` → `ServiceCollection().AddLogging(b => b.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace).SetMinimumLevel(verbose ? Debug : Information)).AddProcessRunner().AddFileSecretStore(o => o.RootDirectory = cfg.Secrets.Root).AddEnvelopeSigning().AddGitHubBus(o => { Remote/Identity/CheckoutRoot/Version from cfg; ApiBaseUri from ZYGGY_BUS_API_BASE when set (**Assumption A3**); CommitIdentity = ("zyggy (<machine>)", "<machine>@zyggy.org") })`; the common `--config` and `--verbose` options.
@@ -479,16 +479,16 @@ Steps are named by what the system can do. One gate per slice (E and G carry two
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: `NodeConfigurationReaderTests` (the refusal theory), `ProbeLedgerTests`, `ProbeStatsTests`, `ReachabilityCheckTests`; by hand on the dev machine: a scratch `node.json` + `echo <hex> | zyggy secret set hmac/1 --hex` → `stored acme/hmac/1 (32 bytes)`, `icacls` shows the single-entry DACL; `zyggy probe listen --config <bad>` → exit 3 lines as AC-27.
-- [ ] Contract review: AC-27, AC-30, AC-31, AC-32 against the spec; the `node.json` minimal schema and precedence (**Assumption A5**: `~/.config/zyggy/node.json` on Linux although `LocalApplicationData` maps to `~/.local/share` — the spec's words win); the ledger JSON field names; the `reach` classification table.
-- [ ] ⚠️ Risk review (secrets, public API): the secret value never appears in argv, stdout, stderr or a log (`SecretSweep` over the CLI runs); `FileSecretStore` permissions as 03; `ZYGGY_BUS_API_BASE` is a documented test hook that only changes the API host, never a credential (**Assumption A3**); new public types XML-documented; no package.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `NodeConfigurationReaderTests` (the refusal theory), `ProbeLedgerTests`, `ProbeStatsTests`, `ReachabilityCheckTests`; by hand on the dev machine: a scratch `node.json` + `echo <hex> | zyggy secret set hmac/1 --hex` → `stored acme/hmac/1 (32 bytes)`, `icacls` shows the single-entry DACL; `zyggy probe listen --config <bad>` → exit 3 lines as AC-27.
+- [x] Contract review: AC-27, AC-30, AC-31, AC-32 against the spec; the `node.json` minimal schema and precedence (**Assumption A5**: `~/.config/zyggy/node.json` on Linux although `LocalApplicationData` maps to `~/.local/share` — the spec's words win); the ledger JSON field names; the `reach` classification table.
+- [x] ⚠️ Risk review (secrets, public API): the secret value never appears in argv, stdout, stderr or a log (`SecretSweep` over the CLI runs); `FileSecretStore` permissions as 03; `ZYGGY_BUS_API_BASE` is a documented test hook that only changes the API host, never a credential (**Assumption A3**); new public types XML-documented; no package.
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 13 — From the built `zyggy` binary: `probe send --to home-laptop --timeout 5` with no listener pushes a signed probe job onto `main`, records `outcome: timeout` in the ledger and exits 6; with a `zyggy probe listen` process started by the test on a second `node.json` for `home-laptop` against the same bare repository (the API doorbell answered by a loopback stand-in), `send` observes the verified report, prints the round trip, records `outcome: done` with `roundTripMs > 0` and exits 0; `probe stats` prints one row for `home-laptop` (count 2, done 1, timeout 1, p50/p95) and exits 1 on an empty ledger; the test PAT and HMAC key appear nowhere
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Bus/Probe/ProbeSender.cs` *(create, public sealed class `(IBusProvider provider, BusRepository bus, EnvelopeSigner signer, BusIdentity me, KeyId signWith, PollOptions options, TimeProvider clock, Random jitter, ProbeLedger ledger, ILogger<ProbeSender> log)`)*: `SendOneAsync(MachineName to, TimeSpan timeout, ct) → ProbeRecord` — build `Envelope.CreateJob(header(me.Tenant, EnvelopeId.New(now), me.Machine, to, now), new JobFields("probe", TimeoutMinutes: 2), "zyggy transport probe\n")`, `SignAsync`, `bus.SubmitAsync` (`Deferred`/`WriteFailed` → `push_failed`); then a sender-side loop with its own `PollState` (`Active`): wait until due, `ProbeHeadAsync`, `Apply`, on `Pull` → `PullAsync` → `bus.FindReportsAsync(to, id)` → first verified report → `done` (`roundTripMs = observed − sent`) or `rejected <reason>` when `status: rejected`; the timeout elapsed → `timeout`; each record appended to the ledger. `SendManyAsync(to, count, interval, timeout, ct)`.
@@ -516,7 +516,7 @@ Steps are named by what the system can do. One gate per slice (E and G carry two
 
 ## Step 14 — `zyggy probe reach` prints the four-row matrix (`api`, `fetch`, `push`, `ssh`) with `check | endpoint | result | detail | proxy` and a header naming git's `http.proxy`, `http.sslBackend`, `credential.helper` (userinfo stripped) and the system proxy for the API host; against the fixture `fetch` and `push` are `ok` with the bare repository unchanged by the dry-run push, `api` is `ok` when the loopback stand-in answers and `unreachable (connection refused)` when nothing listens, `ssh` is `skipped` or a result that never changes the exit code, and the exit is 0 only when `api`, `fetch` and `push` are `ok`
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Bus/Probe/ReachabilityCheck.cs` *(modify: the runner — `public sealed class ReachabilityCheck(IBusProvider provider, GitClient git, string checkoutRoot, BusRemote remote, ILogger<ReachabilityCheck> log)` with `RunAsync(ct) → ReachReport(IReadOnlyList<ReachResult> Rows, string GitProxy, string GitSslBackend, string CredentialHelper, string SystemProxy)`: `api` = `ClassifyApi(await provider.ProbeHeadAsync(null))`, endpoint `remote.HttpsUrl.Host` (the API host is the provider's business; the row shows the provider's `Remote` and the result); `fetch` = `git.LsRemoteAsync(root, remote.HttpsUrl, branch, env: none)`; `push` = `git.PushDryRunAsync(root, remote.HttpsUrl, "HEAD:refs/heads/<branch>")`; `ssh` = `remote.SshUrl is null → Skipped("no ssh remote configured")` else `LsRemoteAsync(root, SshUrl, branch, { GIT_SSH_COMMAND = "ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new" })`; `proxy` column = `ProxyDisplay(HttpClient.DefaultProxy.GetProxy(remote.HttpsUrl))` for `api`, `ConfigGetAsync("http.proxy")` redacted for the git rows; header values from `ConfigGetAsync`; each check with a 30 s timeout; `ExitCode` = 0 when `api`, `fetch`, `push` are `Ok`, else 6; `RenderMarkdown()`)*; `src/Zyggy.Core/Bus/GitHubBusProvider.cs` *(modify: `Remote` built from `GitHubBusOptions`: `HttpsUrl = https://github.com/<owner>/<repo>.git` unless the configured `bus.remote` is HTTPS (then that), `SshUrl = git@github.com:<owner>/<repo>.git` or the configured SSH remote — the only file naming `github.com` (AC-2); for the fixture the configured `bus.remote` is the bare `file://` URL, which the provider passes through as `HttpsUrl` when its scheme is not `https` — documented test accommodation, **Assumption A6**)*.
@@ -545,16 +545,16 @@ Steps are named by what the system can do. One gate per slice (E and G carry two
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: `ProbeSenderTests`, `ProbeRoundTripTests` (paste the `send` stdout, the two ledger lines, the `stats` table), `ProbeReachTests` (paste one `reach` table); by hand on the dev machine against a scratch bare repository: `zyggy probe listen` in one terminal, `zyggy probe send --to home-laptop` in another, `zyggy probe stats`, `zyggy probe reach`; CI green on both runners with the publish + smoke step (AC-38).
-- [ ] Contract review: AC-26, AC-28, AC-29 against the spec; the CLI table (options, output lines, exit codes); the probe job fields; the `reach` rows, header and exit rule; `Remote` URL derivation (**Assumption A6** — `file://` pass-through for tests); `GitHubBusProvider` is still the only file naming `github.com`.
-- [ ] ⚠️ Risk review (PAT never reaches git; secrets; work boundary; proxy): `RunAsync_NeverPassesCredentialToGit` and the integration sweep green; `HTTPS_PROXY` userinfo never printed; `probe reach` left the bare repository unchanged; the probe body is the fixed string; no package; `Directory.Packages.props` unchanged.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `ProbeSenderTests`, `ProbeRoundTripTests` (paste the `send` stdout, the two ledger lines, the `stats` table), `ProbeReachTests` (paste one `reach` table); by hand on the dev machine against a scratch bare repository: `zyggy probe listen` in one terminal, `zyggy probe send --to home-laptop` in another, `zyggy probe stats`, `zyggy probe reach`; CI green on both runners with the publish + smoke step (AC-38).
+- [x] Contract review: AC-26, AC-28, AC-29 against the spec; the CLI table (options, output lines, exit codes); the probe job fields; the `reach` rows, header and exit rule; `Remote` URL derivation (**Assumption A6** — `file://` pass-through for tests); `GitHubBusProvider` is still the only file naming `github.com`.
+- [x] ⚠️ Risk review (PAT never reaches git; secrets; work boundary; proxy): `RunAsync_NeverPassesCredentialToGit` and the integration sweep green; `HTTPS_PROXY` userinfo never printed; `probe reach` left the bare repository unchanged; the probe body is the fixed string; no package; `Directory.Packages.props` unchanged.
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 15 — The documents say how to run and how to recover: `src/Zyggy.Core/README.md` gets the `Bus/` folder row corrected (spec finding 3: `GitClient` lives in `Git/`) and a "Troubleshooting — Bus" section with the spec's Failure-modes entries (dirty working copy, checkout, push deferred, pull failed, rate limit, rejected envelopes) naming the founding-spec amendments the code implements; `src/Zyggy.Cli/README.md` gets the `probe` and `secret` verbs with exit codes, the `node.json` minimal schema, the per-machine setup (key seeding, PAT, Git Credential Manager, proxy and TLS settings pass) and the "Probe:" troubleshooting entries — the `bus-conflict.md` draft and the probe runbook; the owner (or the orchestrating session at his instruction) pastes the founding-spec amendments A1–A6 and the agent confirms them present
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope** *(agent for the READMEs; **owner-run** for the founding spec)*:
 - `src/Zyggy.Core/README.md` *(modify)*: Responsibilities table — `Bus/` row = `BusPaths`, `IBusProvider`/`GitHubBusProvider`, `PollState`, `BusRepository`, `BusListener`, `Probe/`; a `Git/` row = `GitClient` (28) with the 04 additions; a `Configuration/` row; new section `## Troubleshooting — Bus` with one table row per spec Failure-modes entry marked "Core README" (`Bus: dirty working copy`, `Bus: checkout`, `Bus: push deferred`, `Bus: pull failed`, `Bus: rate limit`, `Bus: rejected envelopes`), each naming the symptom, the command to inspect (`git stash list`, `git log origin/main..HEAD`, `git rebase --abort`, `probe reach`) and the amendment it implements (A1, A3/A4, A5) — this is the `bus-conflict.md` draft (§11) until the runbook directory exists (10).
@@ -579,10 +579,10 @@ Steps are named by what the system can do. One gate per slice (E and G carry two
 
 *Executor: STOP here. Present the results and WAIT for user approval — do not start Step 16.*
 
-- [ ] Behavioral verification: both README diffs; the six-phrase check output for `_specs/00 …`.
-- [ ] Contract review: AC-37 (first two clauses + amendments) against the spec's Failure-modes table; every "Core README"/"Cli README" entry of that table present; the per-machine setup matches the spec's Context table and the `add-tenant.md` steps; A1–A6 present or explicitly deferred by the owner (A7 has no 04 text).
-- [ ] ⚠️ Risk review (public repository): no company name, token, personal data or real hostname in the READMEs beyond the `zyggy-org`/`zyggy-bus` names already public in the spec; placeholders for tenant and machine.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: both README diffs; the six-phrase check output for `_specs/00 …`.
+- [x] Contract review: AC-37 (first two clauses + amendments) against the spec's Failure-modes table; every "Core README"/"Cli README" entry of that table present; the per-machine setup matches the spec's Context table and the `add-tenant.md` steps; A1–A6 present or explicitly deferred by the owner (A7 has no 04 text).
+- [x] ⚠️ Risk review (public repository): no company name, token, personal data or real hostname in the READMEs beyond the `zyggy-org`/`zyggy-bus` names already public in the spec; placeholders for tenant and machine.
+- [x] User approved — implementation may continue past this gate
 
 ---
 
