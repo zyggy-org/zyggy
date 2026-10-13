@@ -128,6 +128,13 @@ public sealed class EnvelopeSigner
             : parsed;
     }
 
+    /// <summary>Whether the store holds a usable key for <paramref name="keyId"/> (present and at least 32 bytes) — the bus listener's start-up check (deliverable 04).</summary>
+    internal async Task<bool> CanSignAsync(KeyId keyId, CancellationToken cancellationToken)
+    {
+        ReadOnlyMemory<byte>? key = await _secrets.GetAsync(keyId.Tenant, keyId.SecretName, cancellationToken).ConfigureAwait(false);
+        return key is { Length: >= MinimumKeyLength };
+    }
+
     private async Task<(ReadOnlyMemory<byte> Key, EnvelopeRejection? Rejection)> ReadKeyAsync(
         Envelope envelope, KeyId keyId, CancellationToken cancellationToken)
     {

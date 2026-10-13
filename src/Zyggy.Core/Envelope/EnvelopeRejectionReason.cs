@@ -32,4 +32,7 @@ public enum EnvelopeRejectionReason
 
     /// <summary><c>invalid_signature</c>: <c>sig</c> is malformed or does not match the canonical form.</summary>
     InvalidSignature,
+
+    /// <summary><c>wrong_recipient</c>: <c>to</c> is not the receiver's machine (§4 "Signature", deliverable 04).</summary>
+    WrongRecipient,
 }

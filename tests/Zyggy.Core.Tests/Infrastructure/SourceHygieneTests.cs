@@ -195,6 +195,88 @@ public sealed partial class SourceHygieneTests
         text.Should().NotContainAny("IProcessRunner", "System.Diagnostics.Process");
     }
 
+    [Theory]
+    [InlineData("tenants/")]
+    [InlineData("nodes/")]
+    [InlineData("jobs/")]
+    [InlineData("reports/")]
+    [InlineData("context/")]
+    [InlineData("archive/")]
+    [InlineData("registry/")]
+    [InlineData("PROTOCOL.md")]
+    public void Src_BusPathLiterals_OnlyInBusPaths(string literal)
+    {
+        // Arrange: spec 04 AC-2 — a bus path is built in one place: the folder word in code (comments stripped), right after
+        // an opening quote or a `/`. The memory repository has its own layout (`Memory/MemoryPaths`, used by the dream), so
+        // `src/Zyggy.Core/Memory/` and `src/Zyggy.Core/Dream/` are outside this rule.
+        const string Allowed = "src/Zyggy.Core/Bus/BusPaths.cs";
+        var pattern = new Regex("[\"/]" + Regex.Escape(literal), RegexOptions.None, TimeSpan.FromSeconds(5));
+
+        // Act
+        var holders = SourceFiles()
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .Where(f => !f.StartsWith("src/Zyggy.Core/Memory/", StringComparison.Ordinal) && !f.StartsWith("src/Zyggy.Core/Dream/", StringComparison.Ordinal))
+            .Where(f => pattern.IsMatch(CommentLine().Replace(File.ReadAllText(Path.Combine(RepoRoot(), f)), string.Empty)))
+            .ToList();
+
+        // Assert
+        holders.Should().BeSubsetOf([Allowed]);
+    }
+
+    [Theory]
+    [InlineData("api.github.com")]
+    [InlineData("github.com")]
+    [InlineData("x-ratelimit")]
+    [InlineData("x-poll-interval")]
+    public void Src_GitHubLiterals_OnlyInGitHubBusProvider(string literal)
+    {
+        // Arrange: spec 04 AC-2 — only the GitHub implementation of IBusProvider knows GitHub (the file arrives in Step 4)
+        const string Allowed = "src/Zyggy.Core/Bus/GitHubBusProvider.cs";
+
+        // Act
+        var holders = SourceFiles()
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .Where(f => File.ReadAllText(Path.Combine(RepoRoot(), f)).Contains(literal, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        // Assert
+        holders.Should().BeSubsetOf([Allowed]);
+    }
+
+    [Fact]
+    public void Src_Bus_NeverDisablesProxy()
+    {
+        // Act: spec 04 AC-2/AC-11 — the bus honours the system proxy (§5 item 7); the product's UseProxy = false pattern must not leak in
+        var offenders = BusSourceFiles().Where(f => DisabledProxy().IsMatch(File.ReadAllText(Path.Combine(RepoRoot(), f)))).ToList();
+
+        // Assert
+        offenders.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Src_Bus_NoClockOrStaticState()
+    {
+        // Act: spec 04 AC-2 — the clock is injected (TimeProvider) and nothing under Bus/ or Configuration/ holds static mutable state
+        var offenders = BusSourceFiles().Where(f =>
+        {
+            var text = File.ReadAllText(Path.Combine(RepoRoot(), f));
+            return text.Contains("DateTime.UtcNow", StringComparison.Ordinal)
+                || text.Contains("DateTimeOffset.UtcNow", StringComparison.Ordinal)
+                || text.Contains("TimeProvider.System", StringComparison.Ordinal)
+                || StaticMutableField().IsMatch(text);
+        }).ToList();
+
+        // Assert
+        BusSourceFiles().Should().NotBeEmpty();
+        offenders.Should().BeEmpty();
+    }
+
+    private static List<string> BusSourceFiles() =>
+        SourceFiles()
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .Where(f => f.StartsWith("src/Zyggy.Core/Bus/", StringComparison.Ordinal) || f.StartsWith("src/Zyggy.Core/Configuration/", StringComparison.Ordinal))
+            .ToList();
+
     private static List<string> SourceFiles() =>
         Directory.EnumerateFiles(Path.Combine(RepoRoot(), "src"), "*.cs", SearchOption.AllDirectories)
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
@@ -218,4 +300,14 @@ public sealed partial class SourceHygieneTests
 
     [GeneratedRegex(@"\bModelContextProtocol\.")]
     private static partial Regex McpSdk();
+
+    [GeneratedRegex(@"UseProxy\s*=\s*false")]
+    private static partial Regex DisabledProxy();
+
+    [GeneratedRegex(@"^\s*//.*$", RegexOptions.Multiline)]
+    private static partial Regex CommentLine();
+
+    // A static field that is neither readonly nor const: `static Type name;` or `static Type name = …;` (methods have a `(`).
+    [GeneratedRegex(@"^\s*(?:public|private|internal|protected)?\s*static\s+(?!readonly\b|const\b|class\b|partial\b|async\b)[^(=;{]*\s\w+\s*(?:=(?!>)|;)", RegexOptions.Multiline)]
+    private static partial Regex StaticMutableField();
 }

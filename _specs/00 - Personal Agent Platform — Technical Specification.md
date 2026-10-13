@@ -184,7 +184,7 @@ Timestamps are RFC 3339 date-times written as `YYYY-MM-DDTHH:MM:SSZ` (UTC, whole
 
 - `sig` = `hmac-sha256:` followed by the HMAC-SHA256 digest, as 64 lowercase hexadecimal characters, over the canonical form: front matter with `sig` removed, keys sorted, YAML re-serialised with `\n` line endings, then `\n---\n`, then the body byte-for-byte (normative details below). A receiver accepts the digest in either case and treats any other algorithm prefix as an invalid signature.
 - Shared secret per `key_id`, where `key_id` = `<tenant>/<n>`; keys never cross tenants. Stored in each machine's secret store (§8). Rotation: add `<tenant>/2`, accept both for 7 days, drop `<tenant>/1`.
-- A receiver rejects (moves to `jobs/rejected/` with a `reports/` entry `status: rejected`) any envelope with a missing, unknown or invalid signature, with `tenant` different from its own tenant (which, because `BusPaths` only ever reads the receiver's own prefix, is also the `<org>` of the path the file sits in), with a `key_id` whose tenant part differs from `tenant`, or with `to` not equal to its own machine name. The tenant check runs before the signature check, so a key from another tenant is never even looked up (built in deliverable 03).
+- A receiver rejects (moves to `jobs/rejected/`) any envelope with a missing, unknown or invalid signature, with `tenant` different from its own tenant (which, because `BusPaths` only ever reads the receiver's own prefix, is also the `<org>` of the path the file sits in), with a `key_id` whose tenant part differs from `tenant`, or with `to` not equal to its own machine name. The tenant check runs before the signature check, so a key from another tenant is never even looked up (built in deliverable 03). The move is accompanied, in the same commit, by a `reports/` entry `status: rejected` whose `in_reply_to` is the rejected file's name (its ULID), whose `to` is the rejected file's `from`, and whose `reason` is the rejection reason: `malformed`, `tenant_mismatch`, `schema_unsupported`, `key_id_tenant_mismatch`, `missing_field`, `invalid_field`, `missing_signature`, `unknown_key`, `invalid_signature` or `wrong_recipient` (`to` not the receiver). When the file's `from` cannot be read, the move alone records the rejection and no report is written (deliverable 04).
 
 **Canonical form, normative details.** The file is read as bytes: an optional UTF-8 BOM is skipped; the file starts with `---` and a line break; the front matter ends at the first following line that is exactly `---`; the body is every byte after that line's break, unchanged (line endings, a missing final newline and further `---` lines included; may be empty; must be valid UTF-8). The front matter is one YAML 1.2 document whose root is a mapping with unique string keys and whose values are scalars, sequences or mappings, recursively; anchors, aliases, merge keys, explicit tags, directives and a second document are rejected as malformed; comments are not data and are dropped. The canonical form re-emits that mapping without the top-level `sig` key: keys in ordinal order at every level; mappings in block style with two-space indentation; sequences in flow style (`[a, b]`) when every item is a scalar, block style otherwise, `[]` when empty; every scalar as its parsed text, plain when YAML allows it in that position, otherwise single-quoted, otherwise double-quoted (the empty string is `''`); lines terminated by `\n`, no line folding, UTF-8 without BOM; then `---\n`; then the body bytes. For a file written by `agentbus` the canonical form is therefore the file minus its first line and its `sig:` line. A writer signs the bytes it emits and never edits them afterwards; any later field change (for example the sweep's `attempt`) is followed by re-signing.
 
@@ -193,7 +193,7 @@ Timestamps are RFC 3339 date-times written as `YYYY-MM-DDTHH:MM:SSZ` (UTC, whole
 | From | To | Actor | Git operation |
 | --- | --- | --- | --- |
 | (none) | `jobs/<id>.md` | sender | add + commit + push |
-| `jobs/` | `jobs/claimed/` | target node | `git mv` + commit + push; push rejected → the §5 retry rule (pull --rebase, up to 3 attempts with jitter); still rejected → leave the job unclaimed and skip until the next poll |
+| `jobs/` | `jobs/claimed/` | target node | `git mv` + commit + push; push rejected → the §5 retry rule (pull --rebase, up to 3 attempts with jitter); still rejected → the claim stays a local, unpushed commit on the node and is pushed with the node's next write (§5) |
 | `jobs/claimed/` | `reports/<ulid>.md` + job deleted | target node | add report (fresh ULID file name, `in_reply_to` = job id), `git rm` job, commit, push |
 | `jobs/claimed/` older than `timeout_minutes` + 15 min | `jobs/` | Central (hourly sweep) | `git mv` back, `attempt: n+1`; after 3 attempts → report `status: failed` |
 | `reports/`, `context/` older than 14 days | `archive/YYYY-MM/` (same tenant prefix) | Central | `git mv` |
@@ -235,7 +235,7 @@ One transport everywhere: GitHub as ledger (git) and as doorbell (conditional RE
 1. `GET https://api.github.com/repos/{owner}/agent-bus/commits?sha=main&per_page=1` with headers `Authorization: Bearer <PAT>`, `If-None-Match: <etag>`, `User-Agent: agentbus/<version>`.
 2. `304` → sleep and repeat. `200` → store the new ETag, run `git pull --rebase`, process `tenants/<my tenant>/nodes/<me>/jobs/`, then continue. Commits touching other machines' folders or other tenants' subtrees wake the poller like any other commit but produce no work.
 3. Interval: 10 s inside `work_hours`, 60 s outside; jitter ±2 s; one in-flight request at a time.
-4. On HTTP 403/429 or `x-ratelimit-remaining < 100`: back off to 120 s until the reset time in `x-ratelimit-reset`.
+4. On HTTP 403/429 or `x-ratelimit-remaining < 100`: back off until the later of 120 s from now, the reset time in `x-ratelimit-reset` and `retry-after`. When a response carries `x-poll-interval`, the next interval is at least that many seconds. Conditional requests answered `304` do not count against GitHub's primary limit; all personal access tokens of one account share that limit.
 5. On network error: exponential back-off 10 s → 5 min, then keep polling; log once per state change, not per attempt.
 6. Safety net: unconditional `git fetch` + compare `origin/main` every 15 min regardless of ETag state.
 7. Proxy: `HttpClient` uses system proxy (`HTTPS_PROXY` / WinHTTP); git uses its own `http.proxy` config. Both must be set on the work laptop.
@@ -244,7 +244,7 @@ One transport everywhere: GitHub as ledger (git) and as doorbell (conditional RE
 
 - Shell out to the system `git` (`Process`), never LibGit2Sharp. Authentication via the machine's configured deploy key (SSH, port 22) or the PAT via credential helper (HTTPS, port 443); the code never handles credentials itself. Which of the two a machine uses is measured in P0 (`agentbus probe reach`) and recorded per machine in the decision record; the work laptop is expected to need HTTPS because corporate proxies typically pass only 443.
 - Commit identity per machine: `agentbus (<machine>) <machine>@agentbus.local`.
-- Every write sequence is: `pull --rebase` → local change → `commit -m "<tenant> <type> <id> <from>→<to>"` → `push`. On push rejection: `pull --rebase`, retry at most 3 times with 1–3 s jitter, then leave the change uncommitted and log an error; the next poll retries.
+- Every write sequence is: `pull --rebase` → local change → `commit -m "<tenant> <action> <id> <from>→<to>"` → `push`, where `<action>` is `job` (a submission), `claim`, `report`, `reject` or `context`. On push rejection: `pull --rebase`, retry at most 3 times with 1–3 s jitter, then leave the commit local and unpushed with a clean working copy and log an error once; the next write sequence rebases and pushes it together with its own change.
 - The working copy is never left dirty across iterations: on start-up, `git status --porcelain` non-empty → `git stash` to a named stash, log a warning.
 
 **Direct fast path (optional, home laptop only)**
@@ -501,7 +501,7 @@ AgentBus.sln
 - Tenant checks are enforced in `Zyggy.Core`, not in callers: `EnvelopeParser` rejects an envelope whose `tenant` differs from the subtree it was read from, `BusRepository` refuses a move across tenant prefixes, `ISecretStore` lookups are tenant-scoped, and the Hub resolves its `Principal` once per connection and passes it down.
 - `EnvelopeSigner.Canonicalize` is the single source of truth for the signing input; it has golden-file tests (`tests/golden/*.md` + expected signature).
 - The poller is a pure state machine (`PollState` record: etag, interval, backoffUntil) with the HTTP call injected; tests drive it with a fake clock.
-- `JobRunner` never throws to the loop: every failure becomes a report with a `reason` code from a closed enum (`unknown_project`, `unknown_agent`, `locked`, `timeout`, `dlp_filter`, `claude_error`, `git_error`, `schema_unsupported`, `budget_exceeded`). Tenant mismatches and signature failures are rejections at parse time (§4) and never reach the runner.
+- `JobRunner` never throws to the loop: every `failed` or `timeout` report carries a `reason` code from a closed enum (`unknown_project`, `unknown_agent`, `locked`, `timeout`, `dlp_filter`, `claude_error`, `git_error`, `schema_unsupported`, `budget_exceeded`). Tenant mismatches, signature failures and mis-addressed envelopes are rejections at parse time (§4) and never reach the runner; a `rejected` report carries one of the §4 rejection reasons instead.
 - No static mutable state; everything through DI. Five seams are interfaces from the first commit, each with one implementation in v1: \`IBusProvider\` (GitHub), \`IModelRunner\` (Claude Code CLI), \`ISecretStore\` (per OS), \`INotifier\` (Telegram), \`IPolicySource\` (the machine's \`node.json\`; a signed \`policy.yaml\` on the bus is a §14 item). No code outside the implementation may reference GitHub, \`claude\`, Telegram or a secret store directly.
 - Publish: `dotnet publish -c Release -r win-x64 --self-contained -p:PublishSingleFile=true` and `linux-x64`; artifacts named `agentbus-node`, `agentbus`, `agentbus-hub`.
 
@@ -520,18 +520,20 @@ Each machine has one `node.json`; secrets are never in it.
   "user": "geoffrey",                    // principal for the local Hub / hub --proxy (§7); required on central
   "machine": "home-laptop",
   "role": "node",                        // node | central
-  "bus": { "remote": "git@github.com:gvandiest/agent-bus.git", "owner": "gvandiest", "repo": "agent-bus", "branch": "main", "localPath": "C:/agents/bus" },
+  "signWith": "geoffrey/1",                // the key id this machine signs with (§4 rotation, §11 rotate-hmac.md)
+  "bus": { "remote": "https://github.com/zyggy-org/zyggy-bus.git", "owner": "zyggy-org", "repo": "zyggy-bus", "branch": "main", "localPath": "C:/agents/bus" },   // Central: "remote": "git@github.com-zyggy-bus:zyggy-org/zyggy-bus.git"
   "poll": { "activeSeconds": 10, "idleSeconds": 60, "safetyFetchMinutes": 15 },
   "workHours": { "timezone": "Europe/Brussels", "days": ["Mon","Tue","Wed","Thu","Fri"], "from": "08:00", "to": "19:00" },
   "devRoots": ["C:/src", "C:/work"],
   "maxConcurrentJobs": 2,
   "claude": { "path": "claude", "maxTurns": 60, "defaultTimeoutMinutes": 30, "defaultAllowedTools": ["Read", "Grep", "Glob"] },
   "agentCore": { "path": "C:/agents/agent-core", "pinnedSha": "abc123" },
-  "dlp": { "enabled": false }              // true on the work laptop; may also override the §6 patterns and limits
+  "dlp": { "enabled": false },             // true on the work laptop; may also override the §6 patterns and limits
+  "secrets": { "root": null }              // FileSecretStore root during P0 (§8); null = the per-OS default
 }
 ```
 
-The node refuses to start when `tenant` is missing or when the bus checkout has no `tenants/<tenant>/` directory; it never falls back to a default tenant. Central additionally requires `user` and the memory directory `memory/<tenant>/<user>/`.
+The node refuses to start when `tenant` is missing or when the bus checkout has no `tenants/<tenant>/` directory; it never falls back to a default tenant. Central additionally requires `user` and the memory directory `memory/<tenant>/<user>/`. The probe verbs of deliverable 04 read `tenant`, `machine`, `signWith`, `bus`, `poll` and `secrets`; every other key belongs to the Node service (07). A key that names a secret (`pat`, `token`, `hmac`, `secret`, `password`) is refused: secrets are never in `node.json`.
 
 **Central (Linux VM or container)**
 

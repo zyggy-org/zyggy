@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+
 using Zyggy.Core.Processes;
 
 namespace Zyggy.Core.Git;
@@ -11,6 +13,9 @@ internal sealed record GitClientOptions
 
     /// <summary>Environment additions for every git process; <c>GIT_TERMINAL_PROMPT=0</c> is always added.</summary>
     public IReadOnlyDictionary<string, string?> Environment { get; init; } = new Dictionary<string, string?>();
+
+    /// <summary>When set, every <c>commit</c> is prefixed <c>-c user.name=… -c user.email=…</c> (deliverable 04); null keeps the repository's own identity (28's call sites).</summary>
+    public GitIdentity? Identity { get; init; }
 }
 
 /// <summary>The outcome of one git command.</summary>
@@ -51,10 +56,47 @@ internal sealed class GitClient(IProcessRunner processes, GitClientOptions optio
         RunAsync(repository, ["rm", "--", .. paths], null, cancellationToken);
 
     public Task<GitResult> CommitOnlyAsync(string repository, string message, IReadOnlyList<string> paths, CancellationToken cancellationToken) =>
-        RunAsync(repository, ["commit", "--only", "-F", "-", "--", .. paths], message, cancellationToken);
+        RunAsync(repository, [.. IdentityArguments(), "commit", "--only", "-F", "-", "--", .. paths], message, cancellationToken);
+
+    /// <summary>One logical move (§4 state machine: <c>git mv</c>, never copy + delete).</summary>
+    public Task<GitResult> MoveAsync(string repository, string from, string to, CancellationToken cancellationToken) =>
+        RunAsync(repository, ["mv", "--", from, to], null, cancellationToken);
+
+    /// <summary>Parks a dirty working copy under a named stash (§5 start-up rule).</summary>
+    public Task<GitResult> StashPushAsync(string repository, string message, CancellationToken cancellationToken) =>
+        RunAsync(repository, ["stash", "push", "--include-untracked", "-m", message], null, cancellationToken);
+
+    /// <summary>Reachability check of a remote branch through git itself (the proxy, TLS backend and credential helper are git's); <paramref name="environment"/> adds e.g. <c>GIT_SSH_COMMAND</c>.</summary>
+    public Task<GitResult> LsRemoteAsync(string repository, Uri url, string branch, IReadOnlyDictionary<string, string?> environment, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(url);
+        return RunAsync(repository, ["ls-remote", "--exit-code", url.ToString(), "refs/heads/" + branch], null, environment, cancellationToken);
+    }
+
+    /// <summary>Authenticates against the remote's receive side without writing anything (<c>push --dry-run</c>).</summary>
+    public Task<GitResult> PushDryRunAsync(string repository, Uri url, string refspec, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(url);
+        return RunAsync(repository, ["push", "--dry-run", url.ToString(), refspec], null, cancellationToken);
+    }
+
+    /// <summary>Unstages a path without touching the working copy (<c>rm --cached</c>); used to undo a failed write's <c>add</c> (deliverable 04).</summary>
+    public Task<GitResult> UnstageAsync(string repository, string path, CancellationToken cancellationToken) =>
+        RunAsync(repository, ["rm", "--cached", "--quiet", "--", path], null, cancellationToken);
+
+    /// <summary>The value of a git configuration key, or <see langword="null"/> when unset.</summary>
+    public async Task<string?> ConfigGetAsync(string repository, string key, CancellationToken cancellationToken)
+    {
+        var result = await RunAsync(repository, ["config", "--get", key], null, cancellationToken).ConfigureAwait(false);
+        return result.Succeeded && result.Stdout.Trim() is { Length: > 0 } value ? value : null;
+    }
 
     public Task<GitResult> PushAsync(string repository, string branch, CancellationToken cancellationToken) =>
         RunAsync(repository, ["push", "origin", "HEAD:" + branch], null, cancellationToken);
+
+    /// <summary>Step 1 of the §5 write sequence: <c>pull --rebase origin &lt;branch&gt;</c> (deliverable 04).</summary>
+    public Task<GitResult> PullRebaseAsync(string repository, string branch, CancellationToken cancellationToken) =>
+        RunAsync(repository, ["pull", "--rebase", "origin", branch], null, cancellationToken);
 
     public async Task<string?> RevParseAsync(string repository, string revision, CancellationToken cancellationToken)
     {
@@ -103,21 +145,36 @@ internal sealed class GitClient(IProcessRunner processes, GitClientOptions optio
     }
 
     /// <summary>Runs one git command; a command that hits <c>index.lock</c> is retried three times with a two-second back-off.</summary>
-    public async Task<GitResult> RunAsync(string repository, IReadOnlyList<string> arguments, string? standardInput, CancellationToken cancellationToken)
+    public Task<GitResult> RunAsync(string repository, IReadOnlyList<string> arguments, string? standardInput, CancellationToken cancellationToken) =>
+        RunAsync(repository, arguments, standardInput, null, cancellationToken);
+
+    /// <summary>Runs one git command with extra environment entries merged over the options'; the same index.lock retry.</summary>
+    public async Task<GitResult> RunAsync(string repository, IReadOnlyList<string> arguments, string? standardInput, IReadOnlyDictionary<string, string?>? environment, CancellationToken cancellationToken)
     {
-        var result = await RunOnceAsync(repository, arguments, standardInput, cancellationToken).ConfigureAwait(false);
+        var result = await RunOnceAsync(repository, arguments, standardInput, environment, cancellationToken).ConfigureAwait(false);
         for (var retry = 0; retry < 3 && !result.Succeeded && result.Stderr.Contains("index.lock", StringComparison.Ordinal); retry++)
         {
             await Task.Delay(TimeSpan.FromSeconds(2), Clock, cancellationToken).ConfigureAwait(false);
-            result = await RunOnceAsync(repository, arguments, standardInput, cancellationToken).ConfigureAwait(false);
+            result = await RunOnceAsync(repository, arguments, standardInput, environment, cancellationToken).ConfigureAwait(false);
         }
 
         return result;
     }
 
-    private async Task<GitResult> RunOnceAsync(string repository, IReadOnlyList<string> arguments, string? standardInput, CancellationToken cancellationToken)
+    private IEnumerable<string> IdentityArguments() =>
+        options.Identity is { } identity
+            ? ["-c", "user.name=" + identity.Name, "-c", "user.email=" + identity.Email]
+            : [];
+
+    private async Task<GitResult> RunOnceAsync(string repository, IReadOnlyList<string> arguments, string? standardInput, IReadOnlyDictionary<string, string?>? extra, CancellationToken cancellationToken)
     {
-        var environment = new Dictionary<string, string?>(options.Environment) { ["GIT_TERMINAL_PROMPT"] = "0" };
+        var environment = new Dictionary<string, string?>(options.Environment);
+        foreach (var entry in extra ?? ReadOnlyDictionary<string, string?>.Empty)
+        {
+            environment[entry.Key] = entry.Value;
+        }
+
+        environment["GIT_TERMINAL_PROMPT"] = "0";
         var spec = new ProcessSpec(options.Executable, arguments, repository)
         {
             Environment = environment,

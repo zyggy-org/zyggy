@@ -421,6 +421,101 @@ public sealed class EnvelopeParserTests
         envelope.FrontMatter.Entries["x_extra"].Should().Be(new FrontMatterScalar("value"));
     }
 
+    [Fact]
+    public void PeekFrom_SignedGoldenJob_ReturnsCentral()
+    {
+        // Act: spec 04 ex-OQ10 — the sender of a file is read leniently so a rejection report can be addressed
+        MachineName? from = EnvelopeParser.PeekFrom(Golden.Md("job"));
+
+        // Assert
+        from.Should().Be(MachineName.Parse("central"));
+    }
+
+    [Fact]
+    public void PeekFrom_TamperedSignature_StillReturnsFrom()
+    {
+        // Act
+        MachineName? from = EnvelopeParser.PeekFrom(Job.WithValue("sig", "hmac-sha256:" + new string('0', 64)).ToBytes());
+
+        // Assert
+        from.Should().Be(MachineName.Parse("central"));
+    }
+
+    [Fact]
+    public void PeekFrom_ForeignTenantAndSchema2_StillReturnsFrom()
+    {
+        // Act
+        MachineName? from = EnvelopeParser.PeekFrom(Job.WithValue("tenant", "globex").WithValue("key_id", "globex/1").WithValue("schema", "2").ToBytes());
+
+        // Assert
+        from.Should().Be(MachineName.Parse("central"));
+    }
+
+    [Fact]
+    public void PeekFrom_FromNotALabel_ReturnsNull()
+    {
+        // Act
+        MachineName? from = EnvelopeParser.PeekFrom(Job.WithValue("from", "Not-A-Label").ToBytes());
+
+        // Assert
+        from.Should().BeNull();
+    }
+
+    [Fact]
+    public void PeekFrom_NoFrontMatter_ReturnsNull()
+    {
+        // Act
+        MachineName? from = EnvelopeParser.PeekFrom(Utf8("just a text file\nfrom: central\n"));
+
+        // Assert
+        from.Should().BeNull();
+    }
+
+    [Fact]
+    public void PeekFrom_FromMissing_ReturnsNull()
+    {
+        // Act
+        MachineName? from = EnvelopeParser.PeekFrom(Job.WithoutKey("from").ToBytes());
+
+        // Assert
+        from.Should().BeNull();
+    }
+
+    [Fact]
+    public void PeekFrom_FromNotAScalar_ReturnsNull()
+    {
+        // Act
+        MachineName? from = EnvelopeParser.PeekFrom(Job.WithoutKey("from").WithLine("from: [central]").ToBytes());
+
+        // Assert
+        from.Should().BeNull();
+    }
+
+    [Fact]
+    public void PeekFrom_RandomBytes_ReturnsNullWithoutThrowing()
+    {
+        // Arrange: deterministic noise, including bytes that are not UTF-8 and a lone opening delimiter
+        var random = new Random(4);
+        var samples = new List<byte[]>();
+        for (int i = 0; i < 50; i++)
+        {
+            byte[] bytes = new byte[random.Next(0, 300)];
+            random.NextBytes(bytes);
+            samples.Add(bytes);
+        }
+
+        samples.Add(Utf8("---\n"));
+        samples.Add(Utf8("---\nfrom: central"));
+        samples.Add([0xEF, 0xBB, 0xBF]);
+        samples.Add([]);
+
+        // Act
+        var results = samples.Select(bytes => EnvelopeParser.PeekFrom(bytes)).ToList();
+
+        // Assert
+        results.Should().OnlyContain(r => r == null);
+    }
+
     private static byte[] Utf8(string text) => Encoding.UTF8.GetBytes(text);
 
     private static Model Accept(byte[] file)

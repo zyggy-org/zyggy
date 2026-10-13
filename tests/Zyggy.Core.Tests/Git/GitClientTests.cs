@@ -64,6 +64,95 @@ public sealed class GitClientTests
     }
 
     [Fact]
+    public async Task PullRebaseAsync_BuildsSpecArguments()
+    {
+        // Act: spec 04 §5 write sequence step 1
+        var result = await Client().PullRebaseAsync(Repo, "main", TestContext.Current.CancellationToken);
+
+        // Assert
+        result.Succeeded.Should().BeTrue();
+        var call = _processes.Calls.Should().ContainSingle().Subject;
+        call.FileName.Should().Be("git");
+        call.Arguments.Should().Equal("pull", "--rebase", "origin", "main");
+        call.Environment.Should().Contain("GIT_TERMINAL_PROMPT", "0");
+    }
+
+    [Fact]
+    public async Task NewMembers_BuildExactArgumentVectors()
+    {
+        // Arrange: spec 04 AC-12
+        var ct = TestContext.Current.CancellationToken;
+        var url = new Uri("https://example.invalid/acme-org/acme-bus.git");
+        var client = Client();
+
+        // Act
+        await client.MoveAsync(Repo, "a/jobs/X.md", "a/jobs/claimed/X.md", ct);
+        await client.PullRebaseAsync(Repo, "main", ct);
+        await client.StashPushAsync(Repo, "zyggy-home-laptop-20260930T100000Z", ct);
+        await client.LsRemoteAsync(Repo, url, "main", new Dictionary<string, string?> { ["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes" }, ct);
+        await client.PushDryRunAsync(Repo, url, "HEAD:refs/heads/main", ct);
+        await client.ConfigGetAsync(Repo, "http.proxy", ct);
+
+        // Assert
+        _processes.Calls.Select(c => string.Join(' ', c.Arguments)).Should().Equal(
+            "mv -- a/jobs/X.md a/jobs/claimed/X.md",
+            "pull --rebase origin main",
+            "stash push --include-untracked -m zyggy-home-laptop-20260930T100000Z",
+            "ls-remote --exit-code https://example.invalid/acme-org/acme-bus.git refs/heads/main",
+            "push --dry-run https://example.invalid/acme-org/acme-bus.git HEAD:refs/heads/main",
+            "config --get http.proxy");
+        _processes.Calls[3].Environment.Should().Contain("GIT_SSH_COMMAND", "ssh -o BatchMode=yes").And.Contain("GIT_TERMINAL_PROMPT", "0");
+        _processes.Calls.Should().AllSatisfy(c => c.FileName.Should().Be("git"));
+    }
+
+    [Fact]
+    public async Task CommitOnlyAsync_WithIdentity_PrefixesUserConfig()
+    {
+        // Arrange
+        var client = new GitClient(_processes, new GitClientOptions { Identity = new GitIdentity("zyggy (home-laptop)", "home-laptop@zyggy.org") }, new FakeTimeProvider());
+
+        // Act
+        await client.CommitOnlyAsync(Repo, "acme claim X central→home-laptop", ["a", "b"], TestContext.Current.CancellationToken);
+
+        // Assert
+        _processes.Calls.Single().Arguments.Should().Equal(
+            "-c", "user.name=zyggy (home-laptop)", "-c", "user.email=home-laptop@zyggy.org", "commit", "--only", "-F", "-", "--", "a", "b");
+    }
+
+    [Fact]
+    public async Task CommitOnlyAsync_WithoutIdentity_Unchanged()
+    {
+        // Act: 28's call sites keep today's vector byte for byte
+        await Client().CommitOnlyAsync(Repo, "m", ["a"], TestContext.Current.CancellationToken);
+
+        // Assert
+        _processes.Calls.Single().Arguments.Should().Equal("commit", "--only", "-F", "-", "--", "a");
+    }
+
+    [Fact]
+    public async Task UnstageAsync_RmCachedQuiet()
+    {
+        // Act
+        await Client().UnstageAsync(Repo, "a/reports/X.md", TestContext.Current.CancellationToken);
+
+        // Assert
+        _processes.Calls.Single().Arguments.Should().Equal("rm", "--cached", "--quiet", "--", "a/reports/X.md");
+    }
+
+    [Fact]
+    public async Task ConfigGetAsync_Unset_ReturnsNull()
+    {
+        // Arrange
+        _processes.On("config", RecordingProcessRunner.Fail(1, ""));
+
+        // Act
+        var value = await Client().ConfigGetAsync(Repo, "http.proxy", TestContext.Current.CancellationToken);
+
+        // Assert
+        value.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Push_OriginHeadToBranch()
     {
         // Act
