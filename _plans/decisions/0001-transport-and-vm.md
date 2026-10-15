@@ -37,7 +37,74 @@ Fallback if auth does not survive: `claude setup-token` (one-year token) deliver
 
 ## Transport A through the corporate proxy (deliverable 04)
 
-- [ ] `api.github.com` polling with a bearer PAT — Central / home laptop / work laptop
-- [ ] `git fetch` / `pull` over HTTPS — Central / home laptop / work laptop
-- [ ] `git push` over HTTPS with a PAT via credential helper — Central / home laptop / work laptop
-- [ ] SSH on port 22 (expected blocked on the work laptop)
+- [x] `api.github.com` polling with a bearer PAT — **Central ok 2026-10-14** / **home laptop ok 2026-10-14** / **work laptop ok 2026-10-13**
+- [x] `git fetch` / `pull` over HTTPS — Central n/a (SSH deploy key: `ssh` row ok 2026-10-14) / **home laptop ok 2026-10-14** / **work laptop ok 2026-10-13**
+- [x] `git push` over HTTPS with a PAT via credential helper — Central n/a (pushes over SSH with the deploy key, `ssh` row ok 2026-10-14) / **home laptop ok 2026-10-14** / **work laptop ok 2026-10-13** (seed push + dry-run push)
+- [x] SSH on port 22 (expected blocked on the work laptop) — **work laptop: blocked (timed out) 2026-10-13**, as expected; **home laptop: reached, auth failed (no key) 2026-10-14**; **Central: ok 2026-10-14 (deploy key)**
+
+### Bus repository (deliverable 04, Step 16)
+
+| Item | Evidence |
+|------|----------|
+| Repository | `zyggy-org/zyggy-bus`, private, created 2026-10-13 07:06 UTC by the owner |
+| Seed | commit `f1088f8` "geoffrey seed", pushed **from the work laptop over HTTPS** through the corporate proxy with the owner's own account (Git Credential Manager) on 2026-10-13 — the first live evidence that the HTTPS push path works there; `git ls-tree -r --name-only main` (19 blobs) equals the `BusPaths` layout for `central`, `home-laptop`, `work-laptop` plus `PROTOCOL.md`, `registry/.gitkeep`, `archive/.gitkeep` and `.gitattributes` (`* -text`, the CRLF measure) — verified from the agent's laptop with the GitHub API |
+| Ruleset | **not available**: rulesets (and classic branch protection) on a private repository need GitHub Pro / Team; the API answers `403 Upgrade to GitHub Pro or make this repository public`. Force-push and deletion on `main` are therefore not blocked in P0 — owner decision pending (accept and record, or upgrade the organisation plan); the bus never force-pushes by construction (`GitClient` has no force path, tested) |
+| Tokens | Central: `central-bus` (Contents read-only, only `zyggy-bus`) 2026-10-14; work laptop: `zyggy-bus2026101301` (resource owner `zyggy-org`, only `zyggy-bus`, metadata read + Contents read and write, expires 2027-10-14) — an earlier token was pasted on a command line and deleted; home laptop: fine-grained token, resource owner `zyggy-org`, only `zyggy-bus`, Contents read and write, valid 366 days (created 2026-10-14, expires about 2027-10-15); `central-bus` (Contents read-only) pending |
+| Deploy key | Central, 2026-10-14, owner-run as `zyggy`: `~/.ssh/zyggy_zyggy-bus_ed25519` (ed25519, comment `zyggy central bus`; home `/srv/agent/home`), added to `zyggy-bus` as deploy key `central` with write access (fingerprint `SHA256:L8Q1cx7qAyg+2frhOeToo6Tqa9pdaeTa1kmMryzdhMA`); `~/.ssh/config` host alias `github.com-zyggy-bus`; `ssh -T git@github.com-zyggy-bus` → "Hi zyggy-org/zyggy-bus! You've successfully authenticated" |
+
+### Reachability matrix (deliverable 04, Step 18, AC-33)
+
+| Machine | api (conditional GET with PAT) | fetch (HTTPS) | push (HTTPS, dry run, PAT via Git Credential Manager) | ssh (22) | proxy | when |
+|---------|------|-------|------|-----|-------|------|
+| work laptop (inside the corporate network, on a working day; `http.sslBackend schannel`, `credential.helper manager`, `http.proxy` none — **no settings pass needed**) | **ok** (answered) — second run; the first run (~08:30 UTC) was `unreachable (http 404)` because the fine-grained token `zyggy-bus2026101301` had been saved without a repository and without the Contents permission (GitHub drops the repository selection when no permission is set); fixed on the token page, no settings changed on the laptop | **ok** | **ok** (dry-run push authenticated through Git Credential Manager) | unreachable (connection timed out — port 22 blocked, as expected, O19) | api via `<corporate-proxy>:8080` (the system proxy, host redacted here); git rows `none` (git reaches GitHub through the same proxy without an explicit `http.proxy` setting) | 2026-10-13 ~09:00 UTC, second run; exit 0 |
+| home laptop (home network, Git Credential Manager) | **ok** (answered) | **ok** | **ok** (dry-run push authenticated through Git Credential Manager) | auth failed (port 22 reached; no SSH key for GitHub on this machine — reachability proven, SSH is not this machine's auth path) | `none` on every row | 2026-10-14, first run; exit 0 |
+| Central (Azure VM, unrestricted egress; user `zyggy`; no git `http.proxy`, `http.sslBackend`, `credential.helper`) | **ok** (answered) | auth failed (by design: no HTTPS credential on Central — "could not read Username … terminal prompts disabled") | auth failed (same; Central writes over SSH) | **ok** (deploy key via the `github.com-zyggy-bus` alias — Central's read **and** write path) | `none` on every row | 2026-10-14; exit 6, expected for this machine (the HTTPS rows are not its auth path) |
+
+Facts (ex-OQ6): conditional `304` answers do not count against GitHub's primary rate limit; all personal access tokens of one account share its 5,000 requests per hour.
+
+### Probe series from Central (deliverable 04, Steps 19–20, AC-34/AC-35)
+
+Sender-side round trip (O21: measured on Central's clock only, from the push of the job to the observation of the verified report); poll interval 10 s ± 2 s on both sides; one `zyggy probe send --count 10 --interval 10 --timeout 90` per laptop with a fresh ledger (`--ledger ~/probe-official.jsonl`), 2026-10-15 ~07:00–07:14 UTC, the work laptop inside the corporate network on a working day.
+
+| to | count | done | rejected | timeout | push_failed | p50 ms | p95 ms | min ms | max ms |
+|----|------:|-----:|---------:|--------:|------------:|-------:|-------:|-------:|-------:|
+| home-laptop | 10 | 10 | 0 | 0 | 0 | 13865 | 24602 | 10868 | 24602 |
+| work-laptop | 10 | 10 | 0 | 0 | 0 | 22377 | 24898 | 13473 | 24898 |
+
+Evidence on the bus (`zyggy-org/zyggy-bus`, checked from the agent's laptop with the GitHub API): 60 commits `geoffrey job … central→<laptop>` (author `zyggy (central)`), `geoffrey claim … central→<laptop>` and `geoffrey report … <laptop>→central` (authors `zyggy (home-laptop)` / `zyggy (work-laptop)`), the last at 07:13:34 UTC. The work laptop's claims and reports were pushed over HTTPS through the corporate proxy by the listener — the O19 path under real load. Reading: the round trip is dominated by the two 10 s poll waits (receiver, then sender); the work laptop adds about 8 s at the median for the proxy. The latency target is for 05 to propose (O21).
+
+Before the official series (recorded for the findings, not for the numbers):
+- A first attempt on 2026-10-14/15 showed `invalid_signature` on the work laptop: the three machines did not yet hold the same signing key (one was entered on Central after a suspended input, and the owner had been unsure whether a binary checksum had been used as the key). Fixed by one fresh key from `openssl rand -hex 32`, set on all three machines, fingerprints compared. The rejections behaved as specified: the probes moved to `jobs/rejected/` with rejection reports; the sender, which could not verify those reports, recorded `timeout` (finding F3).
+- Probes sent from a laptop to itself while its own listener ran in the same checkout produced `pull failed: Cannot rebase onto multiple branches` (two processes running `pull --rebase` at once). Nothing was lost; the next round recovered (finding F2).
+
+### Per-machine auth path actually used (input for 05's §5 table, A7)
+
+| Machine | Polling (API) | git read | git write | SSH 22 |
+|---------|---------------|----------|-----------|--------|
+| Central | fine-grained PAT, Contents read-only, from the file secret store | SSH, write deploy key `central` via alias `github.com-zyggy-bus` | same deploy key over SSH | ok |
+| Home laptop | own fine-grained PAT (Contents read and write) from the file store | HTTPS, Git Credential Manager | HTTPS, same PAT via Git Credential Manager | reached, no key (not used) |
+| Work laptop | own fine-grained PAT (Contents read and write) from the file store, through the system proxy with default credentials | HTTPS through the corporate proxy, Git Credential Manager, `http.sslBackend schannel` (already the laptop's setting; no settings pass needed) | HTTPS through the proxy, same PAT via Git Credential Manager | blocked (timed out), as expected |
+
+Fallback line: transport A passed every required check on all three machines, the work laptop included, so candidate C (an HTTPS API served by Central) is **not** needed; 05 records this and does not evaluate C.
+
+### Findings for 05 and later deliverables
+
+- **F1 — Branch protection unavailable**: rulesets and classic branch protection on a private repository need a paid GitHub plan (API `403`). Force-push and deletion on `main` are not blocked; the bus code has no force path (tested). **Owner decision 2026-10-15: risk accepted** ("branch protection: I accept the risk") — mitigations: no force path in the bus code (tested), signatures stop injected jobs, every clone holds the full history to restore `main`; to be revisited before real jobs or work content travel over the bus (option then: GitHub Team for `zyggy-org`). This deviates from the founding spec's §5 "`main` protection" sentence; 05 records it.
+- **F2 — One checkout, two writers**: a machine that sends and listens at the same time runs two git writers in one checkout and can collide (`Cannot rebase onto multiple branches`). The Node service (07) must serialise git operations on the checkout; a cross-process lock plus a one-time pull retry is built as patch 0.8.1 (owner decision 2026-10-15: "patch").
+- **F3 — Unverifiable report recorded as timeout**: when the receiver's rejection report cannot be verified by the sender (different keys), `probe send` records `timeout`, which hides a key mismatch in the stats. Better: an `unverified_report` outcome.
+- **F4 — Windows line endings**: Git for Windows defaults to `core.autocrlf=true`, which rewrites envelope bytes; the bus repository carries `.gitattributes` (`* -text`) and each Windows checkout sets `core.autocrlf false`.
+- **F5 — Owner-facing secret entry**: the value-on-the-next-line form of `zyggy secret set` caused three slips (a token on the command line, Ctrl+Z on Linux, a key confused with a checksum). Candidates for the secret-store deliverable (09): `--generate`, a key fingerprint check, and a hidden prompt when stdin is a terminal.
+
+### Release and install (deliverable 04, Step 17)
+
+| Item | Evidence |
+|------|----------|
+| Code | zyggy PR #15 (`de60bb8`, merged by the owner 2026-10-13); PR CI 38304597405 green (Linux job); tag `v0.8.0` on `de60bb8`; tag CI 38350564512 green on `windows-latest` and `ubuntu-latest` incl. publish + smoke (AC-38) |
+| Release | `v0.8.0` with `zyggy` (linux-x64) SHA-256 `9c579b2f285192c8d86d3837adf3b31e4957f05fba3b29506b7dbce9d2dc28ce`, `zyggy.exe` (win-x64) SHA-256 `e7e3a690a0e63eedd0c4c5cb090709c60ccb21adfd00a9cb84c0e438160f4e6f`, `SHA256SUMS`; `sha256sum -c` on the laptop and on the VM |
+| Central | 2026-10-13 05:2x UTC via `az vm run-command`: the VM downloaded the public assets itself, `/opt/zyggy/0.8.0/zyggy` root:root 755, `/usr/local/bin/zyggy` → 0.8.0, `zyggy --version` = `0.8.0+de60bb8…`; as `zyggy`: `probe --help` exit 0, `dream status` unchanged (nightly 01:01 UTC committed `8ddd63c`, pushed); `claude-remote` and `zyggy-m365-mcp` active, `NRestarts=0`, no unit restarted; timers unchanged (dream 2026-10-14 01:00 UTC, brief 04:30 UTC) |
+| Instance pin | `instance/zyggy.json` → 0.8.0 + the linux-x64 hash: commit `1604971`, PR zyggy-geoffrey#2 opened 2026-10-13, **still open on 2026-10-14**; consequence: the 2026-10-14 01:00 UTC dream refused as designed — unit log `zyggy: configuration error: version_mismatch: version 0.8.0 is not the pinned 0.7.0`, exit 3, no model call, no commit (one night of filing missed). The owner merged PR #2 on 2026-10-14; checkout pulled on Central to `6f725cc` (`instance/zyggy.json` = 0.8.0 + hash `9c579b2f…`); catch-up `zyggy dream request` → 2026-10-14 06:32 UTC on-demand run committed `73f8311` (1 batch, 30 lines, 0 quarantined, 1.02 USD), pushed |
+| Laptops | work laptop 2026-10-13: `zyggy --version` = `0.8.0+de60bb8…` (owner-reported); home laptop 2026-10-14: `zyggy --version` = `0.8.0+de60bb8…` (owner-reported) |
+
+### First nightly dream on the new binary (deliverable 04, Step 21)
+
+2026-10-15 01:01 UTC, Central, `zyggy` 0.8.0 (pin 0.8.0): `nightly committed: batches 1, lines 32, quarantined 0, remaining 0, cost 0.24 USD, commit b1f5c59, pushed yes`; the unit log has no error line; the offload unit ran after it (`Result=success`, 01:01:12 UTC). The additive git-client change runs on the live dream and offload paths without a change in behaviour. (The night before, 2026-10-14, the dream refused with `version_mismatch` because the pin was merged late; caught up the same morning with an on-demand run, `73f8311`.)

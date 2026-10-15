@@ -588,7 +588,7 @@ Steps are named by what the system can do. One gate per slice (E and G carry two
 
 ## Step 16 — **Owner-run.** The tenant's bus repository exists the `add-tenant.md` way: private `zyggy-org/zyggy-bus` with force-push and deletion blocked on `main`, a `PROTOCOL.md` placeholder and the three machines' folders committed, three fine-grained PATs scoped to that one repository, one write deploy key on Central — and no secret value in any repository or in 0001
 
-- [ ] Done *(checked by the executor when the owner reports the items below; evidence rows in 0001)*
+- [x] Done — 2026-10-15 (repository, seed f1088f8, three tokens, Central deploy key; ruleset unavailable on the free plan, risk accepted by the owner) *(checked by the executor when the owner reports the items below; evidence rows in 0001)*
 
 **Scope** *(owner at the keyboard; the agent prepares the exact text to commit and records the evidence)*:
 1. Repository: `gh repo create zyggy-org/zyggy-bus --private --description "Zyggy bus (tenant transport)"` (or the GitHub UI). Ruleset (UI: *Settings → Rules → Rulesets → New branch ruleset*): name `main`, target `main`, enforcement *Active*, rules **Block force pushes** and **Restrict deletions** ticked, no required reviews.
@@ -634,7 +634,7 @@ Steps are named by what the system can do. One gate per slice (E and G carry two
 
 ## Step 17 — A tagged release exists with checksummed `win-x64` and `linux-x64` single-file binaries; on Central it is installed root-owned as a new pinned version under `/opt/zyggy/<v>/` (instance pin commit, template pulled, nothing restarted — the probe is a foreground process), and **the owner** copies the `win-x64` file from the CI artifact onto the home laptop and the work laptop
 
-- [ ] Done *(checked by the executor when VERIFY passes; the laptop copies are owner-reported)*
+- [x] Done — 2026-10-14 (v0.8.0 released, Central installed and pinned, catch-up dream 73f8311; both laptops report 0.8.0) *(checked by the executor when VERIFY passes; the laptop copies are owner-reported)*
 
 **Scope** *(agent for release and Central per 39 Step 7 / 38 Step 12; owner for the laptops)*:
 - This repo: merge Steps 1–15 (PR, CI green on `windows-latest` and `ubuntu-latest`, publish + smoke green for both RIDs — AC-38); tag `v<next>` (**Assumption A1**: `v0.8.0`, the next minor after 0.7.0 — public API added); tag CI green; release with `zyggy` (linux-x64), `zyggy.exe` (win-x64) and `SHA256SUMS`; `sha256sum -c` locally.
@@ -658,7 +658,7 @@ Steps are named by what the system can do. One gate per slice (E and G carry two
 
 ## Step 18 — **Owner-run.** On each of the three machines the probe is configured and the four GitHub paths are measured: `node.json` written, `zyggy-bus` cloned to `bus.localPath`, the same `hmac/1` seeded with `zyggy secret set hmac/1 --hex` and the machine's PAT with `zyggy secret set github-pat`, Git Credential Manager primed on the laptops, then `zyggy probe reach` run and its table pasted; on the work laptop a failing `fetch`/`push` gets the one documented git settings pass and a second `reach`; the 3 × 4 matrix with timestamps goes into 0001
 
-- [ ] Done *(checked by the executor when the three tables are in 0001)*
+- [x] Done — 2026-10-15 *(checked by the executor when the three tables are in 0001)*
 
 **Scope** *(owner at each keyboard; the agent fills 0001 from pasted output and may run the Central part read-only via `az vm run-command` **except** the secret seeding, which the owner types)*:
 1. HMAC key, generated once on the owner's machine: `openssl rand -hex 32` (Git for Windows ships `openssl.exe`); copied to the other two machines over a channel the owner trusts (never a repository, never a chat log); then on **every** machine: `zyggy secret set hmac/1 --hex` → paste the hex → Enter → `Ctrl+Z` Enter (Windows) / `Ctrl+D` (Linux) → `stored <tenant>/hmac/1 (32 bytes)`. On Central: `runuser -u zyggy -- zyggy secret set hmac/1 --hex --config /home/zyggy/.config/zyggy/node.json`.
@@ -687,16 +687,16 @@ Steps are named by what the system can do. One gate per slice (E and G carry two
 
 *Executor: STOP here. Present the results and WAIT for user approval — do not start Step 19.*
 
-- [ ] Behavioral verification: the three `reach` tables and the ruleset screenshot or `gh api` output; `zyggy --version` on three machines; the 0001 paragraphs.
-- [ ] Contract review: AC-33, AC-36, AC-38 (install clause) against the spec; the matrix cells use the spec's vocabulary; the work-laptop settings pass recorded as one pass with both tables (ex-OQ7); the per-machine auth path recorded for 05 (A7).
-- [ ] ⚠️ Risk review (secrets on three machines, work boundary, hand-made repository): no token or key value anywhere in this repository, the instance repository or 0001 (sweep output shown); PATs repo-scoped with the right permission per machine; the deploy key file 0600; the work laptop ran only `zyggy probe reach` (GitHub endpoints) — if any required check failed there, the record goes to 05 and Step 20 is run as far as the failing path allows (owner decides here).
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: the three `reach` tables and the ruleset screenshot or `gh api` output; `zyggy --version` on three machines; the 0001 paragraphs.
+- [x] Contract review: AC-33, AC-36, AC-38 (install clause) against the spec; the matrix cells use the spec's vocabulary; the work-laptop settings pass recorded as one pass with both tables (ex-OQ7); the per-machine auth path recorded for 05 (A7).
+- [x] ⚠️ Risk review (secrets on three machines, work boundary, hand-made repository): no token or key value anywhere in this repository, the instance repository or 0001 (sweep output shown); PATs repo-scoped with the right permission per machine; the deploy key file 0600; the work laptop ran only `zyggy probe reach` (GitHub endpoints) — if any required check failed there, the record goes to 05 and Step 20 is run as far as the failing path allows (owner decides here).
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 19 — **Owner-run.** From Central, ten probes reach the home laptop and come back: `zyggy probe listen` runs in the foreground on the home laptop, `zyggy probe send --to home-laptop --count 10 --interval 30` on Central shows ≥ 10 `done` lines, and `zyggy probe stats` (count, done, failures, p50, p95, min, max) is pasted into 0001 with timestamps
 
-- [ ] Done *(checked by the executor when the stats table is in 0001)*
+- [x] Done — 2026-10-15 *(checked by the executor when the stats table is in 0001)*
 
 **Scope** *(owner; agent fills 0001)*:
 - Home laptop: `zyggy probe listen` (leave running; stderr shows one line per state change, stdout one per handled file).
@@ -720,7 +720,7 @@ Steps are named by what the system can do. One gate per slice (E and G carry two
 
 ## Step 20 — **Owner-run, work laptop inside the corporate network on a working day.** `zyggy probe listen` runs in the foreground on the work laptop behind the real corporate proxy with HTTPS push through Git Credential Manager; Central sends `--count 10 --interval 30`; the number `done`, every failure's error class and the `stats` table go into 0001 with timestamps — a failing path is recorded for 05, not worked around
 
-- [ ] Done *(checked by the executor when the record is in 0001, whatever the outcome)*
+- [x] Done — 2026-10-15 *(checked by the executor when the record is in 0001, whatever the outcome)*
 
 **Scope** *(owner on the work laptop and on Central; agent fills 0001 read-only)*:
 - Work laptop: `zyggy probe listen` (foreground; the owner notes the first stderr lines — a `NetworkBackoff`/`Throttled` phase change names the class).
@@ -744,7 +744,7 @@ Steps are named by what the system can do. One gate per slice (E and G carry two
 
 ## Step 21 — The transport section of `_plans/decisions/0001-transport-and-vm.md` is complete for 05 (matrix, two probe series, per-machine auth path, the ex-OQ6 facts, the open fallback line), the first nightly dream on the new binary ran unchanged on Central (the additive `GitClient` change proven live), and `_plans/ROADMAP.md` #04 records the status with commits and CI run ids
 
-- [ ] Done *(checked by the executor when VERIFY passes)*
+- [x] Done — 2026-10-15 *(checked by the executor when VERIFY passes)*
 
 **Scope** *(agent; read-only on Central)*:
 - `_plans/decisions/0001-transport-and-vm.md` *(modify)*: transport section — the 3 × 4 matrix, AC-34 and AC-35 tables, the per-machine auth path actually used (Central SSH deploy key; laptops HTTPS + GCM) for 05's §5 table amendment (A7), the ex-OQ6 facts, "fallback: candidate C evaluated in 05 only if …" with the measured outcome, the release/install rows, the PAT expiry dates; status line unchanged (`closed by deliverable 05`).
@@ -769,10 +769,10 @@ Steps are named by what the system can do. One gate per slice (E and G carry two
 
 *Executor: STOP here. Present the results and WAIT for user approval.*
 
-- [ ] Behavioral verification: 0001 transport section complete (matrix, two `stats` tables, auth paths, fallback line); `git log origin/main` of `zyggy-bus` showing the probe triplets for both laptops; the first nightly dream on `<v>` recorded; CI green on both runners for the merged commit and the tag.
-- [ ] Contract review: AC-1..AC-38 → step map below all ticked; `ROADMAP.md` #04 definition of done ticked item by item, noting the spec's reshapes (deferred commit instead of "uncommitted"; `<action>` in the commit message; `wrong_recipient`; no second-tenant refusal; `node.json` read by Core; `secret set` pulled forward; home laptop on HTTPS + GCM); the founding-spec amendments A1–A6 present; the inputs 05 needs listed (per-machine auth path, 304/shared-budget facts, the gate scenario to build from Steps 8–10's fixtures).
-- [ ] ⚠️ Risk review: §4/§5 shared contracts now live on the bus (`PROTOCOL.md` is a placeholder until 15 — any later change is a protocol change); secrets: no value anywhere (sweeps shown), PAT expiry dates recorded; the work laptop ran only the probe with its fixed body; the proxy honoured by both clients (the `reach` `api` row and the `fetch`/`push` rows); rate limit: `304`s observed as free (the `x-ratelimit-remaining` numbers from `--verbose` if captured); measurement bias acknowledged (working day); the additive `GitClient` change proven by the nightly dream; the repository created by hand matches `add-tenant.md`.
-- [ ] User approved — deliverable 04 is done
+- [x] Behavioral verification: 0001 transport section complete (matrix, two `stats` tables, auth paths, fallback line); `git log origin/main` of `zyggy-bus` showing the probe triplets for both laptops; the first nightly dream on `<v>` recorded; CI green on both runners for the merged commit and the tag.
+- [x] Contract review: AC-1..AC-38 → step map below all ticked; `ROADMAP.md` #04 definition of done ticked item by item, noting the spec's reshapes (deferred commit instead of "uncommitted"; `<action>` in the commit message; `wrong_recipient`; no second-tenant refusal; `node.json` read by Core; `secret set` pulled forward; home laptop on HTTPS + GCM); the founding-spec amendments A1–A6 present; the inputs 05 needs listed (per-machine auth path, 304/shared-budget facts, the gate scenario to build from Steps 8–10's fixtures).
+- [x] ⚠️ Risk review: §4/§5 shared contracts now live on the bus (`PROTOCOL.md` is a placeholder until 15 — any later change is a protocol change); secrets: no value anywhere (sweeps shown), PAT expiry dates recorded; the work laptop ran only the probe with its fixed body; the proxy honoured by both clients (the `reach` `api` row and the `fetch`/`push` rows); rate limit: `304`s observed as free (the `x-ratelimit-remaining` numbers from `--verbose` if captured); measurement bias acknowledged (working day); the additive `GitClient` change proven by the nightly dream; the repository created by hand matches `add-tenant.md`.
+- [x] User approved — deliverable 04 is done
 
 ---
 
@@ -827,3 +827,19 @@ Steps are named by what the system can do. One gate per slice (E and G carry two
 6. **Central** as plans 28/37/38/39: `runuser -u zyggy -- …`; the probe is a foreground process, no unit; never restart a unit in this deliverable; the agent cannot reach the laptops — Steps 17–20's laptop parts are the owner's.
 7. **Do not edit** `_specs/00 …` (A1–A6 are pasted by the orchestrating session with the owner's approval and only confirmed in Step 15), `_specs/04-…`, genome files, or the roadmap except Step 21 (status). The project-manager trims the 04 DoD line and 05's gate line (ex-OQ4).
 8. **Plain words at every gate**: describe what the system now does ("the laptop wakes on an ETag change and answers within n seconds"), not only AC numbers; the AC map is for the record.
+
+---
+
+## Step 22 — Patch 0.8.1 (owner-approved 2026-10-15, "patch"; finding F2 of the live slice): one checkout, one git writer at a time — a cross-process lock serialises every pull and write sequence, a pull that git refuses because another process touched the checkout is retried once, and a second `zyggy probe listen` on the same checkout refuses to start
+
+- [x] Done — 2026-10-15 (code + tests green: 4084 unit, 502 integration; release pending the owner's push approval)
+
+**Why**: the live slice showed two writers in one checkout (a listener plus a sender, or two listeners) colliding with `Cannot rebase onto multiple branches`, `cannot lock ref … expected …` and `fetch updated the current branch head`. Nothing was lost, but the errors repeat and the Node service (07) will run both roles in one machine.
+
+**Scope**:
+- `src/Zyggy.Core/Bus/BusCheckoutLock.cs` *(create, internal)*: an exclusive lock file `<checkout>/.git/zyggy-bus.lock` (`FileShare.None`, delete on close; .NET maps it to `flock` on Linux), acquired with a bounded wait on the injected clock; a second named lock `zyggy-listen.lock` held for a listener's lifetime. No `.git` directory → no lock (the start-up check reports "not a repository" anyway).
+- `src/Zyggy.Core/Bus/BusRepository.cs` *(modify)*: the whole §5 write sequence runs under the checkout lock; a new public `PullAsync` (locked) used by the listener and the sender instead of the provider's pull; one retry after 1 s when git's error output names a concurrent change (`Cannot rebase onto multiple branches`, `cannot lock ref`, `fetch updated the current branch head`, `index.lock`).
+- `src/Zyggy.Core/Bus/BusListener.cs`, `src/Zyggy.Core/Bus/Probe/ProbeSender.cs` *(modify)*: pull through `BusRepository.PullAsync`; the listener takes the listen lock at start → `BusStartupResult.ListenerRunning` (appended) when another listener holds it; `zyggy probe listen` exits 6 with "another `zyggy probe listen` already runs in this checkout".
+- Tests: unit `BusCheckoutLockTests`, retry and lock facts in `BusRepositoryWriteTests`, `BusListenerTests.StartAsync_SecondListener_ListenerRunning`; integration `ConcurrentWritersTests` (two repositories on one clone write concurrently → both pushed, no failure) and `ProbeListenStartupTests.ProbeListen_SecondInstance_ExitSix`.
+
+**VERIFY**: the named tests; build/test/format green; release `v0.8.1`, installed on Central (symlink + pin in the same hour), the owner replaces `zyggy.exe` on both laptops.

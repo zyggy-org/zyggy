@@ -303,6 +303,89 @@ public sealed class BusRepositoryWriteTests : IDisposable
         await _provider.DidNotReceive().PullAsync(Arg.Any<CancellationToken>());
     }
 
+    [Theory]
+    [InlineData("From https://example.invalid\nfatal: Cannot rebase onto multiple branches.")]
+    [InlineData("error: cannot lock ref 'refs/remotes/origin/main': is at f934 but expected 6196")]
+    [InlineData("warning: fetch updated the current branch head.")]
+    public async Task PullAsync_ConcurrentChange_RetriedOnceAfterOneSecond(string stderr)
+    {
+        // Arrange: patch 0.8.1 — git refused because another process touched the checkout
+        var ct = TestContext.Current.CancellationToken;
+        _provider.PullAsync(Arg.Any<CancellationToken>()).Returns(new BusSyncResult(false, stderr), new BusSyncResult(true, string.Empty));
+
+        // Act
+        Task<BusSyncResult> task = Repository().PullAsync(ct);
+        await Task.Delay(20, ct);
+        bool waiting = !task.IsCompleted;
+        _clock.Advance(TimeSpan.FromSeconds(1));
+        BusSyncResult result = await task.WaitAsync(TimeSpan.FromSeconds(5), ct);
+
+        // Assert
+        waiting.Should().BeTrue();
+        result.Succeeded.Should().BeTrue();
+        await _provider.Received(2).PullAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PullAsync_OtherFailure_NotRetried()
+    {
+        // Arrange
+        _provider.PullAsync(Arg.Any<CancellationToken>()).Returns(new BusSyncResult(false, "fatal: unable to access: Could not resolve host"));
+
+        // Act
+        BusSyncResult result = await Repository().PullAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        result.Succeeded.Should().BeFalse();
+        await _provider.Received(1).PullAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ClaimAsync_PullHitsConcurrentChange_RetriedAndPushed()
+    {
+        // Arrange: the write sequence's own first pull also gets the one retry
+        var ct = TestContext.Current.CancellationToken;
+        _provider.PullAsync(Arg.Any<CancellationToken>()).Returns(new BusSyncResult(false, "fatal: Cannot rebase onto multiple branches."), new BusSyncResult(true, string.Empty));
+        AcceptedJob job = await JobAsync(ct);
+
+        // Act
+        Task<WriteOutcome> task = Repository().ClaimAsync(job, ct);
+        for (int i = 0; i < 50 && !task.IsCompleted; i++)
+        {
+            _clock.Advance(TimeSpan.FromMilliseconds(500));
+            await Task.Delay(5, ct);
+        }
+
+        // Assert
+        (await task).Should().Be(new Pushed(1));
+    }
+
+    [Fact]
+    public async Task ClaimAsync_WriteLockHeldByAnotherProcess_WaitsThenWrites()
+    {
+        // Arrange: another writer holds the checkout lock; the claim waits for it instead of colliding
+        var ct = TestContext.Current.CancellationToken;
+        Directory.CreateDirectory(Path.Combine(_checkout.Root, ".git"));
+        AcceptedJob job = await JobAsync(ct);
+        IDisposable? other = await BusCheckoutLock.AcquireAsync(_checkout.Root, BusCheckoutLock.WriteLockName, TimeSpan.Zero, _clock, ct);
+
+        // Act
+        Task<WriteOutcome> task = Repository().ClaimAsync(job, ct);
+        _clock.Advance(TimeSpan.FromSeconds(1));
+        await Task.Delay(50, ct);
+        bool waited = !task.IsCompleted && _processes.Calls.Count == 0;
+        other!.Dispose();
+        for (int i = 0; i < 50 && !task.IsCompleted; i++)
+        {
+            _clock.Advance(TimeSpan.FromMilliseconds(500));
+            await Task.Delay(5, ct);
+        }
+
+        // Assert
+        waited.Should().BeTrue();
+        (await task).Should().Be(new Pushed(1));
+    }
+
     [Fact]
     public async Task SecretSweep_OverEveryRecordedSpecAndLog_Clean()
     {

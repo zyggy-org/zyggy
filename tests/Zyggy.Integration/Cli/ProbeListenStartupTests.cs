@@ -1,4 +1,7 @@
+using Microsoft.Extensions.DependencyInjection;
+
 using Zyggy.Core.Envelope;
+using Zyggy.Core.Secrets;
 using Zyggy.Core.Tenancy;
 using Zyggy.Integration.Infrastructure;
 
@@ -71,6 +74,42 @@ public sealed class ProbeListenStartupTests : IAsyncLifetime
         (await _bus.RunGitAsync(_bus.CloneDir, ["stash", "list"], ct)).Should().BeEmpty("nothing stashed");
         (await _bus.HeadShaAsync(ct)).Should().Be(headBefore);
         (File.Exists(fetchHead) ? File.GetLastWriteTimeUtc(fetchHead) : (DateTime?)null).Should().Be(fetchHeadBefore, "nothing pulled");
+    }
+
+    [Fact]
+    public async Task ProbeListen_SecondInstance_ExitSix()
+    {
+        // Arrange: patch 0.8.1 — a first listener holds the checkout's listen lock
+        var ct = TestContext.Current.CancellationToken;
+        string secrets = _scratch.File("secrets");
+        await using (ServiceProvider seed = new ServiceCollection().AddFileSecretStore(o => o.RootDirectory = secrets).BuildServiceProvider())
+        {
+            await seed.GetRequiredService<ISecretStore>().SetAsync(Acme, Zyggy.Core.Tests.Infrastructure.TestKeys.Acme1.SecretName, Zyggy.Core.Tests.Infrastructure.TestKeys.Secret1, ct);
+        }
+
+        string nodeJson = NodeJson.Write(_scratch.File("cfg"), Acme, HomeLaptop, KeyId.Parse("acme/1"), _bus.CloneDir, _bus.BareDir.Replace('\\', '/'), secrets);
+        var env = new Dictionary<string, string?> { ["ZYGGY_BUS_API_BASE"] = FakeGitHubApi.ClosedPortAddress(), ["GIT_CONFIG_GLOBAL"] = Path.Combine(_bus.RootDir, "gitconfig") };
+        using CapturedProcess first = ZyggyCli.StartCapturing(["probe", "listen", "--config", nodeJson], env, _scratch.Path);
+        try
+        {
+            for (int i = 0; i < 100 && !first.Stderr.Any(l => l.Contains("listening as", StringComparison.Ordinal)); i++)
+            {
+                await Task.Delay(100, ct);
+            }
+
+            first.Stderr.Should().Contain(l => l.Contains("listening as", StringComparison.Ordinal));
+
+            // Act
+            ZyggyRun second = await ZyggyCli.RunAsync(["probe", "listen", "--config", nodeJson], env, null, _scratch.Path, ct);
+
+            // Assert
+            second.ExitCode.Should().Be(6, second.Stderr);
+            second.Stderr.Should().Contain("another zyggy probe listen already runs in this checkout");
+        }
+        finally
+        {
+            await first.StopAsync(CancellationToken.None);
+        }
     }
 
     [Fact]
