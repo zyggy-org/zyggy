@@ -126,7 +126,7 @@ public sealed partial class ProbeSender
                 continue;
             }
 
-            BusSyncResult pull = await _provider.PullAsync(ct).ConfigureAwait(false);
+            BusSyncResult pull = await _bus.PullAsync(ct).ConfigureAwait(false);
             if (!pull.Succeeded)
             {
                 continue;

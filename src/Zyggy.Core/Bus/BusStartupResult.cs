@@ -23,4 +23,7 @@ public enum BusStartupResult
 
     /// <summary>The signing key this node writes with is absent from its secret store (spec 04 Assumption A4): run <c>zyggy secret set</c> first.</summary>
     KeyMissing,
+
+    /// <summary>Another listener already runs in this checkout (patch 0.8.1): one listener per checkout; nothing was touched.</summary>
+    ListenerRunning,
 }

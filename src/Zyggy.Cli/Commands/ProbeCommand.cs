@@ -89,13 +89,16 @@ internal static class ProbeCommand
             return checkout;
         }
 
-        BusListener listener = services.GetRequiredService<BusListener>();
+        using BusListener listener = services.GetRequiredService<BusListener>();
         BusStartupResult start = await listener.StartAsync(ct);
         switch (start)
         {
             case BusStartupResult.Clean:
             case BusStartupResult.Stashed:
                 break;
+            case BusStartupResult.ListenerRunning:
+                Console.Error.WriteLine("zyggy: another zyggy probe listen already runs in this checkout (" + configuration.Bus.LocalPath + "); stop it first");
+                return ExitCodes.Failed;
             case BusStartupResult.KeyMissing:
                 Console.Error.WriteLine($"zyggy: signing key {configuration.SignWith} is not in the secret store; run: zyggy secret set {configuration.SignWith.SecretName} --hex");
                 return ExitCodes.Failed;

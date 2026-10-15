@@ -10,7 +10,7 @@ namespace Zyggy.Core.Bus;
 /// for every inbox file verify → claim → handler → report, or reject. One request in flight at a time; one log line per
 /// state change and nothing on a silent tick (§11); every entry scoped with <c>tenant</c>, <c>machine</c> and <c>phase</c>.
 /// </summary>
-public sealed partial class BusListener
+public sealed partial class BusListener : IDisposable
 {
     private readonly IBusProvider _provider;
     private readonly BusRepository _bus;
@@ -21,6 +21,7 @@ public sealed partial class BusListener
     private readonly JobHandler _handler;
     private readonly ILogger<BusListener> _log;
     private bool _pullErrorLogged;
+    private IDisposable? _listenLock;
 
     /// <summary>Creates the listener.</summary>
     /// <param name="provider">The bus host seam.</param>
@@ -75,7 +76,13 @@ public sealed partial class BusListener
             return BusStartupResult.KeyMissing;
         }
 
-        BusSyncResult pull = await _provider.PullAsync(ct).ConfigureAwait(false);
+        _listenLock ??= await _bus.TryAcquireListenLockAsync(ct).ConfigureAwait(false);
+        if (_listenLock is null)
+        {
+            return BusStartupResult.ListenerRunning;
+        }
+
+        BusSyncResult pull = await _bus.PullAsync(ct).ConfigureAwait(false);
         if (!pull.Succeeded)
         {
             using IDisposable? scope = Scope("pull");
@@ -85,6 +92,13 @@ public sealed partial class BusListener
         await ProcessOnceAsync(ct).ConfigureAwait(false);
         State = PollState.Initial(_clock.GetUtcNow());
         return result;
+    }
+
+    /// <summary>Releases the one-listener-per-checkout lock (patch 0.8.1).</summary>
+    public void Dispose()
+    {
+        _listenLock?.Dispose();
+        _listenLock = null;
     }
 
     /// <summary>
@@ -175,7 +189,7 @@ public sealed partial class BusListener
 
                 using (Scope("pull"))
                 {
-                    BusSyncResult pull = await _provider.PullAsync(ct).ConfigureAwait(false);
+                    BusSyncResult pull = await _bus.PullAsync(ct).ConfigureAwait(false);
                     if (!pull.Succeeded)
                     {
                         if (!_pullErrorLogged)

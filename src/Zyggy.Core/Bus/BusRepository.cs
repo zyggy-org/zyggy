@@ -23,6 +23,9 @@ public sealed partial class BusRepository
 
     private const string EnvelopeExtension = ".md";
 
+    /// <summary>How long a write or pull waits for another process's checkout lock (one full write sequence incl. its push retries fits).</summary>
+    private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(60);
+
     private readonly GitClient _git;
     private readonly IBusProvider _provider;
     private readonly BusIdentity _me;
@@ -372,10 +375,50 @@ public sealed partial class BusRepository
         return reports;
     }
 
-    /// <summary>Runs the §5 write sequence: pull, change, one commit with the machine identity, push with the jittered retry rule.</summary>
-    private async Task<WriteOutcome> WriteAsync(string subject, IReadOnlyList<string> paths, Func<CancellationToken, Task<WriteFailed?>> change, CancellationToken ct)
+    /// <summary>
+    /// Brings the remote branch into the checkout under the checkout lock (patch 0.8.1): one writer at a time across
+    /// processes; a pull that git refused because another process touched the checkout is retried once after 1 s.
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Whether the pull succeeded, with git's redacted detail.</returns>
+    public async Task<BusSyncResult> PullAsync(CancellationToken ct)
+    {
+        using IDisposable? handle = await BusCheckoutLock.AcquireAsync(_checkoutRoot, BusCheckoutLock.WriteLockName, LockTimeout, _clock, ct).ConfigureAwait(false);
+        return handle is null
+            ? new BusSyncResult(false, "the bus checkout is busy: another zyggy process held its lock for " + LockTimeout.TotalSeconds.ToString("0", CultureInfo.InvariantCulture) + " s")
+            : await PullUnlockedAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Takes the one-listener-per-checkout lock without waiting (patch 0.8.1).</summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A handle to keep for the listener's lifetime, or <see langword="null"/> when another listener holds it.</returns>
+    public Task<IDisposable?> TryAcquireListenLockAsync(CancellationToken ct) =>
+        BusCheckoutLock.AcquireAsync(_checkoutRoot, BusCheckoutLock.ListenLockName, TimeSpan.Zero, _clock, ct);
+
+    private async Task<BusSyncResult> PullUnlockedAsync(CancellationToken ct)
     {
         BusSyncResult pull = await _provider.PullAsync(ct).ConfigureAwait(false);
+        if (pull.Succeeded || !BusCheckoutLock.IsConcurrentChange(pull.Detail))
+        {
+            return pull;
+        }
+
+        await Task.Delay(TimeSpan.FromSeconds(1), _clock, ct).ConfigureAwait(false);
+        return await _provider.PullAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Runs the §5 write sequence under the checkout lock: pull, change, one commit with the machine identity, push with the jittered retry rule.</summary>
+    private async Task<WriteOutcome> WriteAsync(string subject, IReadOnlyList<string> paths, Func<CancellationToken, Task<WriteFailed?>> change, CancellationToken ct)
+    {
+        using IDisposable? handle = await BusCheckoutLock.AcquireAsync(_checkoutRoot, BusCheckoutLock.WriteLockName, LockTimeout, _clock, ct).ConfigureAwait(false);
+        if (handle is null)
+        {
+            const string Busy = "the bus checkout is busy: another zyggy process held its lock";
+            LogWriteFailed(_me.Tenant.Value, _me.Machine.Value, subject, "lock", Busy);
+            return new WriteFailed("lock", Busy);
+        }
+
+        BusSyncResult pull = await PullUnlockedAsync(ct).ConfigureAwait(false);
         if (!pull.Succeeded)
         {
             LogWriteFailed(_me.Tenant.Value, _me.Machine.Value, subject, "pull", pull.Detail);
@@ -404,7 +447,7 @@ public sealed partial class BusRepository
         {
             TimeSpan delay = TimeSpan.FromSeconds(1) + TimeSpan.FromSeconds(2) * _jitter();
             await Task.Delay(delay, _clock, ct).ConfigureAwait(false);
-            await _provider.PullAsync(ct).ConfigureAwait(false);
+            await PullUnlockedAsync(ct).ConfigureAwait(false);
             push = await _provider.PushAsync(ct).ConfigureAwait(false);
             attempts++;
         }

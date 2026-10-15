@@ -116,6 +116,24 @@ public sealed class BusListenerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task StartAsync_SecondListener_ListenerRunning()
+    {
+        // Arrange: patch 0.8.1 — one listener per checkout
+        var ct = TestContext.Current.CancellationToken;
+        Directory.CreateDirectory(Path.Combine(_checkout.Root, ".git"));
+        BusListener first = Listener();
+        (await first.StartAsync(ct)).Should().Be(BusStartupResult.Clean);
+
+        // Act
+        BusStartupResult second = await Listener().StartAsync(ct);
+
+        // Assert
+        second.Should().Be(BusStartupResult.ListenerRunning);
+        first.Dispose();
+        (await Listener().StartAsync(ct)).Should().Be(BusStartupResult.Clean, "the lock is released when the first listener is disposed");
+    }
+
+    [Fact]
     public async Task StartAsync_Clean_StateIsInitialDueNow()
     {
         // Act
