@@ -79,7 +79,15 @@ public sealed class ConcurrentWritersTests : IAsyncLifetime
             {
                 if (round % 5 == 0)
                 {
-                    await _bus.AdvanceMainFromSenderAsync(CancellationToken.None);
+                    try
+                    {
+                        await _bus.AdvanceMainFromSenderAsync(CancellationToken.None);
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // The foreign push lost the race against the writer's push (the remote refused a stale ref);
+                        // a real machine would rebase and retry — here the next round simply tries again.
+                    }
                 }
 
                 pulls.Add(await p.PullAsync(CancellationToken.None));
