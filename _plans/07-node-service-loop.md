@@ -114,7 +114,7 @@ Never the real claude, never GitHub. Steps are named by what the system can do. 
 
 ## Step 2 — `node.json` tells the node when and how much it may run: `poll.safetyFetchMinutes`, `workHours` (`timezone` IANA, `days`, `from`/`to`), `maxConcurrentJobs` and `log.level` are read, defaulted and refused with the dotted key named; `WorkHours.Contains` evaluates in the zone's wall clock across DST on Windows and Linux under invariant globalization; `NodePolicy` carries `MaxConcurrentJobs` and `WorkHours`; `PollOptions.SafetyFetchInterval` exists
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Configuration/WorkHoursSettings.cs` *(create, public sealed record `WorkHoursSettings(string Timezone, IReadOnlyList<string> Days, string From, string To)`)*; `LogSettings.cs` *(create, public sealed record `LogSettings(string Level = "Information")` with `public LogLevel ToLogLevel()` — `Microsoft.Extensions.Logging.LogLevel` from `Logging.Abstractions`, already referenced)*; `PollSettings.cs` *(modify: `PollSettings(int ActiveSeconds = 10, int IdleSeconds = 60, int SafetyFetchMinutes = 15)`; `ToPollOptions()` sets `SafetyFetchInterval`)*; `NodeConfiguration.cs` *(modify, additive init properties: `WorkHoursSettings? WorkHours`, `int MaxConcurrentJobs = 2`, `LogSettings Log = new()`)*.
@@ -148,7 +148,7 @@ Never the real claude, never GitHub. Steps are named by what the system can do. 
 
 ## Step 3 — The dispatcher decides who may run now: `JobDispatcher.AdmitAsync` applies, in order, work hours (skipped by `priority: high`), a free slot under `MaxConcurrentJobs`, and "project not in flight here and `ProjectLock.IsHeld` false"; an admitted job holds a lease that counts in `JobsRunning` until disposed; a deferral is logged once per episode and the later admission once; `AddJobDispatcher()` registers the dispatcher, its `JobGate` and the `PollModeSelector` from the node's work hours
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Jobs/AdmissionDecision.cs` *(create)*: `public enum DeferralReason { OutsideWorkHours, NoSlot, ProjectBusy }`; `public abstract record AdmissionDecision` (private protected ctor); `public sealed record Admitted(IDisposable Lease) : AdmissionDecision` (A1 — the lease releases the slot and the project); `public sealed record Deferred(DeferralReason Reason) : AdmissionDecision`.

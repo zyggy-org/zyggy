@@ -16,7 +16,9 @@ internal sealed class NodeJsonPolicySource : IPolicySource
             claude.DefaultTimeoutMinutes,
             claude.MaxTurns,
             claude.MaxBudgetUsd,
-            [.. configuration.DevRoots]);
+            [.. configuration.DevRoots],
+            configuration.MaxConcurrentJobs,
+            WorkHours.FromSettings(configuration.WorkHours));
     }
 
     public Task<NodePolicy> GetAsync(CancellationToken ct)

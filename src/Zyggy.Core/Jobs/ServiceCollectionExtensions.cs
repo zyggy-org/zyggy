@@ -52,4 +52,26 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<JobHandler>(sp => sp.GetRequiredService<JobRunner>().RunAsync);
         return services;
     }
+
+    /// <summary>
+    /// Registers the singleton <see cref="JobDispatcher"/> (§6 admission rules), its rules as the listener's <see cref="JobGate"/>, and the
+    /// <see cref="PollModeSelector"/> derived from the node's <c>workHours</c> (spec 07, plan A6). Requires an <see cref="IPolicySource"/>
+    /// and, for the selector, a <see cref="NodeConfiguration"/> — resolving throws without them; registers <see cref="TimeProvider.System"/>
+    /// when no clock is registered. Called by the Node host only; the probe verbs keep admit-all and <see cref="PollMode.Active"/>.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns><paramref name="services"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is null.</exception>
+    public static IServiceCollection AddJobDispatcher(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton(sp => new JobDispatcher(
+            sp.GetRequiredService<IPolicySource>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetService<ILoggerFactory>()?.CreateLogger<JobDispatcher>() ?? NullLogger<JobDispatcher>.Instance));
+        services.AddSingleton<JobGate>(sp => sp.GetRequiredService<JobDispatcher>().AsGate());
+        services.AddSingleton<PollModeSelector>(sp => WorkHours.ModeSelector(WorkHours.FromSettings(sp.GetRequiredService<NodeConfiguration>().WorkHours)));
+        return services;
+    }
 }

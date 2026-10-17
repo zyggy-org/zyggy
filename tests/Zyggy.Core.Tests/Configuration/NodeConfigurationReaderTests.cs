@@ -53,8 +53,8 @@ public sealed class NodeConfigurationReaderTests : IDisposable
     [Fact]
     public void Read_UnknownKeys_Ignored()
     {
-        // Arrange: the Node service's keys
-        string json = Minimal.Replace("\"tenant\": \"acme\",", "\"tenant\": \"acme\", \"role\": \"node\", \"workHours\": { \"from\": \"08:00\" }, \"claude\": { \"path\": \"claude\" },", StringComparison.Ordinal);
+        // Arrange: the keys later deliverables read (role/user -> 11, agentCore -> 15, dlp -> 19); workHours is typed since 07
+        string json = Minimal.Replace("\"tenant\": \"acme\",", "\"tenant\": \"acme\", \"role\": \"node\", \"user\": \"someone\", \"agentCore\": { \"path\": \"/srv/core\" }, \"dlp\": { \"enabled\": false }, \"claude\": { \"path\": \"claude\" },", StringComparison.Ordinal);
 
         // Act
         NodeConfigurationResult result = Read(json);
@@ -354,6 +354,118 @@ public sealed class NodeConfigurationReaderTests : IDisposable
         result.Error.Should().Be(NodeConfigurationError.InvalidField);
         result.Field.Should().Be("nodeDir");
     }
+
+    [Fact]
+    public void Read_Section10Example_WorkHoursConcurrencySafetyFetchAndLogTyped()
+    {
+        // Arrange: spec 07 AC-1 — the §10 example's service keys
+        string json = WithTopLevel(Section10Keys).Replace("\"poll\": { \"activeSeconds\": 10, \"idleSeconds\": 60 }", "\"poll\": { \"activeSeconds\": 10, \"idleSeconds\": 60, \"safetyFetchMinutes\": 15 }", StringComparison.Ordinal);
+
+        // Act
+        NodeConfigurationResult result = Read(json);
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        NodeConfiguration cfg = result.Configuration!;
+        cfg.WorkHours.Should().BeEquivalentTo(new WorkHoursSettings("Europe/Brussels", ["Mon", "Tue", "Wed", "Thu", "Fri"], "08:00", "19:00"));
+        cfg.MaxConcurrentJobs.Should().Be(2);
+        cfg.Poll.SafetyFetchMinutes.Should().Be(15);
+        cfg.Log.Level.Should().Be("Information");
+    }
+
+    [Fact]
+    public void Read_NewKeysAbsent_Defaults()
+    {
+        // Act
+        NodeConfigurationResult result = Read(Minimal);
+
+        // Assert: spec 07 — absent workHours = always inside; 2 jobs; 15 min; Information
+        result.IsOk.Should().BeTrue(result.ToString());
+        NodeConfiguration cfg = result.Configuration!;
+        cfg.WorkHours.Should().BeNull();
+        cfg.MaxConcurrentJobs.Should().Be(2);
+        cfg.Poll.SafetyFetchMinutes.Should().Be(15);
+        cfg.Log.Should().Be(new LogSettings());
+    }
+
+    [Theory]
+    [InlineData("\"workHours\": { \"timezone\": \"Europe/Brussels\", \"days\": [\"Mon\"], \"from\": \"19:00\", \"to\": \"08:00\" },", "workHours.to")]
+    [InlineData("\"workHours\": { \"timezone\": \"Europe/Brussels\", \"days\": [\"Mon\"], \"from\": \"08:00\", \"to\": \"08:00\" },", "workHours.to")]
+    [InlineData("\"workHours\": { \"timezone\": \"Europe/Brussels\", \"days\": [\"Monday\"], \"from\": \"08:00\", \"to\": \"19:00\" },", "workHours.days[0]")]
+    [InlineData("\"workHours\": { \"timezone\": \"Europe/Brussels\", \"days\": [], \"from\": \"08:00\", \"to\": \"19:00\" },", "workHours.days")]
+    [InlineData("\"workHours\": { \"timezone\": \"Europe/Brussels\", \"days\": [\"Mon\", \"Mon\"], \"from\": \"08:00\", \"to\": \"19:00\" },", "workHours.days")]
+    [InlineData("\"workHours\": { \"timezone\": \"Mars/Olympus\", \"days\": [\"Mon\"], \"from\": \"08:00\", \"to\": \"19:00\" },", "workHours.timezone")]
+    [InlineData("\"workHours\": { \"timezone\": \"Europe/Brussels\", \"days\": [\"Mon\"], \"from\": \"8:00\", \"to\": \"19:00\" },", "workHours.from")]
+    [InlineData("\"workHours\": 5,", "workHours")]
+    [InlineData("\"maxConcurrentJobs\": 0,", "maxConcurrentJobs")]
+    [InlineData("\"log\": { \"level\": \"chatty\" },", "log.level")]
+    [InlineData("\"log\": \"Debug\",", "log")]
+    public void Read_NewKeysInvalid_InvalidFieldNamesKey(string insert, string field)
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel(insert));
+
+        // Assert
+        result.Error.Should().Be(NodeConfigurationError.InvalidField);
+        result.Field.Should().Be(field);
+    }
+
+    [Fact]
+    public void Read_WorkHoursTimezoneMissing_MissingFieldNamesKey()
+    {
+        // Act: present section, required part absent — the 04 rule for required keys
+        NodeConfigurationResult result = Read(WithTopLevel("\"workHours\": { \"days\": [\"Mon\"], \"from\": \"08:00\", \"to\": \"19:00\" },"));
+
+        // Assert
+        result.Error.Should().Be(NodeConfigurationError.MissingField);
+        result.Field.Should().Be("workHours.timezone");
+    }
+
+    [Fact]
+    public void Read_SafetyFetchMinutesZero_InvalidField()
+    {
+        // Act
+        NodeConfigurationResult result = Read(Minimal.Replace("\"idleSeconds\": 60", "\"idleSeconds\": 60, \"safetyFetchMinutes\": 0", StringComparison.Ordinal));
+
+        // Assert
+        result.Error.Should().Be(NodeConfigurationError.InvalidField);
+        result.Field.Should().Be("poll.safetyFetchMinutes");
+    }
+
+    [Fact]
+    public void Read_WorkHoursOvernight_Refused()
+    {
+        // Act: no overnight windows in v1
+        NodeConfigurationResult result = Read(WithTopLevel("\"workHours\": { \"timezone\": \"Europe/Brussels\", \"days\": [\"Mon\"], \"from\": \"22:00\", \"to\": \"06:00\" },"));
+
+        // Assert
+        result.Field.Should().Be("workHours.to");
+        result.Detail.Should().Be("to must be after from");
+    }
+
+    [Fact]
+    public void Read_TenantStillRequired_NoDefault()
+    {
+        // Act: the new keys present, the tenant absent
+        NodeConfigurationResult result = Read(WithTopLevel(Section10Keys).Replace("\"tenant\": \"acme\",", string.Empty, StringComparison.Ordinal));
+
+        // Assert
+        result.Error.Should().Be(NodeConfigurationError.MissingField);
+        result.Field.Should().Be("tenant");
+    }
+
+    [Fact]
+    public void Read_SignWithAbsent_StillOkForTheReader()
+    {
+        // Act: the host refuses a missing signWith (spec 07); the reader keeps it optional for `reach`
+        NodeConfigurationResult result = Read(WithTopLevel(Section10Keys).Replace("\"signWith\": \"acme/1\",", string.Empty, StringComparison.Ordinal));
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        result.Configuration!.SignWith.Should().BeNull();
+    }
+
+    private const string Section10Keys = "\"workHours\": { \"timezone\": \"Europe/Brussels\", \"days\": [\"Mon\",\"Tue\",\"Wed\",\"Thu\",\"Fri\"], \"from\": \"08:00\", \"to\": \"19:00\" }, \"maxConcurrentJobs\": 2, \"log\": { \"level\": \"Information\" },";
 
     private static string WithTopLevel(string insert) =>
         Minimal.Replace("\"tenant\": \"acme\",", "\"tenant\": \"acme\", " + insert, StringComparison.Ordinal);
