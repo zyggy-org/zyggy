@@ -97,7 +97,7 @@ public sealed partial class JobRunnerRoundTripTests : IAsyncLifetime
         ProjectLock.IsHeld(_project.Path).Should().BeFalse();
         File.Exists(ProjectLock.PathOf(_project.Path)).Should().BeFalse();
 
-        // The run's metrics last: red only while done.jsonl is the placeholder (no total_cost_usd, no usage) — plan 06 note 3.
+        // The run's metrics: present because done.jsonl is the real capture (total_cost_usd, usage) — plan 06 note 3.
         report.Report.CostUsd.Should().NotBeNull();
         report.Report.NumTurns.Should().NotBeNull();
         report.Report.InputTokens.Should().NotBeNull();

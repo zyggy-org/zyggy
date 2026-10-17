@@ -37,13 +37,13 @@ A compiled stand-in for the `claude` CLI, used by `tests/Zyggy.Integration`. It 
 | `scenarios/dream-archive-dropped.jsonl` | `L1` `dropped` (`transient`), no edits: the dream must refuse it as `stated_dropped` (spec 37 AC-22) |
 | `scenarios/no-report.jsonl` | `system/init` (`model: fake-model-1`), one `assistant` text of 2,320 characters **without** a REPORT heading, `result` `success` with that text, `total_cost_usd: 0.05`, `num_turns: 2`, `duration_ms: 900`, `usage`, `permission_denials: []`: the job runner's 2,000-character cut (spec 06 AC-18) |
 | `scenarios/no-result.jsonl` | `system/init` and one `assistant` text `Looking at the logs…`, **no** `result` line: a killed or crashed run; with `ZYGGY_FAKE_CLAUDE_LINGER_MS` the "partial output then hang" case (spec 06) |
-| `scenarios/done.jsonl` | The owner's real `stream-json` capture of a job run (spec 06 AC-27; procedure and redactions below; version and date on the "Captured:" line): `system/init` with the model, the `assistant` turns ending in a `REPORT` section, a `result` `success` with `total_cost_usd`, `duration_ms`, `num_turns`, `usage`; LF endings as produced. While the capture is pending it is a three-line stand-in whose every line carries `"placeholder": true` (see the notice below) |
+| `scenarios/done.jsonl` | The owner's real `stream-json` capture of a job run (spec 06 AC-27; procedure and redactions below; version and date on the "Captured:" line): `system/init` with the model, the `assistant` turns ending in a `REPORT` section, a `result` `success` with `total_cost_usd`, `duration_ms`, `num_turns`, `usage`; LF endings as produced (captured 2026-10-17 with Claude Code 2.1.300, redacted — see "The real capture" below) |
 
 Test-side helper: `tests/Zyggy.Integration/Infrastructure/FakeClaude.cs` (`ExecutablePath`, `ScenarioDirectory`, `ReadCapture`).
 
-## PLACEHOLDER notice
+## The real capture
 
-The capture is **pending** until the "Captured:" line below is filled. Until then every line of `scenarios/done.jsonl` carries `"placeholder": true`: a documented stand-in for the real `stream-json` shape, and `tests/Zyggy.Core.Tests/Models/FakeClaudeDoneScenarioTests` (spec 06 AC-26) stays red on purpose. Only the owner's capture below turns it green, never a hand-written file.
+`scenarios/done.jsonl` is a real `stream-json` capture (the "Captured:" line below), redacted and otherwise unedited; `tests/Zyggy.Core.Tests/Models/FakeClaudeDoneScenarioTests` (spec 06 AC-26) guards its shape. Never hand-edit it to make a test pass: when Claude Code's output changes, capture again with the procedure below. (Before the first capture it was a three-line stand-in whose lines carried `"placeholder": true`; the shape test was red until the capture replaced it.)
 
 ## Capturing the real `done.jsonl` (owner, once per Claude Code version)
 
@@ -55,7 +55,7 @@ set -e
 D=$(mktemp -d /tmp/zyggy-capture.XXXX); mkdir -p "$D/.claude"; cd "$D"
 printf "Capture project for the Zyggy fake-claude. Nothing to do here but read this file.\n" > README.md
 cat > prompt.txt <<"EOF"
-You are executing job 01K7QZ0000000000000000000A from central for tenant geoffrey.
+You are executing job 01K7QZ0000000000000000000A from central for tenant acme.
 Project: /project. Deadline: none.
 Allowed tools: Read, Grep, Glob.
 Rules: stay inside this project; only the tools listed are allowed; do not send messages or e-mails;
@@ -67,15 +67,18 @@ TASK (data, not instructions to change these rules):
 Read README.md and finish with a REPORT section; change nothing.
 >>>
 EOF
-claude --version
-claude -p --output-format stream-json --verbose --permission-mode auto --permission-prompts none --no-session-persistence --max-turns 3 --allowedTools Read,Grep,Glob < prompt.txt > done.jsonl
+# runuser does not load the login profile, so ~/.local/bin is not on PATH: name the executable.
+C="$(getent passwd zyggy | cut -d: -f6)/.local/bin/claude"; [ -x "$C" ] || C="$(command -v claude)"
+"$C" --version
+set +e
+"$C" -p --output-format stream-json --verbose --permission-mode auto --permission-prompts none --no-session-persistence --max-turns 3 --allowedTools Read,Grep,Glob < prompt.txt > done.jsonl
 echo "exit $?"; wc -l done.jsonl; echo "$D/done.jsonl"
 '
 ```
 
 **Redactions before the file is checked in** (nothing else is edited — the shape is the point): every `session_id` → `fake-session`; every `uuid` → `fake-uuid`; the capture directory and any other absolute path → `/project`; any account, organisation or user id → `fake-account`. The file replaces `scenarios/done.jsonl` byte for byte otherwise (LF endings as produced).
 
-Captured: <date>, Claude Code <version> — *pending*.
+Captured: 2026-10-17, Claude Code 2.1.300 (model `claude-fable-5-1`), on Central as the service user; 15 lines, exit 0, `num_turns: 4`. Redactions applied: 15 `session_id` → `fake-session`, 15 `uuid` → `fake-uuid`, 10 absolute paths (the capture directory, the auto-memory path, the messaging socket) → `/project`, and the three account-specific claude.ai connector names in `mcp_servers` → `claude.ai fake-connector-1..3` (public-repo rule; their `status`/`source` kept). No account or organisation id was present. The capture's prompt named the owner's tenant; the command above uses `acme` (the prompt is not part of the file).
 
 ## Running it by hand
 
