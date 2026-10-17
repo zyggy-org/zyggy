@@ -59,8 +59,17 @@ Every bus verb reads `node.json`: `--config <path>`, else `ZYGGY_NODE_JSON`, els
 | `bus.branch` | | `main` |
 | `poll.activeSeconds`, `poll.idleSeconds` | positive integers | 10, 60 |
 | `secrets.root` | the file secret store's root | the per-OS default |
+| `claude.path` | the `claude` executable; a non-empty string | `claude` (resolved on `PATH`) |
+| `claude.maxTurns` | positive integer; the turn limit of every job run (`--max-turns`) | 60 |
+| `claude.defaultTimeoutMinutes` | positive integer; used when a job names no `timeout_minutes` | 30 |
+| `claude.defaultAllowedTools` | array of non-empty strings; used when a job names no `allowed_tools` | `["Read", "Grep", "Glob"]` |
+| `claude.maxBudgetUsd` | `null` or a positive number; the per-run `--max-budget-usd` | `null` (no cap) |
+| `devRoots` | array of absolute paths; read now, enforced with the registry (deliverable 14) | `[]` |
+| `nodeDir` | absolute path; job transcripts under `runs/<tenant>/` (kept 30 days), logs under `logs/` | `%LOCALAPPDATA%\zyggy` / `~/.local/share/zyggy` |
 | any other key | ignored (the Node service adds its own) | |
 | any key named `pat`, `token`, `hmac`, `secret`, `password` (any depth, any case) | **refused**: secrets never live in `node.json` | |
+
+The `claude.*`, `devRoots` and `nodeDir` keys (deliverable 06) are read by the Node service (07); the probe verbs validate them but otherwise ignore them. A wrong value is refused with its dotted key named, for example `zyggy: configuration error: claude.maxTurns: must be a positive integer`; an absent `claude` section means the defaults above.
 
 ## Per-machine setup for the transport proof
 

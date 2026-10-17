@@ -37,7 +37,7 @@ A compiled stand-in for the `claude` CLI, used by `tests/Zyggy.Integration`. It 
 | `scenarios/dream-archive-dropped.jsonl` | `L1` `dropped` (`transient`), no edits: the dream must refuse it as `stated_dropped` (spec 37 AC-22) |
 | `scenarios/no-report.jsonl` | `system/init` (`model: fake-model-1`), one `assistant` text of 2,320 characters **without** a REPORT heading, `result` `success` with that text, `total_cost_usd: 0.05`, `num_turns: 2`, `duration_ms: 900`, `usage`, `permission_denials: []`: the job runner's 2,000-character cut (spec 06 AC-18) |
 | `scenarios/no-result.jsonl` | `system/init` and one `assistant` text `Looking at the logs…`, **no** `result` line: a killed or crashed run; with `ZYGGY_FAKE_CLAUDE_LINGER_MS` the "partial output then hang" case (spec 06) |
-| `scenarios/done.jsonl` | Three JSON lines (`system`/`init`, `assistant` with a `REPORT` section, `result` with `cost_usd`, `duration_ms`, `num_turns`, `is_error: false`), LF endings, final LF |
+| `scenarios/done.jsonl` | The owner's real `stream-json` capture of a job run (spec 06 AC-27; procedure and redactions below; version and date on the "Captured:" line): `system/init` with the model, the `assistant` turns ending in a `REPORT` section, a `result` `success` with `total_cost_usd`, `duration_ms`, `num_turns`, `usage`; LF endings as produced. While the capture is pending it is a three-line stand-in whose every line carries `"placeholder": true` (see the notice below) |
 
 Test-side helper: `tests/Zyggy.Integration/Infrastructure/FakeClaude.cs` (`ExecutablePath`, `ScenarioDirectory`, `ReadCapture`).
 
@@ -94,6 +94,7 @@ Or the built apphost directly: `tests/Zyggy.Integration/bin/Debug/net10.0/fake-c
 
 - `3` with `fake-claude: unknown scenario '<name>'`: no `scenarios/<name>.jsonl` next to the executable (or in `ZYGGY_FAKE_CLAUDE_SCENARIO_DIR` when set). Check `ZYGGY_FAKE_CLAUDE_SCENARIO` and that the scenario file has `CopyToOutputDirectory` (the `Content` item in `FakeClaude.csproj`). The capture file is still written.
 - `4` with `fake-claude: cannot write capture '<path>': …`: the capture path is a directory, unwritable, or its parent does not exist. Nothing is written to stdout.
+- `5` with `fake-claude: invalid <name> '<value>'`: `ZYGGY_FAKE_CLAUDE_DELAY_MS`, `ZYGGY_FAKE_CLAUDE_LINGER_MS` or `ZYGGY_FAKE_CLAUDE_EXIT` is not a non-negative integer. Checked before anything else: nothing is captured or streamed.
 
 ### `ZYGGY_FAKE_CLAUDE_CAPTURE` unset
 
