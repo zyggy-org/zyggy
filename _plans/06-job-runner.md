@@ -335,16 +335,16 @@ Never the real claude, never GitHub. Steps are named by what the system can do. 
 
 **In plain words**: whatever the model streams, the runner now turns it into the report the bus expects — the REPORT section (or the last thing the model said, cut at 2,000 characters), the cost, the turns, the tokens and the model name on a `done`; `timeout` with the partial text; `claude_error` with the detail otherwise — and the listener writes those numbers into the report envelope. A big run is no longer a failure; the whole stream is kept on disk for 30 days under `runs/<tenant>/` and old transcripts are swept. These changes touch code the nightly dream already runs on Central: the dream, m365 and brief suites are untouched and green.
 
-- [ ] Behavioral verification: `StreamJsonReaderTests` (last assistant text, 3 MB then result), `ClaudeCodeCliRunnerTests` (14-row theory, over-cap success, transcript facts), `ReportSummaryTests`, `JobRunnerTests` (metrics, timeout body, `claude_error` details, nine-wire-strings fact, sweep), `BusListenerTests.ProcessOnceAsync_HandlerReplyWithMetrics_ReportCarriesThem` with the report front matter shown.
-- [ ] Contract review: AC-8..AC-14 against the spec; the Report-mapping table line by line; the `JobReply` properties (ex-Q8); **Assumption A6** (the timeout body names the job's/policy's minutes even under `TimeoutOverride`); the sweep's "own tenant only" rule.
-- [ ] ⚠️ Risk review (shared contracts of 28 and 04): the only retired tests are the two `output_too_large` rows (ex-Q4, A3 pasted); `git diff` of the dream/m365/brief tests empty; `ModelRunResult`, `ModelRunRequest`, `JobReply`, `BusListener` changes additive; the probe's reports unchanged; no transcript is written for the dream (`TranscriptPath` null); the transcript holds the model's output on the executing machine only (never on the bus, §8 Audit).
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `StreamJsonReaderTests` (last assistant text, 3 MB then result), `ClaudeCodeCliRunnerTests` (14-row theory, over-cap success, transcript facts), `ReportSummaryTests`, `JobRunnerTests` (metrics, timeout body, `claude_error` details, nine-wire-strings fact, sweep), `BusListenerTests.ProcessOnceAsync_HandlerReplyWithMetrics_ReportCarriesThem` with the report front matter shown.
+- [x] Contract review: AC-8..AC-14 against the spec; the Report-mapping table line by line; the `JobReply` properties (ex-Q8); **Assumption A6** (the timeout body names the job's/policy's minutes even under `TimeoutOverride`); the sweep's "own tenant only" rule.
+- [x] ⚠️ Risk review (shared contracts of 28 and 04): the only retired tests are the two `output_too_large` rows (ex-Q4, A3 pasted); `git diff` of the dream/m365/brief tests empty; `ModelRunResult`, `ModelRunRequest`, `JobReply`, `BusListener` changes additive; the probe's reports unchanged; no transcript is written for the dream (`TranscriptPath` null); the transcript holds the model's output on the executing machine only (never on the bus, §8 Audit).
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 8 — `fake-claude` can play every job scenario: `no-report.jsonl` (success without a REPORT heading), `no-result.jsonl` (init and a partial assistant text, no `result` line), and `ZYGGY_FAKE_CLAUDE_LINGER_MS` makes it sleep after streaming (the "partial output then hang" case), validated like `DELAY_MS`
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `tools/fake-claude/scenarios/no-report.jsonl` *(create)*: `system/init` (`model: fake-model-1`), one `assistant` text of about 2,300 characters **without** a REPORT heading (so the 2,000-character cut is visible end to end), `result` `success` with `result` = that text, `total_cost_usd: 0.05`, `num_turns: 2`, `duration_ms: 900`, `usage`, `permission_denials: []`; LF endings, final LF.
@@ -373,7 +373,7 @@ Never the real claude, never GitHub. Steps are named by what the system can do. 
 
 ## Step 9 — On the bare repository, one `ProcessOnceAsync` of the real listener with the job runner as its handler takes a signed job naming a scratch project from `jobs/` to a verified `done` report on `main` carrying the REPORT section, cost, turns, tokens, model, `files_changed: []` and no `diff_ref`, with the transcript byte-identical to the scenario and the lock released; `no-report` ends as the truncated last text; a project without `.claude/` ends `rejected`/`unknown_project` and a held lock `failed`/`locked` without the fake ever starting; the captured argv and stdin equal the §6 vector and the rendered prompt; 04's four rejection cases still never reach the model; and the production DI composes it all (`AddProcessRunner + AddClaudeCodeModelRunner + AddNodeJsonPolicy + AddJobRunner`)
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Jobs/ServiceCollectionExtensions.cs` *(create, public static)*: `AddJobRunner(this IServiceCollection, Action<JobRunnerOptions>? configure = null)` — `AddOptions<JobRunnerOptions>()` + `Configure`; `TryAddSingleton(TimeProvider.System)`; `AddSingleton<JobRunner>(sp => new JobRunner(sp.GetRequiredService<IModelRunner>(), sp.GetRequiredService<IPolicySource>(), new GitClient(sp.GetRequiredService<IProcessRunner>(), new GitClientOptions(), clock), sp.GetRequiredService<IOptions<JobRunnerOptions>>(), clock, logger-or-NullLogger))` (its own identity-less `GitClient` for `rev-parse` only — Assumption A2 — so the order of `AddJobRunner` and `AddGitHubBus` never matters); `AddSingleton<JobHandler>(sp => sp.GetRequiredService<JobRunner>().RunAsync)`; a post-configure fills `NodeDir` from a registered `NodeConfiguration.NodeDir` when the caller left it null and one is registered (Assumption A3); `IModelRunner`/`IPolicySource`/`IProcessRunner` are required at resolve time — no hidden default.
@@ -407,7 +407,7 @@ Never the real claude, never GitHub. Steps are named by what the system can do. 
 
 ## Step 10 — Through the same real listener, a fake that never answers is killed at the 2-second test override and reported `timeout`/`timeout` with no orphan process, a transcript on disk and the lock released; a fake that streams a partial answer then hangs is reported `timeout` with that partial text in the body; `error` with exit 1 ends `failed`/`claude_error: error_during_execution` with `cost_usd: 0.001`; `no-result` with exit 143 ends `claude_error: no_result`; and a missing `claude.path` ends `claude_error: not_found`
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `tests/Zyggy.Integration/Jobs/JobRunnerFailureTests.cs` *(create — same harness as Step 9)*.

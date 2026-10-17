@@ -245,7 +245,8 @@ public class BusRepoFixture : IAsyncLifetime
     /// Builds a <c>probe</c> job from <paramref name="from"/> to <paramref name="to"/> (fixed <c>created</c> instant,
     /// <c>timeout_minutes: 2</c>), signs it with the production signer, optionally mutates the serialized bytes, writes it at
     /// <c>jobs/&lt;ULID&gt;.md</c> of <paramref name="to"/> (or <paramref name="fileNameOverride"/>) and pushes it from the sender
-    /// with the §5 subject <c>&lt;tenant&gt; job &lt;id&gt; &lt;from&gt;→&lt;to&gt;</c>.
+    /// with the §5 subject <c>&lt;tenant&gt; job &lt;id&gt; &lt;from&gt;→&lt;to&gt;</c>. <paramref name="fields"/> replaces the probe's job
+    /// fields (plan 06 Step 9: a job naming a scratch project); null keeps them.
     /// </summary>
     public async Task<SeededJob> SeedSignedJobAsync(
         MachineName from,
@@ -255,6 +256,7 @@ public class BusRepoFixture : IAsyncLifetime
         string body,
         Func<byte[], byte[]>? mutate = null,
         string? fileNameOverride = null,
+        JobFields? fields = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(from);
@@ -264,7 +266,7 @@ public class BusRepoFixture : IAsyncLifetime
 
         var id = EnvelopeId.New(FixedInstant);
         var header = new EnvelopeHeader(signWith.Tenant, id, from, to, FixedInstant);
-        Model job = Model.CreateJob(header, new JobFields("probe", TimeoutMinutes: 2), Encoding.UTF8.GetBytes(body));
+        Model job = Model.CreateJob(header, fields ?? new JobFields("probe", TimeoutMinutes: 2), Encoding.UTF8.GetBytes(body));
         EnvelopeResult signed = await new EnvelopeSigner(store).SignAsync(job, signWith, ct);
         if (!signed.IsAccepted)
         {

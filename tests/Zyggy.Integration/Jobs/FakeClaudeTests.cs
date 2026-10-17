@@ -1,11 +1,13 @@
 using System.Diagnostics;
 using System.Text;
+using System.Text.RegularExpressions;
 
+using Zyggy.Core.Models;
 using Zyggy.Integration.Infrastructure;
 
 namespace Zyggy.Integration.Jobs;
 
-public sealed class FakeClaudeTests
+public sealed partial class FakeClaudeTests
 {
     /// <summary>The §6 argument vector; no --cwd, the real CLI has none (the run directory is the working directory).</summary>
     private static readonly string[] Section6Arguments =
@@ -274,6 +276,127 @@ public sealed class FakeClaudeTests
         result.Stdout.Should().BeEmpty();
         result.Stderr.TrimEnd().Should().Be($"fake-claude: invalid {name} '{value}'");
     }
+
+    [Fact]
+    public async Task Run_NoReportScenario_StreamsBytesWithResultWithoutReportHeading()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        using var scratch = new ScratchDirectory();
+        var expected = await File.ReadAllBytesAsync(Path.Combine(FakeClaude.ScenarioDirectory, "no-report.jsonl"), ct);
+
+        // Act
+        var result = await RunAsync("no-report", null, ["-p"], scratch.Path, ct);
+
+        // Assert
+        result.ExitCode.Should().Be(0, result.Stderr);
+        result.Stdout.Should().Equal(expected);
+        var reader = Read(result.Stdout);
+        reader.SawResult.Should().BeTrue();
+        reader.CostUsd.Should().Be(0.05m);
+        reader.ResultText.Should().NotBeNull();
+        reader.ResultText!.Length.Should().BeGreaterThan(StreamJsonReader.MaxAssistantTextLength);
+        reader.ResultText.Split('\n').Should().NotContain(line => ReportHeading().IsMatch(line));
+    }
+
+    [Fact]
+    public async Task Run_NoResultScenario_StreamsInitAndAssistantOnly()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        using var scratch = new ScratchDirectory();
+
+        // Act
+        var result = await RunAsync("no-result", null, ["-p"], scratch.Path, ct);
+
+        // Assert
+        result.ExitCode.Should().Be(0, result.Stderr);
+        var reader = Read(result.Stdout);
+        reader.SawResult.Should().BeFalse();
+        reader.Model.Should().Be("fake-model-1");
+        reader.LastAssistantText.Should().Be("Looking at the logs…");
+    }
+
+    [Fact]
+    public async Task Run_NoResultWithExit143_StreamsThenExits143()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        using var scratch = new ScratchDirectory();
+        var expected = await File.ReadAllBytesAsync(Path.Combine(FakeClaude.ScenarioDirectory, "no-result.jsonl"), ct);
+
+        // Act
+        var result = await RunAsync("no-result", null, ["-p"], scratch.Path, ct, new() { ["ZYGGY_FAKE_CLAUDE_EXIT"] = "143" });
+
+        // Assert
+        result.ExitCode.Should().Be(143);
+        result.Stdout.Should().Equal(expected);
+    }
+
+    [Fact]
+    public async Task Run_LingerMs_ExitsAfterStreamingPlusLinger()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        using var scratch = new ScratchDirectory();
+        var expected = await File.ReadAllBytesAsync(Path.Combine(FakeClaude.ScenarioDirectory, "no-result.jsonl"), ct);
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = FakeClaude.ExecutablePath,
+            WorkingDirectory = scratch.Path,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+        startInfo.Environment["ZYGGY_FAKE_CLAUDE_SCENARIO"] = "no-result";
+        startInfo.Environment["ZYGGY_FAKE_CLAUDE_LINGER_MS"] = "1500";
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+
+        // Act: read until the whole scenario has arrived, while the fake is still lingering.
+        using var process = Process.Start(startInfo)!;
+        var stderrTask = process.StandardError.ReadToEndAsync(timeout.Token);
+        var received = new byte[expected.Length];
+        await process.StandardOutput.BaseStream.ReadExactlyAsync(received, timeout.Token);
+        await Task.Delay(300, timeout.Token);
+        var aliveAfterStreaming = !process.HasExited;
+        await process.WaitForExitAsync(timeout.Token);
+
+        // Assert
+        received.Should().Equal(expected);
+        aliveAfterStreaming.Should().BeTrue();
+        process.ExitCode.Should().Be(0, await stderrTask);
+    }
+
+    [Fact]
+    public async Task Run_LingerMsInvalid_ExitFiveWithMessage()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        using var scratch = new ScratchDirectory();
+
+        // Act
+        var result = await RunAsync("done", null, ["-p"], scratch.Path, ct, new() { ["ZYGGY_FAKE_CLAUDE_LINGER_MS"] = "abc" });
+
+        // Assert
+        result.ExitCode.Should().Be(5);
+        result.Stdout.Should().BeEmpty();
+        result.Stderr.TrimEnd().Should().Be("fake-claude: invalid ZYGGY_FAKE_CLAUDE_LINGER_MS 'abc'");
+    }
+
+    private static StreamJsonReader Read(byte[] stdout)
+    {
+        var reader = new StreamJsonReader(2 * 1024 * 1024);
+        foreach (var line in Encoding.UTF8.GetString(stdout).Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            reader.Accept(line);
+        }
+
+        return reader;
+    }
+
+    [GeneratedRegex(@"^(#+\s*)?REPORT\s*$")]
+    private static partial Regex ReportHeading();
 
     private static async Task<(int ExitCode, byte[] Stdout, string Stderr)> RunAsync(
         string? scenario,
