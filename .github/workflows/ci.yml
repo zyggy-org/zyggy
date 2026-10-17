@@ -72,21 +72,37 @@ jobs:
       - name: Publish zyggy (${{ matrix.rid }})
         run: dotnet publish src/Zyggy.Cli -c Release -r ${{ matrix.rid }} --self-contained -p:PublishSingleFile=true -o artifacts/${{ matrix.rid }}
 
-      # sha256sum format (<64 lowercase hex>  <name>\n, LF) so Central can check the pinned binary (spec 28).
+      # Deliverable 07: the Node service ships next to the CLI (spec 07 AC-25).
+      - name: Publish zyggy-node (${{ matrix.rid }})
+        run: dotnet publish src/Zyggy.Node -c Release -r ${{ matrix.rid }} --self-contained -p:PublishSingleFile=true -o artifacts/${{ matrix.rid }}
+
+      # sha256sum format (<64 lowercase hex>  <name>\n, LF) so Central can check the pinned binaries (spec 28).
       - name: Write SHA256SUMS
         shell: pwsh
         run: |
-          $exe = 'artifacts/${{ matrix.rid }}/${{ matrix.exe }}'
-          $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          [IO.File]::WriteAllText('artifacts/${{ matrix.rid }}/SHA256SUMS', "$hash  ${{ matrix.exe }}`n")
+          $dir = 'artifacts/${{ matrix.rid }}'
+          $ext = if ($IsWindows) { '.exe' } else { '' }
+          $lines = foreach ($name in @('${{ matrix.exe }}', "zyggy-node$ext")) {
+            $hash = (Get-FileHash -LiteralPath "$dir/$name" -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $name`n"
+          }
+          [IO.File]::WriteAllText("$dir/SHA256SUMS", ($lines -join ''))
 
-      - name: Smoke-run the published binary
+      # Both binaries answer --version; their single-file sizes go to the step summary (the Gate A measurement of plan 07).
+      - name: Smoke-run the published binaries
         shell: pwsh
         run: |
-          $out = & 'artifacts/${{ matrix.rid }}/${{ matrix.exe }}' --version
-          if ($LASTEXITCODE -ne 0) { Write-Error "zyggy --version exited $LASTEXITCODE"; exit 1 }
-          if ("$out" -notmatch '^\d+\.\d+\.\d+') { Write-Error "unexpected version output: $out"; exit 1 }
-          "zyggy --version: $out"
+          $dir = 'artifacts/${{ matrix.rid }}'
+          $ext = if ($IsWindows) { '.exe' } else { '' }
+          "### Published binaries (${{ matrix.rid }})" >> $env:GITHUB_STEP_SUMMARY
+          foreach ($name in @('${{ matrix.exe }}', "zyggy-node$ext")) {
+            $out = & "$dir/$name" --version
+            if ($LASTEXITCODE -ne 0) { Write-Error "$name --version exited $LASTEXITCODE"; exit 1 }
+            if ("$out" -notmatch '^\d+\.\d+\.\d+') { Write-Error "unexpected version output from ${name}: $out"; exit 1 }
+            $mb = [math]::Round((Get-Item -LiteralPath "$dir/$name").Length / 1MB, 1)
+            "$name --version: $out ($mb MB)"
+            "- ``$name`` $out — $mb MB" >> $env:GITHUB_STEP_SUMMARY
+          }
 
       - uses: actions/upload-artifact@v7
         with:

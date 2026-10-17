@@ -31,4 +31,7 @@ public sealed record NodeConfiguration(
 
     /// <summary>Gets the <c>nodeDir</c> (an absolute path) that holds the node's <c>runs/</c> transcripts; <see langword="null"/> means the per-OS default.</summary>
     public string? NodeDir { get; init; }
+
+    /// <summary>Gets <see cref="NodeDir"/> or, when it is <see langword="null"/>, the per-OS default (<c>%LOCALAPPDATA%\zyggy</c>, <c>~/.local/share/zyggy</c>) — the one place that rule lives (spec 07).</summary>
+    public string EffectiveNodeDir => NodeDir ?? Jobs.TranscriptPaths.DefaultNodeDir();
 }

@@ -360,6 +360,84 @@ public sealed partial class SourceHygieneTests
         offenders.Should().BeEmpty();
     }
 
+    [Fact]
+    public void Packages_Deliverable07_PinnedExactly()
+    {
+        // Arrange: spec 07 Dependencies — exact versions, nothing floating, no telemetry package (O8)
+        var expected = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["Microsoft.Extensions.Hosting.WindowsServices"] = "10.0.12",
+            ["Microsoft.Extensions.Hosting.Systemd"] = "10.0.12",
+            ["Serilog"] = "4.4.0",
+            ["Serilog.Extensions.Hosting"] = "10.0.0",
+            ["Serilog.Sinks.File"] = "7.0.0",
+            ["Serilog.Sinks.Console"] = "6.1.1",
+            ["TimeZoneConverter"] = "8.0.0",
+        };
+        var document = System.Xml.Linq.XDocument.Load(Path.Combine(RepoRoot(), "Directory.Packages.props"));
+
+        // Act
+        var pinned = document.Descendants("PackageVersion")
+            .ToDictionary(e => (string)e.Attribute("Include")!, e => (string)e.Attribute("Version")!, StringComparer.Ordinal);
+
+        // Assert
+        foreach (var (package, version) in expected)
+        {
+            pinned.Should().ContainKey(package).WhoseValue.Should().Be(version);
+        }
+
+        pinned.Keys.Should().NotContain(k => k.Contains("OpenTelemetry", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Src_Node_NoAppSettings()
+    {
+        // Arrange: spec 07 ex-Q6 — node.json is the single configuration file
+        var node = Path.Combine(RepoRoot(), "src", "Zyggy.Node");
+
+        // Act
+        var offenders = Directory.EnumerateFiles(node, "appsettings*.json", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .ToList();
+
+        // Assert
+        offenders.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Src_Node_KestrelFrameworkReferencedOnce()
+    {
+        // Arrange: spec 07 ex-Q1 — the health endpoint's framework reference lives in the Node project only
+        var projects = Directory.EnumerateFiles(Path.Combine(RepoRoot(), "src"), "*.csproj", SearchOption.AllDirectories);
+
+        // Act
+        var holders = projects
+            .Where(f => File.ReadAllText(f).Contains("Microsoft.AspNetCore.App", StringComparison.Ordinal))
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .ToList();
+
+        // Assert
+        holders.Should().Equal("src/Zyggy.Node/Zyggy.Node.csproj");
+    }
+
+    [Fact]
+    public void Src_NoOpenTelemetryNamespace()
+    {
+        // Arrange: spec 07 / O8 — telemetry is off in v1; no collector wired anywhere
+        var files = SourceFiles()
+            .Concat(Directory.EnumerateFiles(Path.Combine(RepoRoot(), "src"), "*.csproj", SearchOption.AllDirectories));
+
+        // Act
+        var offenders = files
+            .Where(f => File.ReadAllText(f).Contains("OpenTelemetry", StringComparison.OrdinalIgnoreCase))
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .ToList();
+
+        // Assert
+        offenders.Should().BeEmpty();
+    }
+
     private static List<string> CoreFilesContaining(string literal) =>
         SourceFiles()
             .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
