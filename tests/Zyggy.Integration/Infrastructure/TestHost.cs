@@ -2,7 +2,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 using Zyggy.Core.Bus;
+using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
+using Zyggy.Core.Jobs;
+using Zyggy.Core.Models;
+using Zyggy.Core.Policy;
 using Zyggy.Core.Processes;
 using Zyggy.Core.Secrets;
 using Zyggy.Core.Tenancy;
@@ -100,6 +104,74 @@ internal static class TestHost
         });
         return services.BuildServiceProvider();
     }
+
+    /// <summary>
+    /// Builds the production composition of a node's job path (plan 06 Step 9): the real process runner, the Claude Code runner
+    /// pointed at <paramref name="claudePath"/> (the fake), the policy from <paramref name="configuration"/>, the job runner as the
+    /// listener's handler, and the same bus as <see cref="BuildListener"/>. <paramref name="jobRunnerAfterBus"/> registers the job runner after
+    /// the bus instead of before it (the order must not matter, plan 06 Assumption A2).
+    /// </summary>
+    public static ServiceProvider BuildRunnerListener(
+        BusRepoFixture bus,
+        MachineName machine,
+        ISecretStore store,
+        string claudePath,
+        NodeConfiguration configuration,
+        Action<JobRunnerOptions>? runner = null,
+        HookedProcessRunner? hooks = null,
+        ILoggerProvider? logging = null,
+        bool jobRunnerAfterBus = false)
+    {
+        var services = new ServiceCollection()
+            .AddProcessRunner()
+            .AddEnvelopeSigning()
+            .AddSingleton(store)
+            .AddSingleton(configuration)
+            .AddClaudeCodeModelRunner(o => o.Path = claudePath)
+            .AddNodeJsonPolicy()
+            .AddSingleton(TestKeys.Acme1)
+            .AddSingleton(new Random(7))
+            .AddSingleton(PollOptions.Default with { ActiveInterval = TimeSpan.FromSeconds(1), Jitter = TimeSpan.FromMilliseconds(200) });
+        if (hooks is not null)
+        {
+            services.AddSingleton<IProcessRunner>(hooks);
+        }
+
+        if (logging is not null)
+        {
+            services.AddLogging(b => b.AddProvider(logging).SetMinimumLevel(LogLevel.Trace));
+        }
+
+        if (!jobRunnerAfterBus)
+        {
+            services.AddJobRunner(runner);
+        }
+
+        services.AddGitHubBus(o =>
+        {
+            o.Remote = Remote;
+            o.Identity = new BusIdentity(bus.Tenant, machine);
+            o.CheckoutRoot = bus.CloneDir;
+            o.Version = "0.0.0-test";
+            o.HandlerFactory = () => new BareRepoHeadHandler(ct => HeadShaOrNullAsync(bus, ct));
+            o.GitEnvironment = bus.GitEnvironment;
+            o.Jitter = () => 0;
+        });
+        if (jobRunnerAfterBus)
+        {
+            services.AddJobRunner(runner);
+        }
+
+        return services.BuildServiceProvider();
+    }
+
+    /// <summary>The typed <c>node.json</c> of <paramref name="machine"/> on the fixture's bus, with an optional <c>claude</c> section.</summary>
+    public static NodeConfiguration NodeConfigurationFor(BusRepoFixture bus, MachineName machine, ClaudeSettings? claude = null, string? nodeDir = null) =>
+        new(bus.Tenant, machine, TestKeys.Acme1, new BusSettings(Remote.Owner, Remote.Repository, Remote.Branch, bus.CloneDir, Remote.HttpsUrl!.ToString()), new PollSettings(1, 1), new SecretsSettings())
+        {
+            Claude = claude ?? new ClaudeSettings(),
+            NodeDir = nodeDir,
+        };
 
     /// <summary>A hooked runner over the production one, for the push-retry scenarios.</summary>
     public static HookedProcessRunner Hooks()

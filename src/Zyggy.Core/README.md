@@ -26,7 +26,7 @@ The library defines the interfaces behind which every external system hides. Eac
 | `IModelRunner` | the Claude Code CLI |
 | `ISecretStore` | the OS secret store |
 | `INotifier` | Telegram |
-| `IPolicySource` | the signed `policy.yaml` |
+| `IPolicySource` | the node's policy; v1 reads it from `node.json` (`NodeJsonPolicySource`, the MVP-scope decision), the signed `policy.yaml` comes later |
 
 Plus `IProcessRunner`, the single path to the `git` and `claude` processes, so tests can substitute both.
 
@@ -63,3 +63,15 @@ The bus checkout is a plain git clone of the tenant's `zyggy-bus` repository; ev
 | Bus: pull failed | `WriteFailed("pull", …)`; one error; nothing changed; the next tick retries | Network or authentication: `zyggy probe reach`. If `.git/rebase-merge` exists, `git rebase --abort` and report the file pair — a content conflict is impossible by the write rules. |
 | Bus: rate limit | `Throttled` with the instant polling resumes; one warning (A5: back-off until the later of 120 s, the host's reset time and `retry-after`) | All tokens of one GitHub account share 5,000 requests per hour; conditional `304` answers are free. Look for a runaway poller (the `User-Agent` is `zyggy/<version>`). |
 | Bus: rejected envelopes | `jobs/rejected/<id>.md` and a `status: rejected` report whose `reason` is the rejection's wire name (A1: `malformed`, `tenant_mismatch`, `schema_unsupported`, `key_id_tenant_mismatch`, `missing_field`, `invalid_field`, `missing_signature`, `unknown_key`, `invalid_signature`, `wrong_recipient`); one warning with the file name and reason, never the body | `invalid_signature`/`unknown_key`: compare `hmac/<n>` across machines (same bytes, same `<n>`) and check `core.autocrlf`; `tenant_mismatch`/`wrong_recipient`: check `tenant` and `machine` in `node.json`; `schema_unsupported`: upgrade the binary. A file whose sender cannot be read is moved without a report. |
+
+## Troubleshooting — Jobs
+
+The job runner (deliverable 06) answers every claimed job with a signed report; it never leaves one unanswered and never throws to the poll loop. The log lines carry the scope `tenant`, `machine`, `phase=run`, `jobId` and never the prompt, the job body or the summary. The full `stream-json` of every run is kept on the executing machine at `<nodeDir>/runs/<tenant>/<job id>.jsonl` for 30 days — read it first. The entries below are the runbook draft until the runbook directory exists (deliverable 10); the wording is spec 06's Failure modes table.
+
+| Situation | What you see | What to do |
+|-----------|--------------|------------|
+| Jobs: unknown_project / unknown_agent | `status: rejected`, `reason: unknown_project` (body `unknown_project: <check>`) or `unknown_agent`; one warning `job <id>: rejected at pre-flight: <reason> (<check>)`; the model never started | `unknown_project`: the job must name an absolute path on this machine that is a git repository with `.claude/`; registry names arrive with deliverable 14. `unknown_agent`: `<project>/.claude/agents/<name>.md` must exist and the name match `[A-Za-z0-9._-]+`. |
+| Jobs: locked | `status: failed`, `reason: locked`, body `locked: <project>/.claude/zyggy.lock`; one warning | Another run (or a hand-run `zyggy run`, deliverable 16) holds the project. Read the lock file's `job`/`pid`/`acquired` lines. A lock whose process died opens again by itself (the operating system releases the handle) — there is no age rule; resubmit the job. |
+| Jobs: timeout | `status: timeout`, `reason: timeout`, body `timeout after <n> min` and the partial text; the `claude` process tree killed; one `finished timeout` line | Raise `timeout_minutes` on the job or `claude.defaultTimeoutMinutes` in `node.json`; the transcript's tail shows where it stalled. An unauthenticated CLI can wait on a login prompt — check `claude` is logged in as the service user. |
+| Jobs: claude_error | `status: failed`, `reason: claude_error`, body `claude_error: <detail>`: `not_found` / `start_failed` (the executable), `no_result` (the stream ended without a result — killed, crashed, exit 143), `error_max_turns`, `error_during_execution`, `auth`, `rate_limit`, `runner_exception <type>` (one error line) | `not_found`/`start_failed`: `claude.path` in `node.json`, then `claude --version` as the service user. `no_result`: the transcript tail. `error_max_turns`: raise `claude.maxTurns`. `auth`: `claude login` on the machine. `rate_limit`: wait. `runner_exception`: a bug — the log line names the type; file a bugfix. |
+| Jobs: transcript not written | One warning `transcript not written: <detail>` from the model runner (scoped with the job id); the run and its report are unaffected | Permissions on `<nodeDir>/runs/`, or the disk is full. |

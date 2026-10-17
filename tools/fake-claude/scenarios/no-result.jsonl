@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","model":"fake-model-1","session_id":"fake-session-4","tools":["Read","Grep","Glob"]}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Looking at the logs…"}]},"session_id":"fake-session-4"}

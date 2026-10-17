@@ -23,8 +23,8 @@ public sealed class ClaudeCodeCliRunnerTests
     private static ProcessResult Exited(int code = 0) =>
         new(code, Stdout: "", Stderr: "", TimedOut: false, StartFailed: false, StdoutTruncated: false, Duration: TimeSpan.FromSeconds(2));
 
-    private ClaudeCodeCliRunner Runner(string path = "claude") =>
-        new(_processes, Options.Create(new ClaudeCodeOptions { Path = path }), new FakeTimeProvider());
+    private ClaudeCodeCliRunner Runner(string path = "claude", RecordingLogger<ClaudeCodeCliRunner>? log = null) =>
+        new(_processes, Options.Create(new ClaudeCodeOptions { Path = path }), new FakeTimeProvider(), log);
 
     private void Script(ProcessResult result, params string[] lines) =>
         _processes.RunAsync(Arg.Any<ProcessSpec>(), Arg.Any<CancellationToken>()).Returns(call =>
@@ -154,9 +154,6 @@ public sealed class ClaudeCodeCliRunnerTests
             new FailureCase("unparseable result", ok, ["""{"type":"result","subtype":"success", broken"""], false, Cap, "claude",
                 RunFailureReason.ClaudeError, "unparseable_result"),
             new FailureCase("schema without structured output", ok, success, true, Cap, "claude", RunFailureReason.ClaudeError, "no_structured_output"),
-            new FailureCase("output over the cap", ok, success, false, 64, "claude", RunFailureReason.ClaudeError, "output_too_large"),
-            new FailureCase("stdout truncated by the process runner", ok with { StdoutTruncated = true }, success, false, Cap, "claude",
-                RunFailureReason.ClaudeError, "output_too_large"),
             new FailureCase("auth marker", Exited(1), [StreamLines.Result(isError: true, resultText: "Invalid API key · Please run /login")], false, Cap,
                 "claude", RunFailureReason.ClaudeError, "auth"),
             new FailureCase("rate marker", Exited(1), [StreamLines.Result(isError: true, resultText: "Claude AI usage limit reached|1759550400")], false,
@@ -179,6 +176,103 @@ public sealed class ClaudeCodeCliRunnerTests
         result.Outcome.Should().Be(ModelRunOutcome.Failed);
         result.Reason.Should().Be(shape.Reason);
         result.FailureDetail.Should().Be(shape.Detail);
+    }
+
+    [Fact]
+    public async Task RunAsync_OutputOverCap_StillSucceedsFromItsResult()
+    {
+        // Arrange: spec 06 ex-Q4 — the cap bounds what is retained; the run is classified by its result
+        Script(Exited(), StreamLines.Init(), StreamLines.Result());
+
+        // Act
+        var result = await Runner().RunAsync(Request() with { MaxCaptureBytes = 64 }, TestContext.Current.CancellationToken);
+
+        // Assert
+        result.Outcome.Should().Be(ModelRunOutcome.Succeeded);
+        result.CostUsd.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task RunAsync_StdoutTruncatedByProcessRunner_NotAFailure()
+    {
+        // Arrange
+        Script(Exited() with { StdoutTruncated = true }, StreamLines.Init(), StreamLines.Result());
+
+        // Act
+        var result = await Runner().RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        // Assert
+        result.Outcome.Should().Be(ModelRunOutcome.Succeeded);
+    }
+
+    [Fact]
+    public async Task RunAsync_Result_CarriesLastAssistantText()
+    {
+        // Arrange
+        Script(Exited(), StreamLines.Init(), StreamLines.Assistant("thinking"), StreamLines.Assistant("REPORT\nall good"), StreamLines.Result());
+
+        // Act
+        var result = await Runner().RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        // Assert
+        result.LastAssistantText.Should().Be("REPORT\nall good");
+    }
+
+    [Fact]
+    public async Task RunAsync_TranscriptPath_WritesEveryLineAsReceivedUtf8NoBom()
+    {
+        // Arrange: spec 06 — the transcript is written as the stream arrives, into a directory the runner creates
+        using var scratch = new ScratchDirectoryForTranscripts();
+        var path = Path.Combine(scratch.Root, "runs", "acme", "job.jsonl");
+        Script(Exited(), "line1", "line2", "line3");
+
+        // Act
+        await Runner().RunAsync(Request() with { TranscriptPath = path }, TestContext.Current.CancellationToken);
+
+        // Assert
+        File.ReadAllBytes(path).Should().Equal("line1\nline2\nline3\n"u8.ToArray());
+    }
+
+    [Fact]
+    public async Task RunAsync_TranscriptPathUnwritable_WarnsOnceAndStillReturnsResult()
+    {
+        // Arrange: the transcript's directory would have to live under a file
+        using var scratch = new ScratchDirectoryForTranscripts();
+        var blocker = Path.Combine(scratch.Root, "blocker");
+        File.WriteAllText(blocker, "x");
+        var log = new RecordingLogger<ClaudeCodeCliRunner>();
+        Script(Exited(), StreamLines.Init(), StreamLines.Assistant("secret-line-text"), StreamLines.Result());
+
+        // Act
+        var result = await Runner(log: log).RunAsync(Request() with { TranscriptPath = Path.Combine(blocker, "runs", "x.jsonl") }, TestContext.Current.CancellationToken);
+
+        // Assert
+        result.Outcome.Should().Be(ModelRunOutcome.Succeeded);
+        var warning = log.Entries.Should().ContainSingle().Subject;
+        warning.Level.Should().Be(Microsoft.Extensions.Logging.LogLevel.Warning);
+        warning.Message.Should().Contain("transcript not written").And.NotContain("secret-line-text");
+    }
+
+    [Fact]
+    public async Task RunAsync_NoTranscriptPath_WritesNothing()
+    {
+        // Arrange: the dream's behaviour — no transcript, no log line
+        var log = new RecordingLogger<ClaudeCodeCliRunner>();
+        Script(Exited(), StreamLines.Init(), StreamLines.Result());
+
+        // Act
+        var result = await Runner(log: log).RunAsync(Request(), TestContext.Current.CancellationToken);
+
+        // Assert
+        result.Outcome.Should().Be(ModelRunOutcome.Succeeded);
+        log.Entries.Should().BeEmpty();
+    }
+
+    private sealed class ScratchDirectoryForTranscripts : IDisposable
+    {
+        public string Root { get; } = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "zyggy-unit", Guid.NewGuid().ToString("N"))).FullName;
+
+        public void Dispose() => Directory.Delete(Root, recursive: true);
     }
 
     [Fact]

@@ -1,8 +1,9 @@
 # 0001 — Transport A and Central VM
 
-Status: open. VM soak section (deliverable 02) closed 2026-10-05 by owner decision — unfinished checks carried to
-33's Central evidence (plan 33 Steps 21–22); 05 references that evidence and no longer collects the day-7 result
-itself. Transport section open; the record is closed by deliverable 05.
+Status: closed 2026-10-15 by owner decision ("you can close 2 & 3"): transport A confirmed on the evidence below
+(deliverable 04 and patch 0.8.1); deliverable 05 was not built separately — no `Gates/P0_*` scenario, no latency
+target (O21). VM soak section (deliverable 02) closed 2026-10-05 by owner decision — unfinished checks carried to
+33's Central evidence (plan 33 Steps 21–22).
 
 Owner decision 2026-10-05, verbatim: "Before you implement I permit you to break and finish open work of preceding
 plans here in .Net so that we've in the end a clean slate with all finished work. In anyway the open items in other
@@ -104,6 +105,10 @@ Fallback line: transport A passed every required check on all three machines, th
 | Central | 2026-10-13 05:2x UTC via `az vm run-command`: the VM downloaded the public assets itself, `/opt/zyggy/0.8.0/zyggy` root:root 755, `/usr/local/bin/zyggy` → 0.8.0, `zyggy --version` = `0.8.0+de60bb8…`; as `zyggy`: `probe --help` exit 0, `dream status` unchanged (nightly 01:01 UTC committed `8ddd63c`, pushed); `claude-remote` and `zyggy-m365-mcp` active, `NRestarts=0`, no unit restarted; timers unchanged (dream 2026-10-14 01:00 UTC, brief 04:30 UTC) |
 | Instance pin | `instance/zyggy.json` → 0.8.0 + the linux-x64 hash: commit `1604971`, PR zyggy-geoffrey#2 opened 2026-10-13, **still open on 2026-10-14**; consequence: the 2026-10-14 01:00 UTC dream refused as designed — unit log `zyggy: configuration error: version_mismatch: version 0.8.0 is not the pinned 0.7.0`, exit 3, no model call, no commit (one night of filing missed). The owner merged PR #2 on 2026-10-14; checkout pulled on Central to `6f725cc` (`instance/zyggy.json` = 0.8.0 + hash `9c579b2f…`); catch-up `zyggy dream request` → 2026-10-14 06:32 UTC on-demand run committed `73f8311` (1 batch, 30 lines, 0 quarantined, 1.02 USD), pushed |
 | Laptops | work laptop 2026-10-13: `zyggy --version` = `0.8.0+de60bb8…` (owner-reported); home laptop 2026-10-14: `zyggy --version` = `0.8.0+de60bb8…` (owner-reported) |
+
+### Patch 0.8.1 (deliverable 04, Step 22 — finding F2)
+
+2026-10-15: zyggy PR #16 (`581c0b4`, merged by the owner), PR CI green (Linux, after one test-helper race fixed); tag `v0.8.1`, tag CI 38705382141 green on both runners; release `v0.8.1` — `zyggy` (linux-x64) SHA-256 `49ed1c035de9f916fe180071960fc868a4c37d3e353a0e7bc4147875635da02d`, `zyggy.exe` (win-x64) SHA-256 `fe73c092cfabd1dde9395569e6ae781ac8800860c08c2e95814f976c10985048`. Instance pin PR zyggy-geoffrey#3 merged by the owner **first**; then in one `az vm run-command`: the VM downloaded and verified the asset, `/opt/zyggy/0.8.1/zyggy` root:root 755, checkout pulled to `b9d033b` (pin 0.8.1), symlink switched, `--version` `0.8.1+581c0b4…`, `probe --help` exit 0, `dream status` unchanged, `claude-remote` and `zyggy-m365-mcp` active with `NRestarts=0`, next dream 2026-10-16 01:00 UTC. Both laptops updated by the owner (owner-reported). Change: a cross-process lock file in the checkout's `.git` serialises every pull and write; a pull refused by a concurrent change is retried once; a second `zyggy probe listen` on the same checkout exits 6.
 
 ### First nightly dream on the new binary (deliverable 04, Step 21)
 

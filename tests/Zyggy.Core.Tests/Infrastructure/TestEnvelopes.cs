@@ -14,10 +14,11 @@ public static class TestEnvelopes
     public static DateTimeOffset FixedInstant { get; } = new(2026, 9, 27, 14, 5, 0, TimeSpan.Zero);
 
     /// <summary>A signed <c>probe</c> job from <paramref name="from"/> to <paramref name="to"/>.</summary>
-    public static async Task<Model> SignedJobAsync(MachineName from, MachineName to, ISecretStore store, KeyId signWith, string body, CancellationToken ct, EnvelopeId? id = null)
+    /// <remarks><paramref name="fields"/> <see langword="null"/> keeps <c>JobFields("probe", TimeoutMinutes: 2)</c> (plan 06, additive).</remarks>
+    public static async Task<Model> SignedJobAsync(MachineName from, MachineName to, ISecretStore store, KeyId signWith, string body, CancellationToken ct, EnvelopeId? id = null, JobFields? fields = null)
     {
         var header = new EnvelopeHeader(signWith.Tenant, id ?? EnvelopeId.New(FixedInstant), from, to, FixedInstant);
-        Model job = Model.CreateJob(header, new JobFields("probe", TimeoutMinutes: 2), Encoding.UTF8.GetBytes(body));
+        Model job = Model.CreateJob(header, fields ?? new JobFields("probe", TimeoutMinutes: 2), Encoding.UTF8.GetBytes(body));
         EnvelopeResult signed = await new EnvelopeSigner(store).SignAsync(job, signWith, ct);
         signed.IsAccepted.Should().BeTrue(signed.Rejection?.ToString());
         return signed.Envelope!;

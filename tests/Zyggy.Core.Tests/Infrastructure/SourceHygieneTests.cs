@@ -5,16 +5,7 @@ namespace Zyggy.Core.Tests.Infrastructure;
 /// <summary>AC-2: no tenant literal and no default tenant anywhere in <c>src/</c>.</summary>
 public sealed partial class SourceHygieneTests
 {
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Zyggy.slnx")))
-        {
-            dir = dir.Parent;
-        }
-
-        return dir?.FullName ?? throw new InvalidOperationException("Zyggy.slnx not found above the test output.");
-    }
+    private static string RepoRoot() => Infrastructure.RepoRoot.Find();
 
     [Fact]
     public void Src_ContainsNoTenantLiteral()
@@ -270,6 +261,118 @@ public sealed partial class SourceHygieneTests
         BusSourceFiles().Should().NotBeEmpty();
         offenders.Should().BeEmpty();
     }
+
+    [Fact]
+    public void Src_ClaudeProgramLiteral_OnlyInModelAdapterAndM365Preflight()
+    {
+        // Arrange: spec 06 AC-16 — "claude" as a program name lives in the model adapter; RunPreflight's is 33's (plan 06 A5), and
+        // NodeConfigurationReader's is the node.json section key, not a program name (spec 06 Configuration).
+        string[] allowed =
+        [
+            "src/Zyggy.Core/Configuration/NodeConfigurationReader.cs",
+            "src/Zyggy.Core/M365/Runs/RunPreflight.cs",
+            "src/Zyggy.Core/Models/ClaudeCodeCliRunner.cs",
+            "src/Zyggy.Core/Models/ClaudeCodeOptions.cs",
+        ];
+
+        // Act
+        var holders = CoreFilesContaining("\"claude\"");
+
+        // Assert
+        holders.Should().Contain("src/Zyggy.Core/Models/ClaudeCodeOptions.cs").And.BeSubsetOf(allowed);
+    }
+
+    [Fact]
+    public void Src_ZyggyLockLiteral_OnlyInProjectLock()
+    {
+        // Act: spec 06 AC-16
+        var holders = CoreFilesContaining("zyggy.lock");
+
+        // Assert
+        holders.Should().Equal("src/Zyggy.Core/Jobs/ProjectLock.cs");
+    }
+
+    [Fact]
+    public void Src_RunsDirectoryLiteral_OnlyInTranscriptPaths()
+    {
+        // Act: spec 06 AC-16 — job transcripts' runs/ is built in one place. The brief and the dream keep their own run folders
+        // under their state directories (deliverables 33/35 and 28), outside this rule like Memory/ and Dream/ are outside BusPaths'.
+        var holders = CoreFilesContaining("\"runs\"")
+            .Where(f => !f.StartsWith("src/Zyggy.Core/Brief/", StringComparison.Ordinal) && !f.StartsWith("src/Zyggy.Core/Dream/", StringComparison.Ordinal))
+            .ToList();
+
+        // Assert
+        holders.Should().Equal("src/Zyggy.Core/Jobs/TranscriptPaths.cs");
+    }
+
+    [Fact]
+    public void Src_ProcessId_OnlyInProjectLock()
+    {
+        // Act: spec 06 AC-16 (plan 06 A4: ProjectLock.CurrentProcessId is the one read)
+        var holders = SourceFiles()
+            .Where(f => File.ReadAllText(f).Contains("Environment.ProcessId", StringComparison.Ordinal))
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .ToList();
+
+        // Assert
+        holders.Should().Equal("src/Zyggy.Core/Jobs/ProjectLock.cs");
+    }
+
+    [Fact]
+    public void Src_JobsAndPolicy_NoClockOrStaticState()
+    {
+        // Act: spec 06 AC-16 — the clock is injected; only the DI extension may name TimeProvider.System (its TryAdd default)
+        var offenders = JobsAndPolicySourceFiles().Where(f =>
+        {
+            var text = File.ReadAllText(Path.Combine(RepoRoot(), f));
+            return text.Contains("DateTime.UtcNow", StringComparison.Ordinal)
+                || text.Contains("DateTimeOffset.UtcNow", StringComparison.Ordinal)
+                || (text.Contains("TimeProvider.System", StringComparison.Ordinal) && !f.EndsWith("/ServiceCollectionExtensions.cs", StringComparison.Ordinal))
+                || StaticMutableField().IsMatch(text);
+        }).ToList();
+
+        // Assert
+        JobsAndPolicySourceFiles().Should().NotBeEmpty();
+        offenders.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("tenants/")]
+    [InlineData("nodes/")]
+    [InlineData("jobs/")]
+    [InlineData("reports/")]
+    [InlineData("context/")]
+    [InlineData("archive/")]
+    [InlineData("registry/")]
+    [InlineData("PROTOCOL.md")]
+    public void Src_Jobs_NoBusPathLiteral(string literal)
+    {
+        // Arrange: spec 06 AC-16 — the runner never touches the bus; the listener does
+        var pattern = new Regex("[\"/]" + Regex.Escape(literal), RegexOptions.None, TimeSpan.FromSeconds(5));
+
+        // Act
+        var offenders = JobsAndPolicySourceFiles()
+            .Where(f => f.StartsWith("src/Zyggy.Core/Jobs/", StringComparison.Ordinal))
+            .Where(f => pattern.IsMatch(CommentLine().Replace(File.ReadAllText(Path.Combine(RepoRoot(), f)), string.Empty)))
+            .ToList();
+
+        // Assert
+        offenders.Should().BeEmpty();
+    }
+
+    private static List<string> CoreFilesContaining(string literal) =>
+        SourceFiles()
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .Where(f => f.StartsWith("src/Zyggy.Core/", StringComparison.Ordinal))
+            .Where(f => File.ReadAllText(Path.Combine(RepoRoot(), f)).Contains(literal, StringComparison.Ordinal))
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+    private static List<string> JobsAndPolicySourceFiles() =>
+        SourceFiles()
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .Where(f => f.StartsWith("src/Zyggy.Core/Jobs/", StringComparison.Ordinal) || f.StartsWith("src/Zyggy.Core/Policy/", StringComparison.Ordinal))
+            .ToList();
 
     private static List<string> BusSourceFiles() =>
         SourceFiles()

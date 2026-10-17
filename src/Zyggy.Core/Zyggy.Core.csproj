@@ -18,6 +18,8 @@
   <ItemGroup>
     <EmbeddedResource Include="Dream/Prompts/*" LogicalName="Zyggy.Core.Dream.Prompts.%(Filename)%(Extension)" />
     <EmbeddedResource Include="Brief/Prompts/*" LogicalName="Zyggy.Core.Brief.Prompts.%(Filename)%(Extension)" />
+    <!-- The job prompt (spec 06 ex-Q6): embedded, so nothing in a project or on the bus can alter it (§8). -->
+    <EmbeddedResource Include="Jobs/Prompts/*" LogicalName="Zyggy.Core.Jobs.Prompts.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

@@ -35,7 +35,7 @@ public static class ModelFailureDetail
     /// <summary>A schema was given but the successful result carried no structured output.</summary>
     public const string NoStructuredOutput = "no_structured_output";
 
-    /// <summary>Standard output exceeded the capture cap.</summary>
+    /// <summary>Standard output exceeded the capture cap. No longer produced since deliverable 06 (the stream is parsed to its end).</summary>
     public const string OutputTooLarge = "output_too_large";
 
     /// <summary>The CLI is not logged in or its credential was refused.</summary>

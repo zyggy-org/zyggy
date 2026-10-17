@@ -53,6 +53,6 @@ public sealed record ModelRunRequest(string Prompt, string WorkingDirectory, Tim
     /// <summary>Where a transcript is kept; <see langword="null"/> keeps none (the dream). Reserved for the job runner.</summary>
     public string? TranscriptPath { get; init; }
 
-    /// <summary>Capture cap for the model's standard output in bytes; more is a failure (<c>output_too_large</c>).</summary>
+    /// <summary>Capture cap for the model's standard output in bytes: bounds what is retained; the stream is parsed to its end (spec 06 ex-Q4).</summary>
     public int MaxCaptureBytes { get; init; } = 2 * 1024 * 1024;
 }

@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 using Zyggy.Core.Processes;
@@ -8,9 +10,17 @@ namespace Zyggy.Core.Models;
 /// <summary>
 /// The v1 <see cref="IModelRunner"/>: runs <c>claude -p</c> through <see cref="IProcessRunner"/> with the spec's Invocation
 /// contract, the prompt on standard input, and maps every stream outcome to a result. Only cancellation by the caller throws.
+/// When the request names a transcript, every stdout line is appended to it as received (spec 06); a transcript that cannot be
+/// written is one warning, never a failed run.
 /// </summary>
-internal sealed class ClaudeCodeCliRunner(IProcessRunner processes, IOptions<ClaudeCodeOptions> options, TimeProvider clock) : IModelRunner
+internal sealed partial class ClaudeCodeCliRunner(
+    IProcessRunner processes,
+    IOptions<ClaudeCodeOptions> options,
+    TimeProvider clock,
+    ILogger<ClaudeCodeCliRunner>? log = null) : IModelRunner
 {
+    private readonly ILogger<ClaudeCodeCliRunner> _log = log ?? NullLogger<ClaudeCodeCliRunner>.Instance;
+
     // Recognised from the result text of a failed run; unconfirmed until the first live run (spec AC-30). A wrong guess only
     // changes the detail token, never the outcome.
     private static readonly string[] AuthMarkers = ["invalid api key", "/login", "not logged in", "authentication", "oauth token", "401"];
@@ -34,12 +44,39 @@ internal sealed class ClaudeCodeCliRunner(IProcessRunner processes, IOptions<Cla
         var environment = request.Environment.ToDictionary(kv => kv.Key, kv => (string?)kv.Value);
         // No credential reaches a model run unless the request names it (the m365 runs: the headersHelper reads the unit's key copy, D8).
         environment.TryAdd("CREDENTIALS_DIRECTORY", null);
+        var transcript = TranscriptWriter.Open(request.TranscriptPath);
+        try
+        {
+            return await RunProcessAsync(request, path, reader, environment, transcript, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            transcript?.Dispose();
+            if (transcript?.Failure is { } failure)
+            {
+                LogTranscriptNotWritten(failure);
+            }
+        }
+    }
+
+    private async Task<ModelRunResult> RunProcessAsync(
+        ModelRunRequest request,
+        string path,
+        StreamJsonReader reader,
+        Dictionary<string, string?> environment,
+        TranscriptWriter? transcript,
+        CancellationToken cancellationToken)
+    {
         var spec = new ProcessSpec(path, ClaudeArguments.Build(request), request.WorkingDirectory)
         {
             Environment = environment,
             StandardInput = request.Prompt,
             Timeout = request.Timeout,
-            OnStdoutLine = reader.Accept,
+            OnStdoutLine = line =>
+            {
+                transcript?.Write(line);
+                reader.Accept(line);
+            },
             MaxStdoutBytes = request.MaxCaptureBytes,
         };
 
@@ -67,6 +104,9 @@ internal sealed class ClaudeCodeCliRunner(IProcessRunner processes, IOptions<Cla
         return Classify(request, path, process, reader);
     }
 
+    [LoggerMessage(Level = LogLevel.Warning, Message = "transcript not written: {Detail}")]
+    private partial void LogTranscriptNotWritten(string detail);
+
     private static ModelRunResult Classify(ModelRunRequest request, string path, ProcessResult process, StreamJsonReader reader)
     {
         if (process.StartFailed)
@@ -80,11 +120,7 @@ internal sealed class ClaudeCodeCliRunner(IProcessRunner processes, IOptions<Cla
             return Failed(RunFailureReason.Timeout, ModelFailureDetail.Timeout, reader, process.Duration, process.ExitCode);
         }
 
-        if (reader.OutputTooLarge || process.StdoutTruncated)
-        {
-            return Failed(RunFailureReason.ClaudeError, ModelFailureDetail.OutputTooLarge, reader, process.Duration, process.ExitCode);
-        }
-
+        // Over the capture cap is not a failure (spec 06 ex-Q4): the reader parsed the whole stream; the cap bounds retention only.
         if (!reader.SawResult)
         {
             return Failed(RunFailureReason.ClaudeError, ModelFailureDetail.NoResult, reader, process.Duration, process.ExitCode);
@@ -157,5 +193,6 @@ internal sealed class ClaudeCodeCliRunner(IProcessRunner processes, IOptions<Cla
             reader.PermissionDenials)
         {
             PermissionDenialTools = reader.PermissionDenialTools,
+            LastAssistantText = reader.LastAssistantText,
         };
 }

@@ -832,7 +832,7 @@ Steps are named by what the system can do. One gate per slice (E and G carry two
 
 ## Step 22 — Patch 0.8.1 (owner-approved 2026-10-15, "patch"; finding F2 of the live slice): one checkout, one git writer at a time — a cross-process lock serialises every pull and write sequence, a pull that git refuses because another process touched the checkout is retried once, and a second `zyggy probe listen` on the same checkout refuses to start
 
-- [x] Done — 2026-10-15 (code + tests green: 4084 unit, 502 integration; release pending the owner's push approval)
+- [x] Done — 2026-10-15 (code + tests green: 4084 unit, 502 integration; v0.8.1 released, installed on Central with its pin in one run, both laptops updated)
 
 **Why**: the live slice showed two writers in one checkout (a listener plus a sender, or two listeners) colliding with `Cannot rebase onto multiple branches`, `cannot lock ref … expected …` and `fetch updated the current branch head`. Nothing was lost, but the errors repeat and the Node service (07) will run both roles in one machine.
 

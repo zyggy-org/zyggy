@@ -1,11 +1,13 @@
 // fake-claude: stands in for the `claude` CLI in integration tests (tools/fake-claude/README.md).
 // 1. argument capture (optional) → 2. stdin capture (optional) → 3. delay (optional) → 4. resolve scenario
-// → 5. stream its bytes unchanged → 6. exit (ZYGGY_FAKE_CLAUDE_EXIT, default 0).
+// → 5. stream its bytes unchanged → 5b. linger (optional, the "partial output then hang" case) → 6. exit (ZYGGY_FAKE_CLAUDE_EXIT, default 0).
 // Arguments are never parsed or validated; stdin is read only when ZYGGY_FAKE_CLAUDE_STDIN_CAPTURE is set.
 using System.Globalization;
 using System.Text;
 
-if (!TryReadInt("ZYGGY_FAKE_CLAUDE_DELAY_MS", min: 0, out var delayMs) || !TryReadInt("ZYGGY_FAKE_CLAUDE_EXIT", min: 0, out var exitCode))
+if (!TryReadInt("ZYGGY_FAKE_CLAUDE_DELAY_MS", min: 0, out var delayMs)
+    || !TryReadInt("ZYGGY_FAKE_CLAUDE_LINGER_MS", min: 0, out var lingerMs)
+    || !TryReadInt("ZYGGY_FAKE_CLAUDE_EXIT", min: 0, out var exitCode))
 {
     return 5;
 }
@@ -73,6 +75,11 @@ using (var stdout = Console.OpenStandardOutput())
 {
     input.CopyTo(stdout);
     stdout.Flush();
+}
+
+if (lingerMs > 0)
+{
+    Thread.Sleep(lingerMs);
 }
 
 return exitCode;

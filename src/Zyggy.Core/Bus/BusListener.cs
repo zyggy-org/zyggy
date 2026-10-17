@@ -249,7 +249,14 @@ public sealed partial class BusListener : IDisposable
                 reply.Reason,
                 reply.Started,
                 reply.Finished,
-                (int)Math.Max(0, Math.Round((reply.Finished - reply.Started).TotalSeconds)));
+                (int)Math.Max(0, Math.Round((reply.Finished - reply.Started).TotalSeconds)),
+                reply.CostUsd,
+                reply.InputTokens,
+                reply.OutputTokens,
+                reply.NumTurns,
+                reply.Model,
+                reply.FilesChanged,
+                reply.DiffRef);
             WriteOutcome report = await _bus.ReportAsync(accepted, fields, reply.Body, _signWith, ct).ConfigureAwait(false);
             if (report is WriteFailed failed)
             {
