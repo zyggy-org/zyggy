@@ -240,6 +240,124 @@ public sealed class NodeConfigurationReaderTests : IDisposable
         path.Should().Be(OperatingSystem.IsWindows() ? Path.Join("/local", "zyggy", "node.json") : Path.Join("/home/u", ".config", "zyggy", "node.json"));
     }
 
+    private const string ClaudeSection = """
+        "claude": { "path": "/opt/claude/claude", "maxTurns": 40, "defaultTimeoutMinutes": 15, "defaultAllowedTools": ["Read", "Edit"], "maxBudgetUsd": 5 },
+        """;
+
+    [Fact]
+    public void Read_ClaudeSection_Typed()
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel(ClaudeSection));
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        ClaudeSettings claude = result.Configuration!.Claude;
+        claude.Path.Should().Be("/opt/claude/claude");
+        claude.MaxTurns.Should().Be(40);
+        claude.DefaultTimeoutMinutes.Should().Be(15);
+        claude.DefaultAllowedTools.Should().Equal("Read", "Edit");
+        claude.EffectiveAllowedTools.Should().Equal("Read", "Edit");
+        claude.MaxBudgetUsd.Should().Be(5m);
+    }
+
+    [Fact]
+    public void Read_ClaudeAbsent_Defaults()
+    {
+        // Act
+        NodeConfigurationResult result = Read(Minimal);
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        NodeConfiguration cfg = result.Configuration!;
+        cfg.Claude.MaxTurns.Should().Be(60);
+        cfg.Claude.DefaultTimeoutMinutes.Should().Be(30);
+        cfg.Claude.EffectiveAllowedTools.Should().Equal("Read", "Grep", "Glob");
+        cfg.Claude.MaxBudgetUsd.Should().BeNull();
+        cfg.Claude.Path.Should().BeNull();
+        cfg.DevRoots.Should().BeEmpty();
+        cfg.NodeDir.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("\"claude\": { \"maxTurns\": 0 },", "claude.maxTurns")]
+    [InlineData("\"claude\": { \"defaultTimeoutMinutes\": 0 },", "claude.defaultTimeoutMinutes")]
+    [InlineData("\"claude\": { \"maxBudgetUsd\": -1 },", "claude.maxBudgetUsd")]
+    [InlineData("\"claude\": { \"maxBudgetUsd\": \"5\" },", "claude.maxBudgetUsd")]
+    [InlineData("\"claude\": { \"defaultAllowedTools\": \"Read\" },", "claude.defaultAllowedTools")]
+    [InlineData("\"claude\": { \"defaultAllowedTools\": [\"Read\", \"\"] },", "claude.defaultAllowedTools")]
+    [InlineData("\"claude\": { \"path\": \"\" },", "claude.path")]
+    [InlineData("\"claude\": \"x\",", "claude")]
+    [InlineData("\"devRoots\": \"/src\",", "devRoots")]
+    public void Read_ClaudeInvalid_InvalidFieldNamesKey(string insert, string field)
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel(insert));
+
+        // Assert
+        result.Error.Should().Be(NodeConfigurationError.InvalidField);
+        result.Field.Should().Be(field);
+    }
+
+    [Fact]
+    public void Read_MaxBudgetUsdNull_Null()
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"claude\": { \"maxBudgetUsd\": null },"));
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        result.Configuration!.Claude.MaxBudgetUsd.Should().BeNull();
+    }
+
+    [Fact]
+    public void Read_DevRoots_Typed()
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"devRoots\": [\"{root}/src\", \"{root}/work\"],"));
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        result.Configuration!.DevRoots.Should().Equal(Root + "/src", Root + "/work");
+    }
+
+    [Fact]
+    public void Read_DevRootsRelativeEntry_InvalidField()
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"devRoots\": [\"{root}/src\", \"relative/work\"],"));
+
+        // Assert
+        result.Error.Should().Be(NodeConfigurationError.InvalidField);
+        result.Field.Should().Be("devRoots[1]");
+        result.Detail.Should().Be("must be an absolute path");
+    }
+
+    [Fact]
+    public void Read_NodeDir_Typed()
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"nodeDir\": \"{root}/node\","));
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        result.Configuration!.NodeDir.Should().Be(Root + "/node");
+    }
+
+    [Fact]
+    public void Read_NodeDirRelative_InvalidField()
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"nodeDir\": \"node\","));
+
+        // Assert
+        result.Error.Should().Be(NodeConfigurationError.InvalidField);
+        result.Field.Should().Be("nodeDir");
+    }
+
+    private static string WithTopLevel(string insert) =>
+        Minimal.Replace("\"tenant\": \"acme\",", "\"tenant\": \"acme\", " + insert, StringComparison.Ordinal);
+
     private NodeConfigurationResult Read(string json)
     {
         string path = Path.Combine(_dir, "node.json");

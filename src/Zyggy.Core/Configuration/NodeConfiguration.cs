@@ -6,7 +6,8 @@ namespace Zyggy.Core.Configuration;
 /// <summary>
 /// The typed <c>node.json</c> a machine runs with (founding spec §10, the minimum of deliverable 04): who the node is, which
 /// bus it reads, how often it polls, where its secrets live. There is no default tenant; the file names it or the node refuses
-/// to start. The Node service extends this with its own keys (role, user, work hours, claude …), which this reader ignores.
+/// to start. Deliverable 06 adds <c>claude</c>, <c>devRoots</c> and <c>nodeDir</c>; the Node service's other keys (role, user, work
+/// hours …) are ignored by the reader.
 /// </summary>
 /// <param name="Tenant">The <c>tenant</c> — required.</param>
 /// <param name="Machine">The <c>machine</c> — required.</param>
@@ -20,4 +21,14 @@ public sealed record NodeConfiguration(
     KeyId? SignWith,
     BusSettings Bus,
     PollSettings Poll,
-    SecretsSettings Secrets);
+    SecretsSettings Secrets)
+{
+    /// <summary>Gets the <c>claude</c> section (spec 06); the §10 defaults when absent.</summary>
+    public ClaudeSettings Claude { get; init; } = new();
+
+    /// <summary>Gets the <c>devRoots</c> (absolute paths); read in 06, enforced with the registry (O18).</summary>
+    public IReadOnlyList<string> DevRoots { get; init; } = [];
+
+    /// <summary>Gets the <c>nodeDir</c> (an absolute path) that holds the node's <c>runs/</c> transcripts; <see langword="null"/> means the per-OS default.</summary>
+    public string? NodeDir { get; init; }
+}

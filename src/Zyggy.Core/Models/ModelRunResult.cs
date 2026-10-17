@@ -35,4 +35,10 @@ public sealed record ModelRunResult(
 {
     /// <summary>Gets the names of the denied tools (<c>permission_denials[].tool_name</c>), in the order reported.</summary>
     public IReadOnlyList<string> PermissionDenialTools { get; init; } = [];
+
+    /// <summary>
+    /// Gets the text of the stream's last assistant message (at most 2,000 characters), or <see langword="null"/> when none: the §6
+    /// summary fallback when a run has no result text (a timeout, a crash).
+    /// </summary>
+    public string? LastAssistantText { get; init; }
 }

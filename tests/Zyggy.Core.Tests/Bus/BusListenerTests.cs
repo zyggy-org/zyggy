@@ -179,6 +179,55 @@ public sealed class BusListenerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ProcessOnceAsync_HandlerReplyWithMetrics_ReportCarriesThem()
+    {
+        // Arrange: spec 06 ex-Q8 — the job runner's metrics reach the §4 report fields
+        var ct = TestContext.Current.CancellationToken;
+        await DropJobAsync(ct);
+        _handler = (_, _) => Task.FromResult(new JobReply(ReportStatus.Done, null, Encoding.UTF8.GetBytes("REPORT\nok\n"), T, T.AddSeconds(65))
+        {
+            CostUsd = 0.42m,
+            NumTurns = 12,
+            InputTokens = 1200,
+            OutputTokens = 300,
+            Model = "claude-sonnet-4-5",
+            FilesChanged = [],
+            DiffRef = null,
+        });
+
+        // Act
+        await Listener().ProcessOnceAsync(ct);
+
+        // Assert
+        string reportPath = _checkout.FilesUnder(BusPaths.Reports(Acme, HomeLaptop)).Single();
+        Model report = (await new EnvelopeSigner(_store).ParseAndVerifyAsync(_checkout.Read(reportPath), Acme, ct)).Envelope!;
+        report.Report!.CostUsd.Should().Be(0.42m);
+        report.Report.NumTurns.Should().Be(12);
+        report.Report.InputTokens.Should().Be(1200);
+        report.Report.OutputTokens.Should().Be(300);
+        report.Report.Model.Should().Be("claude-sonnet-4-5");
+        report.Report.FilesChanged.Should().NotBeNull().And.BeEmpty();
+        report.Report.DiffRef.Should().BeNull();
+        report.Report.DurationSeconds.Should().Be(65);
+    }
+
+    [Fact]
+    public async Task ProcessOnceAsync_ProbeReply_ReportHasNoMetricFields()
+    {
+        // Arrange: a reply without metrics (the probe's) writes the same report as before 06
+        var ct = TestContext.Current.CancellationToken;
+        await DropJobAsync(ct);
+
+        // Act
+        await Listener().ProcessOnceAsync(ct);
+
+        // Assert
+        string reportPath = _checkout.FilesUnder(BusPaths.Reports(Acme, HomeLaptop)).Single();
+        Model report = (await new EnvelopeSigner(_store).ParseAndVerifyAsync(_checkout.Read(reportPath), Acme, ct)).Envelope!;
+        report.FrontMatter.Entries.Keys.Should().NotContain(["cost_usd", "num_turns", "input_tokens", "output_tokens", "model", "files_changed", "diff_ref"]);
+    }
+
+    [Fact]
     public async Task ProcessOnceAsync_RejectedJob_HandlerNeverCalled()
     {
         // Arrange

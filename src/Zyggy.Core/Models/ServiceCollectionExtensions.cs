@@ -1,5 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+using Zyggy.Core.Processes;
 
 namespace Zyggy.Core.Models;
 
@@ -24,7 +28,11 @@ public static class ServiceCollectionExtensions
         }
 
         services.TryAddSingleton(TimeProvider.System);
-        services.AddSingleton<IModelRunner, ClaudeCodeCliRunner>();
+        services.AddSingleton<IModelRunner>(sp => new ClaudeCodeCliRunner(
+            sp.GetRequiredService<IProcessRunner>(),
+            sp.GetRequiredService<IOptions<ClaudeCodeOptions>>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetService<ILoggerFactory>()?.CreateLogger<ClaudeCodeCliRunner>()));
         return services;
     }
 }

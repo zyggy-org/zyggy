@@ -5,16 +5,7 @@ namespace Zyggy.Core.Tests.Infrastructure;
 /// <summary>AC-2: no tenant literal and no default tenant anywhere in <c>src/</c>.</summary>
 public sealed partial class SourceHygieneTests
 {
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Zyggy.slnx")))
-        {
-            dir = dir.Parent;
-        }
-
-        return dir?.FullName ?? throw new InvalidOperationException("Zyggy.slnx not found above the test output.");
-    }
+    private static string RepoRoot() => Infrastructure.RepoRoot.Find();
 
     [Fact]
     public void Src_ContainsNoTenantLiteral()

@@ -105,4 +105,84 @@ public sealed class StreamJsonReaderTests
         // Assert
         reader.PermissionDenials.Should().Be(3);
     }
+
+    [Fact]
+    public void Accept_TwoAssistantMessages_KeepsOnlyTheLastText()
+    {
+        // Arrange
+        var reader = new StreamJsonReader(1024 * 1024);
+
+        // Act
+        reader.Accept(StreamLines.Assistant("first"));
+        reader.Accept(StreamLines.Assistant("second"));
+
+        // Assert
+        reader.LastAssistantText.Should().Be("second");
+    }
+
+    [Fact]
+    public void Accept_AssistantWithTwoTextBlocks_Concatenated()
+    {
+        // Arrange
+        var reader = new StreamJsonReader(1024 * 1024);
+        const string Line = """{"type":"assistant","message":{"content":[{"type":"text","text":"one"},{"type":"tool_use","name":"Read"},{"type":"text","text":"two"}]}}""";
+
+        // Act
+        reader.Accept(Line);
+
+        // Assert
+        reader.LastAssistantText.Should().Be("one\ntwo");
+    }
+
+    [Fact]
+    public void Accept_AssistantToolUseOnly_LastTextUnchanged()
+    {
+        // Arrange
+        var reader = new StreamJsonReader(1024 * 1024);
+        reader.Accept(StreamLines.Assistant("kept"));
+
+        // Act
+        reader.Accept("""{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{}}]}}""");
+
+        // Assert
+        reader.LastAssistantText.Should().Be("kept");
+    }
+
+    [Fact]
+    public void Accept_AssistantTextOver2000_TruncatedHead()
+    {
+        // Arrange
+        var reader = new StreamJsonReader(1024 * 1024);
+        var text = new string('a', 1500) + new string('b', 1500);
+
+        // Act
+        reader.Accept(StreamLines.Assistant(text));
+
+        // Assert
+        reader.LastAssistantText.Should().Be(text[..2000]);
+    }
+
+    [Fact]
+    public void Accept_ThreeMegabytesThenResult_ResultParsedAndOutputTooLarge()
+    {
+        // Arrange
+        var reader = new StreamJsonReader(2 * 1024 * 1024);
+        var line = StreamLines.Assistant(new string('x', 10_000));
+
+        // Act
+        reader.Accept(StreamLines.Init());
+        for (var written = 0L; written < 3L * 1024 * 1024; written += line.Length + 1)
+        {
+            reader.Accept(line);
+        }
+
+        reader.Accept(StreamLines.Result());
+
+        // Assert
+        reader.SawResult.Should().BeTrue();
+        reader.CostUsd.Should().NotBeNull();
+        reader.NumTurns.Should().NotBeNull();
+        reader.OutputTooLarge.Should().BeTrue();
+        reader.LastAssistantText!.Length.Should().BeLessThanOrEqualTo(2000);
+    }
 }

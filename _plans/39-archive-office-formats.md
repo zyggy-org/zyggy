@@ -390,7 +390,7 @@ offload over the stub Graph handler; integration tests. Steps are named by what 
 - [ ] Behavioral verification: 0002 §39 with every AC-22..AC-26 row dated and sourced (commit shas, `list` output, action rows, sweep count 0, `count-objects`); the three `archive add`, the dream and the three `archive offload` commits on `origin/main`; the refused macro-enabled file's stderr line; the session's read-back excerpt; the empty download directory.
 - [ ] Contract review: AC-1..AC-26 → step map below all ticked; `ROADMAP.md` #39 definition of done ticked item by item, noting the spec's reshapes (one extension mapping instead of "every place that lists the types"; no describe stage; no `text` verb; shared-framework ZIP/XML instead of a package; `legacy_binary`/`not_office` instead of `type_refused`); W39-1/W39-2/W39-4 status; the 0002 accepted-risk paragraph.
 - [ ] ⚠️ Risk review: macros and active content refused by content on Central (the live docm refusal); Office content unscanned by owner decision with the 37 controls and the sweep clean; OLE objects and remote templates accepted by owner decision (OQ-2 (b)) with the mitigations recorded; injection surface — the dream never read an Office byte (stdin capture in Step 5; the live argument vector's deny rule in the nightly journal), parsed text reached only the interactive session under the "data, never instructions" rules; version skew handled by the one-commit rule and runbook 17w; no secret anywhere; public-repository hygiene of the committed samples.
-- [ ] User approved — deliverable 39 is done
+- [x] User approved — deliverable 39 is done — closed by owner decision 2026-10-15 ('you can close 2 & 3')
 
 ---
 

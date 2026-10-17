@@ -5,11 +5,15 @@ namespace Zyggy.Core.Models;
 
 /// <summary>
 /// Reads a Claude Code <c>stream-json</c> output line by line: the model from the <c>system/init</c> event and every
-/// field of the final <c>result</c> event. Lines that are not JSON objects are ignored; a result line that cannot be
-/// read is marked, never thrown. Output beyond the byte cap marks the stream as too large and is not parsed.
+/// field of the final <c>result</c> event, and the text of the last <c>assistant</c> message (at most
+/// <see cref="MaxAssistantTextLength"/> characters). Lines that are not JSON objects are ignored; a result line that cannot be
+/// read is marked, never thrown. Output beyond the byte cap marks <see cref="OutputTooLarge"/>, yet every line is still parsed,
+/// so a late <c>result</c> is read (spec 06 ex-Q4); memory held is bounded by the last text, not by the stream.
 /// </summary>
 internal sealed class StreamJsonReader(int maxBytes)
 {
+    public const int MaxAssistantTextLength = 2000;
+
     private long _bytes;
 
     public bool OutputTooLarge { get; private set; }
@@ -42,19 +46,16 @@ internal sealed class StreamJsonReader(int maxBytes)
 
     public IReadOnlyList<string> PermissionDenialTools { get; private set; } = [];
 
+    /// <summary>Gets the concatenated <c>text</c> blocks of the last assistant message that had any, at most 2,000 characters.</summary>
+    public string? LastAssistantText { get; private set; }
+
     public void Accept(string line)
     {
         ArgumentNullException.ThrowIfNull(line);
-        if (OutputTooLarge)
-        {
-            return;
-        }
-
         _bytes += Encoding.UTF8.GetByteCount(line) + 1;
         if (_bytes > maxBytes)
         {
             OutputTooLarge = true;
-            return;
         }
 
         JsonDocument document;
@@ -86,12 +87,36 @@ internal sealed class StreamJsonReader(int maxBytes)
                 case "system" when root.TryGetProperty("model", out var model) && model.ValueKind == JsonValueKind.String:
                     Model = model.GetString();
                     break;
+                case "assistant":
+                    ReadAssistant(root);
+                    break;
                 case "result":
                     SawResult = true;
                     ResultUnparseable = !TryReadResult(root);
                     break;
             }
         }
+    }
+
+    private void ReadAssistant(JsonElement root)
+    {
+        if (!root.TryGetProperty("message", out var message) || message.ValueKind != JsonValueKind.Object
+            || !message.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        var texts = content.EnumerateArray()
+            .Where(b => b.ValueKind == JsonValueKind.Object && String(b, "type") == "text" && b.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String)
+            .Select(b => b.GetProperty("text").GetString()!)
+            .ToList();
+        if (texts.Count == 0)
+        {
+            return;
+        }
+
+        var text = string.Join('\n', texts);
+        LastAssistantText = text.Length > MaxAssistantTextLength ? text[..MaxAssistantTextLength] : text;
     }
 
     private static bool LooksLikeResult(string line) =>

@@ -1,8 +1,9 @@
 # 0001 — Transport A and Central VM
 
-Status: open. VM soak section (deliverable 02) closed 2026-10-05 by owner decision — unfinished checks carried to
-33's Central evidence (plan 33 Steps 21–22); 05 references that evidence and no longer collects the day-7 result
-itself. Transport section open; the record is closed by deliverable 05.
+Status: closed 2026-10-15 by owner decision ("you can close 2 & 3"): transport A confirmed on the evidence below
+(deliverable 04 and patch 0.8.1); deliverable 05 was not built separately — no `Gates/P0_*` scenario, no latency
+target (O21). VM soak section (deliverable 02) closed 2026-10-05 by owner decision — unfinished checks carried to
+33's Central evidence (plan 33 Steps 21–22).
 
 Owner decision 2026-10-05, verbatim: "Before you implement I permit you to break and finish open work of preceding
 plans here in .Net so that we've in the end a clean slate with all finished work. In anyway the open items in other

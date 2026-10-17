@@ -167,8 +167,8 @@ public static partial class NodeConfigurationReader
                 return Invalid("poll", "must be an object");
             }
 
-            if (!TryPositiveInt(pollElement, "activeSeconds", poll.ActiveSeconds, out int active, out failure)
-                || !TryPositiveInt(pollElement, "idleSeconds", poll.IdleSeconds, out int idle, out failure))
+            if (!TryPositiveInt(pollElement, "activeSeconds", poll.ActiveSeconds, out int active, out failure, "poll.")
+                || !TryPositiveInt(pollElement, "idleSeconds", poll.IdleSeconds, out int idle, out failure, "poll."))
             {
                 return failure;
             }
@@ -192,13 +192,131 @@ public static partial class NodeConfigurationReader
             secrets = new SecretsSettings(secretsRoot);
         }
 
+        if (!TryClaude(root, out ClaudeSettings claude, out failure)
+            || !TryAbsolutePaths(root, "devRoots", out IReadOnlyList<string> devRoots, out failure))
+        {
+            return failure;
+        }
+
+        if (TryOptionalString(root, "nodeDir", out string? nodeDir, out failure) is false)
+        {
+            return failure!;
+        }
+
+        if (nodeDir is not null && !Path.IsPathFullyQualified(nodeDir))
+        {
+            return Invalid("nodeDir", "must be an absolute path");
+        }
+
         return NodeConfigurationResult.Ok(new NodeConfiguration(
             tenant,
             machine,
             signWith,
             new BusSettings(owner!, repo!, string.IsNullOrEmpty(branch) ? "main" : branch, localPath!, remote!),
             poll,
-            secrets));
+            secrets)
+        {
+            Claude = claude,
+            DevRoots = devRoots,
+            NodeDir = nodeDir,
+        });
+    }
+
+    /// <summary>The <c>claude</c> section (spec 06): absent means the §10 defaults; every refusal names its dotted key.</summary>
+    private static bool TryClaude(JsonElement root, out ClaudeSettings claude, out NodeConfigurationResult failure)
+    {
+        claude = new ClaudeSettings();
+        failure = null!;
+        if (!root.TryGetProperty("claude", out JsonElement section) || section.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (section.ValueKind != JsonValueKind.Object)
+        {
+            failure = Invalid("claude", "must be an object");
+            return false;
+        }
+
+        if (TryOptionalString(section, "path", out string? path, out NodeConfigurationResult? pathFailure, "claude.") is false)
+        {
+            failure = pathFailure!;
+            return false;
+        }
+
+        if (path is { Length: 0 })
+        {
+            failure = Invalid("claude.path", "must be a non-empty string");
+            return false;
+        }
+
+        if (!TryPositiveInt(section, "maxTurns", claude.MaxTurns, out int maxTurns, out failure, "claude.")
+            || !TryPositiveInt(section, "defaultTimeoutMinutes", claude.DefaultTimeoutMinutes, out int timeout, out failure, "claude."))
+        {
+            return false;
+        }
+
+        IReadOnlyList<string>? tools = null;
+        if (section.TryGetProperty("defaultAllowedTools", out JsonElement toolsElement) && toolsElement.ValueKind != JsonValueKind.Null)
+        {
+            if (toolsElement.ValueKind != JsonValueKind.Array
+                || toolsElement.EnumerateArray().Any(t => t.ValueKind != JsonValueKind.String || string.IsNullOrEmpty(t.GetString())))
+            {
+                failure = Invalid("claude.defaultAllowedTools", "must be an array of non-empty strings");
+                return false;
+            }
+
+            tools = [.. toolsElement.EnumerateArray().Select(t => t.GetString()!)];
+        }
+
+        decimal? budget = null;
+        if (section.TryGetProperty("maxBudgetUsd", out JsonElement budgetElement) && budgetElement.ValueKind != JsonValueKind.Null)
+        {
+            if (budgetElement.ValueKind != JsonValueKind.Number || !budgetElement.TryGetDecimal(out decimal parsed) || parsed <= 0)
+            {
+                failure = Invalid("claude.maxBudgetUsd", "must be null or a positive number");
+                return false;
+            }
+
+            budget = parsed;
+        }
+
+        claude = new ClaudeSettings(path, maxTurns, timeout, tools, budget);
+        return true;
+    }
+
+    /// <summary>An optional array of absolute paths; an entry that is not one is refused as <c>&lt;key&gt;[&lt;i&gt;]</c>.</summary>
+    private static bool TryAbsolutePaths(JsonElement root, string key, out IReadOnlyList<string> paths, out NodeConfigurationResult failure)
+    {
+        paths = [];
+        failure = null!;
+        if (!root.TryGetProperty(key, out JsonElement element) || element.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (element.ValueKind != JsonValueKind.Array)
+        {
+            failure = Invalid(key, "must be an array of absolute paths");
+            return false;
+        }
+
+        var list = new List<string>();
+        var index = 0;
+        foreach (JsonElement entry in element.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.String || entry.GetString() is not { Length: > 0 } path || !Path.IsPathFullyQualified(path))
+            {
+                failure = Invalid($"{key}[{index}]", "must be an absolute path");
+                return false;
+            }
+
+            list.Add(path);
+            index++;
+        }
+
+        paths = list;
+        return true;
     }
 
     /// <summary>Depth-first: the first key, at any depth, that contains a secret word (case-insensitive), as a dotted path.</summary>
@@ -272,7 +390,7 @@ public static partial class NodeConfigurationReader
         return true;
     }
 
-    private static bool TryPositiveInt(JsonElement element, string key, int fallback, out int value, out NodeConfigurationResult failure)
+    private static bool TryPositiveInt(JsonElement element, string key, int fallback, out int value, out NodeConfigurationResult failure, string prefix)
     {
         value = fallback;
         failure = null!;
@@ -283,7 +401,7 @@ public static partial class NodeConfigurationReader
 
         if (property.ValueKind != JsonValueKind.Number || !property.TryGetInt32(out int parsed) || parsed <= 0)
         {
-            failure = Invalid("poll." + key, "must be a positive integer");
+            failure = Invalid(prefix + key, "must be a positive integer");
             return false;
         }
 
