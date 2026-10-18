@@ -58,6 +58,10 @@ Every bus verb reads `node.json`: `--config <path>`, else `ZYGGY_NODE_JSON`, els
 | `bus.owner`, `bus.repo`, `bus.localPath` (absolute), `bus.remote` | required; the remote is the checkout's `origin` URL (HTTPS or SSH form) | — |
 | `bus.branch` | | `main` |
 | `poll.activeSeconds`, `poll.idleSeconds` | positive integers | 10, 60 |
+| `poll.safetyFetchMinutes` | positive integer; read by the Node service (07): the period of the unconditional `git fetch` that catches a head check that lies; the probe verbs validate it but otherwise ignore it | 15 |
+| `workHours` | object `{ "timezone", "days", "from", "to" }` or absent; read by the Node service (07): `timezone` an IANA id (`Europe/Brussels`), `days` a non-empty array of `Mon`..`Sun` without duplicates, `from`/`to` as `HH:mm` with `to` after `from` (no overnight window); **absent = always inside work hours** (Central); refused with the dotted key (`workHours.timezone` unknown, `workHours.days[0]` not a day, `workHours.to` not after `from`); the probe verbs validate it but otherwise ignore it | absent |
+| `maxConcurrentJobs` | positive integer; read by the Node service (07): how many jobs may run at once (a value above 4 is accepted with one advisory warning); the probe verbs validate it but otherwise ignore it | 2 |
+| `log.level` | `Debug`, `Information`, `Warning` or `Error`; read by the Node service (07) for its rolling log file; the probe verbs validate it but otherwise ignore it | `Information` |
 | `secrets.root` | the file secret store's root | the per-OS default |
 | `claude.path` | the `claude` executable; a non-empty string | `claude` (resolved on `PATH`) |
 | `claude.maxTurns` | positive integer; the turn limit of every job run (`--max-turns`) | 60 |

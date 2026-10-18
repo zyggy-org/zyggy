@@ -22,34 +22,34 @@ public sealed class NodeHostJobFlowTests
     [Fact]
     public async Task TwoJobsTwoProjectsThenThirdToFirst_ConcurrentThenDeferredThenThreeReports()
     {
-        // Arrange: AC-17 — three slots so the third job is deferred for its project, not for a slot (rule order of §6)
+        // Arrange: AC-17 — three jobs on the bus before the host starts: two for the first project, one for the second; three slots so
+        // the second job of the first project is deferred for its project, not for a slot (the §6 rule order). The ids share a timestamp,
+        // so which of the two first-project jobs runs first is the ULID's random part — the facts are written for either order.
         var ct = TestContext.Current.CancellationToken;
         await using NodeHostHarness harness = await NodeHostHarness.CreateAsync(ct);
         harness.WriteNodeJson(maxConcurrentJobs: 3);
-        harness.FakeEnvironment["ZYGGY_FAKE_CLAUDE_DELAY_MS"] = "5000";
+        harness.FakeEnvironment["ZYGGY_FAKE_CLAUDE_DELAY_MS"] = "8000";
         ScratchProject first = await harness.ProjectAsync(ct);
         ScratchProject second = await harness.ProjectAsync(ct);
         SeededJob job1 = await harness.SeedJobAsync(first, ct);
         SeededJob job2 = await harness.SeedJobAsync(second, ct);
+        SeededJob job3 = await harness.SeedJobAsync(first, ct);
         using IHost host = harness.Build();
         await host.StartAsync(ct);
         HealthServer server = host.Services.GetRequiredService<HealthServer>();
         await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(server.IsListening), TimeSpan.FromSeconds(10), ct);
         using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{server.BoundPort}/") };
 
-        // Act 1: both run at once
-        // generous bounds: under full-suite load the 1 s ticks and the 3 s fake runs stretch; a passing run never waits them out
+        // Act 1: two run at once (one per project), the third waits for its project
         await NodeHostHarness.WaitUntilAsync(async () => (await HealthAsync(client, ct)).GetProperty("jobsRunning").GetInt32() == 2, TimeSpan.FromSeconds(45), ct);
         bool bothCapturesExist = File.Exists(Path.Combine(first.Path, "capture.bin")) && File.Exists(Path.Combine(second.Path, "capture.bin"));
         int reportsWhileBothRun = (await harness.ReportsOnMainAsync(ct)).Count;
+        string? deferredLine = harness.LogLines.FirstOrDefault(l => l.Contains("deferred: ProjectBusy", StringComparison.Ordinal));
+        SeededJob deferred = deferredLine?.Contains(job3.Id.Value, StringComparison.Ordinal) == true ? job3 : job1;
+        bool deferredStillQueued = await harness.Bus.ExistsOnMainAsync(deferred.RelativePath, ct);
 
-        // Act 2: a third job to the first project waits for it
-        SeededJob job3 = await harness.SeedJobAsync(first, ct);
-        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(harness.LogLines.Any(l => l.Contains($"job {job3.Id.Value} deferred: ProjectBusy", StringComparison.Ordinal))), TimeSpan.FromSeconds(45), ct);
-        bool thirdStillQueued = await harness.Bus.ExistsOnMainAsync(job3.RelativePath, ct);
-
-        // Act 3: all three end
-        await NodeHostHarness.WaitUntilAsync(async () => (await harness.ReportsOnMainAsync(ct)).Count == 3, TimeSpan.FromSeconds(60), ct);
+        // Act 2: all three end
+        await NodeHostHarness.WaitUntilAsync(async () => (await harness.ReportsOnMainAsync(ct)).Count == 3, TimeSpan.FromSeconds(90), ct);
         await NodeHostHarness.WaitUntilAsync(async () =>
         {
             JsonElement health = await HealthAsync(client, ct);
@@ -60,8 +60,10 @@ public sealed class NodeHostJobFlowTests
         // Assert
         bothCapturesExist.Should().BeTrue();
         reportsWhileBothRun.Should().Be(0);
-        thirdStillQueued.Should().BeTrue("the deferred job stays in jobs/ on main");
-        harness.LogLines.Where(l => l.Contains($"job {job3.Id.Value} deferred: ProjectBusy", StringComparison.Ordinal)).Should().ContainSingle();
+        deferredLine.Should().NotBeNull("one of the first project's jobs waits for the other").And.Contain($"job {deferred.Id.Value} deferred: ProjectBusy");
+        deferredStillQueued.Should().BeTrue("the deferred job stays in jobs/ on main");
+        harness.LogLines.Where(l => l.Contains("deferred: ProjectBusy", StringComparison.Ordinal)).Should().ContainSingle();
+        harness.LogLines.Where(l => l.Contains($"job {deferred.Id.Value} admitted after deferral", StringComparison.Ordinal)).Should().ContainSingle();
         IReadOnlyList<string> reports = await harness.ReportsOnMainAsync(ct);
         var replies = new List<EnvelopeId>();
         foreach (string path in reports)

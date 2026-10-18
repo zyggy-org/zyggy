@@ -441,6 +441,73 @@ public sealed partial class SourceHygieneTests
     }
 
     [Fact]
+    public void Src_Node_NoClockOrStaticStateOutsideNodeHost()
+    {
+        // Arrange: spec 07 AC-12 — the clock comes from the composition root; no static mutable state
+        var offenders = NodeSourceFiles()
+            .Where(kv => kv.Value.Contains("DateTime.UtcNow", StringComparison.Ordinal)
+                || kv.Value.Contains("DateTimeOffset.UtcNow", StringComparison.Ordinal)
+                || kv.Value.Contains("TimeProvider.System", StringComparison.Ordinal)
+                || StaticMutableField().IsMatch(CommentLine().Replace(kv.Value, string.Empty)))
+            .Select(kv => kv.Key)
+            .ToList();
+
+        // Assert
+        offenders.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Src_Node_NoProcessHttpClientGitHubClaudeOrSecretStoreReference()
+    {
+        // Arrange: spec 07 AC-12 — the Node composes Core; every seam implementation stays in Core
+        string[] forbidden = ["System.Diagnostics.Process", "new HttpClient", "HttpClient", "github", "GitHub", "\"claude\"", "FileSecretStore", "ISecretStore"];
+
+        // Act
+        var offenders = NodeSourceFiles()
+            .Where(kv => forbidden.Any(t => CommentLine().Replace(kv.Value, string.Empty).Contains(t, StringComparison.Ordinal)))
+            .Select(kv => kv.Key)
+            .ToList();
+
+        // Assert
+        offenders.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Src_Node_NoBusPathLiteral()
+    {
+        // Arrange: spec 07 AC-12 — bus paths only through BusPaths (in Core)
+        string[] literals = ["tenants/", "nodes/", "jobs/", "reports/", "context/", "archive/", "registry/", "PROTOCOL.md"];
+
+        // Act
+        var offenders = NodeSourceFiles()
+            .Where(kv => literals.Any(t => CommentLine().Replace(kv.Value, string.Empty).Contains("\"" + t, StringComparison.Ordinal)))
+            .Select(kv => kv.Key)
+            .ToList();
+
+        // Assert
+        offenders.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Src_NoDangerouslySkipPermissions()
+    {
+        // Act: spec 06 AC-16 re-asserted over all of src/ (spec 07 AC-12)
+        var offenders = SourceFiles()
+            .Where(f => File.ReadAllText(f).Contains("dangerously-skip-permissions", StringComparison.OrdinalIgnoreCase))
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .ToList();
+
+        // Assert
+        offenders.Should().BeEmpty();
+    }
+
+    private static Dictionary<string, string> NodeSourceFiles() =>
+        SourceFiles()
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .Where(f => f.StartsWith("src/Zyggy.Node/", StringComparison.Ordinal))
+            .ToDictionary(f => f, f => File.ReadAllText(Path.Combine(RepoRoot(), f)), StringComparer.Ordinal);
+
+    [Fact]
     public void Src_NoOpenTelemetryNamespace()
     {
         // Arrange: spec 07 / O8 — telemetry is off in v1; no collector wired anywhere
