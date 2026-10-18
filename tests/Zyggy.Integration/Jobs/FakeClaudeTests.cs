@@ -398,6 +398,70 @@ public sealed partial class FakeClaudeTests
     [GeneratedRegex(@"^(#+\s*)?REPORT\s*$")]
     private static partial Regex ReportHeading();
 
+    // ----- plan 07 Step 7: the `auth status` mode -----
+
+    [Fact]
+    public async Task Run_AuthStatus_ExitZeroLoggedIn()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        using var scratch = new ScratchDirectory();
+
+        // Act
+        var result = await RunAsync(null, null, ["auth", "status"], scratch.Path, ct);
+
+        // Assert
+        result.ExitCode.Should().Be(0);
+        Encoding.UTF8.GetString(result.Stdout).TrimEnd().Should().Be("logged in");
+        result.Stderr.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Run_AuthStatusWithAuthZero_ExitOneNotLoggedIn()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        using var scratch = new ScratchDirectory();
+
+        // Act
+        var result = await RunAsync(null, null, ["auth", "status"], scratch.Path, ct, new() { ["ZYGGY_FAKE_CLAUDE_AUTH"] = "0" });
+
+        // Assert
+        result.ExitCode.Should().Be(1);
+        Encoding.UTF8.GetString(result.Stdout).TrimEnd().Should().Be("not logged in");
+    }
+
+    [Fact]
+    public async Task Run_AuthStatus_WritesNoCaptureFile()
+    {
+        // Arrange: the probe is not a run — no capture, no scenario
+        var ct = TestContext.Current.CancellationToken;
+        using var scratch = new ScratchDirectory();
+        var capture = scratch.File("capture.bin");
+
+        // Act
+        var result = await RunAsync("done", capture, ["auth", "status"], scratch.Path, ct);
+
+        // Assert
+        result.ExitCode.Should().Be(0);
+        File.Exists(capture).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Run_AuthStatusInvalidAuthValue_ExitFive()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        using var scratch = new ScratchDirectory();
+
+        // Act
+        var result = await RunAsync(null, null, ["auth", "status"], scratch.Path, ct, new() { ["ZYGGY_FAKE_CLAUDE_AUTH"] = "maybe" });
+
+        // Assert
+        result.ExitCode.Should().Be(5);
+        result.Stderr.TrimEnd().Should().Be("fake-claude: invalid ZYGGY_FAKE_CLAUDE_AUTH 'maybe'");
+    }
+
     private static async Task<(int ExitCode, byte[] Stdout, string Stderr)> RunAsync(
         string? scenario,
         string? capturePath,

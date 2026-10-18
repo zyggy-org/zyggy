@@ -122,7 +122,8 @@ public sealed partial class JobDispatcher
     {
         if (_deferred.Add(id))
         {
-            LogDeferred(id, reason);
+            string reasonText = reason.ToString();
+            LogDeferred(id, reasonText);
         }
 
         return new Deferred(reason);
@@ -157,7 +158,7 @@ public sealed partial class JobDispatcher
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "job {Id} deferred: {Reason}")]
-    private partial void LogDeferred(string id, DeferralReason reason);
+    private partial void LogDeferred(string id, string reason);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "job {Id} admitted after deferral")]
     private partial void LogAdmittedAfterDeferral(string id);

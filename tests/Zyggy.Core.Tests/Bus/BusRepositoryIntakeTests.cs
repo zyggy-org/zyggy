@@ -124,6 +124,40 @@ public sealed class BusRepositoryIntakeTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ListClaimedAsync_ListsOnlyOwnClaimedFolderInOrdinalOrder()
+    {
+        // Arrange: plan 07 Step 4 — the resume and the health count read this machine's claimed/ only
+        var ct = TestContext.Current.CancellationToken;
+        var older = EnvelopeId.New(T.AddMinutes(-5));
+        var newer = EnvelopeId.New(T);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Claimed(Acme, HomeLaptop), newer), [1]);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Claimed(Acme, HomeLaptop), older), [1]);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Jobs(Acme, HomeLaptop), EnvelopeId.New(T)), [1]);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Claimed(Acme, Central), EnvelopeId.New(T)), [1]);
+        _checkout.Drop(BusPaths.Claimed(Acme, HomeLaptop) + "/notes.txt", [1]);
+
+        // Act
+        IReadOnlyList<BusFile> files = await Repository().ListClaimedAsync(ct);
+
+        // Assert
+        files.Select(f => f.Id).Should().Equal(older, newer);
+        files.Select(f => f.RelativePath).Should().Equal(
+            BusPaths.EnvelopeFile(BusPaths.Claimed(Acme, HomeLaptop), older),
+            BusPaths.EnvelopeFile(BusPaths.Claimed(Acme, HomeLaptop), newer));
+    }
+
+    [Fact]
+    public async Task HeadShaAsync_RevParseHead()
+    {
+        // Act
+        string? sha = await Repository().HeadShaAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        sha.Should().Be("0123456789abcdef0123456789abcdef01234567");
+        _processes.CallsOf("rev-parse").Should().ContainSingle().Which.Arguments.Should().EndWith(["rev-parse", "HEAD"]);
+    }
+
+    [Fact]
     public async Task ListNewJobsAsync_EmptyFolder_Empty()
     {
         // Act

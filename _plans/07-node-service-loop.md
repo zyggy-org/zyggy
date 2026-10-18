@@ -182,16 +182,16 @@ Never the real claude, never GitHub. Steps are named by what the system can do. 
 
 **In plain words**: `node.json` now carries the working window, the number of parallel jobs, the safety-fetch period and the log level, each refused with its key named when wrong; the working window is evaluated correctly on both operating systems, including the clock changes in March and October. A dispatcher, fed a job and the current time, answers "run it" or "wait: outside work hours / no free slot / project busy", and says so in the log exactly once per waiting spell. Nothing touches the bus yet.
 
-- [ ] Behavioral verification: `NodeConfigurationReaderTests` (the eleven refusal rows), `WorkHoursTests` (boundaries and DST rows shown with their UTC instants and local times), `JobDispatcherTests.AdmitAsync_RulesInOrder`, the two-log-lines fact, `JobDispatcherRegistrationTests`.
-- [ ] Contract review: AC-1..AC-6 (first half) against the spec; the `node.json` additions table (defaults and refusal strings); **Assumption A1** (`Admitted(IDisposable Lease)` — the slot is taken atomically in `AdmitAsync` and released by the listener, instead of a separate `Track` call); **A6** (`AddJobDispatcher` in Core, called by the Node only).
-- [ ] ⚠️ Risk review (shared records `NodePolicy`, `PollOptions`; `node.json`): 06's and 04's tests compile and pass unedited apart from additive facts; no secret-looking key accepted; `TimeZoneConverter` is used in one file (`WorkHours.cs`) and the reader's `TryGetTimeZoneInfo`.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `NodeConfigurationReaderTests` (the eleven refusal rows), `WorkHoursTests` (boundaries and DST rows shown with their UTC instants and local times), `JobDispatcherTests.AdmitAsync_RulesInOrder`, the two-log-lines fact, `JobDispatcherRegistrationTests`.
+- [x] Contract review: AC-1..AC-6 (first half) against the spec; the `node.json` additions table (defaults and refusal strings); **Assumption A1** (`Admitted(IDisposable Lease)` — the slot is taken atomically in `AdmitAsync` and released by the listener, instead of a separate `Track` call); **A6** (`AddJobDispatcher` in Core, called by the Node only).
+- [x] ⚠️ Risk review (shared records `NodePolicy`, `PollOptions`; `node.json`): 06's and 04's tests compile and pass unedited apart from additive facts; no secret-looking key accepted; `TimeZoneConverter` is used in one file (`WorkHours.cs`) and the reader's `TryGetTimeZoneInfo`.
+- [x] User approved — implementation may continue past this gate *(owner, 2026-10-17: "approved")*
 
 ---
 
 ## Step 4 — The listener consults the gate before claiming: a deferred job stays in `jobs/` (no claim, no handler, not counted), an admitted job is claimed inline and its run + report continue as a tracked task so `ProcessOnceAsync` returns and the loop keeps ringing the doorbell; `Status` reports `JobsRunning`, `LastPollUtc`, `LastPullUtc`, `LastReportUtc`, `BusHeadSha`, `JobsClaimedByMe`, the poll state and the mode; cancellation interrupts the runs without a report and drains; on the bare repository a job whose project lock is held stays in `jobs/` on `main` while a free one is answered
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Bus/ListenerStatus.cs` *(create, public sealed record `ListenerStatus(PollState Poll, DateTimeOffset? LastPollUtc, DateTimeOffset? LastPullUtc, DateTimeOffset? LastReportUtc, string? BusHeadSha, int JobsRunning, int JobsClaimedByMe, PollMode Mode)`)*.
@@ -222,7 +222,7 @@ Never the real claude, never GitHub. Steps are named by what the system can do. 
 
 ## Step 5 — The loop re-evaluates its mode every tick (`poll mode {Mode}` once per transition; `Idle → Active` processes the inbox without waiting for the branch to move) and runs the §5 item 6 safety fetch every `SafetyFetchInterval`: `BusRepository.SafetyFetchAsync` fetches and compares `origin/<branch>` with `HEAD` under the checkout lock; `Moved` ⇒ one `Warning`, a pull, a pass and `ETag = null`; `Unchanged` ⇒ silence; `Failed` ⇒ one `Warning` per streak — proven with a fake clock and on the bare repository
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Bus/SafetyFetchResult.cs` *(create: `public enum SafetyFetchOutcome { Unchanged, Moved, Failed }`; `public sealed record SafetyFetchResult(SafetyFetchOutcome Outcome, string Detail)`)*.
@@ -252,7 +252,7 @@ Never the real claude, never GitHub. Steps are named by what the system can do. 
 
 ## Step 6 — A node resumes its own interrupted claims: after the start-up pull, `ResumeClaimedAsync` lists this machine's `jobs/claimed/*.md`, re-verifies each, runs the verifying ones through gate → handler → report with no second claim commit, leaves the others with one `Warning` for the sweep, and logs `resuming {Count} claimed job(s) from a previous run` once — proven over a temp checkout and on the bare repository
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Bus/BusRepository.cs` *(modify, additive)*: `Task<JobIntake> VerifyClaimedAsync(BusFile claimed, ct)` — the `VerifyIntakeAsync` logic for a file under `claimed/` (same checks; a `RejectedJob` result is **informational only**: nothing is moved).
@@ -280,7 +280,7 @@ Never the real claude, never GitHub. Steps are named by what the system can do. 
 
 ## Step 7 — The model seam can say whether Claude is logged in: `IModelRunner.CheckAuthAsync(ct)` returns `true`/`false`/`null`; `ClaudeCodeCliRunner` runs `claude auth status` through `IProcessRunner` with a 30 s timeout (exit 0 → `true`, 1 → `false`, start failure / timeout / other → `null`), never throws except for the caller's cancellation; `fake-claude` answers `auth status` (exit 0, or 1 under `ZYGGY_FAKE_CLAUDE_AUTH=0`) without touching a scenario or a capture file
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Models/IModelRunner.cs` *(modify, additive: `Task<bool?> CheckAuthAsync(CancellationToken cancellationToken)`; XML doc: A7-4, `null` = could not tell)*; `ClaudeCodeCliRunner.cs` *(modify: `CheckAuthAsync` builds `ProcessSpec(path, ["auth", "status"], workingDirectory: Path.GetTempPath())` with `Timeout = 30 s`, `Environment = { CREDENTIALS_DIRECTORY = null }`, `MaxStdoutBytes 64 KB`; maps the result; `catch (OperationCanceledException) when (ct.IsCancellationRequested) throw;` else `null`; one `Debug` line `claude auth status: {Outcome}`)*; `ClaudeArguments.cs` *(unchanged — the job vector is not touched)*.
@@ -314,16 +314,16 @@ Never the real claude, never GitHub. Steps are named by what the system can do. 
 
 **In plain words**: the receiver loop from the transport proof now asks the dispatcher before it claims anything — a job it may not run yet stays untouched on the bus — and when it does claim, it hands the job to the runner and keeps ringing the doorbell instead of waiting for the run to finish, so two jobs can run side by side and the health data stays fresh. Every 15 minutes it fetches the branch anyway and catches a doorbell that lied. When the service is restarted it picks up the claims it left behind. And the model seam can report whether `claude` is logged in. All of this is proven with substitutes and a fake clock, and again on the local stand-in for the bus with the fake `claude`.
 
-- [ ] Behavioral verification: `BusListenerTests` (defer / track / two blocking runs / cancel drains / mode transitions / safety-fetch schedule, moved, failed streak / resume), `BusRepositoryWriteTests` and `BusRepositoryIntakeTests` additions, `BusListenerGateRoundTripTests` (the deferred job's path shown still on `main`), `SafetyFetchTests`, `ResumeClaimedTests` (the `git log` subjects shown: no second claim), `ClaudeCodeCliRunnerTests.CheckAuthAsync_*`, `FakeClaudeTests.Run_AuthStatus*`.
-- [ ] Contract review: AC-6..AC-10 against the spec; the loop rules under Contracts → `BusListener` additions; the log lines against the Behaviors list; **Assumption A13** (`DrainAsync`), **A1** (the lease released by the listener's tracked task), the `VerifyClaimedAsync` helper (informational rejection, nothing moved).
-- [ ] ⚠️ Risk review (shared contracts of 04 and 06/28): `BusListener`, `BusRepository`, `PollOptions`, `IModelRunner` additive; 04's listener/probe tests and 06's runner tests unedited and green; `IBusProvider` untouched; `git diff tests/golden/` empty; no secret in any recorded spec or log line; the only new `claude` invocation is `auth status` inside the adapter.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `BusListenerTests` (defer / track / two blocking runs / cancel drains / mode transitions / safety-fetch schedule, moved, failed streak / resume), `BusRepositoryWriteTests` and `BusRepositoryIntakeTests` additions, `BusListenerGateRoundTripTests` (the deferred job's path shown still on `main`), `SafetyFetchTests`, `ResumeClaimedTests` (the `git log` subjects shown: no second claim), `ClaudeCodeCliRunnerTests.CheckAuthAsync_*`, `FakeClaudeTests.Run_AuthStatus*`.
+- [x] Contract review: AC-6..AC-10 against the spec; the loop rules under Contracts → `BusListener` additions; the log lines against the Behaviors list; **Assumption A13** (`DrainAsync`), **A1** (the lease released by the listener's tracked task), the `VerifyClaimedAsync` helper (informational rejection, nothing moved).
+- [x] ⚠️ Risk review (shared contracts of 04 and 06/28): `BusListener`, `BusRepository`, `PollOptions`, `IModelRunner` additive; 04's listener/probe tests and 06's runner tests unedited and green; `IBusProvider` untouched; `git diff tests/golden/` empty; no secret in any recorded spec or log line; the only new `claude` invocation is `auth status` inside the adapter.
+- [x] User approved — implementation may continue past this gate *(owner, 2026-10-18: "approved")*
 
 ---
 
 ## Step 8 — One composition root: `AddNodeServices(NodeConfiguration)` in `Zyggy.Core.Configuration` registers the process runner, the file secret store from `secrets.root`, signing, `PollOptions` from `poll` (incl. the safety-fetch interval), `KeyId` when `signWith` is set, the GitHub bus from `bus`, the Claude Code runner with `claude.path`, the `node.json` policy, the job runner and the configuration itself; the CLI's `BusHost` and the tests' `TestHost` call it and behave exactly as before
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Configuration/ServiceCollectionExtensions.cs` *(create, public static)*: `AddNodeServices(this IServiceCollection services, NodeConfiguration configuration)` — `AddSingleton(configuration)`; `AddProcessRunner()`; `AddFileSecretStore(o => o.RootDirectory = configuration.Secrets.Root)`; `AddEnvelopeSigning()`; `AddSingleton(configuration.Poll.ToPollOptions())`; `if SignWith is { } k: AddSingleton<KeyId>(k)`; `AddClaudeCodeModelRunner(o => { if (configuration.Claude.Path is { } p) o.Path = p; })`; `AddNodeJsonPolicy()`; `AddJobRunner()`; `AddGitHubBus(o => { Remote = BusRemoteFrom(configuration.Bus); Identity = new(Tenant, Machine); CheckoutRoot = Bus.LocalPath; Version = InformationalVersion(); })` — `BusRemoteFrom` moves here verbatim as `internal static BusRemote BusRemoteFrom(BusSettings)` (public enough through the method; the CLI's private copy is deleted), `InformationalVersion` reuses the `Bus/ServiceCollectionExtensions` private helper (made `internal static`); returns `services`. Order: everything before `AddGitHubBus` so the host's `JobHandler`/`JobGate` registrations can still follow.
@@ -351,7 +351,7 @@ Never the real claude, never GitHub. Steps are named by what the system can do. 
 
 ## Step 9 — The real host runs the loop: `NodeHost.Build` composes `AddNodeServices` + `AddJobDispatcher` + Serilog (level from `log.level`) + `PollLoop`; `PollLoop` runs `StartAsync` (not `Clean`/`Stashed` ⇒ one `Error` naming the condition and the README entry, exit 6, `StopApplication`), then `ResumeClaimedAsync`, then `RunAsync(modeSelector)`; a `Stashed` start warns and continues; an unexpected exception ends the host with `node faulted: {Type}` and exit 1; stop cancels the loop, drains, logs `stopping: {Count} job(s) interrupted; their claims stay for the next start`, releases the listen lock; every log line in `<nodeDir>/logs/zyggy-<date>.log` carries `tenant`/`machine` and, in a run, `phase=run jobId`
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Node/PollLoop.cs` *(create, public sealed partial `PollLoop : BackgroundService`)*: ctor `(BusListener listener, PollModeSelector mode, NodeStatus status, NodeExitState exit, IHostApplicationLifetime lifetime, NodeConfiguration configuration, ILogger<PollLoop> log)`; `ExecuteAsync`: `status.Listener = listener`; `LogNodeStarted(tenant, machine, version)` (the Step 1 banner moves here; `StartupBanner` deleted); `result = await listener.StartAsync(ct)`; `Stashed` ⇒ nothing extra (the repository logged its warning); not `Clean`/`Stashed` ⇒ `LogRefusingToStart(result)` (`Error` `refusing to start: {Condition} — see README "Node: refused to start"`), `exit.Code = Startup`, `lifetime.StopApplication()`, return; `await listener.ResumeClaimedAsync(ct)`; `await listener.RunAsync(mode, ct)`; `catch (OperationCanceledException) when (ct.IsCancellationRequested)` ⇒ normal; `catch (Exception ex)` ⇒ `LogFaulted(ex.GetType().Name)`, `exit.Code = Faulted`, `StopApplication()`. `StopAsync` override: `base.StopAsync` (cancels), then `interrupted = listener.Status.JobsRunning`, `await listener.DrainAsync(CancellationToken.None)` bounded by the host's shutdown token, `LogStopping(interrupted)` (`Information`, only when `interrupted > 0`), `listener.Dispose()` (releases the listen lock). The health server start (Step 10) slots in right after the start-up check.
@@ -386,7 +386,7 @@ Never the real claude, never GitHub. Steps are named by what the system can do. 
 
 ## Step 10 — `GET /health` on loopback answers `200 application/json` with exactly the fourteen §11 fields in camelCase (nulls written, timestamps `YYYY-MM-DDTHH:MM:SSZ`, `Cache-Control: no-store`), `404` for any other path, `405` for any other method; the server is bound only after the start-up check passed (never after a refusal), on `NodeHostOptions.HealthPort` (`0` in tests, the bound port read back); `claudeAuthOk` comes from `IModelRunner.CheckAuthAsync` at start, every `AuthProbeInterval` and after a run that failed with `auth`, with `claude auth ok` / `claude auth expired` logged on the transitions
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Node/NodeHealth.cs` *(create, public sealed record per the spec's Contracts)*; `src/Zyggy.Node/NodeHealthJsonContext.cs` *(create, internal partial `JsonSerializerContext` with `[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, DefaultIgnoreCondition = JsonIgnoreCondition.Never)]`, `[JsonSerializable(typeof(NodeHealth))]`; an internal `UtcSecondsConverter : JsonConverter<DateTimeOffset?>`… — **A10**: `DateTimeOffset` serialises as `…+00:00` by default, so the `Z` form needs a converter applied through `[JsonConverter]` on the four timestamp properties)*.
@@ -419,7 +419,7 @@ Never the real claude, never GitHub. Steps are named by what the system can do. 
 
 ## Step 11 — Through the real host on the bare repository: two jobs to two projects run at the same time (`/health` `jobsRunning: 2`) while a third to the first project waits in `jobs/` until it is free, then all three end as verified `done` reports; outside work hours a `priority: high` job runs while a `normal` one waits and the poll interval is the idle one; a doorbell that keeps saying `304` is caught by the one-minute safety fetch; stopping the host during a `hang` run kills the fake, keeps the claim, writes no report, releases both locks, logs the `stopping:` line, and the next host resumes the claim
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `tests/Zyggy.Integration/Infrastructure/BareRepoHeadHandler.cs` *(modify, additive — A11: `bool Freeze { get; set; }` — while true, the handler answers from the sha it served last, so later pushes are invisible to the doorbell)*.

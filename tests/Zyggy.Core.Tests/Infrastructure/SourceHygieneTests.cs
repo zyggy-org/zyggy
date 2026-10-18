@@ -422,6 +422,25 @@ public sealed partial class SourceHygieneTests
     }
 
     [Fact]
+    public void Src_Node_KestrelListensLocalhostOnly()
+    {
+        // Arrange: spec 07 AC-12 — the health endpoint binds loopback only; nothing may widen it
+        var node = Path.Combine(RepoRoot(), "src", "Zyggy.Node");
+        var files = Directory.EnumerateFiles(node, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .ToDictionary(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'), File.ReadAllText, StringComparer.Ordinal);
+        string[] forbidden = ["ListenAnyIP", "UseUrls", "ASPNETCORE_URLS", "\"0.0.0.0\"", "\"*\""];
+
+        // Act
+        var listeners = files.Where(kv => kv.Value.Contains("ListenLocalhost", StringComparison.Ordinal)).Select(kv => kv.Key).ToList();
+        var offenders = files.Where(kv => forbidden.Any(t => kv.Value.Contains(t, StringComparison.Ordinal))).Select(kv => kv.Key).ToList();
+
+        // Assert
+        listeners.Should().Equal("src/Zyggy.Node/HealthServer.cs");
+        offenders.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Src_NoOpenTelemetryNamespace()
     {
         // Arrange: spec 07 / O8 — telemetry is off in v1; no collector wired anywhere

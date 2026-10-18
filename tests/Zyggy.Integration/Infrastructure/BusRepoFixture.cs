@@ -257,6 +257,7 @@ public class BusRepoFixture : IAsyncLifetime
         Func<byte[], byte[]>? mutate = null,
         string? fileNameOverride = null,
         JobFields? fields = null,
+        EnvelopePriority priority = EnvelopePriority.Normal,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(from);
@@ -265,7 +266,7 @@ public class BusRepoFixture : IAsyncLifetime
         ArgumentNullException.ThrowIfNull(body);
 
         var id = EnvelopeId.New(FixedInstant);
-        var header = new EnvelopeHeader(signWith.Tenant, id, from, to, FixedInstant);
+        var header = new EnvelopeHeader(signWith.Tenant, id, from, to, FixedInstant, priority);
         Model job = Model.CreateJob(header, fields ?? new JobFields("probe", TimeoutMinutes: 2), Encoding.UTF8.GetBytes(body));
         EnvelopeResult signed = await new EnvelopeSigner(store).SignAsync(job, signWith, ct);
         if (!signed.IsAccepted)

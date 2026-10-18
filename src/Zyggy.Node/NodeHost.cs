@@ -4,7 +4,10 @@ using System.Reflection;
 using Serilog;
 using Serilog.Events;
 
+using Zyggy.Core.Bus;
 using Zyggy.Core.Configuration;
+using Zyggy.Core.Envelope;
+using Zyggy.Core.Jobs;
 
 namespace Zyggy.Node;
 
@@ -19,6 +22,9 @@ public static class NodeHost
     private const string ConfigOption = "--config";
 
     private const string VersionOption = "--version";
+
+    /// <summary>The job runner's body prefix for a model run refused for authentication (spec 06 report mapping: <c>claude_error: auth</c>).</summary>
+    private static ReadOnlySpan<byte> AuthFailurePrefix => "claude_error: auth"u8;
 
     private const string OutputTemplate = "{utc} [{Level:u3}] {tenant} {machine} {phase} {jobId} {SourceContext}: {Message:lj}{NewLine}{Exception}";
 
@@ -103,7 +109,9 @@ public static class NodeHost
         var options = new NodeHostOptions();
         HostApplicationBuilder builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { Args = [], DisableDefaults = true });
         builder.Logging.ClearProviders();
-        builder.Services.AddSerilog(CreateLogger(configuration, logDirectory), dispose: true);
+        Serilog.Core.Logger logger = CreateLogger(configuration, logDirectory);
+        logger.ForContext<NodeHostMarker>().Debug("node.json read from {Path}", path);
+        builder.Services.AddSerilog(logger, dispose: true);
         builder.Services.AddWindowsService();
         builder.Services.AddSystemd();
         builder.Services.Configure<HostOptions>(o =>
@@ -112,9 +120,39 @@ public static class NodeHost
             o.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.StopHost;
         });
         builder.Services.AddOptions<NodeHostOptions>();
-        builder.Services.AddSingleton(configuration);
+        builder.Services.AddNodeServices(configuration);
+        builder.Services.AddJobDispatcher();
         builder.Services.AddSingleton<NodeExitState>();
-        builder.Services.AddHostedService<StartupBanner>();
+        builder.Services.AddSingleton<NodeStatus>();
+        builder.Services.AddSingleton<HealthServer>();
+        builder.Services.AddSingleton<ClaudeAuthProbe>();
+        // The runner's handler, decorated: a run that failed with an authentication error asks the login probe to look again (spec 07 ex-Q3).
+        builder.Services.AddSingleton<JobHandler>(sp =>
+        {
+            JobRunner runner = sp.GetRequiredService<JobRunner>();
+            ClaudeAuthProbe probe = sp.GetRequiredService<ClaudeAuthProbe>();
+            return async (job, ct) =>
+            {
+                JobReply reply = await runner.RunAsync(job, ct).ConfigureAwait(false);
+                if (reply.Status == ReportStatus.Failed && reply.Body.Span.StartsWith(AuthFailurePrefix))
+                {
+                    probe.RequestProbe();
+                }
+
+                return reply;
+            };
+        });
+        // The loop's constructor takes internal types, so the container cannot discover it; the factory resolves them (test hooks registered later still win).
+        builder.Services.AddSingleton<IHostedService>(sp => new PollLoop(
+            sp.GetRequiredService<BusListener>(),
+            sp.GetRequiredService<PollModeSelector>(),
+            sp.GetRequiredService<NodeStatus>(),
+            sp.GetRequiredService<NodeExitState>(),
+            sp.GetRequiredService<IHostApplicationLifetime>(),
+            configuration,
+            sp.GetRequiredService<HealthServer>(),
+            sp.GetRequiredService<ClaudeAuthProbe>(),
+            sp.GetRequiredService<ILogger<PollLoop>>()));
         configure?.Invoke(builder.Services);
         return builder.Build();
     }
@@ -129,8 +167,16 @@ public static class NodeHost
 
     private static Serilog.Core.Logger CreateLogger(NodeConfiguration configuration, string logDirectory) =>
         new LoggerConfiguration()
-            .MinimumLevel.Information()
+            .MinimumLevel.Is(configuration.Log.ToLogLevel() switch
+            {
+                LogLevel.Debug => LogEventLevel.Debug,
+                LogLevel.Warning => LogEventLevel.Warning,
+                LogLevel.Error => LogEventLevel.Error,
+                _ => LogEventLevel.Information,
+            })
             .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+            // The hosting infrastructure's own failure line duplicates the loop's "refusing to start" (the nested health host, spec 07 A2).
+            .MinimumLevel.Override("Microsoft.Extensions.Hosting", LogEventLevel.Fatal)
             .MinimumLevel.Override("System", LogEventLevel.Warning)
             .Enrich.With<UtcTimestampEnricher>()
             .Enrich.WithProperty("tenant", configuration.Tenant.Value)
@@ -143,6 +189,9 @@ public static class NodeHost
                 outputTemplate: OutputTemplate)
             .WriteTo.Console(outputTemplate: OutputTemplate)
             .CreateLogger();
+
+    /// <summary>The category of the host's own Serilog lines (<c>Zyggy.Node.NodeHost</c>); a static class cannot be a type argument.</summary>
+    private sealed class NodeHostMarker;
 
     private static string? ParseConfigOption(string[] args)
     {

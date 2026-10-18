@@ -386,6 +386,72 @@ public sealed class BusRepositoryWriteTests : IDisposable
         (await task).Should().Be(new Pushed(1));
     }
 
+    // ----- plan 07 Step 5: the §5 item 6 safety fetch -----
+
+    [Fact]
+    public async Task SafetyFetchAsync_RemoteEqualsHead_Unchanged()
+    {
+        // Act: the recorder answers every rev-parse with the same SHA
+        SafetyFetchResult result = await Repository().SafetyFetchAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        result.Outcome.Should().Be(SafetyFetchOutcome.Unchanged);
+    }
+
+    [Fact]
+    public async Task SafetyFetchAsync_RemoteDiffers_MovedWithShortSha()
+    {
+        // Arrange
+        _processes.Hook = spec => spec.Arguments.Contains("origin/main") ? RecordingProcessRunner.Ok("abcdef0123456789abcdef0123456789abcdef01\n") : null;
+
+        // Act
+        SafetyFetchResult result = await Repository().SafetyFetchAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        result.Should().Be(new SafetyFetchResult(SafetyFetchOutcome.Moved, "abcdef012345"));
+    }
+
+    [Fact]
+    public async Task SafetyFetchAsync_FetchFails_FailedRedactedDetail()
+    {
+        // Arrange: git echoes the URL with the credential and three lines of context
+        _processes.On("fetch", RecordingProcessRunner.Fail(128, "fatal: unable to access 'https://x:" + TestKeys.TestPat + "@example.invalid/acme-org/acme-bus.git/'\nline two\nline three"));
+
+        // Act
+        SafetyFetchResult result = await Repository().SafetyFetchAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        result.Outcome.Should().Be(SafetyFetchOutcome.Failed);
+        result.Detail.Split('\n').Should().HaveCountLessThanOrEqualTo(2);
+        result.Detail.Should().Contain("<redacted>@").And.NotContain("line three");
+        SecretSweep.AssertAbsent([result.Detail]);
+        _processes.CallsOf("rev-parse").Should().BeEmpty("nothing is compared after a failed fetch");
+    }
+
+    [Fact]
+    public async Task SafetyFetchAsync_RunsFetchThenTwoRevParse_UnderTheWriteLock()
+    {
+        // Arrange: a .git directory makes the checkout lock real; the hook watches the lock file while git runs
+        Directory.CreateDirectory(Path.Combine(_checkout.Root, ".git"));
+        string lockPath = Path.Combine(_checkout.Root, ".git", BusCheckoutLock.WriteLockName);
+        var lockHeldDuring = new List<bool>();
+        _processes.Hook = spec =>
+        {
+            lockHeldDuring.Add(File.Exists(lockPath));
+            return null;
+        };
+
+        // Act
+        await Repository().SafetyFetchAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        _processes.Calls.Select(RecordingProcessRunner.SubCommand).Should().Equal("fetch", "rev-parse", "rev-parse");
+        _processes.Calls[1].Arguments.Should().EndWith(["rev-parse", "origin/main"]);
+        _processes.Calls[2].Arguments.Should().EndWith(["rev-parse", "HEAD"]);
+        lockHeldDuring.Should().Equal(true, true, true);
+        File.Exists(lockPath).Should().BeFalse("the lock is released when the fetch is done");
+    }
+
     [Fact]
     public async Task SecretSweep_OverEveryRecordedSpecAndLog_Clean()
     {

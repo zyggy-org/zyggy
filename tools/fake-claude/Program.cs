@@ -1,9 +1,27 @@
 // fake-claude: stands in for the `claude` CLI in integration tests (tools/fake-claude/README.md).
+// 0. `auth status` (spec 07): answer from ZYGGY_FAKE_CLAUDE_AUTH and exit — no capture, no scenario.
 // 1. argument capture (optional) → 2. stdin capture (optional) → 3. delay (optional) → 4. resolve scenario
 // → 5. stream its bytes unchanged → 5b. linger (optional, the "partial output then hang" case) → 6. exit (ZYGGY_FAKE_CLAUDE_EXIT, default 0).
-// Arguments are never parsed or validated; stdin is read only when ZYGGY_FAKE_CLAUDE_STDIN_CAPTURE is set.
+// Arguments are never parsed or validated, except the two words `auth status`; stdin is read only when ZYGGY_FAKE_CLAUDE_STDIN_CAPTURE is set.
 using System.Globalization;
 using System.Text;
+
+if (args is ["auth", "status", ..])
+{
+    var auth = Environment.GetEnvironmentVariable("ZYGGY_FAKE_CLAUDE_AUTH");
+    switch (auth)
+    {
+        case null or "" or "1":
+            Console.Out.WriteLine("logged in");
+            return 0;
+        case "0":
+            Console.Out.WriteLine("not logged in");
+            return 1;
+        default:
+            Console.Error.WriteLine($"fake-claude: invalid ZYGGY_FAKE_CLAUDE_AUTH '{auth}'");
+            return 5;
+    }
+}
 
 if (!TryReadInt("ZYGGY_FAKE_CLAUDE_DELAY_MS", min: 0, out var delayMs)
     || !TryReadInt("ZYGGY_FAKE_CLAUDE_LINGER_MS", min: 0, out var lingerMs)
