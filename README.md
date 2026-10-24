@@ -125,8 +125,7 @@ Every warning is an error, code style is enforced in the build, and CI runs the 
 
 Zyggy is built with Claude Code as well. A project-manager agent keeps the roadmap, a technical-analyst agent turns a
 deliverable into a spec, a planner agent writes red-green-refactor steps, and the build runs them test-first. It
-stops at a human gate after each vertical slice. The agent keeps a journal of what it struggled with, and those notes
-feed the next iteration of its own instructions.
+stops at a human gate after each vertical slice.
 
 ---
 
