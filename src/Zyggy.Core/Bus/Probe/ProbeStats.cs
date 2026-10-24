@@ -11,12 +11,13 @@ namespace Zyggy.Core.Bus.Probe;
 /// <param name="Done">Probes answered <c>done</c>.</param>
 /// <param name="Rejected">Probes answered <c>rejected</c>.</param>
 /// <param name="Timeout">Probes without a report in time.</param>
+/// <param name="UnverifiedReport">Probes whose report was seen but did not verify (a failure: key mismatch or tampering).</param>
 /// <param name="PushFailed">Probes that could not be pushed.</param>
 /// <param name="P50">The median round trip, when any probe was done.</param>
 /// <param name="P95">The 95th percentile round trip.</param>
 /// <param name="Min">The shortest round trip.</param>
 /// <param name="Max">The longest round trip.</param>
-public sealed record ProbeStatsRow(MachineName To, int Count, int Done, int Rejected, int Timeout, int PushFailed, long? P50, long? P95, long? Min, long? Max);
+public sealed record ProbeStatsRow(MachineName To, int Count, int Done, int Rejected, int Timeout, int UnverifiedReport, int PushFailed, long? P50, long? P95, long? Min, long? Max);
 
 /// <summary>Aggregates the probe ledger per target (deliverable 04 CLI table: <c>zyggy probe stats</c>); the table is pasted into the transport decision record.</summary>
 public static class ProbeStats
@@ -43,6 +44,7 @@ public static class ProbeStats
                     rows.Count(r => r.Outcome == ProbeOutcome.Done),
                     rows.Count(r => r.Outcome == ProbeOutcome.Rejected),
                     rows.Count(r => r.Outcome == ProbeOutcome.Timeout),
+                    rows.Count(r => r.Outcome == ProbeOutcome.UnverifiedReport),
                     rows.Count(r => r.Outcome == ProbeOutcome.PushFailed),
                     Percentile(times, 50),
                     Percentile(times, 95),
@@ -52,7 +54,7 @@ public static class ProbeStats
             .ToList();
     }
 
-    /// <summary>Renders the rows as a Markdown table with the columns <c>to | count | done | rejected | timeout | push_failed | p50 ms | p95 ms | min ms | max ms</c>.</summary>
+    /// <summary>Renders the rows as a Markdown table with the columns <c>to | count | done | rejected | timeout | unverified_report | push_failed | p50 ms | p95 ms | min ms | max ms</c>.</summary>
     /// <param name="rows">The rows.</param>
     /// <returns>The table text, ending with a newline.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="rows"/> is null.</exception>
@@ -60,11 +62,11 @@ public static class ProbeStats
     {
         ArgumentNullException.ThrowIfNull(rows);
         var sb = new StringBuilder();
-        sb.Append("| to | count | done | rejected | timeout | push_failed | p50 ms | p95 ms | min ms | max ms |\n");
-        sb.Append("|----|------:|-----:|---------:|--------:|------------:|-------:|-------:|-------:|-------:|\n");
+        sb.Append("| to | count | done | rejected | timeout | unverified_report | push_failed | p50 ms | p95 ms | min ms | max ms |\n");
+        sb.Append("|----|------:|-----:|---------:|--------:|------------------:|------------:|-------:|-------:|-------:|-------:|\n");
         foreach (ProbeStatsRow row in rows)
         {
-            sb.Append(CultureInfo.InvariantCulture, $"| {row.To.Value} | {row.Count} | {row.Done} | {row.Rejected} | {row.Timeout} | {row.PushFailed} | {Cell(row.P50)} | {Cell(row.P95)} | {Cell(row.Min)} | {Cell(row.Max)} |\n");
+            sb.Append(CultureInfo.InvariantCulture, $"| {row.To.Value} | {row.Count} | {row.Done} | {row.Rejected} | {row.Timeout} | {row.UnverifiedReport} | {row.PushFailed} | {Cell(row.P50)} | {Cell(row.P95)} | {Cell(row.Min)} | {Cell(row.Max)} |\n");
         }
 
         return sb.ToString();

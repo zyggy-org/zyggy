@@ -113,6 +113,101 @@ public sealed class ClaudeCodeCliRunnerTests
         result.Duration.Should().Be(TimeSpan.FromSeconds(2));
     }
 
+    // ----- plan 07 Step 7: the login probe (spec 07 ex-Q3, A7-4) -----
+
+    [Fact]
+    public async Task CheckAuthAsync_ExitZero_True()
+    {
+        // Arrange
+        Script(Exited(0));
+
+        // Act
+        bool? ok = await Runner().CheckAuthAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        ok.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CheckAuthAsync_ExitOne_False()
+    {
+        // Arrange
+        Script(Exited(1));
+
+        // Act
+        bool? ok = await Runner().CheckAuthAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        ok.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("start-failed")]
+    [InlineData("timed-out")]
+    [InlineData("exit-two")]
+    public async Task CheckAuthAsync_StartFailedTimedOutOrExitTwo_Null(string shape)
+    {
+        // Arrange
+        Script(shape switch
+        {
+            "start-failed" => new ProcessResult(null, "", "", TimedOut: false, StartFailed: true, StdoutTruncated: false, Duration: TimeSpan.Zero),
+            "timed-out" => new ProcessResult(null, "", "", TimedOut: true, StartFailed: false, StdoutTruncated: false, Duration: TimeSpan.FromSeconds(30)),
+            _ => Exited(2),
+        });
+
+        // Act
+        bool? ok = await Runner().CheckAuthAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        ok.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task CheckAuthAsync_SpecIsAuthStatusWithThirtySecondTimeoutAndNoCredentialsDirectory()
+    {
+        // Arrange
+        Script(Exited(0));
+
+        // Act
+        await Runner("/opt/claude/claude").CheckAuthAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        _captured!.FileName.Should().Be("/opt/claude/claude");
+        _captured.Arguments.Should().Equal("auth", "status");
+        _captured.Timeout.Should().Be(TimeSpan.FromSeconds(30));
+        _captured.Environment.Should().ContainKey("CREDENTIALS_DIRECTORY").WhoseValue.Should().BeNull();
+        _captured.StandardInput.Should().BeNull();
+        _captured.MaxStdoutBytes.Should().Be(64 * 1024);
+    }
+
+    [Fact]
+    public async Task CheckAuthAsync_ProcessRunnerThrows_Null()
+    {
+        // Arrange
+        _processes.RunAsync(Arg.Any<ProcessSpec>(), Arg.Any<CancellationToken>()).ThrowsAsync(new IOException("boom"));
+
+        // Act
+        bool? ok = await Runner().CheckAuthAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        ok.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task CheckAuthAsync_CallerCancelled_Throws()
+    {
+        // Arrange
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        _processes.RunAsync(Arg.Any<ProcessSpec>(), Arg.Any<CancellationToken>()).ThrowsAsync(call => new OperationCanceledException(call.Arg<CancellationToken>()));
+
+        // Act
+        Func<Task> act = () => Runner().CheckAuthAsync(cts.Token);
+
+        // Assert
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
     public sealed record FailureCase(
         string Name,
         ProcessResult Process,

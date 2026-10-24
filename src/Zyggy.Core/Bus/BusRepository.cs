@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 
 using Microsoft.Extensions.Logging;
 
@@ -129,10 +130,24 @@ public sealed partial class BusRepository
     /// </summary>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The inbox files.</returns>
-    public Task<IReadOnlyList<BusFile>> ListNewJobsAsync(CancellationToken ct)
+    public Task<IReadOnlyList<BusFile>> ListNewJobsAsync(CancellationToken ct) => ListFolderAsync(BusPaths.Jobs(_me.Tenant, _me.Machine), ct);
+
+    /// <summary>
+    /// This node's own claims: the <c>*.md</c> files of <c>tenants/&lt;tenant&gt;/nodes/&lt;machine&gt;/jobs/claimed/</c> in ordinal order
+    /// (spec 07: resumed after a restart, counted for <c>jobsClaimedByMe</c>). Never another machine's folder.
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The claimed files.</returns>
+    public Task<IReadOnlyList<BusFile>> ListClaimedAsync(CancellationToken ct) => ListFolderAsync(BusPaths.Claimed(_me.Tenant, _me.Machine), ct);
+
+    /// <summary>The checkout's <c>HEAD</c> commit (the <c>busHeadSha</c> health field); <see langword="null"/> when git cannot say.</summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The full SHA, or <see langword="null"/>.</returns>
+    public Task<string?> HeadShaAsync(CancellationToken ct) => _git.RevParseAsync(_checkoutRoot, "HEAD", ct);
+
+    private Task<IReadOnlyList<BusFile>> ListFolderAsync(string folder, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        string folder = BusPaths.Jobs(_me.Tenant, _me.Machine);
         string full = BusPaths.Resolve(_checkoutRoot, folder);
         if (!Directory.Exists(full))
         {
@@ -188,6 +203,17 @@ public sealed partial class BusRepository
 
         return new AcceptedJob(file, envelope);
     }
+
+    /// <summary>
+    /// Verifies one of this node's own <c>claimed/</c> files before it is resumed (spec 07, A7-5): the same checks as
+    /// <see cref="VerifyIntakeAsync"/>. A <see cref="RejectedJob"/> here is <em>informational</em> — nothing is moved or reported;
+    /// the file is left for the sweep.
+    /// </summary>
+    /// <param name="claimed">A file from <see cref="ListClaimedAsync"/>.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The verdict; an <see cref="AcceptedJob"/> carries the claimed path as its file.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="claimed"/> is null.</exception>
+    public Task<JobIntake> VerifyClaimedAsync(BusFile claimed, CancellationToken ct) => VerifyIntakeAsync(claimed, ct);
 
     /// <summary>§4 state machine row 2: <c>jobs/&lt;id&gt;.md</c> → <c>jobs/claimed/&lt;id&gt;.md</c> in one commit <c>&lt;tenant&gt; claim &lt;id&gt; &lt;from&gt;→&lt;to&gt;</c>.</summary>
     /// <param name="job">The verified job.</param>
@@ -376,6 +402,48 @@ public sealed partial class BusRepository
     }
 
     /// <summary>
+    /// The sender side (decision 0001 F3): the reports of <paramref name="reporter"/> that parse, answer <paramref name="inReplyTo"/>
+    /// and are addressed to this machine, but whose signature does not verify (unknown key, wrong key, tampered bytes).
+    /// </summary>
+    /// <param name="reporter">The machine whose <c>reports/</c> folder is read.</param>
+    /// <param name="inReplyTo">The job id the reports answer.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>One rejection per unverifiable matching report, in file-name order; empty when every matching report verifies.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
+    public async Task<IReadOnlyList<EnvelopeRejection>> FindUnverifiedReportsAsync(MachineName reporter, EnvelopeId inReplyTo, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(reporter);
+        ArgumentNullException.ThrowIfNull(inReplyTo);
+        string full = BusPaths.Resolve(_checkoutRoot, BusPaths.Reports(_me.Tenant, reporter));
+        if (!Directory.Exists(full))
+        {
+            return [];
+        }
+
+        var rejections = new List<EnvelopeRejection>();
+        foreach (string file in Directory.EnumerateFiles(full, "*" + EnvelopeExtension, SearchOption.TopDirectoryOnly).Order(StringComparer.Ordinal))
+        {
+            byte[] bytes = await File.ReadAllBytesAsync(file, ct).ConfigureAwait(false);
+            EnvelopeResult parsed = EnvelopeParser.Parse(bytes, _me.Tenant);
+            if (!parsed.IsAccepted
+                || parsed.Envelope!.Type != EnvelopeType.Report
+                || parsed.Envelope.Header.InReplyTo != inReplyTo
+                || parsed.Envelope.Header.To != _me.Machine)
+            {
+                continue;
+            }
+
+            EnvelopeResult verified = await _signer.VerifyAsync(parsed.Envelope, _me.Tenant, ct).ConfigureAwait(false);
+            if (!verified.IsAccepted)
+            {
+                rejections.Add(verified.Rejection!);
+            }
+        }
+
+        return rejections;
+    }
+
+    /// <summary>
     /// Brings the remote branch into the checkout under the checkout lock (patch 0.8.1): one writer at a time across
     /// processes; a pull that git refused because another process touched the checkout is retried once after 1 s.
     /// </summary>
@@ -387,6 +455,38 @@ public sealed partial class BusRepository
         return handle is null
             ? new BusSyncResult(false, "the bus checkout is busy: another zyggy process held its lock for " + LockTimeout.TotalSeconds.ToString("0", CultureInfo.InvariantCulture) + " s")
             : await PullUnlockedAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The §5 item 6 safety fetch (spec 07): <c>git fetch origin</c> under the checkout's write lock, then <c>origin/&lt;branch&gt;</c>
+    /// compared with <c>HEAD</c>. Never throws for git's sake; a failure is a result with git's redacted first two lines.
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Unchanged, Moved (with the remote head's short SHA) or Failed (with the detail).</returns>
+    public async Task<SafetyFetchResult> SafetyFetchAsync(CancellationToken ct)
+    {
+        using IDisposable? handle = await BusCheckoutLock.AcquireAsync(_checkoutRoot, BusCheckoutLock.WriteLockName, LockTimeout, _clock, ct).ConfigureAwait(false);
+        if (handle is null)
+        {
+            return new SafetyFetchResult(SafetyFetchOutcome.Failed, "the bus checkout is busy: another zyggy process held its lock for " + LockTimeout.TotalSeconds.ToString("0", CultureInfo.InvariantCulture) + " s");
+        }
+
+        GitResult fetch = await _git.FetchAsync(_checkoutRoot, ct).ConfigureAwait(false);
+        if (!fetch.Succeeded)
+        {
+            return new SafetyFetchResult(SafetyFetchOutcome.Failed, RedactedDetail(fetch.Stderr));
+        }
+
+        string? remote = await _git.RevParseAsync(_checkoutRoot, "origin/" + _provider.Remote.Branch, ct).ConfigureAwait(false);
+        string? head = await _git.RevParseAsync(_checkoutRoot, "HEAD", ct).ConfigureAwait(false);
+        if (remote is null || head is null)
+        {
+            return new SafetyFetchResult(SafetyFetchOutcome.Failed, "rev-parse failed");
+        }
+
+        return string.Equals(remote, head, StringComparison.Ordinal)
+            ? new SafetyFetchResult(SafetyFetchOutcome.Unchanged, string.Empty)
+            : new SafetyFetchResult(SafetyFetchOutcome.Moved, remote.Length > 12 ? remote[..12] : remote);
     }
 
     /// <summary>Takes the one-listener-per-checkout lock without waiting (patch 0.8.1).</summary>
@@ -524,6 +624,17 @@ public sealed partial class BusRepository
             throw new InvalidOperationException("write rule: '" + relativePath + "' belongs to another machine");
         }
     }
+
+    /// <summary>Git's error output fit for a result or a log line (§8): URL user information redacted, the first two non-empty lines, trimmed.</summary>
+    private static string RedactedDetail(string stderr)
+    {
+        string text = UrlUserInfo().Replace(stderr ?? string.Empty, "://<redacted>@");
+        IEnumerable<string> lines = text.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).Take(2);
+        return string.Join('\n', lines);
+    }
+
+    [GeneratedRegex(@"://[^/@\s]+@")]
+    private static partial Regex UrlUserInfo();
 
     private static WriteFailed? Failure(string stage, GitResult result) =>
         result.Succeeded ? null : new WriteFailed(stage, result.Stderr.Trim());

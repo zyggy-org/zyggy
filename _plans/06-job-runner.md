@@ -449,7 +449,7 @@ Never the real claude, never GitHub. Steps are named by what the system can do. 
 
 ## Step 11 — The source-hygiene facts of AC-16 hold and guard the deliverable (`"claude"` as a process name only where 28/33 put it, `zyggy.lock` only in `ProjectLock`, `"runs"` only in `TranscriptPaths`, no `Environment.ProcessId` outside `ProjectLock`, no clock or static state under `Jobs/` and `Policy/`); the Core README's Troubleshooting carries the five "Jobs:" runbook rows, the Cli README's `node.json` section carries the 06 keys, the fake-claude README lists everything of Slice D and the capture record, and the founding-spec amendments A1–A6 are confirmed in place
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `tests/Zyggy.Core.Tests/Infrastructure/SourceHygieneTests.cs` *(modify, additive facts)*.
@@ -483,10 +483,10 @@ Never the real claude, never GitHub. Steps are named by what the system can do. 
 
 **In plain words**: the job runner is complete and proven: every scenario a job can take — done, no REPORT, rejected, locked, timeout, half-answer-then-hang, error, no result, claude missing, runner bug — ends as a signed report on the bus with the right status and reason; the real `claude` output shape is in the test suite; the runbook, the `node.json` keys and the fake's contract are documented; nothing new is installed anywhere yet (07 will host it).
 
-- [ ] Behavioral verification: the whole suite green on Windows and on both CI runners, **zero** sanctioned reds; the executor lists per AC the test that proves it (the map below) and pastes the three README diffs.
-- [ ] Contract review: `ROADMAP.md` #06 definition of done line by line (pre-flight, lock, template, stream parsing, cap, timeout with `FakeTimeProvider` where the design allows — the kill is wall-clock by the spec's decision; per-scenario integration tests; runbook `timeout`/`locked`; the replacement rule for O18 is recorded in the spec's Out of Scope); AC-16, AC-28, AC-29; founding-spec amendments A1–A6 present; **Assumption A5** (RunPreflight's pre-existing `"claude"`).
-- [ ] ⚠️ Risk review: no new package; no secret anywhere; the §8 note "the model process (same user as the node) could read the signing-key file under the P0 file store" is forwarded to 09's spec (see Notes); the roadmap status and 07's entry (`Gates/P1_WalkingSkeleton.cs`, the `IsHeld` pre-claim check, `nodeDir`/`claude.path` binding) are the project-manager's to record — not edited here.
-- [ ] User approved — the deliverable is done; Step 12 (release) may start
+- [x] Behavioral verification: the whole suite green on Windows and on both CI runners, **zero** sanctioned reds; the executor lists per AC the test that proves it (the map below) and pastes the three README diffs.
+- [x] Contract review: `ROADMAP.md` #06 definition of done line by line (pre-flight, lock, template, stream parsing, cap, timeout with `FakeTimeProvider` where the design allows — the kill is wall-clock by the spec's decision; per-scenario integration tests; runbook `timeout`/`locked`; the replacement rule for O18 is recorded in the spec's Out of Scope); AC-16, AC-28, AC-29; founding-spec amendments A1–A6 present; **Assumption A5** (RunPreflight's pre-existing `"claude"`).
+- [x] ⚠️ Risk review: no new package; no secret anywhere; the §8 note "the model process (same user as the node) could read the signing-key file under the P0 file store" is forwarded to 09's spec (see Notes); the roadmap status and 07's entry (`Gates/P1_WalkingSkeleton.cs`, the `IsHeld` pre-claim check, `nodeDir`/`claude.path` binding) are the project-manager's to record — not edited here.
+- [x] User approved — the deliverable is done; Step 12 (release) may start *(approved by the owner 2026-10-17: "Close the gate"; local proof Core 4222/0 failed, Integration 533/0 failed, format clean; CI green on the PR, Ubuntu only — Windows proven locally)*
 
 ---
 

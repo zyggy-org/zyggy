@@ -6,9 +6,6 @@ using Microsoft.Extensions.Logging;
 
 using Zyggy.Core.Bus;
 using Zyggy.Core.Configuration;
-using Zyggy.Core.Envelope;
-using Zyggy.Core.Processes;
-using Zyggy.Core.Secrets;
 
 namespace Zyggy.Cli.Commands;
 
@@ -46,46 +43,18 @@ internal static class BusHost
         return ExitCodes.Configuration;
     }
 
-    /// <summary>The production services for <paramref name="configuration"/>.</summary>
+    /// <summary>The production services for <paramref name="configuration"/>: Core's one composition root (spec 07 ex-Q8) plus the CLI's stderr logging and its API test hook; <paramref name="extra"/> is applied last and wins.</summary>
     public static ServiceProvider BuildServices(NodeConfiguration configuration, bool verbose, CliEnvironment environment, Action<IServiceCollection>? extra = null)
     {
         var services = new ServiceCollection()
             .AddLogging(logging => logging
                 .AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace)
                 .SetMinimumLevel(verbose ? LogLevel.Debug : LogLevel.Information))
-            .AddProcessRunner()
-            .AddFileSecretStore(o => o.RootDirectory = configuration.Secrets.Root)
-            .AddEnvelopeSigning()
-            .AddSingleton(configuration.Poll.ToPollOptions());
-        if (configuration.SignWith is { } signWith)
-        {
-            services.AddSingleton<KeyId>(signWith);
-        }
-
+            .AddNodeServices(configuration);
         string? apiBase = environment.Get(ApiBaseVariable);
-        services.AddGitHubBus(o =>
-        {
-            o.Remote = BusRemoteFrom(configuration.Bus);
-            o.Identity = new BusIdentity(configuration.Tenant, configuration.Machine);
-            o.CheckoutRoot = configuration.Bus.LocalPath;
-            o.Version = InformationalVersion();
-            o.ApiBaseUri = apiBase is null ? null : new Uri(apiBase);
-        });
+        services.Configure<GitHubBusOptions>(o => o.ApiBaseUri = apiBase is null ? null : new Uri(apiBase));
         extra?.Invoke(services);
         return services.BuildServiceProvider();
-    }
-
-    /// <summary>The remote description from <c>node.json</c>: the configured URL as the HTTPS form when it is one (or a file URL in tests), as the SSH form when it is one; the provider fills in its host's defaults for the other.</summary>
-    private static BusRemote BusRemoteFrom(BusSettings bus)
-    {
-        if (Uri.TryCreate(bus.Remote, UriKind.Absolute, out Uri? url) && url.Scheme is "https" or "http" or "file")
-        {
-            return new BusRemote(bus.Owner, bus.Repo, bus.Branch, url, null);
-        }
-
-        // git@host:owner/repo.git or ssh://git@host/owner/repo.git
-        Uri ssh = url is { Scheme: "ssh" } ? url : new Uri("ssh://" + bus.Remote.Replace(":", "/", StringComparison.Ordinal));
-        return new BusRemote(bus.Owner, bus.Repo, bus.Branch, null, ssh);
     }
 
     public static string InformationalVersion() =>

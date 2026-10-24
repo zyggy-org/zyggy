@@ -4,22 +4,24 @@ using System.Text;
 namespace Zyggy.Integration.Infrastructure;
 
 /// <summary>
-/// Locates the compiled <c>zyggy</c> CLI next to the test assembly and runs it as a child process with an isolated
-/// environment: every <c>ZYGGY_*</c> variable of the test process is removed before the test's own are applied.
+/// Locates the compiled <c>zyggy</c> CLI under <c>cli/</c> next to the test assembly (the CLI project's own build output, copied there
+/// by <c>Zyggy.Integration.csproj</c> so the plain console app does not depend on the test host's assembly resolution — deliverable 07)
+/// and runs it as a child process with an isolated environment: every <c>ZYGGY_*</c> variable of the test process is removed before
+/// the test's own are applied.
 /// </summary>
 public static class ZyggyCli
 {
-    /// <summary>Absolute path of the <c>zyggy</c> apphost in the test output.</summary>
-    /// <exception cref="FileNotFoundException">The apphost is absent (the ProjectReference to Zyggy.Cli is missing).</exception>
+    /// <summary>Absolute path of the <c>zyggy</c> apphost in the test output's <c>cli/</c> directory.</summary>
+    /// <exception cref="FileNotFoundException">The apphost is absent (the ProjectReference to Zyggy.Cli or the copy target is missing).</exception>
     public static string ExecutablePath
     {
         get
         {
-            var path = Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "zyggy.exe" : "zyggy");
+            var path = Path.Combine(AppContext.BaseDirectory, "cli", OperatingSystem.IsWindows() ? "zyggy.exe" : "zyggy");
             return File.Exists(path)
                 ? path
                 : throw new FileNotFoundException(
-                    $"zyggy not found at '{path}'. Zyggy.Integration.csproj must reference src/Zyggy.Cli/Zyggy.Cli.csproj.",
+                    $"zyggy not found at '{path}'. Zyggy.Integration.csproj must reference src/Zyggy.Cli/Zyggy.Cli.csproj and copy its output to cli/.",
                     path);
         }
     }

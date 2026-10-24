@@ -78,7 +78,7 @@ Six deliverables. Four are .NET binaries; two are Claude Code configuration (Mar
 
 **Node instance (laptops)**
 
-- `C:\agents\node` or `~/agents/node`: `AgentBus.Node` as Windows service / systemd user unit; `agentbus` CLI on PATH; `agent-core` checked out; `node.json` (tenant, machine name, dev roots, work hours).
+- `C:\agents\node` or `~/agents/node`: `AgentBus.Node` as Windows service / systemd user unit; `agentbus` CLI on PATH; `agent-core` checked out; `node.json` (tenant, machine name, dev roots, work hours) at the per-user path of §10 (`%LOCALAPPDATA%\zyggy\node.json` on Windows, `~/.config/zyggy/node.json` elsewhere) or the path given by `ZYGGY_NODE_JSON` / `--config`.
 - Home laptop may additionally run `claude remote-control --name home` when the user wants a live session; not required.
 
 **Skills (`agent-core/.claude/skills/`)**
@@ -125,7 +125,7 @@ agent-bus/
 
 All paths in the rest of this section are relative to `tenants/<org>/`. In code every path is produced by `BusPaths` from the configured tenant id (§9).
 
-**One repository per tenant (rule).** The tenant isolation boundary is the git repository, never the path: git hosts grant read and push rights per repository, and HMAC signatures protect authenticity only, not confidentiality or availability. A tenant therefore has its own bus repository, every machine's credentials (§5) grant access to exactly one, and a repository contains exactly one `tenants/<org>/` directory. v1 has one repository and one directory, so nothing enforces this beyond `BusPaths` reading only its own prefix; the enforcement (`agentbus verify` reporting a second directory, nodes refusing to start against it) is a §14 item.
+**One repository per tenant (rule).** The tenant isolation boundary is the git repository, never the path: git hosts grant read and push rights per repository, and HMAC signatures protect authenticity only, not confidentiality or availability. A tenant therefore has its own bus repository, every machine's credentials (§5) grant access to exactly one, and a repository contains exactly one `tenants/<org>/` directory. v1 has one repository and one directory, so nothing enforces this beyond `BusPaths` reading only its own prefix; `agentbus verify` reports a second directory as drift and never reads inside it (deliverable 08); nodes ignore such a directory (deliverable 04) and refusing to start against it is a §14 item.
 
 **Write rules**
 
@@ -245,7 +245,7 @@ One transport everywhere: GitHub as ledger (git) and as doorbell (conditional RE
 - Shell out to the system `git` (`Process`), never LibGit2Sharp. Authentication via the machine's configured deploy key (SSH, port 22) or the PAT via credential helper (HTTPS, port 443); the code never handles credentials itself. Which of the two a machine uses is measured in P0 (`agentbus probe reach`) and recorded per machine in the decision record; the work laptop is expected to need HTTPS because corporate proxies typically pass only 443.
 - Commit identity per machine: `agentbus (<machine>) <machine>@agentbus.local`.
 - Every write sequence is: `pull --rebase` → local change → `commit -m "<tenant> <action> <id> <from>→<to>"` → `push`, where `<action>` is `job` (a submission), `claim`, `report`, `reject` or `context`. On push rejection: `pull --rebase`, retry at most 3 times with 1–3 s jitter, then leave the commit local and unpushed with a clean working copy and log an error once; the next write sequence rebases and pushes it together with its own change.
-- The working copy is never left dirty across iterations: on start-up, `git status --porcelain` non-empty → `git stash` to a named stash, log a warning.
+- The working copy is never left dirty across iterations: on start-up, `git status --porcelain` non-empty → `git stash` to a named stash, log a warning. On start-up, after the first pull, the node re-runs the jobs still in its own `jobs/claimed/` that verify (its previous run was interrupted); a claimed file that no longer verifies is left for the sweep.
 
 **Direct fast path (optional, home laptop only)**
 
@@ -451,7 +451,7 @@ Central processes the owner's company mail and documents only to produce facts a
 **Audit**
 
 - Every state change is a git commit in `agent-bus`; every model run has a transcript on the executing machine for 30 days; every dream commit lists the files it changed.
-- `agentbus verify` re-checks all signatures in the machine's own tenant subtree (and the `tenant`-field-versus-path consistency of every file) and reports drift.
+- `agentbus verify` re-checks all signatures in the machine's own tenant subtree (and the `tenant`-field-versus-path consistency of every file) and reports drift, and the §4 write-rule consistency of every file (file name = `id`, type matches its folder, `from`/`to` match the folder's machine).
 
 ## 9. .NET solution structure and technology choices
 
@@ -492,6 +492,8 @@ AgentBus.sln
 | MCP | `ModelContextProtocol` (official C# SDK) | tools via attributes |
 | ULID | `Ulid` |  |
 | Logging | `Serilog`, `Serilog.Sinks.File`, `Serilog.Sinks.Console` | Serilog for the Node (07); rolling files, 14 days |
+| Time zones | `TimeZoneConverter` | IANA ids for `workHours.timezone` under invariant globalization |
+| Health endpoint | `Microsoft.AspNetCore.App` framework reference (Kestrel) | `http://localhost:4711/health`, loopback only; no NuGet package |
 | Windows secrets | `Meziantou.Framework.Win32.CredentialManager` |  |
 | Tests | `xunit`, `FluentAssertions`, `NSubstitute` |  |
 
@@ -524,10 +526,11 @@ Each machine has one `node.json`; secrets are never in it.
   "signWith": "geoffrey/1",                // the key id this machine signs with (§4 rotation, §11 rotate-hmac.md)
   "bus": { "remote": "https://github.com/zyggy-org/zyggy-bus.git", "owner": "zyggy-org", "repo": "zyggy-bus", "branch": "main", "localPath": "C:/agents/bus" },   // Central: "remote": "git@github.com-zyggy-bus:zyggy-org/zyggy-bus.git"
   "poll": { "activeSeconds": 10, "idleSeconds": 60, "safetyFetchMinutes": 15 },
-  "workHours": { "timezone": "Europe/Brussels", "days": ["Mon","Tue","Wed","Thu","Fri"], "from": "08:00", "to": "19:00" },
+  "workHours": { "timezone": "Europe/Brussels", "days": ["Mon","Tue","Wed","Thu","Fri"], "from": "08:00", "to": "19:00" },   // absent = always inside work hours (Central): active polling and jobs at any hour
   "devRoots": ["C:/src", "C:/work"],
   "nodeDir": "C:/agents/node",                  // transcripts under runs/<tenant>/, logs under logs/; default %LOCALAPPDATA%\zyggy on Windows, ~/.local/share/zyggy on Linux
   "maxConcurrentJobs": 2,
+  "log": { "level": "Information" },        // Debug on demand (§11); 14-day retention is fixed
   "claude": { "path": "claude", "maxTurns": 60, "defaultTimeoutMinutes": 30, "defaultAllowedTools": ["Read", "Grep", "Glob"], "maxBudgetUsd": null },   // maxBudgetUsd: per-run --max-budget-usd, null = no cap
   "agentCore": { "path": "C:/agents/agent-core", "pinnedSha": "abc123" },
   "dlp": { "enabled": false },             // true on the work laptop; may also override the §6 patterns and limits
@@ -567,13 +570,13 @@ The git history is the primary audit trail; logs and a health endpoint cover wha
 
 **Logging**
 
-- Serilog, structured, one rolling file per machine: `<nodeDir>/logs/zyggy-.log` (`nodeDir` from `node.json`, §10), 14-day retention, level Information; Debug on demand via `node.json`.
+- Serilog, structured, one rolling file per machine: `<nodeDir>/logs/zyggy-.log` (`nodeDir` from `node.json`, §10), 14-day retention, level Information; Debug on demand via `node.json` `log.level`.
 - Every log line carries `tenant`, `machine`, `jobId` (when in a job), `phase` (`poll | pull | claim | run | report | push | discover`).
 - Log once per state change, never per poll tick: a 304 is silent; a transition to back-off, a rate-limit warning, a push retry, a rejection are logged.
 
 **Health endpoint** (`http://localhost:4711/health`, JSON)
 
-`version`, `tenant`, `machine`, `lastPollUtc`, `lastEtag`, `lastPullUtc`, `busHeadSha`, `jobsRunning`, `jobsClaimedByMe`, `lastReportUtc`, `rateLimitRemaining`, `backoffUntilUtc`, `claudeAuthOk`, `agentCoreSha`. Used by `agentbus status` and by Central's `list_nodes` (nodes also write a subset into `tenants/<org>/registry/<machine>.yaml` every 6 h as `last_seen` and `health`).
+`version`, `tenant`, `machine`, `lastPollUtc`, `lastEtag`, `lastPullUtc`, `busHeadSha`, `jobsRunning`, `jobsClaimedByMe`, `lastReportUtc`, `rateLimitRemaining`, `backoffUntilUtc`, `claudeAuthOk`, `agentCoreSha`. Used by `agentbus status` and by Central's `list_nodes` (nodes also write a subset into `tenants/<org>/registry/<machine>.yaml` every 6 h as `last_seen` and `health`). `claudeAuthOk` is the result of `claude auth status` (exit code) run through `IModelRunner.CheckAuthAsync` at start, hourly and after a run that failed with an authentication error; `null` until the first probe.
 
 **Alerts (Central → `INotifier`, Telegram in v1)**
 
@@ -674,7 +677,7 @@ The platform is built for one user. It must not need a rewrite to serve a second
 
 **Would have to be added for a second tenant**
 
-- Enforcement of the repository-per-tenant rule: `agentbus verify` reporting a second `tenants/<org>/` directory, nodes refusing to start against it, and gate scenarios run with a non-default tenant id.
+- Enforcement of the repository-per-tenant rule: nodes refusing to start against a second `tenants/<org>/` directory (`verify` already reports it), and gate scenarios run with a non-default tenant id.
 - Hub over HTTP with the principal taken from a bearer token; a Central serving several tenants with one `IBusProvider` instance and one checkout per repository.
 - Alerts routed per tenant to separate notifier configurations.
 

@@ -358,7 +358,33 @@ public sealed class PollStateTests
             TimeSpan.FromSeconds(120),
             100,
             TimeSpan.FromSeconds(10),
-            TimeSpan.FromMinutes(5)));
+            TimeSpan.FromMinutes(5),
+            TimeSpan.FromMinutes(15)));
+    }
+
+    [Fact]
+    public void Default_SafetyFetchInterval_FifteenMinutes()
+    {
+        // Assert: §5 item 6 (spec 07)
+        Options.SafetyFetchInterval.Should().Be(TimeSpan.FromMinutes(15));
+    }
+
+    [Fact]
+    public void SafetyFetchInterval_Zero_Throws()
+    {
+        // Act
+        Action act = () => _ = new PollOptions(
+            TimeSpan.FromSeconds(10),
+            TimeSpan.FromSeconds(60),
+            TimeSpan.FromSeconds(2),
+            TimeSpan.FromSeconds(120),
+            100,
+            TimeSpan.FromSeconds(10),
+            TimeSpan.FromMinutes(5),
+            TimeSpan.Zero);
+
+        // Assert
+        act.Should().Throw<ArgumentOutOfRangeException>();
     }
 
     [Theory]
@@ -379,7 +405,8 @@ public sealed class PollStateTests
             TimeSpan.FromSeconds(throttle),
             floor,
             TimeSpan.FromSeconds(min),
-            TimeSpan.FromSeconds(max));
+            TimeSpan.FromSeconds(max),
+            TimeSpan.FromMinutes(15));
 
         // Assert
         act.Should().Throw<ArgumentOutOfRangeException>();

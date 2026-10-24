@@ -1,5 +1,8 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+
+using TimeZoneConverter;
 
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Tenancy;
@@ -10,6 +13,7 @@ namespace Zyggy.Core.Configuration;
 /// Reads <c>node.json</c> (founding spec §10, as amended by deliverable 04): the minimal keys typed and validated, unknown keys
 /// ignored, and any key that names a secret (<c>pat</c>, <c>token</c>, <c>hmac</c>, <c>secret</c>, <c>password</c>; any depth,
 /// any case) refused — secrets never live in <c>node.json</c>. A missing <c>tenant</c> is a refusal: there is no default tenant.
+/// Deliverable 07 adds the service keys: <c>poll.safetyFetchMinutes</c>, <c>workHours</c>, <c>maxConcurrentJobs</c>, <c>log.level</c>.
 /// </summary>
 public static partial class NodeConfigurationReader
 {
@@ -168,12 +172,20 @@ public static partial class NodeConfigurationReader
             }
 
             if (!TryPositiveInt(pollElement, "activeSeconds", poll.ActiveSeconds, out int active, out failure, "poll.")
-                || !TryPositiveInt(pollElement, "idleSeconds", poll.IdleSeconds, out int idle, out failure, "poll."))
+                || !TryPositiveInt(pollElement, "idleSeconds", poll.IdleSeconds, out int idle, out failure, "poll.")
+                || !TryPositiveInt(pollElement, "safetyFetchMinutes", poll.SafetyFetchMinutes, out int safetyFetch, out failure, "poll."))
             {
                 return failure;
             }
 
-            poll = new PollSettings(active, idle);
+            poll = new PollSettings(active, idle, safetyFetch);
+        }
+
+        if (!TryWorkHours(root, out WorkHoursSettings? workHours, out failure)
+            || !TryPositiveInt(root, "maxConcurrentJobs", 2, out int maxConcurrentJobs, out failure, string.Empty)
+            || !TryLog(root, out LogSettings log, out failure))
+        {
+            return failure;
         }
 
         var secrets = new SecretsSettings();
@@ -219,7 +231,134 @@ public static partial class NodeConfigurationReader
             Claude = claude,
             DevRoots = devRoots,
             NodeDir = nodeDir,
+            WorkHours = workHours,
+            MaxConcurrentJobs = maxConcurrentJobs,
+            Log = log,
         });
+    }
+
+    /// <summary>The <c>workHours</c> section (spec 07): absent means always inside; present means every part is required and checked.</summary>
+    private static bool TryWorkHours(JsonElement root, out WorkHoursSettings? workHours, out NodeConfigurationResult failure)
+    {
+        workHours = null;
+        failure = null!;
+        if (!root.TryGetProperty("workHours", out JsonElement section) || section.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (section.ValueKind != JsonValueKind.Object)
+        {
+            failure = Invalid("workHours", "must be an object");
+            return false;
+        }
+
+        if (!TryRequiredString(section, "timezone", out string? timezone, out failure, "workHours."))
+        {
+            return false;
+        }
+
+        if (!TZConvert.TryGetTimeZoneInfo(timezone!, out _))
+        {
+            failure = Invalid("workHours.timezone", "unknown time zone");
+            return false;
+        }
+
+        if (!section.TryGetProperty("days", out JsonElement daysElement) || daysElement.ValueKind != JsonValueKind.Array || daysElement.GetArrayLength() == 0)
+        {
+            failure = Invalid("workHours.days", "must be a non-empty array without duplicates");
+            return false;
+        }
+
+        var days = new List<string>();
+        var index = 0;
+        foreach (JsonElement day in daysElement.EnumerateArray())
+        {
+            if (day.ValueKind != JsonValueKind.String || day.GetString() is not { } name || !Policy.WorkHours.DayNames.ContainsKey(name))
+            {
+                failure = Invalid($"workHours.days[{index}]", "must be Mon..Sun");
+                return false;
+            }
+
+            days.Add(name);
+            index++;
+        }
+
+        if (days.Distinct(StringComparer.Ordinal).Count() != days.Count)
+        {
+            failure = Invalid("workHours.days", "must be a non-empty array without duplicates");
+            return false;
+        }
+
+        if (!TryClock(section, "from", out string? from, out TimeOnly fromTime, out failure)
+            || !TryClock(section, "to", out string? to, out TimeOnly toTime, out failure))
+        {
+            return false;
+        }
+
+        if (toTime <= fromTime)
+        {
+            failure = Invalid("workHours.to", "to must be after from");
+            return false;
+        }
+
+        workHours = new WorkHoursSettings(timezone!, days, from!, to!);
+        return true;
+    }
+
+    /// <summary>A required <c>HH:mm</c> value of the <c>workHours</c> section.</summary>
+    private static bool TryClock(JsonElement section, string key, out string? text, out TimeOnly time, out NodeConfigurationResult failure)
+    {
+        time = default;
+        if (!TryRequiredString(section, key, out text, out failure, "workHours."))
+        {
+            return false;
+        }
+
+        if (!TimeOnly.TryParseExact(text, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out time))
+        {
+            failure = Invalid("workHours." + key, "must be HH:mm");
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>The <c>log</c> section (spec 07, A7-3): only <c>level</c>, one of the four names.</summary>
+    private static bool TryLog(JsonElement root, out LogSettings log, out NodeConfigurationResult failure)
+    {
+        log = new LogSettings();
+        failure = null!;
+        if (!root.TryGetProperty("log", out JsonElement section) || section.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (section.ValueKind != JsonValueKind.Object)
+        {
+            failure = Invalid("log", "must be an object");
+            return false;
+        }
+
+        if (TryOptionalString(section, "level", out string? level, out NodeConfigurationResult? levelFailure, "log.") is false)
+        {
+            failure = levelFailure!;
+            return false;
+        }
+
+        if (level is null)
+        {
+            return true;
+        }
+
+        if (!LogSettings.Levels.Contains(level, StringComparer.Ordinal))
+        {
+            failure = Invalid("log.level", "must be Debug, Information, Warning or Error");
+            return false;
+        }
+
+        log = new LogSettings(level);
+        return true;
     }
 
     /// <summary>The <c>claude</c> section (spec 06): absent means the §10 defaults; every refusal names its dotted key.</summary>

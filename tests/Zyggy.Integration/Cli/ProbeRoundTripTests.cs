@@ -75,7 +75,7 @@ public sealed class ProbeRoundTripTests : IAsyncLifetime
         string[] lines = run.Stdout.TrimEnd().Split('\n').Select(l => l.TrimEnd()).ToArray();
         lines.Should().HaveCount(2);
         lines[0].Should().MatchRegex("^[0-9A-HJKMNP-TV-Z]{26} home-laptop timeout$");
-        lines[1].Should().Be("sent 1, done 0, rejected 0, timeout 1, push_failed 0");
+        lines[1].Should().Be("sent 1, done 0, rejected 0, timeout 1, unverified_report 0, push_failed 0");
         string id = lines[0].Split(' ')[0];
         (await _bus.ExistsOnMainAsync(BusPaths.EnvelopeFile(BusPaths.Jobs(Acme, HomeLaptop), EnvelopeId.Parse(id)), ct)).Should().BeTrue();
         File.ReadAllText(_ledger).Should().Contain("\"outcome\":\"timeout\"").And.Contain("\"id\":\"" + id + "\"");
@@ -102,7 +102,7 @@ public sealed class ProbeRoundTripTests : IAsyncLifetime
             run.ExitCode.Should().Be(0, run.Stderr + string.Join('\n', listener.Stderr));
             string[] lines = run.Stdout.TrimEnd().Split('\n').Select(l => l.TrimEnd()).ToArray();
             lines[0].Should().MatchRegex("^[0-9A-HJKMNP-TV-Z]{26} home-laptop done [0-9]+ ms$");
-            lines[1].Should().Be("sent 1, done 1, rejected 0, timeout 0, push_failed 0");
+            lines[1].Should().Be("sent 1, done 1, rejected 0, timeout 0, unverified_report 0, push_failed 0");
             string ledger = File.ReadAllText(_ledger);
             ledger.Should().Contain("\"outcome\":\"done\"");
             long ms = long.Parse(lines[0].Split(' ')[3], System.Globalization.CultureInfo.InvariantCulture);
@@ -142,9 +142,9 @@ public sealed class ProbeRoundTripTests : IAsyncLifetime
         // Assert
         stats.ExitCode.Should().Be(0, stats.Stderr);
         string[] lines = stats.Stdout.TrimEnd().Split('\n').Select(l => l.TrimEnd()).ToArray();
-        lines[0].Should().Be("| to | count | done | rejected | timeout | push_failed | p50 ms | p95 ms | min ms | max ms |");
+        lines[0].Should().Be("| to | count | done | rejected | timeout | unverified_report | push_failed | p50 ms | p95 ms | min ms | max ms |");
         lines.Should().HaveCount(3);
-        lines[2].Should().MatchRegex(@"^\| home-laptop \| 2 \| 1 \| 0 \| 1 \| 0 \| [0-9]+ \| [0-9]+ \| [0-9]+ \| [0-9]+ \|$");
+        lines[2].Should().MatchRegex(@"^\| home-laptop \| 2 \| 1 \| 0 \| 1 \| 0 \| 0 \| [0-9]+ \| [0-9]+ \| [0-9]+ \| [0-9]+ \|$");
     }
 
     [Fact]
@@ -168,7 +168,7 @@ public sealed class ProbeRoundTripTests : IAsyncLifetime
         // Assert
         run.ExitCode.Should().Be(6);
         run.Stdout.TrimEnd().Split('\n').Should().HaveCount(3);
-        run.Stdout.Should().Contain("sent 2, done 0, rejected 0, timeout 2, push_failed 0");
+        run.Stdout.Should().Contain("sent 2, done 0, rejected 0, timeout 2, unverified_report 0, push_failed 0");
         new Zyggy.Core.Bus.Probe.ProbeLedger(_ledger).ReadAll().Should().HaveCount(2);
     }
 

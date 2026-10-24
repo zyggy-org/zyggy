@@ -9,8 +9,23 @@
     <ProjectReference Include="../Zyggy.Core/Zyggy.Core.csproj" />
   </ItemGroup>
 
+  <!-- Deliverable 07: Kestrel serves http://localhost:4711/health (loopback only, spec 07 ex-Q1); a framework reference, not a package. -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- Microsoft.Extensions.Hosting itself comes with the framework reference above (NU1510 would flag an explicit one). -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Systemd" />
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.Extensions.Hosting" />
+    <PackageReference Include="Serilog.Sinks.File" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Zyggy.Integration" />
   </ItemGroup>
 
 </Project>

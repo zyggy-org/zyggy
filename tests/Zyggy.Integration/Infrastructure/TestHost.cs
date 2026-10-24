@@ -5,8 +5,6 @@ using Zyggy.Core.Bus;
 using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Jobs;
-using Zyggy.Core.Models;
-using Zyggy.Core.Policy;
 using Zyggy.Core.Processes;
 using Zyggy.Core.Secrets;
 using Zyggy.Core.Tenancy;
@@ -108,7 +106,7 @@ internal static class TestHost
     /// <summary>
     /// Builds the production composition of a node's job path (plan 06 Step 9): the real process runner, the Claude Code runner
     /// pointed at <paramref name="claudePath"/> (the fake), the policy from <paramref name="configuration"/>, the job runner as the
-    /// listener's handler, and the same bus as <see cref="BuildListener"/>. <paramref name="jobRunnerAfterBus"/> registers the job runner after
+    /// listener's handler, and the same bus as <see cref="BuildListener"/>; <paramref name="withDispatcher"/> adds the §6 dispatcher as the listener's gate (plan 07). <paramref name="jobRunnerAfterBus"/> registers the job runner after
     /// the bus instead of before it (the order must not matter, plan 06 Assumption A2).
     /// </summary>
     public static ServiceProvider BuildRunnerListener(
@@ -120,18 +118,20 @@ internal static class TestHost
         Action<JobRunnerOptions>? runner = null,
         HookedProcessRunner? hooks = null,
         ILoggerProvider? logging = null,
-        bool jobRunnerAfterBus = false)
+        bool jobRunnerAfterBus = false,
+        bool withDispatcher = false)
     {
+        // Plan 07 Step 8: the production composition root; the test's overrides follow (last registration wins for the store, the options are merged).
         var services = new ServiceCollection()
-            .AddProcessRunner()
-            .AddEnvelopeSigning()
+            .AddNodeServices(configuration with { Claude = configuration.Claude with { Path = claudePath } })
             .AddSingleton(store)
-            .AddSingleton(configuration)
-            .AddClaudeCodeModelRunner(o => o.Path = claudePath)
-            .AddNodeJsonPolicy()
-            .AddSingleton(TestKeys.Acme1)
             .AddSingleton(new Random(7))
             .AddSingleton(PollOptions.Default with { ActiveInterval = TimeSpan.FromSeconds(1), Jitter = TimeSpan.FromMilliseconds(200) });
+        if (runner is not null)
+        {
+            services.Configure(runner);
+        }
+
         if (hooks is not null)
         {
             services.AddSingleton<IProcessRunner>(hooks);
@@ -142,32 +142,31 @@ internal static class TestHost
             services.AddLogging(b => b.AddProvider(logging).SetMinimumLevel(LogLevel.Trace));
         }
 
-        if (!jobRunnerAfterBus)
+        if (jobRunnerAfterBus)
         {
+            // Plan 06 Assumption A2: the order of AddJobRunner and AddGitHubBus must not matter — register the runner again, after the bus.
             services.AddJobRunner(runner);
         }
 
-        services.AddGitHubBus(o =>
+        if (withDispatcher)
         {
-            o.Remote = Remote;
-            o.Identity = new BusIdentity(bus.Tenant, machine);
-            o.CheckoutRoot = bus.CloneDir;
+            // Plan 07 Step 4: the §6 admission rules as the listener's gate.
+            services.AddJobDispatcher();
+        }
+
+        services.Configure<GitHubBusOptions>(o =>
+        {
             o.Version = "0.0.0-test";
             o.HandlerFactory = () => new BareRepoHeadHandler(ct => HeadShaOrNullAsync(bus, ct));
             o.GitEnvironment = bus.GitEnvironment;
             o.Jitter = () => 0;
         });
-        if (jobRunnerAfterBus)
-        {
-            services.AddJobRunner(runner);
-        }
-
         return services.BuildServiceProvider();
     }
 
     /// <summary>The typed <c>node.json</c> of <paramref name="machine"/> on the fixture's bus, with an optional <c>claude</c> section.</summary>
     public static NodeConfiguration NodeConfigurationFor(BusRepoFixture bus, MachineName machine, ClaudeSettings? claude = null, string? nodeDir = null) =>
-        new(bus.Tenant, machine, TestKeys.Acme1, new BusSettings(Remote.Owner, Remote.Repository, Remote.Branch, bus.CloneDir, Remote.HttpsUrl!.ToString()), new PollSettings(1, 1), new SecretsSettings())
+        new(bus.Tenant, machine, TestKeys.Acme1, new BusSettings(Remote.Owner, Remote.Repository, Remote.Branch, bus.CloneDir, Remote.HttpsUrl!.ToString()), new PollSettings(1, 1, 1), new SecretsSettings())
         {
             Claude = claude ?? new ClaudeSettings(),
             NodeDir = nodeDir,

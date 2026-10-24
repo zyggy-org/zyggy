@@ -23,4 +23,24 @@
     <Compile Include="../Zyggy.Core.Tests/Infrastructure/TestEnvelopes.cs" Link="Infrastructure/TestEnvelopes.cs" />
   </ItemGroup>
 
+  <!--
+    Deliverable 07: Zyggy.Node carries the Microsoft.AspNetCore.App framework reference, which flows into this test host. The SDK then
+    drops from this output every package assembly the shared framework also provides (Microsoft.Extensions.DependencyInjection*,
+    Options, …). The in-process tests are fine, but `zyggy` — a plain console app launched out of process from this directory — cannot
+    find them (CI on Linux: FileNotFoundException for Microsoft.Extensions.DependencyInjection.Abstractions). The CLI therefore runs
+    from its own build output, copied verbatim into <OutDir>cli/ (see ZyggyCli.ExecutablePath); zyggy-node and fake-claude are unaffected.
+  -->
+  <Target Name="CopyCliOutputForOutOfProcessTests" AfterTargets="Build">
+    <MSBuild Projects="../../src/Zyggy.Cli/Zyggy.Cli.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" PropertyName="_ZyggyCliTargetPath" />
+    </MSBuild>
+    <PropertyGroup>
+      <_ZyggyCliOutputDir>$([System.IO.Path]::GetDirectoryName('$(_ZyggyCliTargetPath)'))</_ZyggyCliOutputDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <_ZyggyCliFiles Include="$(_ZyggyCliOutputDir)/**/*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_ZyggyCliFiles)" DestinationFiles="@(_ZyggyCliFiles->'$(OutDir)cli/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>

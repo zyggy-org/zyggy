@@ -12,6 +12,8 @@
     <PackageReference Include="Microsoft.Extensions.Options" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="ModelContextProtocol" />
+    <!-- Deliverable 07: IANA ids for workHours.timezone under InvariantGlobalization (spec 07 ex-Q2). -->
+    <PackageReference Include="TimeZoneConverter" />
   </ItemGroup>
 
   <!-- The dream model contract (OQ-3): prompts and schemas ship inside the binary. -->

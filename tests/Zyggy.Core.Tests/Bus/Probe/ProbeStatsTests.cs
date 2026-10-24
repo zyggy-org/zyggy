@@ -20,7 +20,17 @@ public sealed class ProbeStatsTests
         IReadOnlyList<ProbeStatsRow> rows = ProbeStats.Aggregate([Record(Home, ProbeOutcome.Done, 1234), Record(Home, ProbeOutcome.Timeout, null)]);
 
         // Assert
-        rows.Should().ContainSingle().Which.Should().Be(new ProbeStatsRow(Home, 2, 1, 0, 1, 0, 1234, 1234, 1234, 1234));
+        rows.Should().ContainSingle().Which.Should().Be(new ProbeStatsRow(Home, 2, 1, 0, 1, 0, 0, 1234, 1234, 1234, 1234));
+    }
+
+    [Fact]
+    public void Aggregate_UnverifiedReport_CountedInOwnColumnNotTimeout()
+    {
+        // Act
+        IReadOnlyList<ProbeStatsRow> rows = ProbeStats.Aggregate([Record(Home, ProbeOutcome.Done, 10), Record(Home, ProbeOutcome.UnverifiedReport, null)]);
+
+        // Assert
+        rows.Should().ContainSingle().Which.Should().Be(new ProbeStatsRow(Home, 2, 1, 0, 0, 1, 0, 10, 10, 10, 10));
     }
 
     [Fact]
@@ -48,7 +58,7 @@ public sealed class ProbeStatsTests
             Work);
 
         // Assert
-        rows.Should().ContainSingle().Which.Should().Be(new ProbeStatsRow(Work, 2, 0, 1, 0, 1, null, null, null, null));
+        rows.Should().ContainSingle().Which.Should().Be(new ProbeStatsRow(Work, 2, 0, 1, 0, 0, 1, null, null, null, null));
     }
 
     [Fact]
@@ -65,14 +75,14 @@ public sealed class ProbeStatsTests
     public void RenderMarkdown_Rows_TableWithSpecColumns()
     {
         // Act
-        string table = ProbeStats.RenderMarkdown([new ProbeStatsRow(Home, 2, 1, 0, 1, 0, 1234, 1234, 1234, 1234), new ProbeStatsRow(Work, 1, 0, 0, 0, 1, null, null, null, null)]);
+        string table = ProbeStats.RenderMarkdown([new ProbeStatsRow(Home, 2, 1, 0, 1, 0, 0, 1234, 1234, 1234, 1234), new ProbeStatsRow(Work, 1, 0, 0, 0, 0, 1, null, null, null, null)]);
 
         // Assert
         table.Split('\n').Should().Equal(
-            "| to | count | done | rejected | timeout | push_failed | p50 ms | p95 ms | min ms | max ms |",
-            "|----|------:|-----:|---------:|--------:|------------:|-------:|-------:|-------:|-------:|",
-            "| home-laptop | 2 | 1 | 0 | 1 | 0 | 1234 | 1234 | 1234 | 1234 |",
-            "| work-laptop | 1 | 0 | 0 | 0 | 1 | - | - | - | - |",
+            "| to | count | done | rejected | timeout | unverified_report | push_failed | p50 ms | p95 ms | min ms | max ms |",
+            "|----|------:|-----:|---------:|--------:|------------------:|------------:|-------:|-------:|-------:|-------:|",
+            "| home-laptop | 2 | 1 | 0 | 1 | 0 | 0 | 1234 | 1234 | 1234 | 1234 |",
+            "| work-laptop | 1 | 0 | 0 | 0 | 0 | 1 | - | - | - | - |",
             string.Empty);
     }
 

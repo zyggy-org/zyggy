@@ -29,6 +29,9 @@ internal sealed class ActingModelRunner(IModelRunner inner, string captureDirect
 
     public string StdinCapture(int call) => Path.Combine(captureDirectory, $"call-{call}-stdin.bin");
 
+    /// <summary>The probe is not a run: it goes straight to the decorated runner (the fake answers <c>auth status</c>).</summary>
+    public Task<bool?> CheckAuthAsync(CancellationToken cancellationToken) => inner.CheckAuthAsync(cancellationToken);
+
     public async Task<ModelRunResult> RunAsync(ModelRunRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);

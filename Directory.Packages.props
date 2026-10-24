@@ -22,6 +22,16 @@
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
     <!-- Deliverable 36: the official C# MCP SDK, for `zyggy linkedin mcp-server` (used only under src/Zyggy.Core/LinkedIn/Mcp/). -->
     <PackageVersion Include="ModelContextProtocol" Version="2.2.0" />
+    <!-- Deliverable 07: service hosting for the Node (UseWindowsService()/UseSystemd(), no-ops outside a service manager). -->
+    <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Systemd" Version="10.0.12" />
+    <!-- Deliverable 07: structured logging of the Node — one daily rolling file per machine, 14-day retention, console for journald (§11). -->
+    <PackageVersion Include="Serilog" Version="4.4.0" />
+    <PackageVersion Include="Serilog.Extensions.Hosting" Version="10.0.0" />
+    <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
+    <!-- Deliverable 07: IANA time-zone ids for workHours.timezone under InvariantGlobalization (no ICU on Windows). -->
+    <PackageVersion Include="TimeZoneConverter" Version="8.0.0" />
     <!-- Test-only: the container implementation the DI resolution tests build. -->
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
   </ItemGroup>

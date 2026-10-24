@@ -136,6 +136,26 @@ public sealed class ClaudeCodeCliRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task CheckAuthAsync_FakeClaude_True()
+    {
+        // Act: plan 07 Step 7 — through the production registration and the real process runner
+        bool? ok = await Runner().CheckAuthAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        ok.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CheckAuthAsync_PathMissing_Null()
+    {
+        // Act
+        bool? ok = await Runner(_scratch.File("claude-missing")).CheckAuthAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        ok.Should().BeNull();
+    }
+
+    [Fact]
     public async Task RunAsync_ClaudePathMissing_ReturnsClaudeErrorNotFound()
     {
         // Arrange

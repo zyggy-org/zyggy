@@ -1,1 +1,1 @@
-Host.CreateApplicationBuilder(args).Build().Run();
+return await Zyggy.Node.NodeHost.RunAsync(args, CancellationToken.None);

@@ -11,6 +11,7 @@ namespace Zyggy.Core.Bus;
 /// <param name="RateLimitFloor">Below this remaining budget the poller throttles itself (100).</param>
 /// <param name="NetworkBackoffMin">The first back-off after a failed check (10 s); it doubles per failure.</param>
 /// <param name="NetworkBackoffMax">The cap of the network back-off (5 min).</param>
+/// <param name="SafetyFetchInterval">The period of the unconditional fetch that catches a head check that lies (§5 item 6; 15 min).</param>
 public sealed record PollOptions(
     TimeSpan ActiveInterval,
     TimeSpan IdleInterval,
@@ -18,9 +19,10 @@ public sealed record PollOptions(
     TimeSpan ThrottleInterval,
     int RateLimitFloor,
     TimeSpan NetworkBackoffMin,
-    TimeSpan NetworkBackoffMax)
+    TimeSpan NetworkBackoffMax,
+    TimeSpan SafetyFetchInterval)
 {
-    /// <summary>Gets the §5 defaults: 10 s / 60 s, ±2 s, 120 s floor, budget floor 100, 10 s doubling to 5 min.</summary>
+    /// <summary>Gets the §5 defaults: 10 s / 60 s, ±2 s, 120 s floor, budget floor 100, 10 s doubling to 5 min, a safety fetch every 15 min.</summary>
     public static PollOptions Default { get; } = new(
         TimeSpan.FromSeconds(10),
         TimeSpan.FromSeconds(60),
@@ -28,7 +30,8 @@ public sealed record PollOptions(
         TimeSpan.FromSeconds(120),
         100,
         TimeSpan.FromSeconds(10),
-        TimeSpan.FromMinutes(5));
+        TimeSpan.FromMinutes(5),
+        TimeSpan.FromMinutes(15));
 
     /// <summary>Gets the base interval in <see cref="PollMode.Active"/>.</summary>
     public TimeSpan ActiveInterval { get; init; } = Positive(ActiveInterval, nameof(ActiveInterval));
@@ -52,6 +55,9 @@ public sealed record PollOptions(
     public TimeSpan NetworkBackoffMax { get; init; } = NetworkBackoffMax >= NetworkBackoffMin
         ? NetworkBackoffMax
         : throw new ArgumentOutOfRangeException(nameof(NetworkBackoffMax), NetworkBackoffMax, "The network back-off cap must not be shorter than its minimum.");
+
+    /// <summary>Gets the safety-fetch period (§5 item 6).</summary>
+    public TimeSpan SafetyFetchInterval { get; init; } = Positive(SafetyFetchInterval, nameof(SafetyFetchInterval));
 
     private static TimeSpan Positive(TimeSpan value, string name) =>
         value > TimeSpan.Zero ? value : throw new ArgumentOutOfRangeException(name, value, "The interval must be positive.");

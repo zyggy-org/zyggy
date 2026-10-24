@@ -49,6 +49,39 @@ public sealed class NodeJsonPolicySourceTests
     }
 
     [Fact]
+    public async Task GetAsync_ProjectsMaxConcurrentJobsAndWorkHours()
+    {
+        // Arrange: spec 07 — the §6 concurrency inputs come from node.json
+        var configuration = Configuration() with
+        {
+            MaxConcurrentJobs = 3,
+            WorkHours = new WorkHoursSettings("Europe/Brussels", ["Mon", "Fri"], "09:00", "17:30"),
+        };
+
+        // Act
+        var policy = await new NodeJsonPolicySource(configuration).GetAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        policy.MaxConcurrentJobs.Should().Be(3);
+        policy.WorkHours.Should().NotBeNull();
+        policy.WorkHours!.Days.Should().BeEquivalentTo([DayOfWeek.Monday, DayOfWeek.Friday]);
+        policy.WorkHours.From.Should().Be(new TimeOnly(9, 0));
+        policy.WorkHours.To.Should().Be(new TimeOnly(17, 30));
+        policy.WorkHours.Zone.BaseUtcOffset.Should().Be(TimeSpan.FromHours(1));
+    }
+
+    [Fact]
+    public async Task GetAsync_WorkHoursAbsent_NullMeansAlwaysInside()
+    {
+        // Act
+        var policy = await new NodeJsonPolicySource(Configuration()).GetAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        policy.WorkHours.Should().BeNull();
+        policy.MaxConcurrentJobs.Should().Be(2);
+    }
+
+    [Fact]
     public async Task GetAsync_DevRoots_ReadNotEnforced()
     {
         // Arrange: O18 — the roots are carried for deliverable 14; nothing compares a project against them in 06

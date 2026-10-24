@@ -83,7 +83,8 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<TimeProvider>(),
                 sp.GetService<Random>() ?? Random.Shared,
                 sp.GetRequiredService<JobHandler>(),
-                log);
+                log,
+                sp.GetService<JobGate>());
         });
         services.TryAddSingleton<IBusProvider>(sp =>
         {
@@ -121,7 +122,8 @@ public static class ServiceCollectionExtensions
     private static InvalidOperationException Missing(string option) =>
         new($"GitHubBusOptions.{option} is not set: the bus has no default remote, identity or checkout (configure it from node.json).");
 
-    private static string InformationalVersion() =>
+    /// <summary>The entry assembly's informational version without build metadata (the bus provider's User-Agent and <c>/health</c>'s <c>version</c>).</summary>
+    internal static string InformationalVersion() =>
         (Assembly.GetEntryAssembly() ?? typeof(ServiceCollectionExtensions).Assembly)
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.0.0";
 }

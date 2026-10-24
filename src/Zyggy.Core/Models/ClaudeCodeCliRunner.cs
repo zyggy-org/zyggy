@@ -21,6 +21,9 @@ internal sealed partial class ClaudeCodeCliRunner(
 {
     private readonly ILogger<ClaudeCodeCliRunner> _log = log ?? NullLogger<ClaudeCodeCliRunner>.Instance;
 
+    /// <summary>How long <c>claude auth status</c> may take before the probe answers "could not tell" (spec 07).</summary>
+    private static readonly TimeSpan AuthProbeTimeout = TimeSpan.FromSeconds(30);
+
     // Recognised from the result text of a failed run; unconfirmed until the first live run (spec AC-30). A wrong guess only
     // changes the detail token, never the outcome.
     private static readonly string[] AuthMarkers = ["invalid api key", "/login", "not logged in", "authentication", "oauth token", "401"];
@@ -57,6 +60,40 @@ internal sealed partial class ClaudeCodeCliRunner(
                 LogTranscriptNotWritten(failure);
             }
         }
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool?> CheckAuthAsync(CancellationToken cancellationToken)
+    {
+        var spec = new ProcessSpec(options.Value.Path, ["auth", "status"], Path.GetTempPath())
+        {
+            // The probe never sees a unit credential (the same rule as a run without a named directory).
+            Environment = new Dictionary<string, string?> { ["CREDENTIALS_DIRECTORY"] = null },
+            Timeout = AuthProbeTimeout,
+            MaxStdoutBytes = 64 * 1024,
+        };
+        ProcessResult process;
+        try
+        {
+            process = await processes.RunAsync(spec, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+#pragma warning disable CA1031 // The seam contract: a probe that cannot run is "could not tell", never an exception.
+        catch (Exception)
+#pragma warning restore CA1031
+        {
+            LogAuthStatus("unknown (start failed)");
+            return null;
+        }
+
+        bool? verdict = process.StartFailed || process.TimedOut
+            ? null
+            : process.ExitCode switch { 0 => true, 1 => false, _ => null };
+        LogAuthStatus(verdict switch { true => "logged in", false => "not logged in", null => "unknown" });
+        return verdict;
     }
 
     private async Task<ModelRunResult> RunProcessAsync(
@@ -106,6 +143,9 @@ internal sealed partial class ClaudeCodeCliRunner(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "transcript not written: {Detail}")]
     private partial void LogTranscriptNotWritten(string detail);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "claude auth status: {Outcome}")]
+    private partial void LogAuthStatus(string outcome);
 
     private static ModelRunResult Classify(ModelRunRequest request, string path, ProcessResult process, StreamJsonReader reader)
     {

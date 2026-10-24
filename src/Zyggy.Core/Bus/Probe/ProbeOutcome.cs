@@ -12,6 +12,9 @@ public enum ProbeOutcome
     /// <summary><c>timeout</c>: no report was observed within the timeout.</summary>
     Timeout,
 
+    /// <summary><c>unverified_report</c>: a report answering the probe was observed but did not verify (unknown key, bad signature); recorded at once, not at the deadline (decision 0001 F3).</summary>
+    UnverifiedReport,
+
     /// <summary><c>push_failed</c>: the probe job itself could not be pushed to the bus.</summary>
     PushFailed,
 }
@@ -21,13 +24,14 @@ public static class ProbeOutcomeWire
 {
     /// <summary>Returns the wire string of an outcome.</summary>
     /// <param name="value">The member.</param>
-    /// <returns><c>done</c>, <c>rejected</c>, <c>timeout</c> or <c>push_failed</c>.</returns>
+    /// <returns><c>done</c>, <c>rejected</c>, <c>timeout</c>, <c>unverified_report</c> or <c>push_failed</c>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown for an undefined member.</exception>
     public static string ToWire(ProbeOutcome value) => value switch
     {
         ProbeOutcome.Done => "done",
         ProbeOutcome.Rejected => "rejected",
         ProbeOutcome.Timeout => "timeout",
+        ProbeOutcome.UnverifiedReport => "unverified_report",
         ProbeOutcome.PushFailed => "push_failed",
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
