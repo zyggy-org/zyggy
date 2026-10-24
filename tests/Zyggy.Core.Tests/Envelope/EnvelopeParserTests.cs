@@ -531,4 +531,56 @@ public sealed class EnvelopeParserTests
         result.IsAccepted.Should().BeFalse();
         return result.Rejection!;
     }
+    // ----- plan 08 Step 6: the lenient header peek used by the inventory -----
+
+    [Fact]
+    public async Task PeekHeader_ReportWithCostAndReason_TypedOptionals()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        var store = await TestKeys.StoreWithBothAsync(ct);
+        var jobId = EnvelopeId.New(TestEnvelopes.FixedInstant);
+        byte[] bytes = await TestEnvelopes.SignedReportBytesAsync(MachineName.Parse("home-laptop"), MachineName.Parse("central"), jobId, store, TestKeys.Acme1, "locked: x\n", ct, status: ReportStatus.Failed, reason: "locked", costUsd: 0.0123m);
+
+        // Act
+        PeekedHeader? peeked = EnvelopeParser.PeekHeader(bytes);
+
+        // Assert
+        peeked.Should().NotBeNull();
+        peeked!.Type.Should().Be(EnvelopeType.Report);
+        peeked.From!.Value.Should().Be("home-laptop");
+        peeked.To!.Value.Should().Be("central");
+        peeked.Created.Should().Be(TestEnvelopes.FixedInstant);
+        peeked.InReplyTo.Should().Be(jobId);
+        peeked.Status.Should().Be(ReportStatus.Failed);
+        peeked.Reason.Should().Be("locked");
+        peeked.CostUsd.Should().Be(0.0123m);
+    }
+
+    [Fact]
+    public void PeekHeader_NotAFrontMatterDocument_Null()
+    {
+        // Act
+        PeekedHeader? peeked = EnvelopeParser.PeekHeader("just text\n"u8.ToArray());
+
+        // Assert
+        peeked.Should().BeNull();
+    }
+
+    [Fact]
+    public void PeekHeader_UnparsableScalars_NullFieldsNotThrow()
+    {
+        // Act: every scalar present but unreadable
+        PeekedHeader? peeked = EnvelopeParser.PeekHeader("---\ntype: banana\nfrom: Home Laptop\nto: Not A Machine\ncreated: yesterday\nin_reply_to: nope\nstatus: maybe\ncost_usd: free\n---\nbody\n"u8.ToArray());
+
+        // Assert
+        peeked.Should().NotBeNull();
+        peeked!.Type.Should().BeNull();
+        peeked.From.Should().BeNull();
+        peeked.To.Should().BeNull();
+        peeked.Created.Should().BeNull();
+        peeked.InReplyTo.Should().BeNull();
+        peeked.Status.Should().BeNull();
+        peeked.CostUsd.Should().BeNull();
+    }
 }

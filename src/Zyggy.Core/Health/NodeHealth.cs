@@ -1,12 +1,13 @@
 using System.Text.Json.Serialization;
 
-namespace Zyggy.Node;
+namespace Zyggy.Core.Health;
 
 /// <summary>
 /// The body of <c>GET /health</c> (founding spec §11, verbatim field list; spec 07): serialised camelCase with nulls written and
-/// timestamps as <c>YYYY-MM-DDTHH:MM:SSZ</c>. There is no verdict field (spec 07 ex-Q9): <c>zyggy status</c> defines "green" from these.
+/// timestamps as <c>YYYY-MM-DDTHH:MM:SSZ</c>. There is no verdict field (spec 07 ex-Q9): <see cref="HealthRules"/> defines "green" for
+/// <c>zyggy status</c>. Moved from <c>Zyggy.Node</c> in deliverable 08 (ex-Q8) so the CLI reads the one shared contract; the JSON is unchanged.
 /// </summary>
-/// <param name="Version">The informational version of this binary.</param>
+/// <param name="Version">The informational version of the node binary.</param>
 /// <param name="Tenant">The tenant from <c>node.json</c>.</param>
 /// <param name="Machine">The machine from <c>node.json</c>.</param>
 /// <param name="LastPollUtc">When the doorbell was last rung.</param>

@@ -1,3 +1,5 @@
+using System.Globalization;
+
 using Zyggy.Core.Tenancy;
 
 namespace Zyggy.Core.Envelope;
@@ -53,6 +55,31 @@ public static class EnvelopeParser
             && MachineName.TryParse(scalar.Value, out MachineName? from)
             ? from
             : null;
+    }
+
+    /// <summary>
+    /// Reads the header scalars of a file that may not verify or even parse (deliverable 08's inventory: an unverifiable report is still
+    /// listed with what its header says). Each field is typed when parsable and <see langword="null"/> otherwise; never the body.
+    /// </summary>
+    /// <param name="file">The file bytes.</param>
+    /// <returns>The peeked header, or <see langword="null"/> when the file is not a front-matter document at all.</returns>
+    internal static PeekedHeader? PeekHeader(ReadOnlyMemory<byte> file)
+    {
+        if (FrontMatterReader.Read(file, out FrontMatterMapping map, out _) is not null)
+        {
+            return null;
+        }
+
+        string? Scalar(string key) => map.Entries.TryGetValue(key, out FrontMatterNode? node) && node is FrontMatterScalar scalar ? scalar.Value : null;
+        return new PeekedHeader(
+            EnvelopeWire.TryFromWire(Scalar("type"), out EnvelopeType type) ? type : null,
+            MachineName.TryParse(Scalar("from"), out MachineName? from) ? from : null,
+            MachineName.TryParse(Scalar("to"), out MachineName? to) ? to : null,
+            DateTimeOffset.TryParse(Scalar("created"), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTimeOffset created) ? created : null,
+            EnvelopeId.TryParse(Scalar("in_reply_to"), out EnvelopeId? inReplyTo) ? inReplyTo : null,
+            EnvelopeWire.TryFromWire(Scalar("status"), out ReportStatus status) ? status : null,
+            Scalar("reason"),
+            decimal.TryParse(Scalar("cost_usd"), NumberStyles.Number, CultureInfo.InvariantCulture, out decimal cost) ? cost : null);
     }
 
     /// <summary>Interprets a front-matter tree; <paramref name="signed"/> false skips <c>key_id</c> and <c>sig</c> (factories).</summary>

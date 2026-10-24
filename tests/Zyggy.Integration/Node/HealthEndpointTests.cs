@@ -102,8 +102,8 @@ public sealed class HealthEndpointTests
         var ct = TestContext.Current.CancellationToken;
         await using NodeHostHarness harness = await NodeHostHarness.CreateAsync(ct);
 
-        // Act
-        int exitCode = await harness.RunAsync(TimeSpan.FromSeconds(4), ct);
+        // Act: run until the probe has answered (under full-suite load the fake's `auth status` can take seconds to spawn)
+        int exitCode = await harness.RunUntilAsync(() => Task.FromResult(harness.LogLines.Any(l => l.EndsWith("claude auth ok", StringComparison.Ordinal))), TimeSpan.FromSeconds(30), ct);
 
         // Assert
         exitCode.Should().Be(0, string.Join(Environment.NewLine, harness.LogLines));

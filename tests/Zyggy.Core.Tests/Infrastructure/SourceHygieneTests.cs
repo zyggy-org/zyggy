@@ -508,6 +508,126 @@ public sealed partial class SourceHygieneTests
             .ToDictionary(f => f, f => File.ReadAllText(Path.Combine(RepoRoot(), f)), StringComparer.Ordinal);
 
     [Fact]
+    public void Src_Cli_ReferencesCoreOnly()
+    {
+        // Arrange: spec 08 AC-6 — the CLI stays slim: one project reference, no framework reference (the Node's Kestrel never enters it)
+        var project = System.Xml.Linq.XDocument.Load(Path.Combine(RepoRoot(), "src", "Zyggy.Cli", "Zyggy.Cli.csproj"));
+
+        // Act
+        var references = project.Descendants("ProjectReference").Select(e => (string)e.Attribute("Include")!).ToList();
+        var frameworks = project.Descendants("FrameworkReference").ToList();
+
+        // Assert
+        references.Should().ContainSingle().Which.Should().EndWith("Zyggy.Core.csproj");
+        frameworks.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Src_Cli_NoProcessHttpClientGitHubClaudeOrSecretStoreReference()
+    {
+        // Arrange: spec 08 AC-6 — the bus verbs compose Core; every seam implementation stays in Core. The composition root may name the
+        // bus implementation's options record for the deliverable-04 test hook (ZYGGY_BUS_API_BASE) and nothing else of it. The two
+        // pre-bus verbs are out of this fact's scope by design: `secret` writes through the ISecretStore seam (its whole purpose) and
+        // `dream` carries the model path option — neither touches the bus.
+        string[] forbidden = ["System.Diagnostics.Process", "HttpClient", "github", "GitHub", "\"claude\"", "FileSecretStore", "ISecretStore"];
+        string[] preBusVerbs = ["src/Zyggy.Cli/Commands/SecretCommand.cs", "src/Zyggy.Cli/Commands/DreamCommand.cs"];
+
+        // Act
+        var offenders = CliSourceFiles()
+            .Where(kv => !preBusVerbs.Contains(kv.Key, StringComparer.Ordinal))
+            .Select(kv => (kv.Key, Text: CommentLine().Replace(kv.Value, string.Empty).Replace("GitHubBusOptions", string.Empty, StringComparison.Ordinal)))
+            .Where(kv => forbidden.Any(t => kv.Text.Contains(t, StringComparison.Ordinal)))
+            .Select(kv => kv.Key)
+            .ToList();
+
+        // Assert
+        offenders.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Src_Deliverable08Classes_NoConsoleClockOrStaticState()
+    {
+        // Arrange: spec 08 AC-16 — the new Core classes read no console, no clock of their own, hold no static mutable state
+        string[] files =
+        [
+            "src/Zyggy.Core/Bus/JobRequest.cs", "src/Zyggy.Core/Bus/ProjectReference.cs", "src/Zyggy.Core/Bus/JobSubmitter.cs",
+            "src/Zyggy.Core/Bus/BusInventory.cs", "src/Zyggy.Core/Bus/BusAuditor.cs",
+        ];
+        var texts = files.Concat(SourceFiles().Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/')).Where(f => f.StartsWith("src/Zyggy.Core/Health/", StringComparison.Ordinal)))
+            .Distinct(StringComparer.Ordinal)
+            .ToDictionary(f => f, f => CommentLine().Replace(File.ReadAllText(Path.Combine(RepoRoot(), f)), string.Empty), StringComparer.Ordinal);
+
+        // Act
+        var offenders = texts
+            .Where(kv => kv.Value.Contains("Console.", StringComparison.Ordinal)
+                || kv.Value.Contains("DateTime.UtcNow", StringComparison.Ordinal)
+                || kv.Value.Contains("DateTimeOffset.UtcNow", StringComparison.Ordinal)
+                || kv.Value.Contains("TimeProvider.System", StringComparison.Ordinal)
+                || StaticMutableField().IsMatch(kv.Value))
+            .Select(kv => kv.Key)
+            .ToList();
+
+        // Assert
+        texts.Should().HaveCountGreaterThanOrEqualTo(8);
+        offenders.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Src_UseProxyFalse_OnlyInHealthClient()
+    {
+        // Act: spec 08 — the loopback health client is the one place the proxy is bypassed (a corporate proxy must never see localhost)
+        var holders = SourceFiles()
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .Where(f => f.StartsWith("src/Zyggy.Core/Bus/", StringComparison.Ordinal) || f.StartsWith("src/Zyggy.Core/Configuration/", StringComparison.Ordinal)
+                || f.StartsWith("src/Zyggy.Core/Health/", StringComparison.Ordinal) || f.StartsWith("src/Zyggy.Cli/", StringComparison.Ordinal))
+            .Where(f => DisabledProxy().IsMatch(File.ReadAllText(Path.Combine(RepoRoot(), f))))
+            .ToList();
+
+        // Assert
+        holders.Should().Equal("src/Zyggy.Core/Health/HealthClient.cs");
+    }
+
+    [Fact]
+    public void Src_HealthClient_LoopbackGuard()
+    {
+        // Assert: the guard is in the constructor, before any request exists
+        File.ReadAllText(Path.Combine(RepoRoot(), "src", "Zyggy.Core", "Health", "HealthClient.cs")).Should().Contain("IsLoopback");
+    }
+
+    [Fact]
+    public void Packages_Deliverable08_NoneAdded()
+    {
+        // Arrange: spec 08 AC-15 — the row count recorded at 07's gate; no HTTP client package ever enters
+        var document = System.Xml.Linq.XDocument.Load(Path.Combine(RepoRoot(), "Directory.Packages.props"));
+
+        // Act
+        var rows = document.Descendants("PackageVersion").Select(e => (string)e.Attribute("Include")!).ToList();
+
+        // Assert
+        rows.Should().HaveCount(23);
+        rows.Should().NotContain(r => r.Contains("Http", StringComparison.OrdinalIgnoreCase) || r.Contains("Refit", StringComparison.OrdinalIgnoreCase) || r.Contains("RestSharp", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Src_HealthUrlOverride_TestHookOnly()
+    {
+        // Act: spec 08 Configuration — ZYGGY_HEALTH_URL is a loopback-only test hook read by the status verb, never a node.json key
+        var holders = SourceFiles()
+            .Where(f => File.ReadAllText(f).Contains("ZYGGY_HEALTH_URL", StringComparison.Ordinal))
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .ToList();
+
+        // Assert
+        holders.Should().Equal("src/Zyggy.Cli/Commands/StatusCommand.cs");
+    }
+
+    private static Dictionary<string, string> CliSourceFiles() =>
+        SourceFiles()
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .Where(f => f.StartsWith("src/Zyggy.Cli/", StringComparison.Ordinal))
+            .ToDictionary(f => f, f => File.ReadAllText(Path.Combine(RepoRoot(), f)), StringComparer.Ordinal);
+
+    [Fact]
     public void Src_NoOpenTelemetryNamespace()
     {
         // Arrange: spec 07 / O8 — telemetry is off in v1; no collector wired anywhere

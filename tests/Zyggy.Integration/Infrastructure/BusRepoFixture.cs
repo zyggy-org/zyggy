@@ -281,6 +281,45 @@ public class BusRepoFixture : IAsyncLifetime
         return new SeededJob(id, relativePath, bytes);
     }
 
+    /// <summary>Signs a report from <paramref name="from"/> to <paramref name="to"/> answering <paramref name="inReplyTo"/>, writes it under <paramref name="from"/>'s <c>reports/</c> and pushes it with the §5 subject (plan 08, additive).</summary>
+    public async Task<SeededJob> SeedSignedReportAsync(
+        MachineName from,
+        MachineName to,
+        EnvelopeId inReplyTo,
+        KeyId signWith,
+        ISecretStore store,
+        string body,
+        ReportStatus status = ReportStatus.Done,
+        string? reason = null,
+        decimal? costUsd = null,
+        Func<byte[], byte[]>? mutate = null,
+        DateTimeOffset? created = null,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(from);
+        ArgumentNullException.ThrowIfNull(to);
+        ArgumentNullException.ThrowIfNull(inReplyTo);
+        ArgumentNullException.ThrowIfNull(signWith);
+        DateTimeOffset at = created ?? FixedInstant;
+        var id = EnvelopeId.New(at);
+        var header = new EnvelopeHeader(signWith.Tenant, id, from, to, at, EnvelopePriority.Normal, inReplyTo);
+        Model report = Model.CreateReport(header, new ReportFields(status, reason, CostUsd: costUsd), Encoding.UTF8.GetBytes(body));
+        EnvelopeResult signed = await new EnvelopeSigner(store).SignAsync(report, signWith, ct);
+        if (!signed.IsAccepted)
+        {
+            throw new InvalidOperationException("Signing the seeded report failed: " + signed.Rejection);
+        }
+
+        byte[] bytes = EnvelopeWriter.Serialize(signed.Envelope!);
+        bytes = mutate is null ? bytes : mutate(bytes);
+        string relativePath = BusPaths.EnvelopeFile(BusPaths.Reports(signWith.Tenant, from), id);
+        await SeedRawFileAsync(relativePath, bytes, string.Create(CultureInfo.InvariantCulture, $"{signWith.Tenant.Value} report {id.Value} {from.Value}→{to.Value}"), ct);
+        return new SeededJob(id, relativePath, bytes);
+    }
+
+    /// <summary>Brings the node clone up to date with <c>main</c> (the pull the tenant seed ends with).</summary>
+    public Task PullCloneAsync(CancellationToken ct) => RunGitAsync(CloneDir, ["pull", "--rebase", "origin", "main"], ct);
+
     /// <summary>Writes <paramref name="bytes"/> at <paramref name="relativePath"/> and pushes it from the sender with <paramref name="subject"/>.</summary>
     public async Task SeedRawFileAsync(string relativePath, byte[] bytes, string subject, CancellationToken ct)
     {

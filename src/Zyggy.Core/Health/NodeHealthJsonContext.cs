@@ -2,12 +2,23 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Zyggy.Node;
+namespace Zyggy.Core.Health;
 
 /// <summary>The source-generated serializer of <see cref="NodeHealth"/> (§9: no reflection-based JSON): camelCase, nulls written.</summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, DefaultIgnoreCondition = JsonIgnoreCondition.Never)]
 [JsonSerializable(typeof(NodeHealth))]
 internal sealed partial class NodeHealthJsonContext : JsonSerializerContext;
+
+/// <summary>The two JSON calls over the §11 body: the server writes it, <c>zyggy status</c> reads it (deliverable 08).</summary>
+internal static class NodeHealthJson
+{
+    /// <summary>The body as the endpoint writes it.</summary>
+    internal static string Serialize(NodeHealth health) => JsonSerializer.Serialize(health, NodeHealthJsonContext.Default.NodeHealth);
+
+    /// <summary>The body read back; <see langword="null"/> for JSON <c>null</c>.</summary>
+    /// <exception cref="JsonException">The bytes are not a health body.</exception>
+    internal static NodeHealth? Deserialize(ReadOnlySpan<byte> utf8) => JsonSerializer.Deserialize(utf8, NodeHealthJsonContext.Default.NodeHealth);
+}
 
 /// <summary>
 /// Writes an instant as <c>YYYY-MM-DDTHH:MM:SSZ</c> (§11): converted to UTC, whole seconds (plan 07 A10 — the default form carries

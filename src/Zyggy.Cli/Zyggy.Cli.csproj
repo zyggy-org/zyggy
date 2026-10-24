@@ -15,4 +15,9 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" />
   </ItemGroup>
 
+  <!-- Deliverable 08: the integration tests drive the verbs in process (CliApplication.RunAsync with an injected console). -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Zyggy.Integration" />
+  </ItemGroup>
+
 </Project>

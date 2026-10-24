@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -8,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 
 using Zyggy.Core.Configuration;
+using Zyggy.Core.Health;
 
 namespace Zyggy.Node;
 
@@ -104,7 +103,7 @@ internal sealed partial class HealthServer : IAsyncDisposable
     }
 
     /// <summary>The body as the endpoint writes it (for tests and <c>zyggy status</c>'s expectations).</summary>
-    internal static string Serialize(NodeHealth health) => JsonSerializer.Serialize(health, NodeHealthJsonContext.Default.NodeHealth);
+    internal static string Serialize(NodeHealth health) => NodeHealthJson.Serialize(health);
 
     public async ValueTask DisposeAsync()
     {

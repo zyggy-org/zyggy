@@ -17,6 +17,9 @@ public static class BusPaths
     /// <summary>The protocol description at the repository root — the only file outside a tenant prefix (§4).</summary>
     public const string Protocol = "PROTOCOL.md";
 
+    /// <summary>The root folder of every tenant subtree (§14: tenant-prefixed from day one).</summary>
+    public const string Tenants = "tenants";
+
     private const string EnvelopeExtension = ".md";
 
     private const string RegistryExtension = ".yaml";
@@ -28,8 +31,18 @@ public static class BusPaths
     public static string Tenant(TenantId tenant)
     {
         ArgumentNullException.ThrowIfNull(tenant);
-        return "tenants/" + tenant.Value;
+        return Tenants + "/" + tenant.Value;
     }
+
+    /// <summary><c>tenants/&lt;tenant&gt;/nodes</c>: the folder holding every machine's subtree (deliverable 08's inventory and auditor walk it).</summary>
+    /// <param name="tenant">The tenant.</param>
+    /// <returns>The relative path.</returns>
+    public static string Nodes(TenantId tenant) => Tenant(tenant) + "/nodes";
+
+    /// <summary><c>tenants/&lt;tenant&gt;/archive</c>: the folder holding the month folders of <see cref="Archive"/>.</summary>
+    /// <param name="tenant">The tenant.</param>
+    /// <returns>The relative path.</returns>
+    public static string ArchiveRoot(TenantId tenant) => Tenant(tenant) + "/archive";
 
     /// <summary>Returns a machine's registry file: <c>tenants/&lt;org&gt;/registry/&lt;machine&gt;.yaml</c>.</summary>
     /// <param name="tenant">The tenant.</param>
@@ -39,8 +52,13 @@ public static class BusPaths
     public static string Registry(TenantId tenant, MachineName machine)
     {
         ArgumentNullException.ThrowIfNull(machine);
-        return Tenant(tenant) + "/registry/" + machine.Value + RegistryExtension;
+        return RegistryFolder(tenant) + "/" + machine.Value + RegistryExtension;
     }
+
+    /// <summary><c>tenants/&lt;tenant&gt;/registry</c>: the folder holding every machine's registry file (deliverable 08's auditor names it).</summary>
+    /// <param name="tenant">The tenant.</param>
+    /// <returns>The relative path.</returns>
+    public static string RegistryFolder(TenantId tenant) => Tenant(tenant) + "/registry";
 
     /// <summary>Returns a machine's job inbox: <c>tenants/&lt;org&gt;/nodes/&lt;machine&gt;/jobs</c>.</summary>
     /// <param name="tenant">The tenant.</param>
@@ -90,7 +108,7 @@ public static class BusPaths
         ArgumentOutOfRangeException.ThrowIfGreaterThan(year, 9999);
         ArgumentOutOfRangeException.ThrowIfLessThan(month, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(month, 12);
-        return Tenant(tenant) + "/archive/" + year.ToString("0000", CultureInfo.InvariantCulture) + "-" + month.ToString("00", CultureInfo.InvariantCulture);
+        return ArchiveRoot(tenant) + "/" + year.ToString("0000", CultureInfo.InvariantCulture) + "-" + month.ToString("00", CultureInfo.InvariantCulture);
     }
 
     /// <summary>Returns an envelope file inside a folder: <c>&lt;folder&gt;/&lt;ULID&gt;.md</c> (§4 write rules: file name = ULID).</summary>
@@ -140,7 +158,7 @@ public static class BusPaths
         }
 
         string[] parts = relative.Split('/');
-        if (parts.Length < 4 || parts[0] != "tenants" || !TenantId.TryParse(parts[1], out TenantId? tenant))
+        if (parts.Length < 4 || parts[0] != Tenants || !TenantId.TryParse(parts[1], out TenantId? tenant))
         {
             return false;
         }

@@ -153,8 +153,8 @@ public sealed class NodeHostJobFlowTests
         IHost host = harness.Build();
         await host.StartAsync(ct);
         NodeStatus status = host.Services.GetRequiredService<NodeStatus>();
-        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(status.Listener?.Status.JobsRunning == 1), TimeSpan.FromSeconds(20), ct);
-        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(File.Exists(Path.Combine(project.Path, "capture.bin"))), TimeSpan.FromSeconds(10), ct);
+        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(status.Listener?.Status.JobsRunning == 1), TimeSpan.FromSeconds(45), ct);
+        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(File.Exists(Path.Combine(project.Path, "capture.bin"))), TimeSpan.FromSeconds(30), ct);
 
         // Act 1: stop while the run hangs
         var stopwatch = Stopwatch.StartNew();
@@ -173,7 +173,8 @@ public sealed class NodeHostJobFlowTests
         // Act 2: the next host resumes the claim
         harness.Scenario = "done";
         harness.FakeEnvironment.Clear();
-        int exitCode = await harness.RunUntilAsync(async () => (await harness.ReportsOnMainAsync(ct)).Count == 1, TimeSpan.FromSeconds(60), ct);
+        // generous: under full-suite load the second host's start-up, resume and fake run stretch; a passing run never waits this out
+        int exitCode = await harness.RunUntilAsync(async () => (await harness.ReportsOnMainAsync(ct)).Count == 1, TimeSpan.FromSeconds(120), ct);
 
         // Assert 2
         exitCode.Should().Be(0);

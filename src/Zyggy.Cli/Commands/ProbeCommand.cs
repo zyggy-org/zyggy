@@ -9,6 +9,7 @@ using Zyggy.Core.Bus.Probe;
 using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Tenancy;
+using Zyggy.Core.Verbs;
 
 namespace Zyggy.Cli.Commands;
 
@@ -52,7 +53,7 @@ internal static class ProbeCommand
         }
 
         await using ServiceProvider services = BusHost.BuildServices(configuration, parseResult.GetValue(BusHost.VerboseOption), environment);
-        int checkout = await CheckCheckoutAsync(services, configuration, ct);
+        int checkout = await BusHost.CheckCheckoutAsync(services, configuration, VerbIo.FromConsole(), ct);
         if (checkout != ExitCodes.Ok)
         {
             return checkout;
@@ -83,7 +84,7 @@ internal static class ProbeCommand
             s => s.AddSingleton(ProbeHandler.For(configuration.Machine, TimeProvider.System)));
 
         // AC-27: configuration-shaped conditions exit 3 before anything is stashed or pulled.
-        int checkout = await CheckCheckoutAsync(services, configuration, ct);
+        int checkout = await BusHost.CheckCheckoutAsync(services, configuration, VerbIo.FromConsole(), ct);
         if (checkout != ExitCodes.Ok)
         {
             return checkout;
@@ -144,7 +145,7 @@ internal static class ProbeCommand
         }
 
         await using ServiceProvider services = BusHost.BuildServices(configuration, parseResult.GetValue(BusHost.VerboseOption), environment);
-        int checkout = await CheckCheckoutAsync(services, configuration, ct);
+        int checkout = await BusHost.CheckCheckoutAsync(services, configuration, VerbIo.FromConsole(), ct);
         if (checkout != ExitCodes.Ok)
         {
             return checkout;
@@ -213,27 +214,4 @@ internal static class ProbeCommand
         parseResult.GetValue(LedgerOption) is { Length: > 0 } ledger
             ? ledger
             : ProbeLedger.DefaultPath(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.Create), tenant);
-
-    /// <summary>The checkout must exist, be a repository and sit on the bus branch (exit 3, one line); nothing is touched.</summary>
-    private static async Task<int> CheckCheckoutAsync(ServiceProvider services, NodeConfiguration configuration, CancellationToken ct)
-    {
-        string localPath = configuration.Bus.LocalPath;
-        if (!Directory.Exists(localPath) || !Directory.Exists(Path.Join(localPath, ".git")))
-        {
-            return BusHost.ConfigurationError("bus.localPath is not a git repository");
-        }
-
-        string? branch = await services.GetRequiredService<BusRepository>().CheckoutBranchAsync(ct);
-        if (branch is null)
-        {
-            return BusHost.ConfigurationError("bus.localPath is not a git repository");
-        }
-
-        if (!string.Equals(branch, configuration.Bus.Branch, StringComparison.Ordinal))
-        {
-            return BusHost.ConfigurationError($"checkout is on '{branch}', expected '{configuration.Bus.Branch}'");
-        }
-
-        return ExitCodes.Ok;
-    }
 }

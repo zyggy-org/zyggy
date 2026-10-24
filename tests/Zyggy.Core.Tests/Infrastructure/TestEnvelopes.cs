@@ -24,6 +24,24 @@ public static class TestEnvelopes
         return signed.Envelope!;
     }
 
+    /// <summary>A signed report from <paramref name="from"/> to <paramref name="to"/> answering <paramref name="inReplyTo"/> (plan 08, additive).</summary>
+    public static async Task<Model> SignedReportAsync(MachineName from, MachineName to, EnvelopeId inReplyTo, ISecretStore store, KeyId signWith, string body, CancellationToken ct, ReportStatus status = ReportStatus.Done, string? reason = null, decimal? costUsd = null, EnvelopeId? id = null, DateTimeOffset? created = null)
+    {
+        DateTimeOffset at = created ?? FixedInstant;
+        var header = new EnvelopeHeader(signWith.Tenant, id ?? EnvelopeId.New(at), from, to, at, EnvelopePriority.Normal, inReplyTo);
+        Model report = Model.CreateReport(header, new ReportFields(status, reason, CostUsd: costUsd), Encoding.UTF8.GetBytes(body));
+        EnvelopeResult signed = await new EnvelopeSigner(store).SignAsync(report, signWith, ct);
+        signed.IsAccepted.Should().BeTrue(signed.Rejection?.ToString());
+        return signed.Envelope!;
+    }
+
+    /// <summary>The bytes of a signed report, optionally mutated after signing.</summary>
+    public static async Task<byte[]> SignedReportBytesAsync(MachineName from, MachineName to, EnvelopeId inReplyTo, ISecretStore store, KeyId signWith, string body, CancellationToken ct, Func<byte[], byte[]>? mutate = null, ReportStatus status = ReportStatus.Done, string? reason = null, decimal? costUsd = null, EnvelopeId? id = null, DateTimeOffset? created = null)
+    {
+        byte[] bytes = EnvelopeWriter.Serialize(await SignedReportAsync(from, to, inReplyTo, store, signWith, body, ct, status, reason, costUsd, id, created));
+        return mutate is null ? bytes : mutate(bytes);
+    }
+
     /// <summary>The bytes of a signed job, optionally mutated after signing.</summary>
     public static async Task<byte[]> SignedJobBytesAsync(MachineName from, MachineName to, ISecretStore store, KeyId signWith, string body, CancellationToken ct, Func<byte[], byte[]>? mutate = null, EnvelopeId? id = null)
     {
