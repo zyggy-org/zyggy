@@ -527,10 +527,10 @@ Never the real claude, never GitHub. Steps are named by what the system can do. 
 
 **In plain words**: the Node service is complete and proven on the local stand-ins: the walking skeleton's automated half — a job submitted on the bus, picked up by a real `zyggy-node` started exactly as production starts it, run through the fake `claude`, answered with a signed report on `main`, visible in `/health` — is scripted as the P1 gate file that the CLI (08) and the dream (13) will extend. The documents say how to read the exit codes, the log and the health fields. Nothing is installed anywhere yet (10).
 
-- [ ] Behavioral verification: the whole suite green on Windows and on both CI runners; `Gates.P1_WalkingSkeleton` four facts shown with the report front matter and the `/health` body; the executor lists per AC the test that proves it (the map below) and pastes the four README diffs.
-- [ ] Contract review: `ROADMAP.md` #07 definition of done line by line (dispatcher-rule and options-validation unit tests incl. the tenant refusals; gate part 1 through production DI with tenant `acme`; `node.json` schema documented; the runbook row "dirty working copy on start-up" linking `bus-conflict.md`); AC-12, AC-23..AC-26; A7-1..A7-6 present; the gate file's part-1a note about `unknown_project` for a registry-style probe (**A14**).
-- [ ] ⚠️ Risk review: `Directory.Packages.props` carries exactly the spec's table and nothing else changed; no secret anywhere; the §8 note on the P0 file store stays forwarded to 09 (nothing here changes where the key lives); `/health` loopback only; the roadmap status, 08's/13's gate-file notes and any version bump are the project-manager's/owner's to record — not edited here.
-- [ ] User approved — the deliverable is done
+- [x] Behavioral verification: the whole suite green on Windows and on both CI runners; `Gates.P1_WalkingSkeleton` four facts shown with the report front matter and the `/health` body; the executor lists per AC the test that proves it (the map below) and pastes the four README diffs.
+- [x] Contract review: `ROADMAP.md` #07 definition of done line by line (dispatcher-rule and options-validation unit tests incl. the tenant refusals; gate part 1 through production DI with tenant `acme`; `node.json` schema documented; the runbook row "dirty working copy on start-up" linking `bus-conflict.md`); AC-12, AC-23..AC-26; A7-1..A7-6 present; the gate file's part-1a note about `unknown_project` for a registry-style probe (**A14**).
+- [x] ⚠️ Risk review: `Directory.Packages.props` carries exactly the spec's table and nothing else changed; no secret anywhere; the §8 note on the P0 file store stays forwarded to 09 (nothing here changes where the key lives); `/health` loopback only; the roadmap status, 08's/13's gate-file notes and any version bump are the project-manager's/owner's to record — not edited here.
+- [x] User approved — the deliverable is done
 
 ---
 
