@@ -109,6 +109,7 @@ public sealed class ReachabilityCheckTests
     [InlineData(ProbeOutcome.Done, "done")]
     [InlineData(ProbeOutcome.Rejected, "rejected")]
     [InlineData(ProbeOutcome.Timeout, "timeout")]
+    [InlineData(ProbeOutcome.UnverifiedReport, "unverified_report")]
     [InlineData(ProbeOutcome.PushFailed, "push_failed")]
     public void ProbeOutcomeWire_RoundTrips(ProbeOutcome outcome, string wire)
     {

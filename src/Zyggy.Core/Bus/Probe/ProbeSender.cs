@@ -135,6 +135,13 @@ public sealed partial class ProbeSender
             IReadOnlyList<Model> reports = await _bus.FindReportsAsync(to, id, ct).ConfigureAwait(false);
             if (reports.Count == 0)
             {
+                // F3: a report answering this probe that does not verify is a key mismatch or tampering, not a timeout; record it at once.
+                IReadOnlyList<EnvelopeRejection> unverified = await _bus.FindUnverifiedReportsAsync(to, id, ct).ConfigureAwait(false);
+                if (unverified.Count > 0)
+                {
+                    return await RecordAsync(new ProbeRecord(id, to, sent, _clock.GetUtcNow(), ProbeOutcome.UnverifiedReport, EnvelopeWire.ToWire(unverified[0].Reason), null), ct).ConfigureAwait(false);
+                }
+
                 continue;
             }
 

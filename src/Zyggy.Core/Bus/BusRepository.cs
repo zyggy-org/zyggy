@@ -402,6 +402,48 @@ public sealed partial class BusRepository
     }
 
     /// <summary>
+    /// The sender side (decision 0001 F3): the reports of <paramref name="reporter"/> that parse, answer <paramref name="inReplyTo"/>
+    /// and are addressed to this machine, but whose signature does not verify (unknown key, wrong key, tampered bytes).
+    /// </summary>
+    /// <param name="reporter">The machine whose <c>reports/</c> folder is read.</param>
+    /// <param name="inReplyTo">The job id the reports answer.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>One rejection per unverifiable matching report, in file-name order; empty when every matching report verifies.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
+    public async Task<IReadOnlyList<EnvelopeRejection>> FindUnverifiedReportsAsync(MachineName reporter, EnvelopeId inReplyTo, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(reporter);
+        ArgumentNullException.ThrowIfNull(inReplyTo);
+        string full = BusPaths.Resolve(_checkoutRoot, BusPaths.Reports(_me.Tenant, reporter));
+        if (!Directory.Exists(full))
+        {
+            return [];
+        }
+
+        var rejections = new List<EnvelopeRejection>();
+        foreach (string file in Directory.EnumerateFiles(full, "*" + EnvelopeExtension, SearchOption.TopDirectoryOnly).Order(StringComparer.Ordinal))
+        {
+            byte[] bytes = await File.ReadAllBytesAsync(file, ct).ConfigureAwait(false);
+            EnvelopeResult parsed = EnvelopeParser.Parse(bytes, _me.Tenant);
+            if (!parsed.IsAccepted
+                || parsed.Envelope!.Type != EnvelopeType.Report
+                || parsed.Envelope.Header.InReplyTo != inReplyTo
+                || parsed.Envelope.Header.To != _me.Machine)
+            {
+                continue;
+            }
+
+            EnvelopeResult verified = await _signer.VerifyAsync(parsed.Envelope, _me.Tenant, ct).ConfigureAwait(false);
+            if (!verified.IsAccepted)
+            {
+                rejections.Add(verified.Rejection!);
+            }
+        }
+
+        return rejections;
+    }
+
+    /// <summary>
     /// Brings the remote branch into the checkout under the checkout lock (patch 0.8.1): one writer at a time across
     /// processes; a pull that git refused because another process touched the checkout is retried once after 1 s.
     /// </summary>

@@ -155,6 +155,65 @@ public sealed class ProbeSenderTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task SendOneAsync_ReportSignedWithKeySenderDoesNotHold_UnverifiedReportNotTimeout()
+    {
+        // Arrange: the sender holds acme/1 only; home-laptop answers with a report signed by acme/2 (decision 0001 F3)
+        var ct = TestContext.Current.CancellationToken;
+        _store = await TestKeys.StoreWithAsync(TestKeys.Acme1, ct);
+        _provider.ProbeHeadAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(new Changed("\"1\"", 4999));
+        EnvelopeId? sentId = null;
+        _provider.When(p => p.PullAsync(Arg.Any<CancellationToken>())).Do(_ => DropReportIfSentAsync(sentId, ReportStatus.Rejected, "wrong_recipient", ct, TestKeys.Acme2).GetAwaiter().GetResult());
+        _processes.Hook = spec =>
+        {
+            if (RecordingProcessRunner.SubCommand(spec) == "add")
+            {
+                sentId = EnvelopeId.Parse(Path.GetFileNameWithoutExtension(spec.Arguments[^1]));
+            }
+
+            return null;
+        };
+
+        // Act
+        ProbeRecord record = await DriveAsync(Sender().SendOneAsync(HomeLaptop, TimeSpan.FromSeconds(60), ct));
+
+        // Assert: recorded as soon as the unverifiable report is seen, not at the deadline
+        record.Outcome.Should().Be(ProbeOutcome.UnverifiedReport);
+        record.Reason.Should().Be("unknown_key");
+        record.RoundTripMs.Should().BeNull();
+        record.ObservedUtc.Should().NotBeNull();
+        _clock.GetUtcNow().Should().BeBefore(T.AddSeconds(60));
+        new ProbeLedger(_ledgerPath).ReadAll().Should().ContainSingle().Which.Should().Be(record);
+    }
+
+    [Fact]
+    public async Task SendOneAsync_ReportWithTamperedSignature_UnverifiedReportNotTimeout()
+    {
+        // Arrange: the report is signed with the right key but one signature hex digit is flipped on the bus
+        var ct = TestContext.Current.CancellationToken;
+        _provider.ProbeHeadAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(new Changed("\"1\"", 4999));
+        EnvelopeId? sentId = null;
+        _provider.When(p => p.PullAsync(Arg.Any<CancellationToken>())).Do(_ => DropReportIfSentAsync(sentId, ReportStatus.Done, null, ct, TestKeys.Acme1, FlipLastSignatureDigit).GetAwaiter().GetResult());
+        _processes.Hook = spec =>
+        {
+            if (RecordingProcessRunner.SubCommand(spec) == "add")
+            {
+                sentId = EnvelopeId.Parse(Path.GetFileNameWithoutExtension(spec.Arguments[^1]));
+            }
+
+            return null;
+        };
+
+        // Act
+        ProbeRecord record = await DriveAsync(Sender().SendOneAsync(HomeLaptop, TimeSpan.FromSeconds(60), ct));
+
+        // Assert
+        record.Outcome.Should().Be(ProbeOutcome.UnverifiedReport);
+        record.Reason.Should().Be("invalid_signature");
+        record.RoundTripMs.Should().BeNull();
+        _clock.GetUtcNow().Should().BeBefore(T.AddSeconds(60));
+    }
+
+    [Fact]
     public async Task SendOneAsync_JobFieldsFixed()
     {
         // Act
@@ -197,7 +256,7 @@ public sealed class ProbeSenderTests : IAsyncLifetime
     }
 
     /// <summary>The first pull is the submission's own (§5 step 1); the report can only exist once the job id is known.</summary>
-    private async Task DropReportIfSentAsync(EnvelopeId? inReplyTo, ReportStatus status, string? reason, CancellationToken ct)
+    private async Task DropReportIfSentAsync(EnvelopeId? inReplyTo, ReportStatus status, string? reason, CancellationToken ct, KeyId? signWith = null, Func<byte[], byte[]>? tamper = null)
     {
         if (inReplyTo is null)
         {
@@ -206,7 +265,18 @@ public sealed class ProbeSenderTests : IAsyncLifetime
 
         var header = new EnvelopeHeader(Acme, EnvelopeId.New(_clock.GetUtcNow()), HomeLaptop, Central, _clock.GetUtcNow(), EnvelopePriority.Normal, inReplyTo);
         Model report = Model.CreateReport(header, new ReportFields(status, reason), Encoding.UTF8.GetBytes("ack\n"));
-        EnvelopeResult signed = await new EnvelopeSigner(_store).SignAsync(report, TestKeys.Acme1, ct);
-        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Reports(Acme, HomeLaptop), header.Id), EnvelopeWriter.Serialize(signed.Envelope!));
+        EnvelopeResult signed = await new EnvelopeSigner(await TestKeys.StoreWithBothAsync(ct)).SignAsync(report, signWith ?? TestKeys.Acme1, ct);
+        byte[] bytes = EnvelopeWriter.Serialize(signed.Envelope!);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Reports(Acme, HomeLaptop), header.Id), tamper is null ? bytes : tamper(bytes));
+    }
+
+    /// <summary>Flips the last hexadecimal digit of the <c>sig</c> value so the HMAC no longer matches.</summary>
+    private static byte[] FlipLastSignatureDigit(byte[] bytes)
+    {
+        string text = Encoding.UTF8.GetString(bytes);
+        int start = text.IndexOf("sig: hmac-sha256:", StringComparison.Ordinal) + "sig: hmac-sha256:".Length;
+        int last = start + 63;
+        char flipped = text[last] == '0' ? '1' : '0';
+        return Encoding.UTF8.GetBytes(string.Concat(text.AsSpan(0, last), flipped.ToString(), text.AsSpan(last + 1)));
     }
 }

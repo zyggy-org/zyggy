@@ -170,7 +170,7 @@ internal static class ProbeCommand
             ct);
         Console.Out.WriteLine(string.Create(
             CultureInfo.InvariantCulture,
-            $"sent {records.Count}, done {records.Count(r => r.Outcome == ProbeOutcome.Done)}, rejected {records.Count(r => r.Outcome == ProbeOutcome.Rejected)}, timeout {records.Count(r => r.Outcome == ProbeOutcome.Timeout)}, push_failed {records.Count(r => r.Outcome == ProbeOutcome.PushFailed)}"));
+            $"sent {records.Count}, done {records.Count(r => r.Outcome == ProbeOutcome.Done)}, rejected {records.Count(r => r.Outcome == ProbeOutcome.Rejected)}, timeout {records.Count(r => r.Outcome == ProbeOutcome.Timeout)}, unverified_report {records.Count(r => r.Outcome == ProbeOutcome.UnverifiedReport)}, push_failed {records.Count(r => r.Outcome == ProbeOutcome.PushFailed)}"));
         return records.All(r => r.Outcome == ProbeOutcome.Done) ? ExitCodes.Ok : ExitCodes.Failed;
     }
 
@@ -205,6 +205,7 @@ internal static class ProbeCommand
         ProbeOutcome.Done => string.Create(CultureInfo.InvariantCulture, $"{record.Id} {record.To} done {record.RoundTripMs} ms"),
         ProbeOutcome.Rejected => $"{record.Id} {record.To} rejected {record.Reason}",
         ProbeOutcome.Timeout => $"{record.Id} {record.To} timeout",
+        ProbeOutcome.UnverifiedReport => $"{record.Id} {record.To} unverified_report {record.Reason}",
         _ => $"{record.Id} {record.To} push_failed {record.Reason}",
     };
 
