@@ -125,7 +125,7 @@ agent-bus/
 
 All paths in the rest of this section are relative to `tenants/<org>/`. In code every path is produced by `BusPaths` from the configured tenant id (§9).
 
-**One repository per tenant (rule).** The tenant isolation boundary is the git repository, never the path: git hosts grant read and push rights per repository, and HMAC signatures protect authenticity only, not confidentiality or availability. A tenant therefore has its own bus repository, every machine's credentials (§5) grant access to exactly one, and a repository contains exactly one `tenants/<org>/` directory. v1 has one repository and one directory, so nothing enforces this beyond `BusPaths` reading only its own prefix; the enforcement (`agentbus verify` reporting a second directory, nodes refusing to start against it) is a §14 item.
+**One repository per tenant (rule).** The tenant isolation boundary is the git repository, never the path: git hosts grant read and push rights per repository, and HMAC signatures protect authenticity only, not confidentiality or availability. A tenant therefore has its own bus repository, every machine's credentials (§5) grant access to exactly one, and a repository contains exactly one `tenants/<org>/` directory. v1 has one repository and one directory, so nothing enforces this beyond `BusPaths` reading only its own prefix; `agentbus verify` reports a second directory as drift and never reads inside it (deliverable 08); nodes ignore such a directory (deliverable 04) and refusing to start against it is a §14 item.
 
 **Write rules**
 
@@ -451,7 +451,7 @@ Central processes the owner's company mail and documents only to produce facts a
 **Audit**
 
 - Every state change is a git commit in `agent-bus`; every model run has a transcript on the executing machine for 30 days; every dream commit lists the files it changed.
-- `agentbus verify` re-checks all signatures in the machine's own tenant subtree (and the `tenant`-field-versus-path consistency of every file) and reports drift.
+- `agentbus verify` re-checks all signatures in the machine's own tenant subtree (and the `tenant`-field-versus-path consistency of every file) and reports drift, and the §4 write-rule consistency of every file (file name = `id`, type matches its folder, `from`/`to` match the folder's machine).
 
 ## 9. .NET solution structure and technology choices
 
@@ -677,7 +677,7 @@ The platform is built for one user. It must not need a rewrite to serve a second
 
 **Would have to be added for a second tenant**
 
-- Enforcement of the repository-per-tenant rule: `agentbus verify` reporting a second `tenants/<org>/` directory, nodes refusing to start against it, and gate scenarios run with a non-default tenant id.
+- Enforcement of the repository-per-tenant rule: nodes refusing to start against a second `tenants/<org>/` directory (`verify` already reports it), and gate scenarios run with a non-default tenant id.
 - Hub over HTTP with the principal taken from a bearer token; a Central serving several tenants with one `IBusProvider` instance and one checkout per repository.
 - Alerts routed per tenant to separate notifier configurations.
 
