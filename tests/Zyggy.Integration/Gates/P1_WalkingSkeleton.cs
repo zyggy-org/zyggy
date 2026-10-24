@@ -1,7 +1,7 @@
 // The P1 walking-skeleton gate (founding spec §12), automated half. Parts and owners:
 //   Part 1  (deliverable 07, this region): submit → real zyggy-node host (production DI, tenant acme) → fake claude → signed report on main,
 //           opened by the ex-05 probe round trip, the tampered-job rejection and the foreign-tenant isolation.
-//   Part 1b (deliverable 08): `zyggy status` over the same host and bus — append a `#region Part 1b — 08` below.
+//   Part 1b (deliverable 08, below): `zyggy submit` → the same host → `zyggy status` / `status --id` / `zyggy verify` in process over the same bus.
 //   Part 2  (deliverable 13): the dream pass ingesting the bus — append a `#region Part 2 — 13` below.
 // Rule: later parts append their own region and reuse the private helpers at the bottom; part 1 is never restructured.
 // Nothing in the wire format changed for this gate: PROTOCOL.md and the §4 envelope are as deliverables 03/04 left them.
@@ -15,6 +15,7 @@ using Microsoft.Extensions.Hosting;
 using Zyggy.Core.Bus;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Jobs;
+using Zyggy.Core.Processes;
 using Zyggy.Core.Tests.Infrastructure;
 using Zyggy.Integration.Infrastructure;
 using Zyggy.Integration.Node;
@@ -24,7 +25,7 @@ using Model = Zyggy.Core.Envelope.Envelope;
 
 namespace Zyggy.Integration.Gates;
 
-/// <summary>Phase P1 gate, part 1 (spec 07 AC-23): the walking skeleton's automated half through the production host.</summary>
+/// <summary>Phase P1 gate, part 1 (spec 07 AC-23) and part 1b (spec 08 AC-12): the walking skeleton's automated half through the production host and the CLI.</summary>
 public sealed partial class P1_WalkingSkeleton : IAsyncLifetime
 {
     private NodeHostHarness _harness = null!;
@@ -157,6 +158,166 @@ public sealed partial class P1_WalkingSkeleton : IAsyncLifetime
     }
 
     #endregion
+
+    #region Part 1b — 08
+
+    [Fact]
+    public async Task Part1b_SubmitStatusVerify_HumanEntryAndReadOutOverTheRealHost()
+    {
+        // Arrange: the production host over the node clone, a scratch project, and central's node.json over the sender clone (spec 08 AC-12)
+        var ct = TestContext.Current.CancellationToken;
+        ScratchProject project = await _harness.ProjectAsync(ct);
+        string centralNodeJson = CentralNodeJson();
+        using IHost host = _harness.Build();
+        await host.StartAsync(ct);
+        HealthServer server = host.Services.GetRequiredService<HealthServer>();
+        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(server.IsListening), TimeSpan.FromSeconds(10), ct);
+        using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{server.BoundPort}/") };
+        await NodeHostHarness.WaitUntilAsync(async () =>
+        {
+            JsonElement h = await HealthAsync(client, ct);
+            return h.GetProperty("lastPollUtc").ValueKind == JsonValueKind.String && h.GetProperty("claudeAuthOk").ValueKind == JsonValueKind.True;
+        }, TimeSpan.FromSeconds(30), ct);
+        string healthUrl = $"http://127.0.0.1:{server.BoundPort}/health";
+
+        // Act (a): the human entry point — `zyggy submit` from central
+        var (submitExit, submit) = await CliAsync(
+            ["submit", "--to", "home-laptop", "--project", project.Path, "--timeout", "2", "--allowed-tools", "Read", "Read README.md and finish with a REPORT section; change nothing.\n"],
+            centralNodeJson, healthUrl: null, ct);
+
+        // Assert (a)
+        submitExit.Should().Be(0, submit.Stderr);
+        Match submitted = SubmittedLine().Match(submit.Stdout);
+        submitted.Success.Should().BeTrue(submit.Stdout);
+        string id = submitted.Groups["id"].Value;
+
+        // Act (b): the host claims it, runs the fake claude and answers on main
+        await NodeHostHarness.WaitUntilAsync(async () =>
+        {
+            if ((await _harness.ReportsOnMainAsync(ct)).Count != 1)
+            {
+                return false;
+            }
+
+            JsonElement h = await HealthAsync(client, ct);
+            return h.GetProperty("jobsRunning").GetInt32() == 0 && h.GetProperty("jobsClaimedByMe").GetInt32() == 0;
+        }, TimeSpan.FromSeconds(60), ct);
+
+        // Assert (b)
+        Model report = await SingleReportAsync(ct);
+        report.Header.InReplyTo.Should().Be(EnvelopeId.Parse(id));
+        report.Report!.Status.Should().Be(ReportStatus.Done);
+
+        // Act (c): the read-out — `zyggy status` from home-laptop against the live health endpoint
+        var (statusExit, status) = await CliAsync(["status"], _harness.NodeJsonPath, healthUrl, ct);
+
+        // Assert (c): green over the §11 fields; the node's and the CLI's versions are the same informational version in this process (A17)
+        statusExit.Should().Be(0, status.Stdout + status.Stderr);
+        string[] lines = status.Stdout.Split('\n');
+        lines[0].Should().StartWith("node    home-laptop (acme) · zyggy-node ").And.EndWith(" · health: green");
+        lines[1].Should().Contain(" · claude auth ok");
+        lines[2].Should().MatchRegex(@"^bus     head [0-9a-f]{12} · 1 tenant directory$");
+        lines[3].Should().Be("        machine       queued  claimed  rejected  reports  context");
+        lines[4].Should().Be("        central            0        0         0        0        0");
+        lines[5].Should().Be("        home-laptop        0        0         0        1        0");
+        lines[6].Should().Be("recent reports (1 of 1)");
+        lines[7].Should().StartWith($"        {report.Header.Id.Value}  home-laptop→central  done  in_reply_to {id}  cost_usd ");
+
+        // Act (d): one job traced
+        var (traceExit, trace) = await CliAsync(["status", "--id", id], _harness.NodeJsonPath, healthUrl, ct);
+
+        // Assert (d): the REPORT body verbatim — the same expectation part 1d has for the envelope's BodyText
+        traceExit.Should().Be(0, trace.Stderr);
+        string[] traceLines = trace.Stdout.Split('\n');
+        traceLines[0].Should().StartWith($"job     {id}  ");
+        traceLines[1].Should().Be("state   reported by home-laptop");
+        traceLines[2].Should().StartWith($"report  {report.Header.Id.Value}  done  ").And.Contain("cost_usd ");
+        traceLines[3].Should().Be("body:");
+        trace.Stdout.Should().EndWith("body:\n" + ExpectedReportSection(await ScenarioResultTextAsync("done", ct)) + "\n");
+
+        // Act (e): the audit
+        var (verifyExit, verify) = await CliAsync(["verify"], _harness.NodeJsonPath, healthUrl: null, ct);
+        await host.StopAsync(ct);
+
+        // Assert (e)
+        verifyExit.Should().Be(0, verify.Stdout + verify.Stderr);
+        verify.Stdout.TrimEnd('\n').Split('\n')[^1].Should().MatchRegex(@"^verified \d+ ok, 0 failed, \d+ skipped; 1 tenant directory; HEAD [0-9a-f]{12}$");
+
+        // Assert: no secret anywhere
+        SecretSweep.AssertAbsent([submit.Stdout, submit.Stderr, status.Stdout, status.Stderr, trace.Stdout, trace.Stderr, verify.Stdout, verify.Stderr]);
+        SecretSweep.AssertAbsent(_harness.LogLines);
+        SecretSweep.AssertAbsent(_harness.Hooks.Calls.SelectMany(SecretSweep.TextsOf));
+    }
+
+    [Fact]
+    public async Task Part1b_StatusWhileTheHostIsStopped_DownButBusStillListed()
+    {
+        // Arrange: one round trip through the host, then the host stopped — its port now answers nobody (spec 08 Failure modes "Status: down")
+        var ct = TestContext.Current.CancellationToken;
+        ScratchProject project = await _harness.ProjectAsync(ct);
+        await _harness.SeedJobAsync(project, ct);
+        using IHost host = _harness.Build();
+        await host.StartAsync(ct);
+        HealthServer server = host.Services.GetRequiredService<HealthServer>();
+        await NodeHostHarness.WaitUntilAsync(async () => server.IsListening && (await _harness.ReportsOnMainAsync(ct)).Count == 1, TimeSpan.FromSeconds(60), ct);
+        string healthUrl = $"http://127.0.0.1:{server.BoundPort}/health";
+        await host.StopAsync(ct);
+
+        // Act
+        var (exit, console) = await CliAsync(["status"], _harness.NodeJsonPath, healthUrl, ct);
+
+        // Assert: the owner's read-out when the service is not running — down, exit 6, the bus block complete
+        exit.Should().Be(6, console.Stdout + console.Stderr);
+        string[] lines = console.Stdout.Split('\n');
+        lines[0].Should().Be($"node    home-laptop (acme) · health: down — no node service answering on {healthUrl}");
+        lines[1].Should().MatchRegex(@"^bus     head [0-9a-f]{12} · 1 tenant directory$");
+        lines[4].Should().MatchRegex(@"^        home-laptop +0 +0 +0 +1 +\d+$");
+        lines[5].Should().Be("recent reports (1 of 1)");
+        SecretSweep.AssertAbsent([console.Stdout, console.Stderr]);
+    }
+
+    #endregion
+
+    // ----- helpers shared by part 1b and later parts -----
+
+    /// <summary>A <c>node.json</c> for <c>central</c> over the sender clone, signing with <c>acme/1</c> from the same file secret store.</summary>
+    private string CentralNodeJson() =>
+        NodeJson.Write(
+            _harness.Scratch.File("central-config"),
+            NodeHostHarness.Acme,
+            NodeHostHarness.Central,
+            TestKeys.Acme1,
+            busLocalPath: _harness.Bus.SenderDir,
+            remote: TestHost.Remote.HttpsUrl!.ToString(),
+            secretsRoot: _harness.SecretsRoot,
+            claudePath: FakeClaude.ExecutablePath,
+            nodeDir: _harness.Scratch.File("node-central"));
+
+    /// <summary>Runs a verb in process over <paramref name="nodeJson"/> with the harness's edges (the doorbell from the bare repository, recorded processes).</summary>
+    private Task<(int Exit, VerbConsole Console)> CliAsync(string[] args, string nodeJson, string? healthUrl, CancellationToken ct)
+    {
+        var environment = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { ["ZYGGY_NODE_JSON"] = nodeJson };
+        if (healthUrl is not null)
+        {
+            environment["ZYGGY_HEALTH_URL"] = healthUrl;
+        }
+
+        return ZyggyCliInProcess.RunAsync(args, environment, CliServices, stdin: null, ct);
+    }
+
+    private void CliServices(IServiceCollection services)
+    {
+        services.Configure<GitHubBusOptions>(o =>
+        {
+            o.HandlerFactory = () => new BareRepoHeadHandler(async c => await _harness.Bus.HeadShaAsync(c));
+            o.GitEnvironment = _harness.Bus.GitEnvironment;
+            o.Jitter = () => 0;
+        });
+        services.AddSingleton<IProcessRunner>(_harness.Hooks);
+    }
+
+    [GeneratedRegex(@"^submitted (?<id>[0-9A-HJKMNP-TV-Z]{26}) to home-laptop \(tenants/acme/nodes/home-laptop/jobs/\k<id>\.md\)\n\z")]
+    private static partial Regex SubmittedLine();
 
     // ----- helpers shared by every part -----
 

@@ -12,4 +12,10 @@ internal static class ExitCodes
     public const int Aborted = 5;
     public const int Failed = 6;
     public const int PushDeferred = 7;
+
+    /// <summary>Spec 08 exit-code table: <c>zyggy status</c> amber ("look later"); the same number as <see cref="NoRun"/>.</summary>
+    public const int Amber = 1;
+
+    /// <summary>Spec 08 exit-code table: <c>zyggy status --id</c> found no such job; the same number as <see cref="NoRun"/>.</summary>
+    public const int NotFound = 1;
 }

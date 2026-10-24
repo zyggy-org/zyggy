@@ -776,6 +776,9 @@ public sealed class BusListenerTests : IAsyncLifetime
         _processes.Hook = spec => spec.Arguments.Contains("origin/main") ? RecordingProcessRunner.Ok("abcdef0123456789abcdef0123456789abcdef01\n") : null;
         _clock.SetUtcNow(T.AddMinutes(15));
         await WaitUntilAsync(() => _handled.Count == 1, ct, run);
+        // the report's write sequence (its pull included) finishes after the handler returned: wait for the pull count itself, not for the handler
+        await WaitUntilAsync(() => PullCalls() >= pullsBefore + 1 + WritePulls, ct, run);
+        await listener.DrainAsync(ct);
         await cts.CancelAsync();
         await run;
 
@@ -852,7 +855,7 @@ public sealed class BusListenerTests : IAsyncLifetime
         _clock.SetUtcNow(T.AddMinutes(15));
         await WaitForProbesAsync(2, ct, run);
         await WaitUntilAsync(() => _handled.Count >= 1, ct, run);
-        await Task.Delay(100, ct);
+        await listener.DrainAsync(ct);
         await cts.CancelAsync();
         await run;
 

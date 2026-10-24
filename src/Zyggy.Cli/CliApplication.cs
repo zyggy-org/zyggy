@@ -1,13 +1,23 @@
 using System.CommandLine;
 
+using Microsoft.Extensions.DependencyInjection;
+
 using Zyggy.Cli.Commands;
+using Zyggy.Core.Verbs;
 
 namespace Zyggy.Cli;
 
 /// <summary>Builds the <c>zyggy</c> root command; the single place where verbs are registered.</summary>
 internal static class CliApplication
 {
-    public static async Task<int> RunAsync(string[] args, CliEnvironment environment)
+    public static Task<int> RunAsync(string[] args, CliEnvironment environment) => RunAsync(args, environment, VerbIo.FromConsole(), configure: null, CancellationToken.None);
+
+    /// <summary>
+    /// The whole CLI with an injected console and a service hook (spec 08 ex-Q9): the verbs of deliverable 08 write through <paramref name="io"/>
+    /// and build their services with <paramref name="configure"/> applied last; the older verbs keep the process console. Parse errors are
+    /// one line each on <paramref name="io"/>'s error stream with exit code 2.
+    /// </summary>
+    public static async Task<int> RunAsync(string[] args, CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure, CancellationToken cancellationToken)
     {
         if (RawVerbs.TryDispatch(args, environment, out var raw))
         {
@@ -24,18 +34,20 @@ internal static class CliApplication
         var root = new RootCommand("Zyggy: the personal agent platform command line.")
         {
             memory, DreamCommand.Create(environment), m365, brief, linkedin, ProbeCommand.Create(environment), SecretCommand.Create(environment),
+            SubmitCommand.Create(environment, io, configure), StatusCommand.Create(environment, io, configure), VerifyCommand.Create(environment, io, configure),
         };
         var parseResult = root.Parse(args);
         if (parseResult.Errors.Count > 0)
         {
             foreach (var error in parseResult.Errors)
             {
-                await Console.Error.WriteLineAsync(error.Message);
+                await io.Error.WriteLineAsync(error.Message);
             }
 
             return ExitCodes.Usage;
         }
 
-        return await parseResult.InvokeAsync();
+        // The root's own --version and --help write through the invocation configuration (plan 08 A4).
+        return await parseResult.InvokeAsync(new InvocationConfiguration { Output = io.Out, Error = io.Error }, cancellationToken);
     }
 }

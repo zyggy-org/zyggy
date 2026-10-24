@@ -17,6 +17,26 @@ public sealed class BusPathsTests
 
     private static readonly EnvelopeId Id = EnvelopeId.Parse(Ulid);
 
+    [Fact]
+    public void Nodes_ArchiveRoot_Shapes()
+    {
+        // Assert: plan 08 Step 6 — the folders above the machine and the archive's root, built in the one place
+        BusPaths.Tenants.Should().Be("tenants");
+        BusPaths.Nodes(Acme).Should().Be("tenants/acme/nodes");
+        BusPaths.ArchiveRoot(Acme).Should().Be("tenants/acme/archive");
+        BusPaths.RegistryFolder(Acme).Should().Be("tenants/acme/registry");
+    }
+
+    [Fact]
+    public void TryParse_NodesFolder_False()
+    {
+        // Act: a folder above the machine is not a §4 location
+        bool parsed = BusPaths.TryParse(BusPaths.Nodes(Acme), out _);
+
+        // Assert
+        parsed.Should().BeFalse();
+    }
+
     public static TheoryData<string, string> SpecPaths => new()
     {
         { "Tenant", "tenants/acme" },

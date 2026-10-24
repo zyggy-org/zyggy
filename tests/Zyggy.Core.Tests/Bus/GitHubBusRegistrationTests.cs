@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 
 using Zyggy.Core.Bus;
+using Zyggy.Core.Envelope;
 using Zyggy.Core.Processes;
 using Zyggy.Core.Secrets;
 using Zyggy.Core.Tenancy;
@@ -90,6 +91,53 @@ public sealed class GitHubBusRegistrationTests
 
         // Act & Assert
         act.Should().Throw<InvalidOperationException>().WithMessage("*Remote*");
+    }
+
+    [Fact]
+    public void AddGitHubBus_WithKeyId_ResolvesJobSubmitter()
+    {
+        // Arrange: plan 08 Step 2 — the sender side resolves from the same registration as the listener
+        using ServiceProvider provider = new ServiceCollection()
+            .AddSingleton<ISecretStore>(new InMemorySecretStore())
+            .AddSingleton<IProcessRunner>(new RecordingProcessRunner())
+            .AddSingleton<TimeProvider>(new FakeTimeProvider())
+            .AddEnvelopeSigning()
+            .AddSingleton(TestKeys.Acme1)
+            .AddGitHubBus(o =>
+            {
+                o.Remote = Remote;
+                o.Identity = Me;
+                o.CheckoutRoot = "/bus";
+            })
+            .BuildServiceProvider();
+
+        // Act
+        JobSubmitter first = provider.GetRequiredService<JobSubmitter>();
+
+        // Assert
+        first.Should().BeSameAs(provider.GetRequiredService<JobSubmitter>());
+    }
+
+    [Fact]
+    public void AddGitHubBus_WithoutKeyId_ResolvingJobSubmitterThrowsInvalidOperationException()
+    {
+        // Arrange: the verb checks signWith first, as probe send does; the container has no hidden key
+        using ServiceProvider provider = new ServiceCollection()
+            .AddSingleton<ISecretStore>(new InMemorySecretStore())
+            .AddSingleton<IProcessRunner>(new RecordingProcessRunner())
+            .AddSingleton<TimeProvider>(new FakeTimeProvider())
+            .AddEnvelopeSigning()
+            .AddGitHubBus(o =>
+            {
+                o.Remote = Remote;
+                o.Identity = Me;
+                o.CheckoutRoot = "/bus";
+            })
+            .BuildServiceProvider();
+        Action act = () => provider.GetRequiredService<JobSubmitter>();
+
+        // Act & Assert
+        act.Should().Throw<InvalidOperationException>();
     }
 
     [Fact]

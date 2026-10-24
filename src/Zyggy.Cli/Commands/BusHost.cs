@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 
 using Zyggy.Core.Bus;
 using Zyggy.Core.Configuration;
+using Zyggy.Core.Verbs;
 
 namespace Zyggy.Cli.Commands;
 
@@ -36,11 +37,57 @@ internal static class BusHost
         return (null, ConfigurationError(result.ToString()));
     }
 
+    /// <summary>Loads <c>node.json</c> for a verb with an injected console (deliverable 08): the same rule, the error line on <paramref name="io"/>.</summary>
+    public static (NodeConfiguration? Configuration, int ExitCode) LoadConfiguration(ParseResult parseResult, CliEnvironment environment, VerbIo io)
+    {
+        string path = NodeConfigurationReader.ResolvePath(parseResult.GetValue(ConfigOption), environment.Variables);
+        NodeConfigurationResult result = NodeConfigurationReader.Read(path);
+        return result.IsOk ? (result.Configuration, ExitCodes.Ok) : (null, ConfigurationError(io, result.ToString()));
+    }
+
     /// <summary>Prints a configuration error line and returns exit code 3.</summary>
     public static int ConfigurationError(string message)
     {
         Console.Error.WriteLine("zyggy: configuration error: " + message);
         return ExitCodes.Configuration;
+    }
+
+    /// <summary>Prints a configuration error line on <paramref name="io"/> and returns exit code 3.</summary>
+    public static int ConfigurationError(VerbIo io, string message)
+    {
+        io.Error.WriteLine("zyggy: configuration error: " + message);
+        return ExitCodes.Configuration;
+    }
+
+    /// <summary>
+    /// The configuration-shaped checks every bus verb runs before touching anything (spec 04 AC-27; spec 08): <c>bus.localPath</c> is a git
+    /// repository, on <c>bus.branch</c>, holding <c>tenants/&lt;tenant&gt;/</c>. Each refusal is exit 3 with one line; nothing is stashed or pulled.
+    /// </summary>
+    public static async Task<int> CheckCheckoutAsync(ServiceProvider services, NodeConfiguration configuration, VerbIo io, CancellationToken ct)
+    {
+        string localPath = configuration.Bus.LocalPath;
+        if (!Directory.Exists(localPath) || !Directory.Exists(Path.Join(localPath, ".git")))
+        {
+            return ConfigurationError(io, "bus.localPath is not a git repository");
+        }
+
+        string? branch = await services.GetRequiredService<BusRepository>().CheckoutBranchAsync(ct);
+        if (branch is null)
+        {
+            return ConfigurationError(io, "bus.localPath is not a git repository");
+        }
+
+        if (!string.Equals(branch, configuration.Bus.Branch, StringComparison.Ordinal))
+        {
+            return ConfigurationError(io, $"checkout is on '{branch}', expected '{configuration.Bus.Branch}'");
+        }
+
+        if (!Directory.Exists(BusPaths.Resolve(localPath, BusPaths.Tenant(configuration.Tenant))))
+        {
+            return ConfigurationError(io, $"no {BusPaths.Tenant(configuration.Tenant)}/ directory in bus.localPath");
+        }
+
+        return ExitCodes.Ok;
     }
 
     /// <summary>The production services for <paramref name="configuration"/>: Core's one composition root (spec 07 ex-Q8) plus the CLI's stderr logging and its API test hook; <paramref name="extra"/> is applied last and wins.</summary>
@@ -57,6 +104,7 @@ internal static class BusHost
         return services.BuildServiceProvider();
     }
 
+    /// <summary>The CLI assembly's informational version without build metadata — the same in the published single file, deterministic in process (plan 08 A5).</summary>
     public static string InformationalVersion() =>
-        Assembly.GetEntryAssembly()?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.0.0";
+        typeof(BusHost).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.0.0";
 }

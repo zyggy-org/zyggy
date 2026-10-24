@@ -86,6 +86,32 @@ public static class ServiceCollectionExtensions
                 log,
                 sp.GetService<JobGate>());
         });
+        // Deliverable 08: the sender side. Resolving without a registered KeyId throws (the verb checks signWith first, as probe send does).
+        services.TryAddSingleton(sp =>
+        {
+            ILogger<JobSubmitter> log = sp.GetService<ILoggerFactory>()?.CreateLogger<JobSubmitter>() ?? NullLogger<JobSubmitter>.Instance;
+            return new JobSubmitter(
+                sp.GetRequiredService<BusRepository>(),
+                sp.GetRequiredService<EnvelopeSigner>(),
+                sp.GetRequiredService<KeyId>(),
+                sp.GetRequiredService<TimeProvider>(),
+                log);
+        });
+        // Deliverable 08: the read side of `zyggy status` over the same checkout.
+        services.TryAddSingleton(sp =>
+        {
+            GitHubBusOptions options = sp.GetRequiredService<IOptions<GitHubBusOptions>>().Value;
+            string checkoutRoot = options.CheckoutRoot ?? throw Missing(nameof(GitHubBusOptions.CheckoutRoot));
+            ILogger<BusInventory> log = sp.GetService<ILoggerFactory>()?.CreateLogger<BusInventory>() ?? NullLogger<BusInventory>.Instance;
+            return new BusInventory(sp.GetRequiredService<BusRepository>(), checkoutRoot, sp.GetRequiredService<EnvelopeSigner>(), sp.GetRequiredService<TimeProvider>(), log);
+        });
+        services.TryAddSingleton(sp =>
+        {
+            GitHubBusOptions options = sp.GetRequiredService<IOptions<GitHubBusOptions>>().Value;
+            string checkoutRoot = options.CheckoutRoot ?? throw Missing(nameof(GitHubBusOptions.CheckoutRoot));
+            ILogger<BusAuditor> log = sp.GetService<ILoggerFactory>()?.CreateLogger<BusAuditor>() ?? NullLogger<BusAuditor>.Instance;
+            return new BusAuditor(sp.GetRequiredService<BusRepository>(), checkoutRoot, sp.GetRequiredService<EnvelopeSigner>(), sp.GetRequiredService<TimeProvider>(), log);
+        });
         services.TryAddSingleton<IBusProvider>(sp =>
         {
             GitHubBusOptions options = sp.GetRequiredService<IOptions<GitHubBusOptions>>().Value;
