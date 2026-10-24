@@ -476,14 +476,14 @@ signing-contract gate the owner asked for). Last slice = the P1 gate file, part 
 13. **A13 *(Gate C)* — AC-10's row shorthand**: `home-laptop  queued 1  claimed 1  rejected 1  reports 2` is the column table of the spec's "Output formats" block, asserted column by column; the block is the stable format.
 14. **A14 *(Gate C)* — the rejection report's body**: `status --id <rejected>` prints the body of the newest **verified** report answering the id; the node's `status: rejected` report is verified, so its (short) body is printed under `body:` like any other.
 15. **A15 *(Gate D)* — `BusAuditor` takes a `TimeProvider`** (not in the spec's DI list) because the write lock's deadline needs a clock.
-16. **A16 *(Gate D)* — `unexpected_path` is a FAIL**: per the spec's drift definition every non-`ok`, non-`skipped` outcome is a `FAIL` and counts in `Failed`; AC-4's "`Failed 9`" omits the `policy.yaml` entry — the plan asserts 10. The owner may instead ask for `policy.yaml` at the tenant root to be `skipped` until 18 (one line in the auditor).
+16. **A16 *(Gate D)* — `unexpected_path` is a FAIL**, except `policy.yaml` at the tenant root, which is `skipped` until deliverable 18 signs it (**owner decision 2026-10-24: "skip until deliverable"**); AC-4's "`Failed 9`" therefore holds as written (the `policy.yaml` entry is `skipped`, not counted). Every other non-`ok`, non-`skipped` outcome is a `FAIL` and counts in `Failed`.
 17. **A17 *(Gate E)* — green in the gate**: `HealthRules` compares the node's `version` with the CLI's; in process both are MinVer's informational version of this build (`NodeHost.InformationalVersion()` reads the Node assembly, `BusHost.InformationalVersion()` the CLI assembly, both versioned from the same repository state), so part 1b is green; a mismatch would show as `amber node X, cli Y` and is fixed in the version plumbing, never by loosening the rule.
 
 ## Questions for the owner (none block the plan; each is answered at the named gate and the assumption above applies until then)
 
-1. *(first prompt)* Branch base for `feature/08-cli-submit-status-verify`: stacked on `feature/07-node-service-loop`, or from `main` once 06/07 are merged?
-2. *(Gate C)* A9: is one more `InternalsVisibleTo` (`Zyggy.Core` → `Zyggy.Node`) acceptable for the JSON context, or should `HealthServer` serialise through `NodeHealthJson.Serialize` and write the text?
-3. *(Gate D)* A16: `policy.yaml` at the tenant root — `unexpected_path` (a FAIL, exit 6) as planned, or `skipped` until deliverable 18 signs it?
+1. *(first prompt)* Branch base for `feature/08-cli-submit-status-verify`: stacked on `feature/07-node-service-loop`, or from `main` once 06/07 are merged? — **Owner 2026-10-24: "from main"** (the branch is created from `main` once the Node service branch is merged there).
+2. *(Gate C)* A9: is one more `InternalsVisibleTo` (`Zyggy.Core` → `Zyggy.Node`) acceptable for the JSON context, or should `HealthServer` serialise through `NodeHealthJson.Serialize` and write the text? — **Owner 2026-10-24: "yes"** (the `InternalsVisibleTo`).
+3. *(Gate D)* A16: `policy.yaml` at the tenant root — `unexpected_path` (a FAIL, exit 6) as planned, or `skipped` until deliverable 18 signs it? — **Owner 2026-10-24: "skip until deliverable"** (`skipped`; AC-4's `Failed 9` stands).
 
 ## Notes for the executor
 
