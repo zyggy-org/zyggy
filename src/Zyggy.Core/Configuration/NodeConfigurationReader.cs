@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using TimeZoneConverter;
 
 using Zyggy.Core.Envelope;
+using Zyggy.Core.Secrets;
 using Zyggy.Core.Tenancy;
 
 namespace Zyggy.Core.Configuration;
@@ -196,12 +197,23 @@ public static partial class NodeConfigurationReader
                 return Invalid("secrets", "must be an object");
             }
 
+            if (TryOptionalString(secretsElement, "store", out string? storeWord, out failure, "secrets.") is false)
+            {
+                return failure!;
+            }
+
+            var store = SecretStoreKind.Os;
+            if (storeWord is not null && !SecretStoreKindWire.TryParse(storeWord, out store))
+            {
+                return Invalid("secrets.store", "one of os, file");
+            }
+
             if (TryOptionalString(secretsElement, "root", out string? secretsRoot, out failure, "secrets.") is false)
             {
                 return failure!;
             }
 
-            secrets = new SecretsSettings(secretsRoot);
+            secrets = new SecretsSettings(store, secretsRoot);
         }
 
         if (!TryClaude(root, out ClaudeSettings claude, out failure)

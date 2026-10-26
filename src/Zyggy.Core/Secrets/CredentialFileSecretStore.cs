@@ -29,7 +29,7 @@ internal interface ICredentialReader
 /// 0700 directory and removed by deleting it. Their refusals start with <c>linkedin:</c>.
 /// </para>
 /// </summary>
-internal sealed partial class CredentialFileSecretStore : ISecretStore, ICredentialReader
+internal sealed partial class CredentialFileSecretStore : ISecretStore, ICredentialReader, IDescribedSecretStore
 {
     public const string AppKeyName = "m365-app-key";
     public const string NewAppKeyName = "m365-app-key/new";
@@ -47,6 +47,8 @@ internal sealed partial class CredentialFileSecretStore : ISecretStore, ICredent
     private readonly bool _checkOwnership;
     private readonly Func<string, uint?> _ownerOf;
     private readonly Func<uint> _effectiveUser;
+
+    string IDescribedSecretStore.StoreName => SecretStoreNames.CredentialFile;
 
     public CredentialFileSecretStore(TenantId tenant, IReadOnlyDictionary<string, string?> environment, string keyFile, string? linkedInDirectory = null)
         : this(tenant, environment, keyFile, checkOwnership: true, linkedInDirectory: linkedInDirectory)
@@ -116,6 +118,61 @@ internal sealed partial class CredentialFileSecretStore : ISecretStore, ICredent
         File.Delete(path);
         return Task.FromResult(existed);
     }
+
+    /// <summary>The fixed names whose file currently exists, for this instance's tenant only (plan 09 A2); no check, no read of content.</summary>
+    public Task<IReadOnlyList<SecretName>> ListAsync(TenantId tenant, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(tenant);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (tenant != _tenant)
+        {
+            return Task.FromResult<IReadOnlyList<SecretName>>([]);
+        }
+
+        var names = new List<SecretName>();
+        if (AppKeyInCredentialsDirectory() || Exists(_keyFile))
+        {
+            names.Add(SecretName.Parse(AppKeyName));
+        }
+
+        if (Exists(_keyFile + ".new"))
+        {
+            names.Add(SecretName.Parse(NewAppKeyName));
+        }
+
+        if (_linkedInDirectory is not null)
+        {
+            if (LinkedInSecretInCredentialsDirectory() || Exists(Path.Join(_linkedInDirectory, LinkedInClientSecretFile)))
+            {
+                names.Add(SecretName.Parse(LinkedInClientSecretName));
+            }
+
+            if (Exists(Path.Join(_linkedInDirectory, LinkedInTokenFile)))
+            {
+                names.Add(SecretName.Parse(LinkedInTokenName));
+            }
+        }
+
+        names.Sort((a, b) => string.CompareOrdinal(a.Value, b.Value));
+        return Task.FromResult<IReadOnlyList<SecretName>>(names);
+    }
+
+    ValueTask<string> IDescribedSecretStore.SourceOfAsync(TenantId tenant, SecretName name, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        cancellationToken.ThrowIfCancellationRequested();
+        bool fromDirectory = name.Value switch
+        {
+            AppKeyName => AppKeyInCredentialsDirectory(),
+            LinkedInClientSecretName => LinkedInSecretInCredentialsDirectory(),
+            _ => false,
+        };
+        return ValueTask.FromResult(fromDirectory ? SecretStoreNames.CredentialsDirectory : SecretStoreNames.CredentialFile);
+    }
+
+    private bool AppKeyInCredentialsDirectory() => _credentialsDirectory is not null && Exists(Path.Join(_credentialsDirectory, AppKeyName));
+
+    private bool LinkedInSecretInCredentialsDirectory() => _credentialsDirectory is not null && Exists(Path.Join(_credentialsDirectory, LinkedInCredentialsFile));
 
     private const string NotFound = "key: not found in credentials directory or file";
     private const string LinkedInNotFound = "linkedin: not found";

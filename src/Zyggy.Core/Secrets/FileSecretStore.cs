@@ -14,7 +14,7 @@ namespace Zyggy.Core.Secrets;
 /// mode 0600 (directories 0700) on Linux, a protected DACL granting only the current user on Windows (founding spec §8, P0
 /// file store). No cache: a rotated key is visible on the next lookup. Never logs, and never puts key bytes in a message.
 /// </summary>
-internal sealed class FileSecretStore : ISecretStore
+internal sealed class FileSecretStore : ISecretStore, IDescribedSecretStore
 {
     private const UnixFileMode OwnerDirectory = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
     private const UnixFileMode OwnerFile = UnixFileMode.UserRead | UnixFileMode.UserWrite;
@@ -22,6 +22,8 @@ internal sealed class FileSecretStore : ISecretStore
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
     private readonly string _root;
+
+    string IDescribedSecretStore.StoreName => SecretStoreNames.File;
 
     public FileSecretStore(IOptions<FileSecretStoreOptions> options)
     {
@@ -98,6 +100,29 @@ internal sealed class FileSecretStore : ISecretStore
         File.Delete(path);
         return Task.FromResult(true);
     }
+
+    /// <summary>The names under <c>&lt;root&gt;/&lt;tenant&gt;/</c> whose relative path is a valid name (a leftover temporary file is not); never reads a file.</summary>
+    public Task<IReadOnlyList<SecretName>> ListAsync(TenantId tenant, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(tenant);
+        cancellationToken.ThrowIfCancellationRequested();
+        string tenantRoot = Path.Combine(_root, tenant.Value);
+        if (!Directory.Exists(tenantRoot))
+        {
+            return Task.FromResult<IReadOnlyList<SecretName>>([]);
+        }
+
+        IReadOnlyList<SecretName> names = Directory.EnumerateFiles(tenantRoot, "*", SearchOption.AllDirectories)
+            .Select(file => Path.GetRelativePath(tenantRoot, file).Replace(Path.DirectorySeparatorChar, '/'))
+            .Select(relative => SecretName.TryParse(relative, out SecretName? name) ? name : null)
+            .OfType<SecretName>()
+            .OrderBy(n => n.Value, StringComparer.Ordinal)
+            .ToList();
+        return Task.FromResult(names);
+    }
+
+    ValueTask<string> IDescribedSecretStore.SourceOfAsync(TenantId tenant, SecretName name, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(SecretStoreNames.File);
 
     private static string DefaultRoot()
     {

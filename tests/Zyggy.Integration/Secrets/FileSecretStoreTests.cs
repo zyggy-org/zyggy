@@ -245,4 +245,57 @@ public sealed class FileSecretStoreTests : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, content);
     }
+
+    [Fact]
+    public async Task ListAsync_NoTenantDirectory_Empty()
+    {
+        // Act: spec 09 AC-1 — the tenant directory does not exist
+        IReadOnlyList<SecretName> names = await _store.ListAsync(Acme, Ct);
+
+        // Assert
+        names.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ListAsync_NestedNames_RelativeWithSlashesOrdinal()
+    {
+        // Arrange
+        await _store.SetAsync(Acme, Hmac1, Key, Ct);
+        await _store.SetAsync(Acme, SecretName.Parse("hmac/10"), Key, Ct);
+        await _store.SetAsync(Acme, SecretName.Parse("github-pat"), Key, Ct);
+
+        // Act
+        IReadOnlyList<SecretName> names = await _store.ListAsync(Acme, Ct);
+
+        // Assert
+        names.Select(n => n.Value).Should().Equal("github-pat", "hmac/1", "hmac/10");
+    }
+
+    [Fact]
+    public async Task ListAsync_IgnoresLeftoverTemporaryFile()
+    {
+        // Arrange: a crashed write's temporary file is not a secret name
+        await _store.SetAsync(Acme, Hmac1, Key, Ct);
+        WriteByHand(KeyFile + ".abc.tmp", "00\n");
+
+        // Act
+        IReadOnlyList<SecretName> names = await _store.ListAsync(Acme, Ct);
+
+        // Assert
+        names.Select(n => n.Value).Should().Equal("hmac/1");
+    }
+
+    [Fact]
+    public async Task ListAsync_OtherTenantNotListed()
+    {
+        // Arrange
+        await _store.SetAsync(Acme, Hmac1, Key, Ct);
+        await _store.SetAsync(Globex, SecretName.Parse("hmac/7"), Key, Ct);
+
+        // Act
+        IReadOnlyList<SecretName> names = await _store.ListAsync(Globex, Ct);
+
+        // Assert
+        names.Select(n => n.Value).Should().Equal("hmac/7");
+    }
 }

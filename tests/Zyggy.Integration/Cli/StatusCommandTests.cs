@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 using Zyggy.Core.Bus;
 using Zyggy.Core.Envelope;
+using Zyggy.Core.Secrets;
 using Zyggy.Core.Tests.Infrastructure;
 using Zyggy.Integration.Infrastructure;
 
@@ -196,6 +197,24 @@ public sealed partial class StatusCommandTests : IAsyncLifetime
     private sealed record Seeded(EnvelopeId Queued, EnvelopeId Claimed, EnvelopeId Rejected, EnvelopeId RejectedReport, EnvelopeId DoneJob, EnvelopeId DoneReport);
 
     /// <summary>One queued, one claimed, one rejected (tampered) job with its rejection report, and a done report with a cost answering a fourth id — then the node clone pulled.</summary>
+    [Fact]
+    public async Task Status_StoreUnavailableWhileVerifyingReports_ExitSixOneLine()
+    {
+        // Arrange: plan 09 A3 — a verb that meets the exception while verifying reports ends through the CLI-wide net
+        var ct = TestContext.Current.CancellationToken;
+        await SeedTreeAsync(ct);
+        int commits = await _harness.CommitCountOnMainAsync(ct);
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["status"], _harness.HomeLaptopNodeJson, extraEnvironment: ClosedHealth, more: s => s.AddSingleton<ISecretStore>(new ThrowingSecretStore()), ct: ct);
+
+        // Assert
+        exit.Should().Be(6, console.Stdout + console.Stderr);
+        console.Stderr.Should().Be("zyggy: secret store unavailable: credential-manager: 1312 No such logon session\n");
+        (await _harness.CommitCountOnMainAsync(ct)).Should().Be(commits);
+        (await _harness.PorcelainAsync(_harness.Bus.CloneDir, ct)).Should().BeEmpty();
+    }
+
     private async Task<Seeded> SeedTreeAsync(CancellationToken ct)
     {
         BusRepoFixture bus = _harness.Bus;

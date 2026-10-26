@@ -26,4 +26,7 @@ public enum BusStartupResult
 
     /// <summary>Another listener already runs in this checkout (patch 0.8.1): one listener per checkout; nothing was touched.</summary>
     ListenerRunning,
+
+    /// <summary>The secret store cannot be opened (spec 09 AC-2); the detail is in <see cref="BusListener.StartupDetail"/> and the log line. Nothing was touched.</summary>
+    StoreUnavailable,
 }

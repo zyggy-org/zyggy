@@ -1,5 +1,6 @@
 using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
+using Zyggy.Core.Secrets;
 using Zyggy.Core.Tenancy;
 
 namespace Zyggy.Core.Tests.Configuration;
@@ -200,6 +201,68 @@ public sealed class NodeConfigurationReaderTests : IDisposable
         // Assert
         result.Error.Should().Be(NodeConfigurationError.InvalidField);
         result.Field.Should().Be("bus.GitHubToken");
+    }
+
+    [Theory]
+    [InlineData("{ \"store\": \"os\" }", SecretStoreKind.Os, false)]
+    [InlineData("{ \"store\": \"file\", \"root\": \"{root}\" }", SecretStoreKind.File, true)]
+    [InlineData("{ \"root\": \"{root}\" }", SecretStoreKind.Os, true)]
+    [InlineData("{ \"store\": \"file\" }", SecretStoreKind.File, false)]
+    [InlineData(null, SecretStoreKind.Os, false)]
+    public void Read_SecretsStore_Typed(string? section, SecretStoreKind store, bool rootSet)
+    {
+        // Arrange: spec 09 AC-4 — `os` is the default; `root` is the file layer's root and is kept whatever the store
+        string json = section is null
+            ? Minimal.Replace("\"secrets\": { \"root\": null }", "\"nodeDir\": null", StringComparison.Ordinal)
+            : Minimal.Replace("\"secrets\": { \"root\": null }", "\"secrets\": " + section, StringComparison.Ordinal);
+
+        // Act
+        NodeConfigurationResult result = Read(json);
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        result.Configuration!.Secrets.Store.Should().Be(store);
+        result.Configuration.Secrets.Root.Should().Be(rootSet ? Root : null);
+    }
+
+    [Theory]
+    [InlineData("vault")]
+    [InlineData("credential-manager")]
+    [InlineData("linux")]
+    [InlineData("OS")]
+    public void Read_SecretsStoreUnknownWord_InvalidFieldOneOfOsFile(string word)
+    {
+        // Act
+        NodeConfigurationResult result = Read(Minimal.Replace("\"secrets\": { \"root\": null }", "\"secrets\": { \"store\": \"" + word + "\" }", StringComparison.Ordinal));
+
+        // Assert
+        result.Error.Should().Be(NodeConfigurationError.InvalidField);
+        result.Field.Should().Be("secrets.store");
+        result.Detail.Should().Be("one of os, file");
+    }
+
+    [Fact]
+    public void Read_SecretsStoreNotAString_InvalidFieldMustBeAString()
+    {
+        // Act
+        NodeConfigurationResult result = Read(Minimal.Replace("\"secrets\": { \"root\": null }", "\"secrets\": { \"store\": 1 }", StringComparison.Ordinal));
+
+        // Assert
+        result.Error.Should().Be(NodeConfigurationError.InvalidField);
+        result.Field.Should().Be("secrets.store");
+        result.Detail.Should().Be("must be a string");
+    }
+
+    [Fact]
+    public void Read_SecretsTokenKey_StillRefused()
+    {
+        // Act: the section names a store and a location, never a secret
+        NodeConfigurationResult result = Read(Minimal.Replace("\"secrets\": { \"root\": null }", "\"secrets\": { \"store\": \"os\", \"token\": \"x\" }", StringComparison.Ordinal));
+
+        // Assert
+        result.Error.Should().Be(NodeConfigurationError.InvalidField);
+        result.Field.Should().Be("secrets.token");
+        result.Detail.Should().Be("secrets never in node.json");
     }
 
     [Fact]

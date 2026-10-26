@@ -151,5 +151,5 @@ public sealed class NodeServicesRegistrationTests
     }
 
     private static NodeConfiguration Configuration() =>
-        new(Acme, HomeLaptop, TestKeys.Acme1, new BusSettings("acme-org", "acme-bus", "main", "/bus", "https://example.invalid/acme-org/acme-bus.git"), new PollSettings(), new SecretsSettings("/secrets"));
+        new(Acme, HomeLaptop, TestKeys.Acme1, new BusSettings("acme-org", "acme-bus", "main", "/bus", "https://example.invalid/acme-org/acme-bus.git"), new PollSettings(), new SecretsSettings(SecretStoreKind.File, "/secrets"));
 }

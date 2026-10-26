@@ -332,4 +332,31 @@ public sealed class CredentialFileSecretStoreTests : IDisposable
 
     private Dictionary<string, string?> Env(bool withCredentials) =>
         new(StringComparer.Ordinal) { ["CREDENTIALS_DIRECTORY"] = withCredentials ? CredentialsDirectory : null };
+
+    [Fact]
+    public async Task ListAsync_KeyFileAndNewKeyPresent_ReturnsBothNames()
+    {
+        // Arrange: spec 09 AC-1 — the fixed names whose file exists, no check and no read of content
+        Write(KeyFile, Pem);
+        Write(KeyFile + ".new", "not even pem");
+
+        // Act
+        IReadOnlyList<SecretName> names = await Store().ListAsync(Acme, CancellationToken.None);
+
+        // Assert
+        names.Select(n => n.Value).Should().Equal("m365-app-key", "m365-app-key/new");
+    }
+
+    [Fact]
+    public async Task ListAsync_OtherTenant_Empty()
+    {
+        // Arrange: plan 09 A2 — another tenant is never this instance's
+        Write(KeyFile, Pem);
+
+        // Act
+        IReadOnlyList<SecretName> names = await Store().ListAsync(TenantId.Parse("globex"), CancellationToken.None);
+
+        // Assert
+        names.Should().BeEmpty();
+    }
 }

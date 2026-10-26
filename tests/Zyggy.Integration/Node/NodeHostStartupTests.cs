@@ -133,7 +133,8 @@ public sealed partial class NodeHostStartupTests : IDisposable
             // Assert
             exitCode.Should().Be(6);
             string[] errors = harness.LogLines.Where(l => l.Contains("[ERR]", StringComparison.Ordinal)).ToArray();
-            errors.Should().ContainSingle().Which.Should().Contain(condition).And.Contain("Node: refused to start");
+            // spec 09 AC-6: the missing-key row carries the owner-facing sentence instead of the enum name
+            errors.Should().ContainSingle().Which.Should().Contain(condition == "KeyMissing" ? "signing key acme/1 is not in the file" : condition).And.Contain("Node: refused to start");
             harness.Head.Requests.Should().BeEmpty();
             (await harness.CommitSubjectsAsync(ct)).Should().NotContain(s => s.StartsWith("acme claim ", StringComparison.Ordinal));
         }
@@ -167,7 +168,8 @@ public sealed partial class NodeHostStartupTests : IDisposable
 
         // Assert
         exitCode.Should().Be(0);
-        harness.LogLines.Where(l => l.Contains("[WRN]", StringComparison.Ordinal)).Should().ContainSingle().Which.Should().Contain("zyggy-home-laptop-");
+        // spec 09 AC-3: the harness selects `secrets.store: file`, which on Windows announces itself once; that line is not the stash warning
+        harness.LogLines.Where(l => l.Contains("[WRN]", StringComparison.Ordinal) && !l.Contains("Zyggy.Core.Secrets:", StringComparison.Ordinal)).Should().ContainSingle().Which.Should().Contain("zyggy-home-laptop-");
         Model report = await harness.ReportAsync((await harness.ReportsOnMainAsync(ct)).Single(), ct);
         report.Header.InReplyTo.Should().Be(job.Id);
         report.Report!.Status.Should().Be(ReportStatus.Done);
@@ -230,7 +232,8 @@ public sealed partial class NodeHostStartupTests : IDisposable
             m.StartsWith("node started:", StringComparison.Ordinal)
             || m == "polling"
             || m.StartsWith("health endpoint listening", StringComparison.Ordinal)
-            || m == "claude auth ok"));
+            || m == "claude auth ok"
+            || m.StartsWith("file secret store selected on Windows", StringComparison.Ordinal)));
         harness.LogLines.Should().NotContain(l => l.Contains("[DBG]", StringComparison.Ordinal));
     }
 
@@ -285,4 +288,55 @@ public sealed partial class NodeHostStartupTests : IDisposable
             remote: "https://example.invalid/acme-org/acme-bus.git",
             secretsRoot: _scratch.File("secrets"),
             nodeDir: nodeDir);
+
+    [Fact]
+    public async Task Run_SecretsStoreUnknownWord_ExitThreeConfigurationError()
+    {
+        // Arrange: spec 09 AC-4 — the host's exit 3 path through the reader
+        string path = NodeJson.Write(_scratch.File("config-vault"), Acme, HomeLaptop, TestKeys.Acme1, busLocalPath: _scratch.File("bus"), remote: "https://example.invalid/acme-org/acme-bus.git", secretsRoot: _scratch.File("secrets"), nodeDir: _scratch.File("node"), secretsStore: "vault");
+
+        // Act
+        int exitCode = await NodeHost.RunAsync(["--config", path], TestContext.Current.CancellationToken);
+        Action build = () => NodeHost.Build(["--config", path]);
+
+        // Assert
+        exitCode.Should().Be(3);
+        build.Should().Throw<NodeStartupException>().Which.Message.Should().Contain("secrets.store").And.Contain("one of os, file");
+    }
+
+    [Fact]
+    public async Task Run_KeyMissing_LogLineNamesStoreAndCommand()
+    {
+        // Arrange: spec 09 AC-6 — the harness's store is the file store, so the sentence names `file`
+        var ct = TestContext.Current.CancellationToken;
+        await using NodeHostHarness harness = await NodeHostHarness.CreateAsync(ct, seedSecrets: false);
+
+        // Act
+        int exitCode = await harness.RunAsync(TimeSpan.FromSeconds(20), ct);
+
+        // Assert
+        exitCode.Should().Be(6);
+        harness.LogLines.Where(l => l.Contains("[ERR]", StringComparison.Ordinal)).Should().ContainSingle().Which.Should()
+            .Contain("refusing to start: signing key acme/1 is not in the file; run: zyggy secret set hmac/1 --hex")
+            .And.Contain("see README \"Node: refused to start\"");
+    }
+
+    [Fact]
+    public async Task Run_StoreUnavailable_ExitSixOneErrorLineWithSecretsPointerNoHealth()
+    {
+        // Arrange: spec 09 AC-2/AC-6 — the store cannot be opened; the node refuses with the secrets pointer, never polls
+        var ct = TestContext.Current.CancellationToken;
+        await using NodeHostHarness harness = await NodeHostHarness.CreateAsync(ct);
+
+        // Act
+        int exitCode = await harness.RunAsync(TimeSpan.FromSeconds(20), ct, s => s.AddSingleton<ISecretStore>(new ThrowingSecretStore()));
+
+        // Assert
+        exitCode.Should().Be(6);
+        harness.LogLines.Where(l => l.Contains("[ERR]", StringComparison.Ordinal)).Should().ContainSingle().Which.Should()
+            .Contain("refusing to start: secret store unavailable: credential-manager: 1312")
+            .And.Contain("see README \"Secrets: store unavailable\"");
+        harness.Head.Requests.Should().BeEmpty();
+        SecretSweep.AssertAbsent(harness.LogLines);
+    }
 }

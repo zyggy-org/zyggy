@@ -3,6 +3,7 @@ using System.CommandLine;
 using Microsoft.Extensions.DependencyInjection;
 
 using Zyggy.Cli.Commands;
+using Zyggy.Core.Secrets;
 using Zyggy.Core.Verbs;
 
 namespace Zyggy.Cli;
@@ -33,7 +34,7 @@ internal static class CliApplication
         var linkedin = new Command("linkedin", "LinkedIn on Central: connect (auth start|finish|status) and the publishing server (mcp-server).");
         var root = new RootCommand("Zyggy: the personal agent platform command line.")
         {
-            memory, DreamCommand.Create(environment), m365, brief, linkedin, ProbeCommand.Create(environment), SecretCommand.Create(environment),
+            memory, DreamCommand.Create(environment), m365, brief, linkedin, ProbeCommand.Create(environment, configure), SecretCommand.Create(environment, io, configure),
             SubmitCommand.Create(environment, io, configure), StatusCommand.Create(environment, io, configure), VerifyCommand.Create(environment, io, configure),
         };
         var parseResult = root.Parse(args);
@@ -47,7 +48,22 @@ internal static class CliApplication
             return ExitCodes.Usage;
         }
 
-        // The root's own --version and --help write through the invocation configuration (plan 08 A4).
-        return await parseResult.InvokeAsync(new InvocationConfiguration { Output = io.Out, Error = io.Error }, cancellationToken);
+        // The root's own --version and --help write through the invocation configuration (plan 08 A4). The default exception
+        // handler is replaced so that a secret store that cannot be opened ends every verb the same way (plan 09 A3), and any
+        // other fault still prints as the default handler did and exits 1.
+        try
+        {
+            return await parseResult.InvokeAsync(new InvocationConfiguration { Output = io.Out, Error = io.Error, EnableDefaultExceptionHandler = false }, cancellationToken);
+        }
+        catch (SecretStoreUnavailableException ex)
+        {
+            await io.Error.WriteLineAsync("zyggy: secret store unavailable: " + ex.Message);
+            return ExitCodes.Failed;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await io.Error.WriteLineAsync("Unhandled exception: " + ex);
+            return 1;
+        }
     }
 }

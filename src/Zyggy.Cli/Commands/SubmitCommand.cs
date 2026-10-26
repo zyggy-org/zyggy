@@ -107,6 +107,9 @@ internal static class SubmitCommand
             case SubmitFailed { Stage: "sign" }:
                 await io.Error.WriteLineAsync($"zyggy: signing key {configuration.SignWith} is not in the secret store; run: zyggy secret set {configuration.SignWith.SecretName} --hex");
                 return ExitCodes.Failed;
+            case SubmitFailed { Stage: "secret-store" } unavailable:
+                await io.Error.WriteLineAsync($"zyggy: secret store unavailable: {unavailable.Detail}");
+                return ExitCodes.Failed;
             case SubmitFailed { Stage: "lock" }:
                 await io.Error.WriteLineAsync("zyggy: the bus checkout is busy: another zyggy process held its lock");
                 return ExitCodes.Failed;

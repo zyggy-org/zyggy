@@ -22,10 +22,10 @@ internal static class ProbeCommand
 {
     private static readonly Option<string?> LedgerOption = new("--ledger") { Description = "The sender's ledger file (default: <LocalApplicationData>/zyggy/probe/<tenant>/sent.jsonl)." };
 
-    public static Command Create(CliEnvironment environment)
+    public static Command Create(CliEnvironment environment, Action<IServiceCollection>? configure = null)
     {
         var listen = new Command("listen", "Poll the bus and answer every probe job addressed to this machine until Ctrl+C.") { BusHost.ConfigOption, BusHost.VerboseOption };
-        listen.SetAction((parseResult, ct) => ListenAsync(environment, parseResult, ct));
+        listen.SetAction((parseResult, ct) => ListenAsync(environment, parseResult, configure, ct));
 
         var to = new Option<string>("--to") { Description = "The target machine.", Required = true };
         var count = new Option<int>("--count") { Description = "How many probes (default 1).", DefaultValueFactory = _ => 1 };
@@ -64,7 +64,7 @@ internal static class ProbeCommand
         return report.ExitCode;
     }
 
-    private static async Task<int> ListenAsync(CliEnvironment environment, ParseResult parseResult, CancellationToken ct)
+    private static async Task<int> ListenAsync(CliEnvironment environment, ParseResult parseResult, Action<IServiceCollection>? configure, CancellationToken ct)
     {
         (NodeConfiguration? configuration, int exitCode) = BusHost.LoadConfiguration(parseResult, environment);
         if (configuration is null)
@@ -81,7 +81,11 @@ internal static class ProbeCommand
             configuration,
             parseResult.GetValue(BusHost.VerboseOption),
             environment,
-            s => s.AddSingleton(ProbeHandler.For(configuration.Machine, TimeProvider.System)));
+            s =>
+            {
+                s.AddSingleton(ProbeHandler.For(configuration.Machine, TimeProvider.System));
+                configure?.Invoke(s);
+            });
 
         // AC-27: configuration-shaped conditions exit 3 before anything is stashed or pulled.
         int checkout = await BusHost.CheckCheckoutAsync(services, configuration, VerbIo.FromConsole(), ct);
@@ -101,7 +105,9 @@ internal static class ProbeCommand
                 Console.Error.WriteLine("zyggy: another zyggy probe listen already runs in this checkout (" + configuration.Bus.LocalPath + "); stop it first");
                 return ExitCodes.Failed;
             case BusStartupResult.KeyMissing:
-                Console.Error.WriteLine($"zyggy: signing key {configuration.SignWith} is not in the secret store; run: zyggy secret set {configuration.SignWith.SecretName} --hex");
+            case BusStartupResult.StoreUnavailable:
+                // spec 09 AC-6: the listener's sentence names the store and the command
+                Console.Error.WriteLine("zyggy: " + listener.StartupDetail);
                 return ExitCodes.Failed;
             case BusStartupResult.RebaseInProgress:
                 Console.Error.WriteLine("zyggy: a rebase or merge is in progress in bus.localPath");

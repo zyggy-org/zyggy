@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 
+using Zyggy.Core.Bus;
 using Zyggy.Core.Secrets;
 using Zyggy.Core.Tenancy;
 
@@ -129,10 +130,37 @@ public sealed class EnvelopeSigner
     }
 
     /// <summary>Whether the store holds a usable key for <paramref name="keyId"/> (present and at least 32 bytes) — the bus listener's start-up check (deliverable 04).</summary>
-    internal async Task<bool> CanSignAsync(KeyId keyId, CancellationToken cancellationToken)
+    internal async Task<bool> CanSignAsync(KeyId keyId, CancellationToken cancellationToken) =>
+        (await CheckKeyAsync(keyId, cancellationToken).ConfigureAwait(false)).State == SigningKeyState.Usable;
+
+    /// <summary>
+    /// The start-up check with its owner-facing sentence (spec 09 AC-6): absent, too short, or the store cannot be opened — the
+    /// last one also for a corrupt value, since absence was not established. Never a byte of the key in the detail.
+    /// </summary>
+    internal async Task<SigningKeyCheck> CheckKeyAsync(KeyId keyId, CancellationToken cancellationToken)
     {
-        ReadOnlyMemory<byte>? key = await _secrets.GetAsync(keyId.Tenant, keyId.SecretName, cancellationToken).ConfigureAwait(false);
-        return key is { Length: >= MinimumKeyLength };
+        ArgumentNullException.ThrowIfNull(keyId);
+        ReadOnlyMemory<byte>? key;
+        try
+        {
+            key = await _secrets.GetAsync(keyId.Tenant, keyId.SecretName, cancellationToken).ConfigureAwait(false);
+        }
+        catch (SecretStoreUnavailableException ex)
+        {
+            return new SigningKeyCheck(SigningKeyState.StoreUnavailable, "secret store unavailable: " + ex.Message);
+        }
+        catch (InvalidDataException ex)
+        {
+            return new SigningKeyCheck(SigningKeyState.StoreUnavailable, "secret store unavailable: corrupt value: " + ex.Message);
+        }
+
+        string secret = keyId.SecretName.Value;
+        return key switch
+        {
+            null => new SigningKeyCheck(SigningKeyState.Missing, $"signing key {keyId} is not in the {SecretStoreNames.Of(_secrets)}; run: zyggy secret set {secret} --hex"),
+            { Length: < MinimumKeyLength } => new SigningKeyCheck(SigningKeyState.TooShort, $"signing key {keyId} is unusable (shorter than {MinimumKeyLength} bytes); run: zyggy secret set {secret} --generate"),
+            _ => new SigningKeyCheck(SigningKeyState.Usable, string.Empty),
+        };
     }
 
     private async Task<(ReadOnlyMemory<byte> Key, EnvelopeRejection? Rejection)> ReadKeyAsync(

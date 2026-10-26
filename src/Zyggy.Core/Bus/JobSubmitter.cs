@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 
 using Zyggy.Core.Envelope;
+using Zyggy.Core.Secrets;
 
 using Model = Zyggy.Core.Envelope.Envelope;
 
@@ -112,6 +113,11 @@ public sealed partial class JobSubmitter
         catch (SigningFailedException ex)
         {
             return new SubmitFailed("sign", ex.Message);
+        }
+        catch (SecretStoreUnavailableException ex)
+        {
+            LogStoreUnavailable(ex.Message);
+            return new SubmitFailed("secret-store", ex.Message);
         }
 
         if (built is BuildRefused refused)
@@ -242,6 +248,9 @@ public sealed partial class JobSubmitter
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "refusing to submit: the envelope does not round-trip ({Field})")]
     private partial void LogRefusing(string field);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "refusing to submit: secret store unavailable: {Detail}")]
+    private partial void LogStoreUnavailable(string detail);
 }
 
 /// <summary>The signing key is absent or unusable: not a refusal of the request but a failure of this machine's configuration.</summary>

@@ -166,7 +166,7 @@ internal static class TestHost
 
     /// <summary>The typed <c>node.json</c> of <paramref name="machine"/> on the fixture's bus, with an optional <c>claude</c> section.</summary>
     public static NodeConfiguration NodeConfigurationFor(BusRepoFixture bus, MachineName machine, ClaudeSettings? claude = null, string? nodeDir = null) =>
-        new(bus.Tenant, machine, TestKeys.Acme1, new BusSettings(Remote.Owner, Remote.Repository, Remote.Branch, bus.CloneDir, Remote.HttpsUrl!.ToString()), new PollSettings(1, 1, 1), new SecretsSettings())
+        new(bus.Tenant, machine, TestKeys.Acme1, new BusSettings(Remote.Owner, Remote.Repository, Remote.Branch, bus.CloneDir, Remote.HttpsUrl!.ToString()), new PollSettings(1, 1, 1), new SecretsSettings(SecretStoreKind.File))
         {
             Claude = claude ?? new ClaudeSettings(),
             NodeDir = nodeDir,

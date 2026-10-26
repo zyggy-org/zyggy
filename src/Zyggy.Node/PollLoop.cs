@@ -84,7 +84,20 @@ public sealed partial class PollLoop : BackgroundService
             BusStartupResult result = await _listener.StartAsync(stoppingToken).ConfigureAwait(false);
             if (result is not (BusStartupResult.Clean or BusStartupResult.Stashed))
             {
-                LogRefusingToStart(result.ToString());
+                // spec 09 AC-6: the owner-facing sentence for the two secret conditions, the enum name for the checkout ones
+                switch (result)
+                {
+                    case BusStartupResult.StoreUnavailable:
+                        LogRefusingToStartSecrets(_listener.StartupDetail ?? result.ToString());
+                        break;
+                    case BusStartupResult.KeyMissing:
+                        LogRefusingToStart(_listener.StartupDetail ?? result.ToString());
+                        break;
+                    default:
+                        LogRefusingToStart(result.ToString());
+                        break;
+                }
+
                 Stop(NodeExitCodes.Startup);
                 return;
             }
@@ -129,6 +142,9 @@ public sealed partial class PollLoop : BackgroundService
 
     [LoggerMessage(Level = LogLevel.Error, Message = "refusing to start: {Condition} — see README \"Node: refused to start\"")]
     private partial void LogRefusingToStart(string condition);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "refusing to start: {Condition} — see README \"Secrets: store unavailable\"")]
+    private partial void LogRefusingToStartSecrets(string condition);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "node faulted: {ExceptionType}")]
     private partial void LogFaulted(string exceptionType);

@@ -14,6 +14,8 @@
     <PackageReference Include="ModelContextProtocol" />
     <!-- Deliverable 07: IANA ids for workHours.timezone under InvariantGlobalization (spec 07 ex-Q2). -->
     <PackageReference Include="TimeZoneConverter" />
+    <!-- Deliverable 09: the laptops' secret store; calls guarded by [SupportedOSPlatform("windows")] and OperatingSystem.IsWindows(). -->
+    <PackageReference Include="Meziantou.Framework.Win32.CredentialManager" />
   </ItemGroup>
 
   <!-- The dream model contract (OQ-3): prompts and schemas ship inside the binary. -->

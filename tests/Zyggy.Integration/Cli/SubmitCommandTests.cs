@@ -1,8 +1,11 @@
 using System.Text;
 using System.Text.RegularExpressions;
 
+using Microsoft.Extensions.DependencyInjection;
+
 using Zyggy.Core.Bus;
 using Zyggy.Core.Envelope;
+using Zyggy.Core.Secrets;
 using Zyggy.Core.Tenancy;
 using Zyggy.Core.Tests.Infrastructure;
 using Zyggy.Integration.Infrastructure;
@@ -167,6 +170,27 @@ public sealed partial class SubmitCommandTests : IAsyncLifetime
         // Assert
         exit.Should().Be(6);
         console.Stderr.Should().Be("zyggy: signing key acme/1 is not in the secret store; run: zyggy secret set hmac/1 --hex\n");
+        (await _harness.CommitCountOnMainAsync(ct)).Should().Be(commits);
+        (await _harness.PorcelainAsync(_harness.Bus.SenderDir, ct)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Submit_StoreUnavailable_ExitSixOneLineNothingCommitted()
+    {
+        // Arrange: spec 09 AC-2 — the sender's store cannot be opened
+        var ct = TestContext.Current.CancellationToken;
+        int commits = await _harness.CommitCountOnMainAsync(ct);
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(
+            ["submit", "--to", "home-laptop", "--project", _project.Path, Body],
+            _harness.CentralNodeJson,
+            more: s => s.AddSingleton<ISecretStore>(new ThrowingSecretStore()),
+            ct: ct);
+
+        // Assert
+        exit.Should().Be(6, console.Stderr);
+        console.Stderr.Should().Be("zyggy: secret store unavailable: credential-manager: 1312 No such logon session\n");
         (await _harness.CommitCountOnMainAsync(ct)).Should().Be(commits);
         (await _harness.PorcelainAsync(_harness.Bus.SenderDir, ct)).Should().BeEmpty();
     }

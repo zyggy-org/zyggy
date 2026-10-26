@@ -31,4 +31,10 @@ public interface ISecretStore
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns><see langword="true"/> when a secret was removed; <see langword="false"/> when it was absent.</returns>
     Task<bool> RemoveAsync(TenantId tenant, SecretName name, CancellationToken cancellationToken);
+
+    /// <summary>Lists the names present for a tenant — names only, never a value.</summary>
+    /// <param name="tenant">The tenant whose names are listed.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The tenant-relative names in ordinal order; an empty list when the tenant holds nothing (absence never throws).</returns>
+    Task<IReadOnlyList<SecretName>> ListAsync(TenantId tenant, CancellationToken cancellationToken);
 }

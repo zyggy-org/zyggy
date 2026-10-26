@@ -595,17 +595,62 @@ public sealed partial class SourceHygieneTests
     }
 
     [Fact]
-    public void Packages_Deliverable08_NoneAdded()
+    public void Packages_RowCountPinned()
     {
-        // Arrange: spec 08 AC-15 — the row count recorded at 07's gate; no HTTP client package ever enters
+        // Arrange: spec 08 AC-15 / spec 09 — 23 rows at 08's gate, one Credential Manager row in 09; no HTTP client package ever enters
         var document = System.Xml.Linq.XDocument.Load(Path.Combine(RepoRoot(), "Directory.Packages.props"));
 
         // Act
         var rows = document.Descendants("PackageVersion").Select(e => (string)e.Attribute("Include")!).ToList();
 
         // Assert
-        rows.Should().HaveCount(23);
+        rows.Should().HaveCount(24);
         rows.Should().NotContain(r => r.Contains("Http", StringComparison.OrdinalIgnoreCase) || r.Contains("Refit", StringComparison.OrdinalIgnoreCase) || r.Contains("RestSharp", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Packages_Deliverable09_CredentialManagerPinnedExactly()
+    {
+        // Arrange: spec 09 — the one new package, exact version; no DPAPI, D-Bus or libsecret package
+        var document = System.Xml.Linq.XDocument.Load(Path.Combine(RepoRoot(), "Directory.Packages.props"));
+
+        // Act
+        var rows = document.Descendants("PackageVersion").ToDictionary(e => (string)e.Attribute("Include")!, e => (string)e.Attribute("Version")!, StringComparer.Ordinal);
+
+        // Assert
+        rows.Should().ContainKey("Meziantou.Framework.Win32.CredentialManager").WhoseValue.Should().Be("3.0.6");
+        rows.Keys.Should().NotContain(k => k.Contains("ProtectedData", StringComparison.OrdinalIgnoreCase) || k.Contains("Tmds.DBus", StringComparison.OrdinalIgnoreCase) || k.Contains("libsecret", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Src_CredentialManagerPackage_OnlyUnderSecretsWindows()
+    {
+        // Act: spec 09 AC-13 — the package is named only by the Windows store's folder and the Core project file
+        var holders = Directory.EnumerateFiles(Path.Combine(RepoRoot(), "src"), "*.*", SearchOption.AllDirectories)
+            .Where(f => f.EndsWith(".cs", StringComparison.Ordinal) || f.EndsWith(".csproj", StringComparison.Ordinal))
+            .Where(f => !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar, StringComparison.Ordinal) && !f.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            .Where(f => File.ReadAllText(f).Contains("Meziantou", StringComparison.Ordinal))
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        // Assert
+        holders.Should().NotBeEmpty();
+        holders.Should().OnlyContain(f => f.StartsWith("src/Zyggy.Core/Secrets/Windows/", StringComparison.Ordinal) || f == "src/Zyggy.Core/Zyggy.Core.csproj");
+    }
+
+    [Fact]
+    public void Src_NoRawCredentialPInvoke()
+    {
+        // Act: spec 09 — the Credential Manager is reached through the package, never through a raw P/Invoke
+        string[] forbidden = ["CredRead", "CredWrite", "CredDelete", "CredEnumerate", "advapi32"];
+        var offenders = SourceFiles()
+            .Where(f => forbidden.Any(t => CommentLine().Replace(File.ReadAllText(f), string.Empty).Contains(t, StringComparison.Ordinal)))
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .ToList();
+
+        // Assert
+        offenders.Should().BeEmpty();
     }
 
     [Fact]
@@ -626,6 +671,66 @@ public sealed partial class SourceHygieneTests
             .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
             .Where(f => f.StartsWith("src/Zyggy.Cli/", StringComparison.Ordinal))
             .ToDictionary(f => f, f => File.ReadAllText(Path.Combine(RepoRoot(), f)), StringComparer.Ordinal);
+
+    [Fact]
+    public void Src_Deliverable09Classes_NoConsoleClockOrStaticState()
+    {
+        // Arrange: spec 09 AC-13 — the new Core classes read no console, no clock of their own, hold no static mutable state
+        string[] named = ["src/Zyggy.Core/Secrets/LinuxSecretStore.cs", "src/Zyggy.Core/Secrets/SecretFingerprint.cs", "src/Zyggy.Core/Secrets/SecretStoreUnavailableException.cs"];
+        var texts = SourceFiles()
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .Where(f => f.StartsWith("src/Zyggy.Core/Secrets/Verbs/", StringComparison.Ordinal) || f.StartsWith("src/Zyggy.Core/Secrets/Windows/", StringComparison.Ordinal))
+            .Concat(named)
+            .Distinct(StringComparer.Ordinal)
+            .ToDictionary(f => f, f => CommentLine().Replace(File.ReadAllText(Path.Combine(RepoRoot(), f)), string.Empty), StringComparer.Ordinal);
+
+        // Act
+        var offenders = texts
+            .Where(kv => kv.Value.Contains("Console.", StringComparison.Ordinal)
+                || kv.Value.Contains("DateTime.UtcNow", StringComparison.Ordinal)
+                || kv.Value.Contains("DateTimeOffset.UtcNow", StringComparison.Ordinal)
+                || kv.Value.Contains("TimeProvider.System", StringComparison.Ordinal)
+                || StaticMutableField().IsMatch(kv.Value))
+            .Select(kv => kv.Key)
+            .ToList();
+
+        // Assert
+        texts.Should().HaveCountGreaterThanOrEqualTo(9);
+        offenders.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Src_CredentialsDirectoryLiteral_OnlyInKnownReaders()
+    {
+        // Arrange: plan 09 A14 — the systemd variable is read by these files and no other; a new holder is a design change
+        string[] allowed =
+        [
+            "src/Zyggy.Core/Secrets/CredentialFileSecretStore.cs", "src/Zyggy.Core/Secrets/CredentialSource.cs", "src/Zyggy.Core/Secrets/LinuxSecretStore.cs",
+            "src/Zyggy.Core/Models/ClaudeCodeCliRunner.cs", "src/Zyggy.Core/Models/ModelRunRequest.cs", "src/Zyggy.Core/M365/M365Paths.cs",
+            "src/Zyggy.Core/M365/Runs/M365RunRequest.cs", "src/Zyggy.Core/LinkedIn/LinkedInPaths.cs", "src/Zyggy.Core/Memory/SourceDenyList.cs",
+        ];
+
+        // Act
+        var holders = SourceFiles()
+            .Where(f => CommentLine().Replace(File.ReadAllText(f), string.Empty).Contains("CREDENTIALS_DIRECTORY", StringComparison.Ordinal))
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .ToList();
+
+        // Assert
+        holders.Should().Contain("src/Zyggy.Core/Secrets/LinuxSecretStore.cs");
+        holders.Should().OnlyContain(f => allowed.Contains(f));
+    }
+
+    [Fact]
+    public void Src_SecretVerbs_NeverWriteArgv()
+    {
+        // Act: spec 09 AC-7 — the only arguments of the secret verbs are the two names (set, remove); a value never has a form on argv
+        string source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Zyggy.Cli", "Commands", "SecretCommand.cs"));
+
+        // Assert
+        Regex.Matches(source, @"new Argument<").Should().HaveCount(2);
+        source.Should().NotContain("Argument<byte");
+    }
 
     [Fact]
     public void Src_NoOpenTelemetryNamespace()
@@ -679,7 +784,7 @@ public sealed partial class SourceHygieneTests
     [GeneratedRegex(@"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")]
     private static partial Regex GuidLiteral();
 
-    [GeneratedRegex(@"new (ProcessSpec|ProcessStartInfo)\(\s*""(claude|markitdown|ms-365-mcp-server)""")]
+    [GeneratedRegex(@"new (ProcessSpec|ProcessStartInfo)\(\s*""(claude|markitdown|ms-365-mcp-server|cmdkey)""")]
     private static partial Regex BareProgram();
 
     [GeneratedRegex(@"HttpMethod\.(Put|Post|Patch|Delete)\b")]

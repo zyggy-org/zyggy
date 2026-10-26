@@ -26,7 +26,8 @@ internal static class NodeJson
         int? maxConcurrentJobs = null,
         int? safetyFetchMinutes = null,
         string? logLevel = null,
-        string? extraTopLevelJson = null)
+        string? extraTopLevelJson = null,
+        string secretsStore = "file")
     {
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "node.json");
@@ -50,7 +51,7 @@ internal static class NodeJson
                 "remote": "{{remote}}"
               },
               "poll": { "activeSeconds": {{pollSeconds}}, "idleSeconds": {{pollSeconds}}{{safetyFetch}} },
-              "secrets": { "root": "{{Slashes(secretsRoot)}}" }
+              "secrets": { "store": "{{secretsStore}}", "root": "{{Slashes(secretsRoot)}}" }
             }
             """);
         File.WriteAllText(path, json);

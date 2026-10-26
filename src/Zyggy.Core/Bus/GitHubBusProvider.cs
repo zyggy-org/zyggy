@@ -75,7 +75,17 @@ internal sealed partial class GitHubBusProvider : IBusProvider, IDisposable
 
     public async Task<HeadProbe> ProbeHeadAsync(string? etag, CancellationToken ct)
     {
-        ReadOnlyMemory<byte>? token = await _secrets.GetAsync(_me.Tenant, SecretName.Parse(PatSecret), ct).ConfigureAwait(false);
+        ReadOnlyMemory<byte>? token;
+        try
+        {
+            token = await _secrets.GetAsync(_me.Tenant, SecretName.Parse(PatSecret), ct).ConfigureAwait(false);
+        }
+        catch (SecretStoreUnavailableException)
+        {
+            // spec 09 AC-2: the store cannot be opened — the listener's per-state logging says so once, never per tick
+            return new Unreachable("secret store unavailable");
+        }
+
         if (token is null)
         {
             return new Unreachable("no " + PatSecret + " for tenant " + _me.Tenant.Value);

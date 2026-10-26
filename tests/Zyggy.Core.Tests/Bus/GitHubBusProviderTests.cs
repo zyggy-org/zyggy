@@ -410,6 +410,20 @@ public sealed class GitHubBusProviderTests : IDisposable
 
     public void Dispose() => _http.Dispose();
 
+    [Fact]
+    public async Task ProbeHeadAsync_StoreUnavailable_UnreachableSecretStoreUnavailable()
+    {
+        // Arrange: spec 09 AC-2 — the PAT's store cannot be opened; nothing is sent
+        GitHubBusProvider provider = Provider(new ThrowingSecretStore());
+
+        // Act
+        HeadProbe probe = await provider.ProbeHeadAsync(null, TestContext.Current.CancellationToken);
+
+        // Assert
+        probe.Should().Be(new Unreachable("secret store unavailable"));
+        _http.Requests.Should().BeEmpty();
+    }
+
     private async Task<GitHubBusProvider> ProviderAsync() => Provider(await TestKeys.StoreWithPatAsync(Acme, TestContext.Current.CancellationToken));
 
     private GitHubBusProvider Provider(ISecretStore store) =>

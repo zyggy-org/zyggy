@@ -126,4 +126,50 @@ public sealed class InMemorySecretStoreTests
         // Assert
         value.Should().BeNull();
     }
+
+    [Fact]
+    public async Task ListAsync_TwoTenants_ReturnsOnlyThisTenantsNamesInOrdinalOrder()
+    {
+        // Arrange: spec 09 AC-1 — names only, this tenant only, ordinal order
+        var store = new InMemorySecretStore();
+        await store.SetAsync(Acme, SecretName.Parse("hmac/2"), new byte[] { 2 }, Ct);
+        await store.SetAsync(Acme, SecretName.Parse("github-pat"), new byte[] { 3 }, Ct);
+        await store.SetAsync(Acme, Hmac1, new byte[] { 1 }, Ct);
+        await store.SetAsync(TenantId.Parse("other-org"), Hmac1, new byte[] { 9 }, Ct);
+
+        // Act
+        IReadOnlyList<SecretName> names = await store.ListAsync(Acme, Ct);
+
+        // Assert
+        names.Select(n => n.Value).Should().Equal("github-pat", "hmac/1", "hmac/2");
+    }
+
+    [Fact]
+    public async Task ListAsync_UnknownTenant_Empty()
+    {
+        // Arrange
+        var store = new InMemorySecretStore();
+        await store.SetAsync(Acme, Hmac1, new byte[] { 1 }, Ct);
+
+        // Act
+        IReadOnlyList<SecretName> names = await store.ListAsync(Globex, Ct);
+
+        // Assert
+        names.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ListAsync_AfterRemove_NameGone()
+    {
+        // Arrange
+        var store = new InMemorySecretStore();
+        await store.SetAsync(Acme, Hmac1, new byte[] { 1 }, Ct);
+        await store.RemoveAsync(Acme, Hmac1, Ct);
+
+        // Act
+        IReadOnlyList<SecretName> names = await store.ListAsync(Acme, Ct);
+
+        // Assert
+        names.Should().BeEmpty();
+    }
 }

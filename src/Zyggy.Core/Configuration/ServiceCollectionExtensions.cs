@@ -30,7 +30,7 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
         services.AddSingleton(configuration);
         services.AddProcessRunner();
-        services.AddFileSecretStore(o => o.RootDirectory = configuration.Secrets.Root);
+        services.AddSecretStore(configuration);
         services.AddEnvelopeSigning();
         services.AddSingleton(configuration.Poll.ToPollOptions());
         if (configuration.SignWith is { } signWith)

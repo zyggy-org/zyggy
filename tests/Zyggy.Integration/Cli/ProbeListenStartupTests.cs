@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Secrets;
 using Zyggy.Core.Tenancy;
+using Zyggy.Core.Tests.Infrastructure;
 using Zyggy.Integration.Infrastructure;
 
 namespace Zyggy.Integration.Cli;
@@ -70,7 +71,9 @@ public sealed class ProbeListenStartupTests : IAsyncLifetime
 
         // Assert
         run.ExitCode.Should().Be(3, run.Stderr);
-        run.Stderr.TrimEnd().Split('\n').Should().ContainSingle().Which.Should().Contain(expected);
+        // spec 09 AC-3: on Windows the harness's `secrets.store: file` announces itself once (a two-line warn block) before the refusal
+        run.Stderr.TrimEnd().Split('\n').Where(l => !l.StartsWith("warn:", StringComparison.Ordinal) && !l.StartsWith("      ", StringComparison.Ordinal))
+            .Should().ContainSingle().Which.Should().Contain(expected);
         (await _bus.RunGitAsync(_bus.CloneDir, ["stash", "list"], ct)).Should().BeEmpty("nothing stashed");
         (await _bus.HeadShaAsync(ct)).Should().Be(headBefore);
         (File.Exists(fetchHead) ? File.GetLastWriteTimeUtc(fetchHead) : (DateTime?)null).Should().Be(fetchHeadBefore, "nothing pulled");
@@ -139,6 +142,33 @@ public sealed class ProbeListenStartupTests : IAsyncLifetime
 
         // Assert
         run.ExitCode.Should().Be(6, run.Stderr);
-        run.Stderr.Should().Contain("signing key acme/1 is not in the secret store");
+        run.Stderr.Should().Contain("signing key acme/1 is not in the file; run: zyggy secret set hmac/1 --hex");
+    }
+
+    [Fact]
+    public async Task Listen_StoreUnavailable_ExitSixOneLine()
+    {
+        // Arrange: spec 09 AC-2 — the binary cannot take a substituted store, so this one fact runs in process; the probe verbs
+        // write to the process console (04), captured here for the duration of the call
+        var ct = TestContext.Current.CancellationToken;
+        string nodeJson = NodeJson.Write(_scratch.File("cfg"), Acme, HomeLaptop, KeyId.Parse("acme/1"), _bus.CloneDir, "https://example.invalid/acme-org/acme-bus.git", _scratch.File("secrets"));
+        TextWriter original = Console.Error;
+        var captured = new StringWriter();
+        int exit;
+
+        // Act
+        Console.SetError(captured);
+        try
+        {
+            (exit, _) = await ZyggyCliInProcess.RunAsync(["probe", "listen", "--config", nodeJson], new Dictionary<string, string?>(), s => s.AddSingleton<ISecretStore>(new ThrowingSecretStore()), null, ct);
+        }
+        finally
+        {
+            Console.SetError(original);
+        }
+
+        // Assert
+        exit.Should().Be(6, captured.ToString());
+        captured.ToString().Should().Contain("zyggy: secret store unavailable: credential-manager: 1312 No such logon session");
     }
 }

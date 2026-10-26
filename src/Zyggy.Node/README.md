@@ -53,7 +53,7 @@ Secrets are never in it; any key named like a credential is refused.
 |------|---------|------------------|
 | 0 | a normal stop (Ctrl+C, SIGTERM, the service manager) | — |
 | 3 | `node.json` refused: missing or invalid key, no `tenant`, no `signWith`, a secret-looking key, an unknown argument | stderr: `zyggy-node: configuration error: <key>: <detail>`; nothing started |
-| 6 | a start-up condition: `NotARepository`, `WrongBranch`, `NoTenantDirectory`, `RebaseInProgress`, `KeyMissing`, `ListenerRunning`, the log directory not creatable, the health port in use | one `[ERR] refusing to start: <condition> — see README "Node: refused to start"` line in the log (the log directory case: stderr); `/health` is never bound |
+| 6 | a start-up condition: `NotARepository`, `WrongBranch`, `NoTenantDirectory`, `RebaseInProgress`, `KeyMissing` (the line names the key, the store and the `zyggy secret set` command), `ListenerRunning`, the log directory not creatable, the health port in use; or `StoreUnavailable` (deliverable 09: the secret store cannot be opened) | one `[ERR] refusing to start: <condition> — see README "Node: refused to start"` line in the log (the log directory case: stderr), or `… — see README "Secrets: store unavailable"` for the store (Core README "Troubleshooting — Secrets"); `/health` is never bound |
 | 1 | an unexpected fault | one `[ERR] node faulted: <ExceptionType>` line |
 
 The Core README's "Troubleshooting — Node" table says what to do for each.

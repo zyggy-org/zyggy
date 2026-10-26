@@ -71,6 +71,17 @@ public sealed partial class BusRepository
         return _signer.CanSignAsync(signWith, ct);
     }
 
+    /// <summary>The start-up check with its owner-facing sentence (spec 09 AC-6): usable, missing, too short, or the store cannot be opened.</summary>
+    /// <param name="signWith">The key this machine signs with.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The state and the sentence (empty when usable).</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="signWith"/> is null.</exception>
+    public Task<SigningKeyCheck> CheckSigningKeyAsync(KeyId signWith, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(signWith);
+        return _signer.CheckKeyAsync(signWith, ct);
+    }
+
     /// <summary>The checkout's current branch, or <see langword="null"/> when it is not a repository or HEAD is detached — a read that touches nothing (for a verb's pre-flight).</summary>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The branch name or null.</returns>

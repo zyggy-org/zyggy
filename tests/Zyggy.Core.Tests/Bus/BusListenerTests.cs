@@ -102,6 +102,44 @@ public sealed class BusListenerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task StartAsync_StoreUnavailable_ReturnsStoreUnavailableWithoutLockOrPull()
+    {
+        // Act: spec 09 AC-2 — a store that cannot be opened is its own outcome, before the listen lock and the pull
+        BusStartupResult result = await Listener(store: new ThrowingSecretStore()).StartAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        result.Should().Be(BusStartupResult.StoreUnavailable);
+        await _provider.DidNotReceive().PullAsync(Arg.Any<CancellationToken>());
+        File.Exists(Path.Join(_checkout.Root, ".git", BusCheckoutLock.ListenLockName)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task StartAsync_KeyMissing_StartupDetailNamesStoreAndCommand()
+    {
+        // Arrange
+        BusListener listener = Listener(signWith: new KeyId(Acme, 9));
+
+        // Act
+        await listener.StartAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        listener.StartupDetail.Should().Be("signing key acme/9 is not in the memory; run: zyggy secret set hmac/9 --hex");
+    }
+
+    [Fact]
+    public async Task StartAsync_StoreUnavailable_StartupDetailStartsWithSecretStoreUnavailable()
+    {
+        // Arrange
+        BusListener listener = Listener(store: new ThrowingSecretStore());
+
+        // Act
+        await listener.StartAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        listener.StartupDetail.Should().Be("secret store unavailable: credential-manager: 1312 No such logon session");
+    }
+
+    [Fact]
     public async Task StartAsync_JobAlreadyWaiting_ProcessedBeforeFirstProbe()
     {
         // Arrange
@@ -1084,10 +1122,10 @@ public sealed class BusListenerTests : IAsyncLifetime
         listener.Status.JobsRunning.Should().Be(0);
     }
 
-    private BusListener Listener(KeyId? signWith = null, JobGate? gate = null)
+    private BusListener Listener(KeyId? signWith = null, JobGate? gate = null, ISecretStore? store = null)
     {
         var git = new GitClient(_processes, new GitClientOptions { Identity = new GitIdentity("zyggy (home-laptop)", "home-laptop@zyggy.org") }, _clock);
-        var repository = new BusRepository(git, _provider, Me, _checkout.Root, new EnvelopeSigner(_store), _clock, () => 0, _repositoryLog);
+        var repository = new BusRepository(git, _provider, Me, _checkout.Root, new EnvelopeSigner(store ?? _store), _clock, () => 0, _repositoryLog);
         return new BusListener(_provider, repository, PollOptions.Default, signWith ?? TestKeys.Acme1, _clock, new Random(1), (job, ct) => _handler(job, ct), _log, gate);
     }
 

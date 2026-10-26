@@ -233,7 +233,22 @@ public sealed class JobSubmitterSubmitTests : IAsyncLifetime
         SecretSweep.AssertAbsent(_processes.Calls.SelectMany(SecretSweep.TextsOf));
     }
 
-    private JobSubmitter Submitter(InMemorySecretStore? store = null, Func<Model, byte[]>? serializer = null)
+    [Fact]
+    public async Task SubmitAsync_StoreUnavailable_SubmitFailedSecretStoreAndNothingWritten()
+    {
+        // Act: spec 09 AC-2 — the sender's store cannot be opened; the "never throws" contract holds
+        SubmitResult result = await Submitter(store: new ThrowingSecretStore()).SubmitAsync(Request(), TestContext.Current.CancellationToken);
+
+        // Assert
+        var failed = result.Should().BeOfType<SubmitFailed>().Subject;
+        failed.Stage.Should().Be("secret-store");
+        failed.Detail.Should().Be("credential-manager: 1312 No such logon session");
+        _processes.CallsOf("add").Should().BeEmpty();
+        _checkout.FilesUnder(BusPaths.Jobs(Acme, HomeLaptop)).Should().BeEmpty();
+        _log.AtLevel(LogLevel.Warning).Should().ContainSingle();
+    }
+
+    private JobSubmitter Submitter(ISecretStore? store = null, Func<Model, byte[]>? serializer = null)
     {
         var git = new GitClient(_processes, new GitClientOptions { Identity = new GitIdentity("zyggy (central)", "central@zyggy.org") }, _clock);
         var signer = new EnvelopeSigner(store ?? _store);

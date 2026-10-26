@@ -8,9 +8,11 @@ namespace Zyggy.Core.Secrets;
 /// An <see cref="ISecretStore"/> held in memory by one instance: the substitute for unit and integration tests. Values are
 /// copied on write and on read.
 /// </summary>
-public sealed class InMemorySecretStore : ISecretStore
+public sealed class InMemorySecretStore : ISecretStore, IDescribedSecretStore
 {
     private readonly ConcurrentDictionary<(TenantId Tenant, SecretName Name), byte[]> _secrets = new();
+
+    string IDescribedSecretStore.StoreName => SecretStoreNames.Memory;
 
     /// <inheritdoc />
     public Task<ReadOnlyMemory<byte>?> GetAsync(TenantId tenant, SecretName name, CancellationToken cancellationToken)
@@ -50,4 +52,20 @@ public sealed class InMemorySecretStore : ISecretStore
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(_secrets.TryRemove((tenant, name), out _));
     }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<SecretName>> ListAsync(TenantId tenant, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(tenant);
+        cancellationToken.ThrowIfCancellationRequested();
+        IReadOnlyList<SecretName> names = _secrets.Keys
+            .Where(k => k.Tenant == tenant)
+            .Select(k => k.Name)
+            .OrderBy(n => n.Value, StringComparer.Ordinal)
+            .ToList();
+        return Task.FromResult(names);
+    }
+
+    ValueTask<string> IDescribedSecretStore.SourceOfAsync(TenantId tenant, SecretName name, CancellationToken cancellationToken) =>
+        ValueTask.FromResult(SecretStoreNames.Memory);
 }

@@ -31,6 +31,9 @@ public sealed partial class BusListener : IDisposable
     private readonly List<AcceptedJob> _deferredClaims = [];
     private bool _pullErrorLogged;
     private IDisposable? _listenLock;
+
+    /// <summary>The sentence behind a <see cref="BusStartupResult.KeyMissing"/> or <see cref="BusStartupResult.StoreUnavailable"/> start-up (spec 09 AC-6); null otherwise.</summary>
+    public string? StartupDetail { get; private set; }
     private DateTimeOffset? _lastPollUtc;
     private DateTimeOffset? _lastPullUtc;
     private DateTimeOffset? _lastReportUtc;
@@ -85,6 +88,7 @@ public sealed partial class BusListener : IDisposable
     /// The §5 start-up rule, then one pull and one pass over what is already waiting. A dirty tree is stashed; a wrong branch,
     /// a missing repository or tenant directory, a rebase in progress or a missing signing key is returned without pulling.
     /// </summary>
+    /// <remarks>The owner-facing sentence for <see cref="BusStartupResult.KeyMissing"/> and <see cref="BusStartupResult.StoreUnavailable"/> is in <see cref="StartupDetail"/>.</remarks>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>What the start-up check found.</returns>
     public async Task<BusStartupResult> StartAsync(CancellationToken ct)
@@ -95,9 +99,11 @@ public sealed partial class BusListener : IDisposable
             return result;
         }
 
-        if (!await _bus.SignerCanSignAsync(_signWith, ct).ConfigureAwait(false))
+        SigningKeyCheck key = await _bus.CheckSigningKeyAsync(_signWith, ct).ConfigureAwait(false);
+        if (key.State != SigningKeyState.Usable)
         {
-            return BusStartupResult.KeyMissing;
+            StartupDetail = key.Detail;
+            return key.State == SigningKeyState.StoreUnavailable ? BusStartupResult.StoreUnavailable : BusStartupResult.KeyMissing;
         }
 
         _listenLock ??= await _bus.TryAcquireListenLockAsync(ct).ConfigureAwait(false);

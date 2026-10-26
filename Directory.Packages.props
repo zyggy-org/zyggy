@@ -34,6 +34,8 @@
     <PackageVersion Include="TimeZoneConverter" Version="8.0.0" />
     <!-- Test-only: the container implementation the DI resolution tests build. -->
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
+    <!-- Deliverable 09: Windows Credential Manager (CredRead/CredWrite/CredDelete/CredEnumerate P/Invoke over advapi32), used only under src/Zyggy.Core/Secrets/Windows/; MIT. -->
+    <PackageVersion Include="Meziantou.Framework.Win32.CredentialManager" Version="3.0.6" />
   </ItemGroup>
 
   <!-- Build-only: versions every assembly from git tags (v*); never a runtime dependency. -->
