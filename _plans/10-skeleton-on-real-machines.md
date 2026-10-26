@@ -227,7 +227,7 @@ the owner-executed physical P1 scenario (rule 15 as adapted — A13).
 
 ## Step 5 — The tagged release's artefact carries `deploy/` with matching checksums on both RIDs: after the owner has tagged `v<x>`, the executor verifies read-only with `gh` that the `v<x>` CI run is green on `windows-latest` and `ubuntu-latest`, downloads both artefacts into the scratchpad, and asserts `SHA256SUMS` lists the four deploy files with hashes equal to the files', that `install.ps1` and the unit in the artefact byte-equal the repository's at the tag, and that the step summary shows `zyggy-node --version` = `<x>` — the precondition of the owner's half (AC-5 on the release; the "Download" row of the failure modes)
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - No file in either repository. Scratchpad only: `C:\Users\<user>\AppData\Local\Temp\claude\…\scratchpad\release-v<x>\{win-x64,linux-x64}\` (the executor names the full absolute path it used when reporting).
