@@ -1,6 +1,6 @@
 # Zyggy.Node
 
-The always-running service on every machine, Central included: the only process that writes to the bus on a machine's behalf. Published as the single-file binary `zyggy-node`; installed as a Windows service (laptops) or a systemd unit (Central) by deliverable 10. Deliverable 07 built it; this file says what it does today.
+The always-running service on every machine, Central included: the only process that writes to the bus on a machine's behalf. Published as the single-file binary `zyggy-node`; installed as the systemd unit `zyggy-node.service` on Central and as the per-user logon task `zyggy-node` on a laptop (deliverable 10; `deploy/` in the release, procedure in `zyggy-core/runbooks/install-node.md`). Deliverable 07 built it; this file says what it does today.
 
 ## What it does
 
@@ -16,7 +16,7 @@ One loop (founding spec §5 and §6), the body of which is `Zyggy.Core.Bus.BusLi
 8. **Health**: `GET http://localhost:4711/health` on loopback only (below).
 9. **Login probe**: `claude auth status` at start, hourly and after a run that failed with an authentication error, into the `claudeAuthOk` health field.
 
-Not here yet: discovery and the registry (14), `policy.yaml` (18), the DLP filter (19), the installer, unit files and service registration (10).
+Not here yet: discovery and the registry (14), `policy.yaml` (18), the DLP filter (19).
 
 ## Running it
 

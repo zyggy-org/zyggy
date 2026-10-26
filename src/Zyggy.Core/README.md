@@ -45,10 +45,10 @@ Tests: `tests/Zyggy.Core.Tests` (unit, mirrors these folders) and `tests/golden`
 |----------|--------|
 | Where is a secret on Windows? | In the Credential Manager of the Windows user who stored it: Control Panel → Credential Manager → Windows Credentials → `zyggy/<tenant>/<name>` (user name `zyggy`, the value as hex, persistence local machine). Another user — a service account — has another, empty vault. `zyggy secret list` shows store `credential-manager`. |
 | Where is a secret on Central? | First the unit's credentials directory (`$CREDENTIALS_DIRECTORY/zyggy.<tenant>.<name with / → .>`, e.g. `zyggy.acme.hmac.1`: systemd's `LoadCredential=` copies are root-owned, mode 0400 or 0440, read as stored without trimming), then the 0600 file under `<root>/<tenant>/<name>`. A hand-made directory must match those modes and be owned by the service user or root; a wrong mode or owner stops the node with `credentials-directory: <path> must be mode 0400, 0440 or 0600 (is <mode>)` or `… must be owned by <user> or root`; an empty file is "unavailable", not absent. Writes never go to the directory: `zyggy secret set` writes the file layer and says `note: the credentials directory still provides <name> to the node`. |
-| Secrets: store unavailable (Windows) — `credential-manager: 1312 …` | `ERROR_NO_SUCH_LOGON_SESSION`: the process has no interactive logon (a hosted CI agent, a service under LocalSystem). The service must run as the user who stored the secrets (deliverable 10's `install.ps1`); log on as that user once so the profile exists. If 1312 persists under the service, a DPAPI-protected file store is the named fallback — the next deliverable's work, not built here. |
+| Secrets: store unavailable (Windows) — `credential-manager: 1312 …` | `ERROR_NO_SUCH_LOGON_SESSION`: the process has no interactive logon (a hosted CI agent, a session-0 process). The node runs as the per-user logon task `zyggy-node` inside the owner's own logon session (deliverable 10's `install.ps1`), the same session `zyggy secret set` used, so a 1312 under the task is a finding to report, not an expected state. |
 | Secrets: corrupt value | `Credential '<target>' does not hold a hexadecimal value` (Windows) or `Secret file '<path>' does not contain … hexadecimal characters` (file layer): written by hand or by another tool. Re-enter it with `zyggy secret set <name> --hex`. The node reports it as `secret store unavailable: corrupt value: …` and refuses to start; the message names the target or the path, never the content. |
 | Secrets: file store on Windows | `secrets.store: file` on Windows logs `file secret store selected on Windows: spike and test use only; the product store is Credential Manager` once per process and works. Allowed for tests and spikes; retire it on a real machine per "First execution — retire the spike file store" below. |
-| Who can read a secret? | Neither OS gives a boundary stronger than the user account. Windows: the vault is per user; any process of that user can read it, so the model's file tools cannot (nothing is on disk) but a process the user runs can. Linux: the 0600 file is readable by the service user, hence by a `claude` child run as that user; the `Read` deny rule for the secrets directory in the settings template (deliverable 15) and the runner's removal of `CREDENTIALS_DIRECTORY` from the child's environment (06) are the mitigations. |
+| Who can read a secret? | Neither OS gives a boundary stronger than the user account. Windows: the vault is per user; any process of that user can read it, so the model's file tools cannot (nothing is on disk) but a process the user runs can. Linux: the 0600 file is readable by the service user, hence by a `claude` child run as that user; the `Read`/`Edit` deny rules for `~/.local/share/zyggy/secrets/**` in the user-scoped Claude Code settings on Central (set by hand in deliverable 10; 15's template ships them) and the runner's removal of `CREDENTIALS_DIRECTORY` from the child's environment (06) are the mitigations. |
 | How do I enter a value? | `zyggy secret set <name>` at a terminal types it blind after a prompt; piped input is read to the end; `--hex` decodes; `--generate [--show]` makes a 32-byte key and shows it once. `zyggy secret list` prints names, sizes, fingerprints, the store and the role (`signs` / `verify-only`), never a value. |
 | Where is a key? | `<root>/<tenant>/hmac/<n>`, e.g. `<root>/acme/hmac/1`. The default root is `%LOCALAPPDATA%\zyggy\secrets` on Windows and `$XDG_DATA_HOME/zyggy/secrets` or `~/.local/share/zyggy/secrets` on Linux; `FileSecretStoreOptions.RootDirectory` overrides it. |
 | What is in the file? | The key as hexadecimal text on one line; surrounding whitespace and either case are accepted. Keys shorter than 32 bytes are refused as `unknown_key`. |
@@ -60,7 +60,7 @@ Tests: `tests/Zyggy.Core.Tests` (unit, mirrors these folders) and `tests/golden`
 
 ## Troubleshooting — Bus
 
-The bus checkout is a plain git clone of the tenant's `zyggy-bus` repository; every change goes through the §5 write sequence (`pull --rebase` → change → one commit → `push`, retried after 1–3 s up to three times). Nothing here needs a reset. The entries below are the `bus-conflict.md` runbook draft until the runbook directory exists (deliverable 10). The founding-spec wording each entry implements is in parentheses (amendments A1–A5 of spec 04, pasted 2026-10-12).
+The bus checkout is a plain git clone of the tenant's `zyggy-bus` repository; every change goes through the §5 write sequence (`pull --rebase` → change → one commit → `push`, retried after 1–3 s up to three times). Nothing here needs a reset. The entries below are filed as `zyggy-core/runbooks/bus-conflict.md` (deliverable 10); the rows stay here as the product reference. The founding-spec wording each entry implements is in parentheses (amendments A1–A5 of spec 04, pasted 2026-10-12).
 
 | Situation | What you see | What to do |
 |-----------|--------------|------------|
@@ -74,7 +74,7 @@ The bus checkout is a plain git clone of the tenant's `zyggy-bus` repository; ev
 
 ## Troubleshooting — Submit / Status / Verify
 
-The three CLI verbs of deliverable 08 over the bus checkout; the Cli README has the user-facing rows, these are the runbook entries until the runbook directory exists (deliverable 10).
+The three CLI verbs of deliverable 08 over the bus checkout; the Cli README has the user-facing rows, these are the product reference; the operational procedures are the `zyggy-core/runbooks/` files (deliverable 10).
 
 | Situation | What you see | What to do |
 |-----------|--------------|------------|
@@ -100,15 +100,7 @@ The Node service (deliverable 07, `zyggy-node`) hosts the listener, the §6 disp
 
 ## Runbook draft: rotate-hmac.md
 
-Drafted by deliverable 09; deliverable 10 files it under `zyggy-core/runbooks/`. For one tenant; other tenants are unaffected. `<n>` is the current key number, `<n+1>` the new one. Retired keys stay verify-only (founding spec §4 as amended).
-
-1. On one machine of the tenant (Central): `zyggy secret set hmac/<n+1> --generate --show`. Copy the hex line to a channel you trust (never a repository, chat log or ticket); it is shown once.
-2. On every other machine of the tenant: `zyggy secret set hmac/<n+1> --hex` — paste at the hidden prompt. `zyggy secret list` on each machine: the fingerprints of `hmac/<n+1>` must match everywhere.
-3. On every machine: set `"signWith": "<tenant>/<n+1>"` in `node.json`; restart `zyggy-node`. From now on new files carry `key_id: <tenant>/<n+1>`; files signed with `<tenant>/<n>` keep verifying because the key is still present.
-4. After 7 days: nothing to remove. `hmac/<n>` stays in every store as a verify-only key (`zyggy secret list` shows it as `verify-only`) so that `zyggy verify`, the node's start-up re-verification of `jobs/claimed/` and the dream's reading of `archive/` keep accepting the older files.
-5. **Compromise variant** (a machine or a key leaked): do steps 1–3 immediately, then `zyggy secret remove hmac/<n>` on every machine. `zyggy verify` will report `unknown_key (<tenant>/<n>)` for every file signed before the rotation; that drift is expected and documented in the audit (08). Follow `revoke-machine.md` for the machine's PAT and deploy key.
-
-**First execution — retire the spike file store (O20)**, on every Windows machine of the tenant, before step 1: `Get-Content "$env:LOCALAPPDATA\zyggy\secrets\<tenant>\hmac\1" | zyggy secret set hmac/1 --hex` and `Get-Content "$env:LOCALAPPDATA\zyggy\secrets\<tenant>\github-pat" | zyggy secret set github-pat --hex` (the spike files hold hex); `zyggy secret list` shows store `credential-manager` for both; remove `"store": "file"` from `node.json` if present; delete `%LOCALAPPDATA%\zyggy\secrets`. Then run steps 1–4 so the keys that once sat in files are no longer the signing keys. Central keeps its 0600 file store — nothing to migrate there.
+Filed as `zyggy-core/runbooks/rotate-hmac.md` by deliverable 10 (steps 1–5, the first-execution paragraph and the Executions record live there). The rule: a retired key stays verify-only; removal is the compromise variant.
 
 ## Troubleshooting — Jobs
 
