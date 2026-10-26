@@ -1,3 +1,5 @@
+using System.Runtime.Versioning;
+
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -132,12 +134,15 @@ public sealed class SecretStoreRegistrationTests : IDisposable
     }
 
     [Fact(SkipUnless = nameof(IsLinux), Skip = "the credentials directory layer: Linux only")]
+    [SupportedOSPlatform("linux")]
     public async Task AddSecretStore_LinuxOs_UsesInjectedEnvironment()
     {
-        // Arrange
+        // Arrange: the production store checks the mode, as systemd's 0400 copy satisfies it
         string credentials = Path.Combine(_scratch, "credentials");
         Directory.CreateDirectory(credentials);
-        await File.WriteAllBytesAsync(Path.Combine(credentials, "zyggy.acme.hmac.1"), TestKeys.Secret1, TestContext.Current.CancellationToken);
+        string id = Path.Combine(credentials, "zyggy.acme.hmac.1");
+        await File.WriteAllBytesAsync(id, TestKeys.Secret1, TestContext.Current.CancellationToken);
+        File.SetUnixFileMode(id, UnixFileMode.UserRead);
         var environment = new Dictionary<string, string?>(StringComparer.Ordinal) { ["CREDENTIALS_DIRECTORY"] = credentials };
         using ServiceProvider provider = new ServiceCollection().AddSecretStore(Configuration(SecretStoreKind.Os), environment).BuildServiceProvider();
 
