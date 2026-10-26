@@ -7,7 +7,7 @@
 #
 # What it does, in order (each step prints one line; the first failure stops with the remedy):
 #   1. verifies SHA256SUMS for zyggy.exe and zyggy-node.exe when the file is next to them;
-#   2. stops the logon task if it runs (the upgrade path), copies both binaries to %LOCALAPPDATA%\Programs\Zyggy, adds that folder to the user PATH once;
+#   2. stops the logon task if it runs and waits for the node process to end (the upgrade path), copies both binaries to %LOCALAPPDATA%\Programs\Zyggy, adds that folder to the user PATH once;
 #   3. creates the parent of the bus checkout path;
 #   4. writes node.json from the template below when absent (else leaves it untouched);
 #   5. pre-flight: git, the checkout and its tenants\<tenant> folder, the signing key (zyggy secret list), claude.path;
@@ -48,6 +48,30 @@ function Get-TaskOrNull {
     return Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
 }
 
+# Stops the task and waits for the node itself: Task Scheduler ends the task's powershell.exe wrapper, and zyggy-node.exe can
+# survive it (seen 2026-10-26: an orphan kept port 4711 and blocked the upgrade's copy). Only this user's own node is touched.
+function Stop-Node([string] $why) {
+    Stop-ScheduledTask -TaskName $taskName
+    $node = @(Get-Process -Name zyggy-node -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $nodeExe })
+    if ($node.Count -gt 0) {
+        $node | Wait-Process -Timeout 30 -ErrorAction SilentlyContinue
+        $node | Where-Object { -not $_.HasExited } | Stop-Process -Force
+    }
+    Step "stopped $taskName $why (node process ended)"
+}
+
+# Runs a native command and returns its stdout and stderr as one string. Under $ErrorActionPreference = 'Stop' a merged stderr
+# line is a terminating NativeCommandError in PowerShell 5.1 (zyggy writes its info log there); the preference is lowered here only.
+function Invoke-Native([string] $exe, [string[]] $arguments) {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        return (& $exe @arguments 2>&1 | Out-String)
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+}
+
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if ($principal.IsInRole('Administrators')) {
     Step 'note: this shell is elevated; elevation was not needed and nothing here uses it'
@@ -59,8 +83,7 @@ if ($Uninstall) {
         Step "uninstall: no task named $taskName for $user; nothing to do"
     } else {
         if ($task.State -eq 'Running') {
-            Stop-ScheduledTask -TaskName $taskName
-            Step "uninstall: stopped $taskName"
+            Stop-Node 'for the uninstall'
         }
         Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
         Step "uninstall: unregistered $taskName"
@@ -94,8 +117,7 @@ foreach ($name in @('zyggy.exe', 'zyggy-node.exe')) {
 # 2. the binaries, per user
 $task = Get-TaskOrNull
 if ($null -ne $task -and $task.State -eq 'Running') {
-    Stop-ScheduledTask -TaskName $taskName
-    Step "stopped $taskName for the upgrade"
+    Stop-Node 'for the upgrade'
 }
 New-Item -ItemType Directory -Force -Path $programs | Out-Null
 Copy-Item (Join-Path $Source 'zyggy.exe') $zyggyExe -Force
@@ -147,7 +169,7 @@ if (Test-Path $NodeJson) {
 }
 
 # 5. pre-flight: the conditions the node would otherwise refuse with its own lines
-$gitVersion = (& git --version 2>&1 | Out-String).Trim()
+$gitVersion = (Invoke-Native 'git' @('--version')).Trim()
 if ($LASTEXITCODE -ne 0) {
     Fail 'git is not on the PATH' 'install Git for Windows (Git Credential Manager is its default helper), then run again'
 }
@@ -159,7 +181,7 @@ if (-not (Test-Path (Join-Path $BusLocalPath "tenants\$Tenant"))) {
     Fail "$BusLocalPath holds no tenants\$Tenant folder" 'clone the bus repository of this tenant (see install-node.md); the node never creates the tenant folder'
 }
 Step "checkout: $BusLocalPath holds tenants\$Tenant"
-$secretList = (& $zyggyExe secret list --config $NodeJson 2>&1 | Out-String)
+$secretList = Invoke-Native $zyggyExe @('secret', 'list', '--config', $NodeJson)
 if ($secretList -match 'file secret store selected on Windows') {
     Step 'secrets: the file store is selected (spike); rotate-hmac.md step 0 retires the spike file store'
 }
@@ -201,5 +223,5 @@ do {
     $state = (Get-ScheduledTask -TaskName $taskName).State
 } while ($state -ne 'Running' -and (Get-Date) -lt $deadline)
 Step "task: $state"
-$status = (& $zyggyExe status --config $NodeJson 2>&1 | Out-String) -split "`n" | Select-Object -First 1
+$status = (Invoke-Native $zyggyExe @('status', '--config', $NodeJson)) -split "`n" | Where-Object { $_ -notmatch '^\s*(info|warn|fail|crit):' -and $_.Trim() -ne '' } | Select-Object -First 1
 Step "status: $status"

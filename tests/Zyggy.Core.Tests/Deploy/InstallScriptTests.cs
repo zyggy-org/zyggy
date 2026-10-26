@@ -176,6 +176,39 @@ public sealed partial class InstallScriptTests
             || l.Contains("$BusLocalPath", StringComparison.Ordinal) || l.Contains("secrets", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void Script_EveryTaskStopWaitsForTheNodeProcessAndEndsASurvivor()
+    {
+        // Bugfix 2026-10-26: Stop-ScheduledTask ends the task's powershell.exe wrapper, not its zyggy-node.exe child; the upgrade's
+        // Copy-Item then collided with the orphan and `Stop-ScheduledTask` by hand left a node running. One helper owns the stop.
+        // Act
+        var stopLines = DeployAssets.Lines(Code).Where(l => l.Contains("Stop-ScheduledTask", StringComparison.Ordinal)).ToList();
+        string helper = Regex.Match(Code, @"function Stop-Node\b.*?\n\}", RegexOptions.Singleline).Value;
+
+        // Assert
+        helper.Should().NotBeEmpty("the stop lives in one helper");
+        stopLines.Should().ContainSingle("every stop goes through the helper");
+        helper.Should().Contain(stopLines[0]);
+        helper.Should().Contain("Get-Process -Name zyggy-node").And.Contain("$nodeExe").And.Contain("Wait-Process").And.Contain("Stop-Process -Force");
+        DeployAssets.Lines(Code).Count(l => l.TrimStart().StartsWith("Stop-Node", StringComparison.Ordinal)).Should().Be(2, "the uninstall branch and the upgrade both stop through it");
+    }
+
+    [Fact]
+    public void Script_NativeOutputIsReadThroughOneHelperThatNeverTurnsStderrIntoATerminatingError()
+    {
+        // Bugfix 2026-10-26: under $ErrorActionPreference = 'Stop', `& exe 2>&1` makes PowerShell 5.1 throw NativeCommandError on the
+        // first stderr line; zyggy writes its info log there, so step 7 died after the task had started. One helper reads native output.
+        // Act
+        string helper = Regex.Match(Code, @"function Invoke-Native\b.*?\n\}", RegexOptions.Singleline).Value;
+        var mergesOutsideHelper = DeployAssets.Lines(Code.Replace(helper, string.Empty)).Where(l => l.Contains("2>&1", StringComparison.Ordinal) || l.Contains("2>$null", StringComparison.Ordinal)).ToList();
+
+        // Assert
+        helper.Should().NotBeEmpty("native output is read in one place");
+        helper.Should().Contain("$ErrorActionPreference = 'Continue'").And.Contain("2>&1").And.Contain("Out-String");
+        mergesOutsideHelper.Should().BeEmpty("no other line merges or discards a native command's stderr");
+        DeployAssets.Lines(Code).Count(l => l.Contains("Invoke-Native ", StringComparison.Ordinal) && !l.TrimStart().StartsWith("function", StringComparison.Ordinal)).Should().Be(3, "git --version, secret list and status");
+    }
+
     [Theory]
     [InlineData("??")]
     [InlineData("?.")]
