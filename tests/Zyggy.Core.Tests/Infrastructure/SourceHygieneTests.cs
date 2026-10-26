@@ -732,6 +732,50 @@ public sealed partial class SourceHygieneTests
         source.Should().NotContain("Argument<byte");
     }
 
+    private static readonly string[] ProductReadmes = ["src/Zyggy.Cli/README.md", "src/Zyggy.Core/README.md", "src/Zyggy.Node/README.md"];
+
+    [Fact]
+    public void Deploy_AndReadmes_NoRealIdentifierNoAbsoluteHomeNoSkipPermissions()
+    {
+        // Arrange: spec 10 AC-6 — the shipped deploy assets and the three product READMEs are public: placeholders only
+        var files = Directory.EnumerateFiles(Path.Combine(RepoRoot(), "deploy"), "*", SearchOption.AllDirectories)
+            .Concat(ProductReadmes.Select(f => Path.Combine(RepoRoot(), f)))
+            .ToDictionary(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'), File.ReadAllText, StringComparer.Ordinal);
+
+        // Act
+        var offenders = files.Where(kv =>
+                kv.Value.Contains("geoffrey", StringComparison.OrdinalIgnoreCase)
+                || MailAddress().IsMatch(kv.Value)
+                || GuidLiteral().IsMatch(kv.Value)
+                || kv.Value.Contains("/home/", StringComparison.Ordinal)
+                || kv.Value.Contains("/srv/", StringComparison.Ordinal)
+                || kv.Value.Contains("C:\\Users\\", StringComparison.Ordinal)
+                || kv.Value.Contains("sharepoint.com", StringComparison.OrdinalIgnoreCase)
+                || kv.Value.Split('\n').Any(l => l.Contains("dangerously-skip-permissions", StringComparison.Ordinal) && !l.Contains("never", StringComparison.Ordinal)))
+            .Select(kv => kv.Key)
+            .ToList();
+
+        // Assert
+        files.Should().HaveCountGreaterThanOrEqualTo(7);
+        offenders.Should().BeEmpty();
+        SecretSweep.AssertAbsent(files.Values);
+    }
+
+    [Fact]
+    public void Readmes_NoWindowsServiceInstallWording()
+    {
+        // Act: spec 10 (owner 2026-10-26) — there is no Windows service; the laptops run a per-user logon task
+        var offenders = ProductReadmes
+            .SelectMany(f => File.ReadAllLines(Path.Combine(RepoRoot(), f)).Select((line, i) => (File: f, Line: i + 1, Text: line)))
+            .Where(l => l.Text.Contains("Windows service", StringComparison.Ordinal)
+                && (l.Text.Contains("install", StringComparison.OrdinalIgnoreCase) || l.Text.Contains("deliverable 10", StringComparison.Ordinal) || l.Text.Contains("register", StringComparison.OrdinalIgnoreCase)))
+            .Select(l => $"{l.File}:{l.Line}")
+            .ToList();
+
+        // Assert
+        offenders.Should().BeEmpty();
+    }
+
     [Fact]
     public void Src_NoOpenTelemetryNamespace()
     {

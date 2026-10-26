@@ -76,13 +76,22 @@ jobs:
       - name: Publish zyggy-node (${{ matrix.rid }})
         run: dotnet publish src/Zyggy.Node -c Release -r ${{ matrix.rid }} --self-contained -p:PublishSingleFile=true -o artifacts/${{ matrix.rid }}
 
-      # sha256sum format (<64 lowercase hex>  <name>\n, LF) so Central can check the pinned binaries (spec 28).
+      # Deliverable 10: the deploy assets (Central's unit and credentials drop-in example, the laptops' unelevated installer,
+      # their README) travel in the same artefact, under the same checksums (spec 10 AC-5).
+      - name: Copy deploy assets (${{ matrix.rid }})
+        shell: pwsh
+        run: Copy-Item -Recurse deploy artifacts/${{ matrix.rid }}/deploy
+
+      # sha256sum format (<64 lowercase hex>  <name>\n, LF) so Central can check the pinned binaries (spec 28) and, since
+      # deliverable 10, every file under deploy/ by its relative name with / separators.
       - name: Write SHA256SUMS
         shell: pwsh
         run: |
           $dir = 'artifacts/${{ matrix.rid }}'
           $ext = if ($IsWindows) { '.exe' } else { '' }
-          $lines = foreach ($name in @('${{ matrix.exe }}', "zyggy-node$ext")) {
+          $deploy = Get-ChildItem -Recurse -File "$dir/deploy" | ForEach-Object {
+            [IO.Path]::GetRelativePath((Resolve-Path $dir).Path, $_.FullName).Replace('\', '/') }
+          $lines = foreach ($name in @('${{ matrix.exe }}', "zyggy-node$ext") + @($deploy)) {
             $hash = (Get-FileHash -LiteralPath "$dir/$name" -Algorithm SHA256).Hash.ToLowerInvariant()
             "$hash  $name`n"
           }
@@ -103,6 +112,16 @@ jobs:
             "$name --version: $out ($mb MB)"
             "- ``$name`` $out — $mb MB" >> $env:GITHUB_STEP_SUMMARY
           }
+
+      # Deliverable 10: a syntax error in the shipped installer fails the job on both runners (the CI half of spec 10 AC-2);
+      # the script itself is never run here.
+      - name: Parse install.ps1
+        shell: pwsh
+        run: |
+          $tokens = $null; $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile('deploy/windows/install.ps1', [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+          "install.ps1 parsed: $($tokens.Count) tokens, 0 errors"
 
       - uses: actions/upload-artifact@v7
         with:
