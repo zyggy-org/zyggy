@@ -113,6 +113,23 @@ jobs:
             "- ``$name`` $out — $mb MB" >> $env:GITHUB_STEP_SUMMARY
           }
 
+      # A release tag prints the exact instance/zyggy.json line (runbook 14a step 3): the version without build metadata and
+      # the hash of the zyggy binary itself, never of an archive around it. Central refuses every brief, backfill and dream
+      # run until the instance pins it (2026-10-27/28: 0.9.0 shipped without the pin PR), so the line goes to the step
+      # summary and a notice on the run page; the version must equal the tag.
+      - name: Print the instance pin
+        if: github.ref_type == 'tag' && matrix.rid == 'linux-x64'
+        shell: pwsh
+        run: |
+          $binary = 'artifacts/linux-x64/zyggy'
+          $version = ("$(& $binary --version)" -split '\+')[0]
+          if ("v$version" -ne '${{ github.ref_name }}') { Write-Error "zyggy --version $version does not match tag ${{ github.ref_name }}"; exit 1 }
+          $hash = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
+          $pin = "{ ""version"": ""$version"", ""sha256"": { ""linux-x64"": ""$hash"" } }"
+          "::notice title=instance/zyggy.json::$pin"
+          "### Instance pin — open the instance repo's PR with this line as ``instance/zyggy.json``" >> $env:GITHUB_STEP_SUMMARY
+          '```json', $pin, '```' >> $env:GITHUB_STEP_SUMMARY
+
       # Deliverable 10: a syntax error in the shipped installer fails the job on both runners (the CI half of spec 10 AC-2);
       # the script itself is never run here.
       - name: Parse install.ps1
