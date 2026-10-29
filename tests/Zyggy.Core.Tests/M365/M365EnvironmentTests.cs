@@ -89,50 +89,6 @@ public sealed class M365EnvironmentTests : IDisposable
         error.Should().Be($"configuration error: ZYGGY_M365_PORT '{value}' is not a port in 1024..65535");
     }
 
-    [Fact]
-    public void PrincipalFromSettings_OnlyUnsetKeysAndOnlyThose()
-    {
-        // Arrange
-        var settings = Path.Combine(_root, "settings.local.json");
-        File.WriteAllText(settings, """
-            {"env":{"ZYGGY_MEMORY_ROOT":"/srv/memory","ZYGGY_TENANT":"geoffrey","ZYGGY_USER":"geoffrey","ZYGGY_TIMEZONE":"Europe/Brussels",
-                    "ZYGGY_HOOKS":"off","ZYGGY_NOW":"2026-01-01T00:00:00Z"}}
-            """);
-        var env = Env(("ZYGGY_TENANT", "acme"), ("ZYGGY_USER", ""));
-
-        // Act
-        var merged = M365Environment.PrincipalFromSettings(env, settings);
-
-        // Assert
-        merged["ZYGGY_MEMORY_ROOT"].Should().Be("/srv/memory");
-        merged["ZYGGY_TENANT"].Should().Be("acme");
-        merged["ZYGGY_USER"].Should().Be("geoffrey");
-        merged["ZYGGY_TIMEZONE"].Should().Be("Europe/Brussels");
-        merged.Should().NotContainKey("ZYGGY_HOOKS");
-        merged.Should().NotContainKey("ZYGGY_NOW");
-    }
-
-    [Theory]
-    [InlineData(null)]
-    [InlineData("{")]
-    [InlineData("""{"env":{"ZYGGY_TENANT":7}}""")]
-    [InlineData("""{"env":"x"}""")]
-    public void PrincipalFromSettings_NoFileBadJsonOrNonString_Unchanged(string? content)
-    {
-        // Arrange
-        var settings = Path.Combine(_root, "settings.local.json");
-        if (content is not null)
-        {
-            File.WriteAllText(settings, content);
-        }
-
-        // Act
-        var merged = M365Environment.PrincipalFromSettings(Env(("HOME", "/h")), settings);
-
-        // Assert
-        merged.Should().BeEquivalentTo(Env(("HOME", "/h")));
-    }
-
     private static Dictionary<string, string?> Env(params (string Key, string? Value)[] pairs)
     {
         var env = new Dictionary<string, string?>(StringComparer.Ordinal);

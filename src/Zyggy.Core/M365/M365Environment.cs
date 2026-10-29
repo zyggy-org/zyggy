@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace Zyggy.Core.M365;
@@ -21,8 +20,6 @@ internal sealed partial record M365Environment(
     M365Paths Paths)
 {
     private const int DefaultPort = 47365;
-
-    private static readonly string[] PrincipalKeys = ["ZYGGY_MEMORY_ROOT", "ZYGGY_TENANT", "ZYGGY_USER", "ZYGGY_TIMEZONE"];
 
     public static M365EnvironmentLoad Load(IReadOnlyDictionary<string, string?> environment)
     {
@@ -60,49 +57,6 @@ internal sealed partial record M365Environment(
 
         error = $"configuration error: ZYGGY_M365_PORT '{value}' is not a port in 1024..65535";
         return null;
-    }
-
-    /// <summary>
-    /// <c>zy_m365_principal_from_settings</c> (the backfills, started from a plain shell): each of <c>ZYGGY_MEMORY_ROOT</c>,
-    /// <c>ZYGGY_TENANT</c>, <c>ZYGGY_USER</c>, <c>ZYGGY_TIMEZONE</c> that is unset or empty is taken from the settings file's
-    /// <c>env</c> object when it holds a non-empty string there. A set variable wins; no other key is read; any problem changes nothing.
-    /// </summary>
-    public static Dictionary<string, string?> PrincipalFromSettings(IReadOnlyDictionary<string, string?> environment, string settingsPath)
-    {
-        ArgumentNullException.ThrowIfNull(environment);
-        var merged = new Dictionary<string, string?>(environment, StringComparer.Ordinal);
-        try
-        {
-            if (!File.Exists(settingsPath))
-            {
-                return merged;
-            }
-
-            using var document = JsonDocument.Parse(File.ReadAllText(settingsPath));
-            if (document.RootElement.ValueKind != JsonValueKind.Object
-                || !document.RootElement.TryGetProperty("env", out var env)
-                || env.ValueKind != JsonValueKind.Object)
-            {
-                return merged;
-            }
-
-            foreach (var key in PrincipalKeys)
-            {
-                if (Value(environment, key) is null
-                    && env.TryGetProperty(key, out var value)
-                    && value.ValueKind == JsonValueKind.String
-                    && value.GetString() is { Length: > 0 } text)
-                {
-                    merged[key] = text;
-                }
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
-        {
-            // As the shell: no readable file or no JSON changes nothing.
-        }
-
-        return merged;
     }
 
     private static string? Value(IReadOnlyDictionary<string, string?> environment, string key) =>

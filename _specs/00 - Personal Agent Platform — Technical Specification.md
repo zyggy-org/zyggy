@@ -59,13 +59,13 @@ The user talks only to Central; Central talks to Nodes only through the bus; Nod
 
 ## 3. Components
 
-Six deliverables. Four are .NET binaries; two are Claude Code configuration (Markdown plus thin launchers that call `zyggy`).
+Six deliverables. Three are .NET binaries (`AgentBus.Hub` is served by the CLI binary, deliverable 11); two are Claude Code configuration (Markdown plus thin launchers that call `zyggy`).
 
 | Component | Kind | Where | Responsibility |
 | --- | --- | --- | --- |
 | `AgentBus.Node` | .NET Worker Service | every machine incl. Central | Poll GitHub, pull, claim, execute, report, push. Publish registry. |
 | `AgentBus.Cli` (`agentbus`) | .NET console, single-file | every machine | `submit`, `status`, `report`, `context`, `discover`, `verify`, `dream`, `dream request`, `dream status`, `memory digest`, `memory archive add | list | remove`; `--version`. Called from Claude Code skills. |
-| `AgentBus.Hub` | .NET MCP server (stdio) | Central | `get_context`, `remember`, `list_nodes`, `submit_job`, `job_status`. |
+| `AgentBus.Hub` | .NET MCP server (stdio), served as the CLI verb `agentbus hub` from `AgentBus.Core/Hub/` (amended 28 October 2026, deliverable 11) | Central | `get_context`, `remember`, `list_nodes`, `submit_job`, `job_status`. |
 | `AgentBus.Core` | .NET class library | shared | Envelope model, signing, git wrapper, GitHub poller, job runner, registry model. |
 | `agent-core` | git repo of Claude Code config | every machine | `CLAUDE.md` templates, `.claude/skills/*`, `.claude/agents/*`, `.claude/hooks/*`, `PROTOCOL.md`. |
 | `agent-bus` | private GitHub repo | GitHub | The bus itself: `tenants/<org>/` holding envelopes, registry, archive. Content only, no code. |
@@ -87,7 +87,7 @@ Six deliverables. Four are .NET binaries; two are Claude Code configuration (Mar
 | --- | --- | --- |
 | `bus` | Central, Nodes | Wraps `agentbus submit/status/report`. Documents envelope fields and the DLP rule. |
 | `dream` | Central | Consolidate the tenant/user's `inbox/` and daily notes (`memory/<tenant>/<user>/…`) into durable files, condense, commit. Owner-requested trigger: `zyggy dream request` / `status`. The run itself — lock, batching, the model call through `IModelRunner`, checks, rollup, commit and push — is `zyggy dream`; the model only proposes structured edits. |
-| `remember` | Central, Nodes | Append a `[stated]` fact to `memory/<tenant>/<user>/inbox/` (Central) or emit a `context` envelope (Nodes). |
+| `remember` | Central, Nodes | Append a `[stated]` fact to `memory/<tenant>/<user>/inbox/` (Central, `agentbus memory remember`) or emit a signed `context` envelope to Central (Nodes, `agentbus context`; the laptop variant of the skill lives under `agent-core/node/`). |
 | `archive` | Central | Keep a long text, a file or an image the owner hands over in the conversation as a project archive item (`zyggy memory archive add`), after showing him name, description and project; list and remove on request. Never from an unattended run, never content read from mail, drives, the web or a clone. |
 | `delegate` | Central | Pick machine/project/agent from the tenant's registry, build a job envelope, submit. |
 | `discover` | Nodes | Scan dev roots, write `tenants/<org>/registry/<machine>.yaml`, commit if changed. |
@@ -98,7 +98,8 @@ Six deliverables. Four are .NET binaries; two are Claude Code configuration (Mar
 **Hooks (`agent-core/.claude/hooks/`)**
 
 - `SessionStart` (Central): inject the §7 memory digest for the configured tenant/user in three sections (`identity`, `index`, `daily`), each under the runtime's 10,000-character hook-output cap (amended 30 September 2026), emitted by `zyggy memory digest <section>` (thin hook launcher).
-- `Stop` (all): on Central, append one `[observed]` line per turn to `memory/<tenant>/<user>/daily/<date>.md` (mechanical: first line of the assistant's last message, secret patterns refused, daily cap; amended 30 September 2026 — `Stop` fires per turn and a hook must not call the model); on Nodes, emit a `context` envelope so hand-run sessions still feed memory.
+- `Stop` (all): on Central, append one `[observed]` line per turn to `memory/<tenant>/<user>/daily/<date>.md` (mechanical: first line of the assistant's last message, secret patterns refused, daily cap; amended 30 September 2026 — `Stop` fires per turn and a hook must not call the model); on Nodes, append the same line to a per-session spool under `<nodeDir>/context/<tenant>/` (`agentbus context --stop-hook`; never the bus, never memory).
+- `SessionEnd` (Nodes): ship the session's spool as one signed `context` envelope, one fact per line, with `agentbus context --flush` (also ships spools older than an hour left by a crashed session), so hand-run sessions still feed memory with one commit per session (amended 28 October 2026, deliverable 12).
 - `PreToolUse` (Nodes): block any tool call outside the job's `allowed_tools`; block writes outside the project worktree.
 
 ## 4. Bus protocol
@@ -129,7 +130,7 @@ All paths in the rest of this section are relative to `tenants/<org>/`. In code 
 
 **Write rules**
 
-- A sender writes only into `nodes/<target>/jobs/` (and `nodes/<target>/context/` when the target is Central), and only inside its own tenant's prefix.
+- A sender writes only into `nodes/<target>/jobs/`, and only inside its own tenant's prefix. A `context` envelope is addressed to Central (`to: central`) but written into the sender's own `nodes/<sender>/context/` folder, so that every `reports/` and `context/` file is written by the machine whose folder holds it (amended 28 October 2026, deliverable 12).
 - A machine writes its own `reports/`, `context/`, `registry/<machine>.yaml`, and moves files between its own `jobs/`, `jobs/claimed/`, `jobs/rejected/`.
 - Only Central writes `archive/`.
 - No machine reads or writes outside the `tenants/<org>/` prefix of the tenant recorded in its `node.json`; a file found under another tenant's prefix is ignored, never processed.
@@ -277,7 +278,7 @@ A node executes a job by running `claude -p` in the target project with a prompt
 **Invocation**
 
 ```markdown
-# working directory = <run dir>, set on the process (no --cwd); the rendered prompt is written to stdin
+# working directory = <run dir>, set on the process (no --cwd); the rendered prompt is written to stdin; ZYGGY_HOOKS=off in the child's environment (an unattended run: the memory and context writers do nothing, the enforcement hooks still run)
 claude -p \
   --output-format stream-json --verbose \
   --permission-mode auto \
@@ -370,7 +371,7 @@ The `SessionStart` hook injects, as three separately capped sections (6,000 / 6,
 
 **Dream pass (`dream` skill, nightly 03:00 Europe/Brussels and on demand, one run per tenant/user)**
 
-1. `agentbus dream ingest`: fetch the bus; copy new `tenants/<org>/nodes/central/reports/` and `context/` files into that tenant/user's `inbox/` as one file each; move processed bus files to `tenants/<org>/archive/`. A file whose `tenant` field differs from the subtree it sits in is never ingested.
+1. `agentbus dream ingest`: fetch the bus; copy the new `reports/` and `context/` files addressed to Central (`to: central`) from every `tenants/<org>/nodes/<machine>/` of the tenant into that tenant/user's `inbox/` as one file each; move processed bus files to `tenants/<org>/archive/`. A file whose `tenant` field differs from the subtree it sits in is never ingested (amended 28 October 2026, deliverable 12; the sender writes its own folder, §4).
 2. Read unconsumed lines of `inbox/` and `daily/` (ledger), in capped batches.
 3. For each fact: decide side and category; create a category when none fits; decide destination file by subject; merge into an existing line if it restates or supersedes one; otherwise append. Keep provenance tags. Never upgrade a single mention into a generalisation.
 4. Rewrite any file over 300 lines: merge duplicates, drop moving state that has expired (a finished job, a past deadline), keep decisions and constraints. Update `description` when it no longer matches.
@@ -381,19 +382,19 @@ The `SessionStart` hook injects, as three separately capped sections (6,000 / 6,
 **Rules that constrain the dream pass**
 
 - Only `[stated]` and `[observed]` tags; no inferred personality or health lines.
-- Facts from nodes are `[observed]` until the user confirms them in a session.
+- Facts a node derives (reports, hook notes) are `[observed]` until the user confirms them in a session; a fact the owner states in a laptop session through the `remember` skill travels as `[stated]`, like one stated on Central (amended 28 October 2026, deliverable 12).
 - Never store secrets, credentials, mail bodies or **harvested** file contents; the `remember` skill refuses lines matching secret patterns (keys, tokens, IBANs, card numbers). A file the owner explicitly archives in a conversation is the one exception: it is stored under `archive/<project>/` with a sidecar after closed checks (allowed type by content, size caps, secret-pattern scan on every line of a text item, no symbolic links, never from a credential or state location), indexed by one `[stated]` line the dream files into the project's file; contact details may appear inside an archived document but never in its name, description, sidecar or index line; the dream never opens or rewrites archived files. Office files with macros or other active content, older binary Office files, password-protected and OpenDocument files are refused; the content of an archived Office document is not scanned (as a PDF's is not).
 - Work facts stay in `memory/<tenant>/<user>/work/` on the work node. Only lines the work node explicitly marks `share: true` in a `context` envelope may reach Central, and only as summaries.
 - `[stated]` facts are never dropped; contact details are never stored; every proposal passes the automatic checks before it is written.
 
 **Hub MCP (`AgentBus.Hub`) surface**
 
-Every Hub call runs under a *principal* `(tenant, user)`. The principal is resolved from the transport, never from the request: the Hub runs over stdio only in v1, and the principal is the one configured for the host machine (`node.json` `tenant` and `user`, §10). No tool accepts `tenant` or `user` as an input field, and a request carrying one is rejected. All paths a tool touches are derived from the principal. An HTTP transport whose principal comes from a bearer token is a §14 item.
+Every Hub call runs under a *principal* `(tenant, user)`. The principal is resolved from the transport, never from the request: the Hub runs over stdio only in v1, and the principal is the one the `ZYGGY_MEMORY_ROOT`, `ZYGGY_TENANT`, `ZYGGY_USER` and `ZYGGY_TIMEZONE` variables name in the Hub process's environment — the same convention as every memory verb, installed from the instance's `.claude/settings.local.json` (§10); a variable that is unset is read from that file's `env` object, and the Hub refuses to start when the principal or its memory directory is still missing (amended 28 October 2026, deliverable 11). No tool accepts `tenant` or `user` as an input field, and a request carrying one is rejected. All paths a tool touches are derived from the principal. An HTTP transport whose principal comes from a bearer token is a §14 item.
 
 | Tool | Input | Output | Notes |
 | --- | --- | --- | --- |
-| `get_context` | `topic` (string), `max_tokens` | matching file bodies and daily lines | ranked by alias/description match, then recency; searches only the principal's `memory/<tenant>/<user>/` |
-| `remember` | `fact`, `scope`, `tag` | ok | writes to the principal's `inbox/`; refuses secret patterns |
+| `get_context` | `topic` (string), `max_tokens` (default 2,000, 100–8,000) | matching file bodies and daily lines | ranked by match on slug, `name`, `aliases` and `description` (exact, then all terms, then any term), then `updated` descending; searches only the principal's `<side>/<category>/<slug>.md` files and the last 30 `daily/YYYY-MM-DD.md` files (daily lines at most 20 % of the budget); `inbox/`, `auto/`, `archive/`, the monthly roll-ups and the identity files are never returned; the budget is `max_tokens × 4` bytes, cut at a line boundary with a marker (amended 28 October 2026) |
+| `remember` | `fact`, `scope` | `remembered: <path>` and the line | one `[stated]` line in the principal's `inbox/remember-<date>.md`, through the same writer as `agentbus memory remember`; refuses secret patterns and stores nothing under `ZYGGY_HOOKS=off` (amended 28 October 2026) |
 | `list_nodes` | – | registry summary | from the principal's tenant `registry/*.yaml` |
 | `submit_job` | envelope fields (except `tenant`, `key_id`, `sig`) | job id | stamps `tenant` from the principal, signs with that tenant's key, pushes |
 | `job_status` | `id` | state, report if any | reads the principal's tenant subtree only |
@@ -472,8 +473,8 @@ AgentBus.sln
       Memory/               MemoryPaths (per Principal), MemoryStore (read-only helpers for Hub), ContextRanker
       Secrets/              ISecretStore (keys namespaced by tenant) + Windows (CredentialManager), Linux (systemd credentials directory, then file 0600); libsecret is a §14 item
     AgentBus.Node/          Worker Service: PollLoop (BackgroundService), JobDispatcher, DiscoveryTimer, Health endpoint (localhost:4711)
-    AgentBus.Cli/           System.CommandLine: submit | status | report | context | discover | verify | run | hub --proxy | dream | dream request | dream status | memory digest | memory archive add | list | remove; --version
-    AgentBus.Hub/           MCP server (ModelContextProtocol SDK): stdio transport (HTTP is a §14 item)
+    AgentBus.Cli/           System.CommandLine: submit | status | report | context | discover | verify | run | hub | hub --proxy | dream | dream request | dream status | memory digest | memory remember | memory archive add | list | remove; --version
+    AgentBus.Hub/           empty host kept in the solution; the MCP server (ModelContextProtocol SDK, stdio) lives under AgentBus.Core/Hub/ and runs as agentbus hub (HTTP is a §14 item)
   tests/
     AgentBus.Core.Tests/    xUnit: parser, signer, state machine, poller (mocked HttpMessageHandler), runner (fake claude)
     AgentBus.Integration/   end-to-end against a local bare git repo and a fake claude script
@@ -507,7 +508,7 @@ AgentBus.sln
 - The poller is a pure state machine (`PollState` record: etag, interval, backoffUntil) with the HTTP call injected; tests drive it with a fake clock.
 - `JobRunner` never throws to the loop: every `failed` or `timeout` report carries a `reason` code from a closed enum (`unknown_project`, `unknown_agent`, `locked`, `timeout`, `dlp_filter`, `claude_error`, `git_error`, `schema_unsupported`, `budget_exceeded`). Tenant mismatches, signature failures and mis-addressed envelopes are rejections at parse time (§4) and never reach the runner; a `rejected` report carries one of the §4 rejection reasons instead. A `rejected` report written by the runner itself carries `unknown_project` or `unknown_agent` (§6 pre-flight): the job never ran.
 - No static mutable state; everything through DI. Five seams are interfaces from the first commit, each with one implementation in v1: \`IBusProvider\` (GitHub), \`IModelRunner\` (Claude Code CLI), \`ISecretStore\` (per OS), \`INotifier\` (Telegram), \`IPolicySource\` (the machine's \`node.json\`; a signed \`policy.yaml\` on the bus is a §14 item). No code outside the implementation may reference GitHub, \`claude\`, Telegram or a secret store directly.
-- Publish: `dotnet publish -c Release -r win-x64 --self-contained -p:PublishSingleFile=true` and `linux-x64`; artifacts named `agentbus-node`, `agentbus`, `agentbus-hub`.
+- Publish: `dotnet publish -c Release -r win-x64 --self-contained -p:PublishSingleFile=true` and `linux-x64`; artifacts named `agentbus-node`, `agentbus` (the Hub ships inside `agentbus`; amended 28 October 2026).
 
 **Versioning and compatibility**
 
@@ -521,7 +522,6 @@ Each machine has one `node.json`; secrets are never in it.
 ```markdown
 {
   "tenant": "geoffrey",                  // the <org> this machine belongs to; required, no default
-  "user": "geoffrey",                    // principal for the local Hub / hub --proxy (§7); required on central
   "machine": "home-laptop",
   "role": "node",                        // node | central
   "signWith": "geoffrey/1",                // the key id this machine signs with (§4 rotation, §11 rotate-hmac.md)
@@ -539,7 +539,7 @@ Each machine has one `node.json`; secrets are never in it.
 }
 ```
 
-The node refuses to start when `tenant` is missing or when the bus checkout has no `tenants/<tenant>/` directory; it never falls back to a default tenant. Central additionally requires `user` and the memory directory `memory/<tenant>/<user>/`. The probe verbs of deliverable 04 read `tenant`, `machine`, `signWith`, `bus`, `poll` and `secrets`; every other key belongs to the Node service (07). A key that names a secret (`pat`, `token`, `hmac`, `secret`, `password`) is refused: secrets are never in `node.json`.
+The node refuses to start when `tenant` is missing or when the bus checkout has no `tenants/<tenant>/` directory; it never falls back to a default tenant. On Central the Hub and the memory verbs require the principal from the environment (§7) and the memory directory `memory/<tenant>/<user>/`; `node.json` names no user. The probe verbs of deliverable 04 read `tenant`, `machine`, `signWith`, `bus`, `poll` and `secrets`; every other key belongs to the Node service (07). A key that names a secret (`pat`, `token`, `hmac`, `secret`, `password`) is refused: secrets are never in `node.json`.
 
 **Central (Linux VM or container)**
 
@@ -660,7 +660,7 @@ All five open questions are answered as of 27 September 2026; the decisions tabl
 | MVP scope: a personal assistant for one user; productisation is kept open (§14) but not built | Market review of 29 September 2026: no identified paying customer, the vendor is absorbing the always-on agent layer, and subscription-backed execution cannot be sold. Every item that needs code, tests or infrastructure only for a second tenant or a customer moves to §14; everything already built or free of cost stays | Decided (29 September 2026) |
 | Tenancy shape from P0: `tenant` on every envelope, `tenants/<org>/` prefix on every bus path, `memory/<tenant>/<user>/` on every memory path, tenant-namespaced secrets and `key_id`; v1 = one tenant `geoffrey`, one user `geoffrey`; no default-tenant constant in code | §14 productisation without a rewrite; the cost of the prefix is near zero on day one and prohibitive later | Decided (28 September 2026); narrowed 29 September 2026: the shape stays, but no gate runs with a second tenant and no code exists only for one |
 | One bus repository per tenant; the repository is the tenant isolation boundary, the `tenants/<org>/` prefix is uniformity plus defence in depth; a repository with several tenant directories is a protocol violation | Git hosts authorise per repository, not per path; HMAC gives authenticity only, so a shared repository would expose every tenant's envelopes and ledger to every other tenant's machines | Decided as a rule (29 September 2026, supersedes the shared-repository option of 28 September); enforcement in `verify` and node start-up deferred to §14 |
-| Hub principal `(tenant, user)` is resolved from the transport, never from a request field | A caller must not be able to name another tenant | Decided (28 September 2026); v1 is stdio only with the principal from `node.json`; the HTTP transport with a bearer-token principal is deferred to §14 (29 September 2026) |
+| Hub principal `(tenant, user)` is resolved from the transport, never from a request field | A caller must not be able to name another tenant | Decided (28 September 2026); v1 is stdio only with the principal from the Hub process's `ZYGGY_*` environment (28 October 2026, deliverable 11 — `node.json` carries no user); the HTTP transport with a bearer-token principal is deferred to §14 (29 September 2026) |
 | WebSocket / MQTT signalling for sub-second latency | Only if 10 s polling proves insufficient after P3; P0 records the measured round-trip latency of git polling and proposes a target for ratification | Deferred |
 | Inbound chat channels (WhatsApp, Slack) | After P5, via a thin bridge that submits jobs. Telegram is decided (30 September 2026): the official Claude Code channel plugin on Central's interactive session, owner-only; WhatsApp has no official route for a personal account and stays deferred | Deferred (Telegram decided) |
 
@@ -672,7 +672,7 @@ The platform is built for one user. It must not need a rewrite to serve a second
 
 - Identifiers: `tenant` on every envelope, `key_id` = `<tenant>/<n>`, `tenants/<org>/` on every bus path (`BusPaths`), `memory/<tenant>/<user>/` on every memory path (`MemoryPaths`), secret names `agentbus/<tenant>/…`, no default-tenant constant in `src/`, `tenant` on log lines and in health (§11).
 - Checks already built in deliverable 03: a receiver rejects an envelope whose `tenant` is not its own or whose `key_id` belongs to another tenant (§4).
-- The Hub principal read once from `node.json` and passed down; no tool accepts `tenant` or `user` as input (§7).
+- The Hub principal read once from the process environment at start and passed down; no tool accepts `tenant` or `user` as input (§7).
 - The five seams (§9): `IBusProvider`, `IModelRunner`, `ISecretStore`, `INotifier`, `IPolicySource`, one implementation each.
 - Rules that need no code: one bus repository per tenant (§4), credentials scoped to one repository (§5), `add-tenant.md` (§11).
 

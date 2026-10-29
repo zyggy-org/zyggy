@@ -32,9 +32,10 @@ internal static class CliApplication
         var m365 = new Command("m365", "Microsoft 365 on Central: state, facts and the connector's tools (zyggy m365 <verb> ...).");
         var brief = new Command("brief", "The morning brief, shown when the owner asks for it (zyggy brief show [--full] [<date>]); zyggy brief request asks the unit for a run now.");
         var linkedin = new Command("linkedin", "LinkedIn on Central: connect (auth start|finish|status) and the publishing server (mcp-server).");
+        var hub = new Command("hub", "The memory MCP server over stdio (get_context, remember); started by Claude Code from .mcp.json, never by hand.");
         var root = new RootCommand("Zyggy: the personal agent platform command line.")
         {
-            memory, DreamCommand.Create(environment), m365, brief, linkedin, ProbeCommand.Create(environment, configure), SecretCommand.Create(environment, io, configure),
+            memory, DreamCommand.Create(environment), m365, brief, linkedin, hub, ProbeCommand.Create(environment, configure), SecretCommand.Create(environment, io, configure),
             SubmitCommand.Create(environment, io, configure), StatusCommand.Create(environment, io, configure), VerifyCommand.Create(environment, io, configure),
         };
         var parseResult = root.Parse(args);

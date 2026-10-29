@@ -7,13 +7,12 @@ namespace Zyggy.Integration.Infrastructure;
 
 /// <summary>
 /// A hand-written newline-delimited JSON-RPC 2.0 client for an MCP server over stdio (plan 36 Step 8), independent of the SDK so the
-/// oracle is not the library under test. It starts the given <c>zyggy</c> (the built one by default) with <c>linkedin mcp-server</c>
-/// and an isolated environment, writes one line per message, and keeps every stdout line for the "only protocol lines" check.
+/// oracle is not the library under test. It starts the given <c>zyggy</c> (the built one by default) with the server's arguments
+/// (<c>linkedin mcp-server</c>, <c>hub</c>) and an isolated environment, writes one line per message, and keeps every stdout line for the "only protocol lines" check.
 /// </summary>
 internal sealed class McpStdioClient : IAsyncDisposable
 {
     private static readonly TimeSpan Wait = TimeSpan.FromSeconds(30);
-    private static readonly string[] ServerArgs = ["linkedin", "mcp-server"];
 
     private readonly Process _process;
     private readonly Channel<string> _lines = Channel.CreateUnbounded<string>();
@@ -40,7 +39,7 @@ internal sealed class McpStdioClient : IAsyncDisposable
 
     public List<string> StdoutLines { get; } = [];
 
-    public static McpStdioClient Start(IReadOnlyDictionary<string, string?> env, string workingDirectory, string? executable = null, params string[] extraArgs)
+    public static McpStdioClient Start(IReadOnlyDictionary<string, string?> env, string workingDirectory, IReadOnlyList<string> serverArgs, string? executable = null)
     {
         var info = new ProcessStartInfo(executable ?? ZyggyCli.ExecutablePath)
         {
@@ -53,7 +52,7 @@ internal sealed class McpStdioClient : IAsyncDisposable
             StandardErrorEncoding = Encoding.UTF8,
             WorkingDirectory = workingDirectory,
         };
-        foreach (var arg in ServerArgs.Concat(extraArgs))
+        foreach (var arg in serverArgs)
         {
             info.ArgumentList.Add(arg);
         }

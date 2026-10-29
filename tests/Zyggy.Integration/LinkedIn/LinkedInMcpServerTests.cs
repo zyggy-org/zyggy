@@ -225,5 +225,5 @@ public sealed class LinkedInMcpServerTests : IAsyncLifetime
         run.Stdout.Should().BeEmpty();
     }
 
-    private McpStdioClient Start() => McpStdioClient.Start(_fixture.Env(_stub.Port), _fixture.Root);
+    private McpStdioClient Start() => McpStdioClient.Start(_fixture.Env(_stub.Port), _fixture.Root, ["linkedin", "mcp-server"]);
 }
