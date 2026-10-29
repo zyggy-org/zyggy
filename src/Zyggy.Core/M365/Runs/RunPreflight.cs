@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using Microsoft.Extensions.Options;
 
 using Zyggy.Core.M365.Tools;
+using Zyggy.Core.Memory;
 using Zyggy.Core.Models;
 using Zyggy.Core.Verbs;
 
@@ -25,7 +26,7 @@ internal static class RunPreflight
         var effective = context;
         if (principalFromSettings && M365Environment.Load(context.Environment).Environment is { } instance)
         {
-            effective = context with { Environment = M365Environment.PrincipalFromSettings(context.Environment, instance.SettingsPath) };
+            effective = context with { Environment = PrincipalFromSettings.Apply(context.Environment, instance.SettingsPath) };
         }
 
         var (session, exit, error) = M365Session.Load(effective, baseOnly: false);

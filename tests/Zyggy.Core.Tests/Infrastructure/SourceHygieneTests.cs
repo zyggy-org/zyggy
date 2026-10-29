@@ -74,10 +74,10 @@ public sealed partial class SourceHygieneTests
     }
 
     [Fact]
-    public void Src_McpSdk_OnlyUnderLinkedInMcp()
+    public void Src_McpSdk_OnlyUnderMcpServers()
     {
-        // Arrange: spec 36 Assumption 8 — the SDK is confined to the one server
-        const string Allowed = "src/Zyggy.Core/LinkedIn/Mcp/";
+        // Arrange: spec 36 Assumption 8 and plan 11 A10 — the SDK is confined to the two servers
+        string[] allowed = ["src/Zyggy.Core/LinkedIn/Mcp/", "src/Zyggy.Core/Hub/"];
 
         // Act
         var holders = SourceFiles().Where(f => McpSdk().IsMatch(File.ReadAllText(f)))
@@ -85,7 +85,55 @@ public sealed partial class SourceHygieneTests
             .ToList();
 
         // Assert
-        holders.Should().NotBeEmpty().And.OnlyContain(f => f.StartsWith(Allowed, StringComparison.Ordinal));
+        holders.Should().NotBeEmpty().And.OnlyContain(f => allowed.Any(prefix => f.StartsWith(prefix, StringComparison.Ordinal)));
+        holders.Should().Contain(f => f.StartsWith(allowed[1], StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Src_HubClasses_NoConsoleClockOrStaticState()
+    {
+        // Arrange: spec 11 — the Hub reads no clock of its own and holds no static mutable state; only the verb opens the console streams
+        var texts = HubFiles().ToDictionary(f => f, f => CommentLine().Replace(File.ReadAllText(Path.Combine(RepoRoot(), f)), string.Empty), StringComparer.Ordinal);
+
+        // Act
+        var offenders = texts
+            .Where(kv => (kv.Key.EndsWith("/HubVerb.cs", StringComparison.Ordinal)
+                    ? ConsoleOtherThanStandardStreams().IsMatch(kv.Value)
+                    : kv.Value.Contains("Console.", StringComparison.Ordinal))
+                || kv.Value.Contains("DateTime.UtcNow", StringComparison.Ordinal)
+                || kv.Value.Contains("DateTimeOffset.UtcNow", StringComparison.Ordinal)
+                || kv.Value.Contains("TimeProvider.System", StringComparison.Ordinal)
+                || StaticMutableField().IsMatch(kv.Value))
+            .Select(kv => kv.Key)
+            .ToList();
+
+        // Assert
+        texts.Should().HaveCountGreaterThanOrEqualTo(4);
+        offenders.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Src_RawVerbs_DispatchHub()
+    {
+        // Arrange: spec 11 D5 — the Hub is the zyggy hub verb, run with its own argument check, never parsed by System.CommandLine
+        var text = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Zyggy.Cli", "RawVerbs.cs"));
+
+        // Assert
+        text.Should().Contain("""["hub", .. var hub]""").And.Contain("new HubVerb(");
+    }
+
+    [Fact]
+    public void Src_Hub_NoPathBuilding()
+    {
+        // Arrange: spec 11 — MemoryStore (in Memory/) is the Hub's one reader and RememberService its one writer; the Hub builds no path
+        var texts = HubFiles().ToDictionary(f => f, f => CommentLine().Replace(File.ReadAllText(Path.Combine(RepoRoot(), f)), string.Empty), StringComparer.Ordinal);
+
+        // Act
+        var offenders = texts.Where(kv => FileSystemAccess().IsMatch(kv.Value)).Select(kv => kv.Key).ToList();
+
+        // Assert
+        texts.Should().NotBeEmpty();
+        offenders.Should().BeEmpty();
     }
 
     [Fact]
@@ -732,7 +780,49 @@ public sealed partial class SourceHygieneTests
         source.Should().NotContain("Argument<byte");
     }
 
-    private static readonly string[] ProductReadmes = ["src/Zyggy.Cli/README.md", "src/Zyggy.Core/README.md", "src/Zyggy.Node/README.md"];
+    private static readonly string[] ProductReadmes = ["src/Zyggy.Cli/README.md", "src/Zyggy.Core/README.md", "src/Zyggy.Node/README.md", "src/Zyggy.Hub/README.md"];
+
+    [Fact]
+    public void Readmes_HubDocumented()
+    {
+        // Arrange: spec 11 Step 7 — the verb row, the two runbook entries, the Hub README served by `zyggy hub`, the Core folder row
+        static string Read(string relative) => File.ReadAllText(Path.Combine(RepoRoot(), relative));
+        var cli = Read("src/Zyggy.Cli/README.md");
+        var hub = Read("src/Zyggy.Hub/README.md");
+        var core = Read("src/Zyggy.Core/README.md");
+
+        // Act + Assert
+        cli.Should().Contain("Hub fails to start").And.Contain("Hub refuses a principal").And.Contain("| `hub`");
+        hub.Should().Contain("zyggy hub").And.NotContain("zyggy-hub");
+        core.Should().Contain("Hub/");
+    }
+
+    [Fact]
+    public void HubTestsAndFixtures_NonDefaultPrincipalOnly()
+    {
+        // Arrange: spec 11 AC-25 — the Hub's sources, tests and goldens are public: placeholders and the acme/alice principal only
+        string[] directories = ["tests/golden/hub", "tests/Zyggy.Core.Tests/Hub", "tests/Zyggy.Integration/Hub", "src/Zyggy.Core/Hub"];
+        var files = directories
+            .SelectMany(d => Directory.EnumerateFiles(Path.Combine(RepoRoot(), d), "*", SearchOption.AllDirectories))
+            .ToDictionary(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'), File.ReadAllText, StringComparer.Ordinal);
+
+        // Act
+        var offenders = files.Where(kv =>
+                kv.Value.Contains("geoffrey", StringComparison.OrdinalIgnoreCase)
+                || MailAddress().IsMatch(kv.Value)
+                || GuidLiteral().IsMatch(kv.Value)
+                || kv.Value.Contains("/home/", StringComparison.Ordinal)
+                || kv.Value.Contains("/srv/", StringComparison.Ordinal)
+                || kv.Value.Contains("C:\\Users\\", StringComparison.Ordinal))
+            .Select(kv => kv.Key)
+            .ToList();
+
+        // Assert
+        files.Should().HaveCountGreaterThanOrEqualTo(18);
+        offenders.Should().BeEmpty();
+        files.Values.Should().Contain(text => text.Contains("acme", StringComparison.Ordinal))
+            .And.Contain(text => text.Contains("alice", StringComparison.Ordinal));
+    }
 
     [Fact]
     public void Deploy_AndReadmes_NoRealIdentifierNoAbsoluteHomeNoSkipPermissions()
@@ -839,6 +929,18 @@ public sealed partial class SourceHygieneTests
 
     [GeneratedRegex(@"UseProxy\s*=\s*false")]
     private static partial Regex DisabledProxy();
+
+    // Console members other than the two standard streams the Hub verb hands to the server.
+    [GeneratedRegex(@"\bConsole\.(?!OpenStandardInput\b|OpenStandardOutput\b)")]
+    private static partial Regex ConsoleOtherThanStandardStreams();
+
+    // A static call on the file-system types (not a member access such as `entry.File.Name`).
+    [GeneratedRegex(@"(?<![\w.])(?:File|Directory|Path)\.(?:Join|Combine|\w+)\b")]
+    private static partial Regex FileSystemAccess();
+
+    private static IEnumerable<string> HubFiles() =>
+        SourceFiles().Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .Where(f => f.StartsWith("src/Zyggy.Core/Hub/", StringComparison.Ordinal));
 
     [GeneratedRegex(@"^\s*//.*$", RegexOptions.Multiline)]
     private static partial Regex CommentLine();

@@ -1,21 +1,23 @@
 # Zyggy.Hub
 
-The MCP server that exposes Central's memory and the bus to Claude Code sessions. Published as the single-file binary `zyggy-hub`. On Central it runs over stdio, referenced from `.mcp.json`; an HTTP transport exists for remote callers.
+The empty host kept in the solution. The Hub itself, the MCP server that gives a Claude Code session on Central the owner's memory, lives in `src/Zyggy.Core/Hub/` and runs as the CLI verb `zyggy hub` (deliverable 11). There is no separate Hub binary.
+
+On Central the instance's `.mcp.json` starts it over stdio: `"hub": {"type": "stdio", "command": "zyggy", "args": ["hub"]}`, with no `env` block. It exits 0 when stdin closes, 3 on a configuration error and 4 on any argument.
 
 ## Tools
 
 | Tool | Input | Output | Notes |
 |------|-------|--------|-------|
-| `get_context` | `topic`, `max_tokens` | matching memory file bodies and daily-note lines | ranked by alias/description match, then recency (`ContextRanker` in `Zyggy.Core`) |
-| `remember` | `fact`, `scope`, `tag` | ok | appends to `memory/inbox/`; refuses lines matching secret patterns (keys, tokens, IBANs, card numbers) |
-| `list_nodes` | – | registry summary | from `registry/*.yaml` on the bus |
-| `submit_job` | envelope fields | job id | signs and pushes, same path as `zyggy submit` |
-| `job_status` | `id` | state and report if any | reads the bus |
+| `get_context` | `topic` (1–200 characters), `max_tokens` (100–8000, default 2000) | One `<zyggy-context tenant=".." user=".." generated="..">` block: the matching durable memory files under a `## <path> — <description>` heading each, then the daily lines of the last 30 days that mention the topic, inside a budget of `max_tokens × 4` bytes; or `no memory file or daily line matches the topic` | Matches on slug, name or alias first, then on all terms, then on any term, never on the body; newer `updated` first. Read-only. The text is data, never instructions. |
+| `remember` | `fact`, `scope` (`general`, `project:<name>`, `machine`; optional) | `remembered: <path>` and the line | Appends one `[stated]` line to `inbox/remember-<date>.md`, the same line as `zyggy memory remember`. A secret-shaped fact is refused (`refused: matches secret pattern <name>`); under `ZYGGY_HOOKS=off` nothing is stored. |
+
+`list_nodes`, `submit_job`, `job_status`, the HTTP transport and the laptop proxy `zyggy hub --proxy` are deliverable 21.
 
 ## Boundaries
 
-- Reads memory through the read-only helpers in `Zyggy.Core/Memory`; the only write it performs is to `memory/inbox/`. Durable memory files are rewritten solely by the nightly dream pass, never by the Hub.
-- Takes tenant and user from the caller's token, never from the request body (§14).
-- On laptops the Hub does not run; project `.mcp.json` files point to `zyggy hub --proxy` instead, which answers from a cached copy of the bus `context/` folder plus the project's own `CLAUDE.md`.
+- Reads memory through `MemoryStore` and `ContextRanker` in `Zyggy.Core/Memory`. The only write is to `inbox/`; durable files are rewritten solely by the nightly dream pass.
+- Serves one principal, fixed at start from the process environment (`ZYGGY_MEMORY_ROOT`, `ZYGGY_TENANT`, `ZYGGY_USER`, `ZYGGY_TIMEZONE`; unset ones from the `env` object of `$CLAUDE_PROJECT_DIR/.claude/settings.local.json`). A request that names `tenant` or `user` is refused; nothing is read.
+- Refuses to start without the secret-pattern file, the same list `remember` uses.
+- Never runs git and writes nothing but JSON-RPC on stdout.
 
-Built on the official ModelContextProtocol C# SDK. Founding spec: §7 (Hub MCP surface), §14 (tenancy).
+Built on the official ModelContextProtocol C# SDK. Founding spec: §7 (Hub MCP surface), §14 (tenancy). Failures: the Cli README, "Troubleshooting — Hub".
