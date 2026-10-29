@@ -317,6 +317,38 @@ public class BusRepoFixture : IAsyncLifetime
         return new SeededJob(id, relativePath, bytes);
     }
 
+    /// <summary>Signs a context envelope from <paramref name="from"/> to <paramref name="to"/>, writes it under <paramref name="from"/>'s <c>context/</c> and pushes it with the §5 subject (plan 13, additive).</summary>
+    public async Task<SeededJob> SeedSignedContextAsync(
+        MachineName from,
+        MachineName to,
+        KeyId signWith,
+        ISecretStore store,
+        string body,
+        ContextScope? scope = null,
+        DateTimeOffset? created = null,
+        Func<byte[], byte[]>? mutate = null,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(from);
+        ArgumentNullException.ThrowIfNull(to);
+        ArgumentNullException.ThrowIfNull(signWith);
+        DateTimeOffset at = created ?? FixedInstant;
+        var id = EnvelopeId.New(at);
+        var header = new EnvelopeHeader(signWith.Tenant, id, from, to, at);
+        Model context = Model.CreateContext(header, new ContextFields(scope ?? ContextScope.Parse("project:calizr")), Encoding.UTF8.GetBytes(body));
+        EnvelopeResult signed = await new EnvelopeSigner(store).SignAsync(context, signWith, ct);
+        if (!signed.IsAccepted)
+        {
+            throw new InvalidOperationException("Signing the seeded context failed: " + signed.Rejection);
+        }
+
+        byte[] bytes = EnvelopeWriter.Serialize(signed.Envelope!);
+        bytes = mutate is null ? bytes : mutate(bytes);
+        string relativePath = BusPaths.EnvelopeFile(BusPaths.Context(signWith.Tenant, from), id);
+        await SeedRawFileAsync(relativePath, bytes, string.Create(CultureInfo.InvariantCulture, $"{signWith.Tenant.Value} context {id.Value} {from.Value}→{to.Value}"), ct);
+        return new SeededJob(id, relativePath, bytes);
+    }
+
     /// <summary>Brings the node clone up to date with <c>main</c> (the pull the tenant seed ends with).</summary>
     public Task PullCloneAsync(CancellationToken ct) => RunGitAsync(CloneDir, ["pull", "--rebase", "origin", "main"], ct);
 

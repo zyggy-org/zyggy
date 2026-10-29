@@ -30,7 +30,8 @@ internal static class TestHost
         HookedProcessRunner? hooks = null,
         string? checkoutRoot = null,
         ILoggerProvider? logging = null,
-        Action<GitHubBusOptions>? configure = null)
+        Action<GitHubBusOptions>? configure = null,
+        Action<IServiceCollection>? extend = null)
     {
         var services = new ServiceCollection()
             .AddProcessRunner()
@@ -57,6 +58,7 @@ internal static class TestHost
             o.Jitter = () => 0;
             configure?.Invoke(o);
         });
+        extend?.Invoke(services);
         return services.BuildServiceProvider();
     }
 

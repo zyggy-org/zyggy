@@ -425,6 +425,101 @@ public sealed partial class BusRepository
             ct);
     }
 
+    /// <summary>
+    /// Central's pickup input (spec 13): under the checkout write lock, the bytes of every top-level <c>*.md</c> in the
+    /// <c>context/</c> then <c>reports/</c> folder of every machine of this tenant except <see cref="MachineName.Central"/>,
+    /// machines and files in ordinal order. Never another tenant's subtree; nothing is verified here.
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The candidates.</returns>
+    /// <exception cref="BusBusyException">Another zyggy process held the checkout's write lock for the whole wait.</exception>
+    public async Task<IReadOnlyList<PickupCandidate>> ListPickupCandidatesAsync(CancellationToken ct)
+    {
+        using IDisposable handle = await BusCheckoutLock.AcquireAsync(_checkoutRoot, BusCheckoutLock.WriteLockName, LockTimeout, _clock, ct).ConfigureAwait(false)
+            ?? throw new BusBusyException();
+        string nodes = BusPaths.Resolve(_checkoutRoot, BusPaths.Nodes(_me.Tenant));
+        if (!Directory.Exists(nodes))
+        {
+            return [];
+        }
+
+        var candidates = new List<PickupCandidate>();
+        IEnumerable<MachineName> machines = Directory.EnumerateDirectories(nodes)
+            .Select(d => MachineName.TryParse(Path.GetFileName(d), out MachineName? machine) ? machine : null)
+            .OfType<MachineName>()
+            .Where(m => m != MachineName.Central)
+            .OrderBy(m => m.Value, StringComparer.Ordinal);
+        foreach (MachineName machine in machines)
+        {
+            foreach ((string folder, BusFolder kind) in new[] { (BusPaths.Context(_me.Tenant, machine), BusFolder.Context), (BusPaths.Reports(_me.Tenant, machine), BusFolder.Reports) })
+            {
+                foreach (BusFile file in await ListFolderAsync(folder, ct).ConfigureAwait(false))
+                {
+                    byte[] bytes = await File.ReadAllBytesAsync(BusPaths.Resolve(_checkoutRoot, file.RelativePath), ct).ConfigureAwait(false);
+                    candidates.Add(new PickupCandidate(file, machine, kind, bytes));
+                }
+            }
+        }
+
+        return candidates;
+    }
+
+    /// <summary>
+    /// §4 state machine (A13-5): Central moves processed <c>reports/</c> and <c>context/</c> files of its tenant to
+    /// <c>archive/&lt;YYYY-MM of created&gt;/</c> with one <c>git mv</c> each and one commit
+    /// <c>&lt;tenant&gt; archive &lt;n&gt; central→archive</c> whose body has one line per move (A13-6).
+    /// </summary>
+    /// <param name="files">The files and their envelopes' <c>created</c> instants.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The write outcome; the first failed move stops the change and restores the checkout.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="files"/> is null.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="files"/> is empty.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when this machine is not Central or a path breaks the §4 write rule (a caller bug).</exception>
+    public Task<WriteOutcome> ArchiveAsync(IReadOnlyList<(BusFile File, DateTimeOffset Created)> files, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(files);
+        if (files.Count == 0)
+        {
+            throw new ArgumentException("Nothing to archive.", nameof(files));
+        }
+
+        if (_me.Machine != MachineName.Central)
+        {
+            throw new InvalidOperationException("write rule: only central archives");
+        }
+
+        var moves = new List<(string From, string To, string Month)>(files.Count);
+        foreach ((BusFile file, DateTimeOffset created) in files)
+        {
+            DateTime utc = created.UtcDateTime;
+            string month = BusPaths.Archive(_me.Tenant, utc.Year, utc.Month);
+            string to = BusPaths.EnvelopeFile(month, file.Id);
+            AssertMayArchive(file.RelativePath, source: true);
+            AssertMayArchive(to, source: false);
+            moves.Add((file.RelativePath, to, month));
+        }
+
+        return WriteAsync(
+            ArchiveSubject(moves.Count),
+            [.. moves.Select(m => m.From), .. moves.Select(m => m.To)],
+            async token =>
+            {
+                foreach ((string from, string to, string month) in moves)
+                {
+                    Directory.CreateDirectory(BusPaths.Resolve(_checkoutRoot, month));
+                    WriteFailed? failed = Failure("mv", await _git.MoveAsync(_checkoutRoot, from, to, token).ConfigureAwait(false));
+                    if (failed is not null)
+                    {
+                        return failed;
+                    }
+                }
+
+                return null;
+            },
+            ct,
+            string.Join('\n', moves.Select(m => m.From + " → " + m.To)));
+    }
+
     /// <summary>The sender side: the verified reports of <paramref name="reporter"/> that answer <paramref name="inReplyTo"/> and are addressed to this machine.</summary>
     /// <param name="reporter">The machine whose <c>reports/</c> folder is read.</param>
     /// <param name="inReplyTo">The job id the reports answer.</param>
@@ -565,7 +660,7 @@ public sealed partial class BusRepository
     }
 
     /// <summary>Runs the §5 write sequence under the checkout lock: pull, change, one commit with the machine identity, push with the jittered retry rule.</summary>
-    private async Task<WriteOutcome> WriteAsync(string subject, IReadOnlyList<string> paths, Func<CancellationToken, Task<WriteFailed?>> change, CancellationToken ct)
+    private async Task<WriteOutcome> WriteAsync(string subject, IReadOnlyList<string> paths, Func<CancellationToken, Task<WriteFailed?>> change, CancellationToken ct, string? body = null)
     {
         using IDisposable? handle = await BusCheckoutLock.AcquireAsync(_checkoutRoot, BusCheckoutLock.WriteLockName, LockTimeout, _clock, ct).ConfigureAwait(false);
         if (handle is null)
@@ -590,7 +685,7 @@ public sealed partial class BusRepository
             return failed;
         }
 
-        GitResult commit = await _git.CommitOnlyAsync(_checkoutRoot, subject, paths, ct).ConfigureAwait(false);
+        GitResult commit = await _git.CommitOnlyAsync(_checkoutRoot, body is null ? subject : subject + "\n\n" + body, paths, ct).ConfigureAwait(false);
         if (!commit.Succeeded)
         {
             await RestoreAsync(paths, ct).ConfigureAwait(false);
@@ -682,6 +777,29 @@ public sealed partial class BusRepository
         }
     }
 
+    /// <summary>
+    /// The one archive branch of the §4 write rule (A13-4): only Central, only its own tenant, a source in any machine's
+    /// <c>reports/</c> or <c>context/</c>, a target in <c>archive/YYYY-MM/</c>.
+    /// </summary>
+    private void AssertMayArchive(string relativePath, bool source)
+    {
+        if (!BusPaths.TryParse(relativePath, out BusLocation? location))
+        {
+            throw new InvalidOperationException("write rule: '" + relativePath + "' is not a bus path");
+        }
+
+        if (location.Tenant != _me.Tenant)
+        {
+            throw new InvalidOperationException("write rule: '" + relativePath + "' belongs to another tenant");
+        }
+
+        bool allowed = source ? location.Folder is BusFolder.Reports or BusFolder.Context : location.Folder == BusFolder.Archive;
+        if (!allowed)
+        {
+            throw new InvalidOperationException("write rule: '" + relativePath + "' may not be " + (source ? "archived" : "an archive target"));
+        }
+    }
+
     /// <summary>Git's error output fit for a result or a log line (§8): URL user information redacted, the first two non-empty lines, trimmed.</summary>
     private static string RedactedDetail(string stderr)
     {
@@ -698,6 +816,9 @@ public sealed partial class BusRepository
 
     private string Subject(string action, EnvelopeId id, string from, string to) =>
         string.Create(CultureInfo.InvariantCulture, $"{_me.Tenant.Value} {action} {id.Value} {from}→{to}");
+
+    private string ArchiveSubject(int count) =>
+        string.Create(CultureInfo.InvariantCulture, $"{_me.Tenant.Value} archive {count} {MachineName.Central.Value}→archive");
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "{Tenant}/{Machine}: the bus checkout had {Count} uncommitted change(s); parked under stash {Stash}")]
     private partial void LogStashed(string tenant, string machine, int count, string stash);

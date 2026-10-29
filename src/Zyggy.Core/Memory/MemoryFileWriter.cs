@@ -78,6 +78,33 @@ internal static partial class MemoryFileWriter
         }
     }
 
+    /// <summary>Creates <paramref name="path"/> atomically and never overwrites it (spec 13 pickup); false when the file already exists.</summary>
+    public static bool CreateAtomically(string path, byte[] bytes)
+    {
+        var directory = Path.GetDirectoryName(path) ?? throw new ArgumentException("The path has no directory.", nameof(path));
+        if (File.Exists(path))
+        {
+            return false;
+        }
+
+        Directory.CreateDirectory(directory);
+        var temp = path + ".zyggy-tmp-" + Ulid.NewUlid();
+        try
+        {
+            File.WriteAllBytes(temp, bytes);
+            File.Move(temp, path, overwrite: false);
+            return true;
+        }
+        catch (IOException) when (File.Exists(path))
+        {
+            return false;
+        }
+        finally
+        {
+            File.Delete(temp);
+        }
+    }
+
     // Plain when YAML reads it back as the same string; double-quoted otherwise.
     private static string Scalar(string value) =>
         Plain().IsMatch(value) && !value.Contains(": ", StringComparison.Ordinal) && !value.Contains(" #", StringComparison.Ordinal)

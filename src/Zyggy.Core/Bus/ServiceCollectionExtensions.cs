@@ -19,6 +19,37 @@ namespace Zyggy.Core.Bus;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
+    /// Registers Central's <see cref="BusPickup"/> (spec 13) over the registered <see cref="BusRepository"/> and envelope signer,
+    /// writing into the memory inbox <paramref name="configuration"/> names. Only Central's node calls this.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">A loaded pickup configuration.</param>
+    /// <returns><paramref name="services"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="configuration"/> carries an error.</exception>
+    public static IServiceCollection AddBusPickup(this IServiceCollection services, PickupConfigurationResult configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+        if (configuration.Paths is not { } paths || configuration.Zone is not { } zone || configuration.Patterns is not { } patterns)
+        {
+            throw new ArgumentException("The pickup configuration did not load: " + configuration.Error, nameof(configuration));
+        }
+
+        services.TryAddSingleton(sp =>
+        {
+            ILogger<BusPickup> log = sp.GetService<ILoggerFactory>()?.CreateLogger<BusPickup>() ?? NullLogger<BusPickup>.Instance;
+            return new BusPickup(
+                sp.GetRequiredService<BusRepository>(),
+                sp.GetRequiredService<EnvelopeSigner>(),
+                new PickupInbox(paths, zone, sp.GetRequiredService<TimeProvider>()),
+                patterns,
+                log);
+        });
+        return services;
+    }
+
+    /// <summary>
     /// Registers the GitHub implementation of <see cref="IBusProvider"/>, the git client with this machine's commit identity
     /// (<c>zyggy (&lt;machine&gt;) &lt;machine&gt;@zyggy.org</c>, §5) and the <see cref="BusRepository"/> as singletons. Requires
     /// <see cref="ISecretStore"/>, <see cref="IProcessRunner"/>, <see cref="TimeProvider"/> and the envelope signer to be

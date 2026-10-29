@@ -42,6 +42,17 @@ public static class TestEnvelopes
         return mutate is null ? bytes : mutate(bytes);
     }
 
+    /// <summary>The bytes of a signed context envelope (spec 13, additive), optionally mutated after signing.</summary>
+    public static async Task<byte[]> SignedContextBytesAsync(MachineName from, MachineName to, ISecretStore store, KeyId signWith, string body, DateTimeOffset created, CancellationToken ct, ContextScope? scope = null, EnvelopeId? id = null, Func<byte[], byte[]>? mutate = null)
+    {
+        var header = new EnvelopeHeader(signWith.Tenant, id ?? EnvelopeId.New(created), from, to, created);
+        Model context = Model.CreateContext(header, new ContextFields(scope ?? ContextScope.Parse("project:calizr")), Encoding.UTF8.GetBytes(body));
+        EnvelopeResult signed = await new EnvelopeSigner(store).SignAsync(context, signWith, ct);
+        signed.IsAccepted.Should().BeTrue(signed.Rejection?.ToString());
+        byte[] bytes = EnvelopeWriter.Serialize(signed.Envelope!);
+        return mutate is null ? bytes : mutate(bytes);
+    }
+
     /// <summary>The bytes of a signed job, optionally mutated after signing.</summary>
     public static async Task<byte[]> SignedJobBytesAsync(MachineName from, MachineName to, ISecretStore store, KeyId signWith, string body, CancellationToken ct, Func<byte[], byte[]>? mutate = null, EnvelopeId? id = null)
     {
