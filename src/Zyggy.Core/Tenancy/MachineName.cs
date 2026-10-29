@@ -14,6 +14,12 @@ public sealed record MachineName
     /// <summary>Gets the machine label.</summary>
     public string Value { get; }
 
+    /// <summary>
+    /// The label of the memory owner's node, <c>central</c>: the §4 address of every <c>context</c> envelope and the folder the
+    /// dream ingests from. A protocol constant of the bus layout, not a tenant default.
+    /// </summary>
+    public static MachineName Central { get; } = new("central");
+
     /// <summary>Parses a machine label.</summary>
     /// <param name="value">The label text.</param>
     /// <returns>The machine name.</returns>

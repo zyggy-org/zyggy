@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Git;
+using Zyggy.Core.Memory;
 using Zyggy.Core.Processes;
 using Zyggy.Core.Secrets;
 
@@ -94,6 +95,30 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<BusRepository>(),
                 sp.GetRequiredService<EnvelopeSigner>(),
                 sp.GetRequiredService<KeyId>(),
+                sp.GetRequiredService<TimeProvider>(),
+                log);
+        });
+        // Deliverable 12: the context sender. Resolving without a KeyId or the secret patterns throws (the verb checks both first — fail closed).
+        services.TryAddSingleton(sp =>
+        {
+            ILogger<ContextSubmitter> log = sp.GetService<ILoggerFactory>()?.CreateLogger<ContextSubmitter>() ?? NullLogger<ContextSubmitter>.Instance;
+            return new ContextSubmitter(
+                sp.GetRequiredService<BusRepository>(),
+                sp.GetRequiredService<EnvelopeSigner>(),
+                sp.GetRequiredService<KeyId>(),
+                sp.GetRequiredService<SecretPatterns>(),
+                sp.GetService<ContextEnvelopeOptions>() ?? new ContextEnvelopeOptions(),
+                sp.GetRequiredService<TimeProvider>(),
+                log);
+        });
+        // Deliverable 12: the SessionEnd flush over the spool and the context sender.
+        services.TryAddSingleton(sp =>
+        {
+            ILogger<ContextFlusher> log = sp.GetService<ILoggerFactory>()?.CreateLogger<ContextFlusher>() ?? NullLogger<ContextFlusher>.Instance;
+            return new ContextFlusher(
+                sp.GetRequiredService<ContextSpool>(),
+                sp.GetRequiredService<ContextSubmitter>(),
+                sp.GetRequiredService<SecretPatterns>(),
                 sp.GetRequiredService<TimeProvider>(),
                 log);
         });

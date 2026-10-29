@@ -43,6 +43,9 @@ internal sealed class CliHarness : IAsyncDisposable
 
     public string SecretsRoot => Scratch.File("secrets");
 
+    /// <summary>The golden secret-pattern file every run reads unless a test withholds it (spec 12).</summary>
+    public static string PatternsPath => Path.Combine(Golden.Directory, "secret-patterns", "secret-patterns.txt");
+
     public string CentralNodeJson { get; private set; } = null!;
 
     public string HomeLaptopNodeJson { get; private set; } = null!;
@@ -98,9 +101,15 @@ internal sealed class CliHarness : IAsyncDisposable
         string? stdin = null,
         IReadOnlyDictionary<string, string?>? extraEnvironment = null,
         Action<IServiceCollection>? more = null,
+        bool withPatterns = true,
         CancellationToken ct = default)
     {
         var environment = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { ["ZYGGY_NODE_JSON"] = nodeJson };
+        if (withPatterns)
+        {
+            environment["ZYGGY_SECRET_PATTERNS"] = PatternsPath;
+        }
+
         foreach (var (name, value) in extraEnvironment ?? new Dictionary<string, string?>())
         {
             environment[name] = value;
@@ -117,6 +126,9 @@ internal sealed class CliHarness : IAsyncDisposable
             stdin,
             ct);
     }
+
+    /// <summary>The <c>nodeDir</c> <see cref="WriteNodeJson"/> gave the machine named <paramref name="name"/>.</summary>
+    public string NodeDirOf(string name) => Scratch.File("node-" + name);
 
     public Task<string> PorcelainAsync(string checkout, CancellationToken ct) => Bus.RunGitAsync(checkout, ["status", "--porcelain"], ct);
 

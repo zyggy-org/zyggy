@@ -126,7 +126,8 @@ public sealed partial class JobRunner
             AllowedTools = allowedTools,
             MaxBudgetUsd = policy.MaxBudgetUsd,
             Isolation = ModelSessionIsolation.None,
-            Environment = _options.ModelEnvironment,
+            // Founding spec §6 Invocation (amended by deliverable 12, D5): a job run is unattended — the memory and context writers do nothing.
+            Environment = WithHooksOff(_options.ModelEnvironment),
             TranscriptPath = TranscriptPaths.For(nodeDir, job.Header.Tenant, job.Header.Id),
         };
 
@@ -201,6 +202,10 @@ public sealed partial class JobRunner
             LogTranscriptsRemoved(removed, (int)_options.TranscriptRetention.TotalDays);
         }
     }
+
+    /// <summary>The model environment with <c>ZYGGY_HOOKS=off</c> set last, so no configured value can switch the hooks back on (spec 12 A5).</summary>
+    private static Dictionary<string, string> WithHooksOff(IReadOnlyDictionary<string, string> environment) =>
+        new(environment, StringComparer.Ordinal) { ["ZYGGY_HOOKS"] = "off" };
 
     private static int? Clamp(long? tokens) => tokens is { } value ? (int)Math.Clamp(value, 0, int.MaxValue) : null;
 

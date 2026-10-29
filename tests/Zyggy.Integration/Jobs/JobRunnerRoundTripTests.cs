@@ -69,6 +69,21 @@ public sealed partial class JobRunnerRoundTripTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ProcessOnceAsync_DoneScenario_FakeClaudeRanWithZyggyHooksOff()
+    {
+        // Arrange: spec 12 D5 — the real listener launches the fake claude with the hooks off
+        var ct = TestContext.Current.CancellationToken;
+        await using ServiceProvider services = TestHost.BuildRunnerListener(_bus, HomeLaptop, _store, FakeClaude.ExecutablePath, Configuration(), Runner("done"), _hooks);
+        await SeedAndPullAsync(services, Fields(_project.Path), ct);
+
+        // Act
+        (await services.GetRequiredService<BusListener>().ProcessOnceAsync(ct)).Should().Be(1);
+
+        // Assert
+        _hooks.Calls.Single(c => c.FileName == FakeClaude.ExecutablePath).Environment.Should().Contain("ZYGGY_HOOKS", "off");
+    }
+
+    [Fact]
     public async Task ProcessOnceAsync_DoneScenario_VerifiedDoneReportWithMetricsOnMain()
     {
         // Arrange

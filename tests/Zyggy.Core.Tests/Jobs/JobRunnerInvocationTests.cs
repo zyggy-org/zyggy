@@ -135,6 +135,33 @@ public sealed class JobRunnerInvocationTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_AnyJob_ModelEnvironmentCarriesZyggyHooksOff()
+    {
+        // Arrange: spec 12 D5 — every job run is an unattended run
+        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root));
+
+        // Act
+        await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        ClaudeSpec().Environment.Should().Contain("ZYGGY_HOOKS", "off");
+    }
+
+    [Fact]
+    public async Task RunAsync_ModelEnvironmentNamesZyggyHooksOn_OffStillWins()
+    {
+        // Arrange
+        _h.Options.ModelEnvironment = new Dictionary<string, string> { ["ZYGGY_HOOKS"] = "on", ["ZYGGY_FAKE_CLAUDE_SCENARIO"] = "done" };
+        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root));
+
+        // Act
+        await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        ClaudeSpec().Environment.Should().Contain("ZYGGY_HOOKS", "off").And.Contain("ZYGGY_FAKE_CLAUDE_SCENARIO", "done");
+    }
+
+    [Fact]
     public async Task RunAsync_Arguments_NeverContainBodyBytes()
     {
         // Arrange

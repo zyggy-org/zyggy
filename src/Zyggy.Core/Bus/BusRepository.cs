@@ -379,6 +379,52 @@ public sealed partial class BusRepository
             ct);
     }
 
+    /// <summary>
+    /// §4 as amended by deliverable 12 (D1): adds a signed context envelope of this node, addressed to Central, to this node's own
+    /// <c>nodes/&lt;me&gt;/context/</c> folder in one commit <c>&lt;tenant&gt; context &lt;id&gt; &lt;from&gt;→central</c>.
+    /// </summary>
+    /// <param name="signedContext">The signed context envelope.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The write outcome.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="signedContext"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the envelope is not a context, is unsigned, belongs to another tenant or was not sent by this machine (a caller bug).</exception>
+    public Task<WriteOutcome> PublishContextAsync(Model signedContext, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(signedContext);
+        if (signedContext.Type != EnvelopeType.Context)
+        {
+            throw new InvalidOperationException("write rule: the context envelope is not a context");
+        }
+
+        if (signedContext.Signature is null)
+        {
+            throw new InvalidOperationException("write rule: the context envelope is unsigned");
+        }
+
+        if (signedContext.Header.Tenant != _me.Tenant)
+        {
+            throw new InvalidOperationException("write rule: the context envelope belongs to another tenant");
+        }
+
+        if (signedContext.Header.From != _me.Machine)
+        {
+            throw new InvalidOperationException("write rule: the context envelope was not sent by this machine");
+        }
+
+        byte[] bytes = EnvelopeWriter.Serialize(signedContext);
+        string path = BusPaths.EnvelopeFile(BusPaths.Context(_me.Tenant, _me.Machine), signedContext.Header.Id);
+        AssertMayWrite(path, BusFolder.Context);
+        return WriteAsync(
+            Subject("context", signedContext.Header.Id, signedContext.Header.From.Value, signedContext.Header.To.Value),
+            [path],
+            async token =>
+            {
+                await WriteFileAsync(path, bytes, token).ConfigureAwait(false);
+                return Failure("add", await _git.AddAsync(_checkoutRoot, [path], token).ConfigureAwait(false));
+            },
+            ct);
+    }
+
     /// <summary>The sender side: the verified reports of <paramref name="reporter"/> that answer <paramref name="inReplyTo"/> and are addressed to this machine.</summary>
     /// <param name="reporter">The machine whose <c>reports/</c> folder is read.</param>
     /// <param name="inReplyTo">The job id the reports answer.</param>

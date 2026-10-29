@@ -600,6 +600,11 @@ public sealed partial class SourceHygieneTests
         [
             "src/Zyggy.Core/Bus/JobRequest.cs", "src/Zyggy.Core/Bus/ProjectReference.cs", "src/Zyggy.Core/Bus/JobSubmitter.cs",
             "src/Zyggy.Core/Bus/BusInventory.cs", "src/Zyggy.Core/Bus/BusAuditor.cs",
+
+            // spec 12: the context envelopes from the laptops
+            "src/Zyggy.Core/Bus/ContextRequest.cs", "src/Zyggy.Core/Bus/ContextSubmitter.cs", "src/Zyggy.Core/Bus/ContextSpool.cs",
+            "src/Zyggy.Core/Bus/ContextStopHook.cs", "src/Zyggy.Core/Bus/ContextFlusher.cs", "src/Zyggy.Core/Bus/HookInput.cs",
+            "src/Zyggy.Core/Bus/ContextEnvelopeOptions.cs", "src/Zyggy.Core/Memory/FactLine.cs", "src/Zyggy.Core/Memory/SecretPatternsRegistration.cs",
         ];
         var texts = files.Concat(SourceFiles().Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/')).Where(f => f.StartsWith("src/Zyggy.Core/Health/", StringComparison.Ordinal)))
             .Distinct(StringComparer.Ordinal)
@@ -616,7 +621,7 @@ public sealed partial class SourceHygieneTests
             .ToList();
 
         // Assert
-        texts.Should().HaveCountGreaterThanOrEqualTo(8);
+        texts.Should().HaveCountGreaterThanOrEqualTo(17);
         offenders.Should().BeEmpty();
     }
 
@@ -881,6 +886,99 @@ public sealed partial class SourceHygieneTests
 
         // Assert
         offenders.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Src_ContextSpoolDirectoryLiteral_OnlyInContextSpool()
+    {
+        // Act: spec 12 A6 — the node-state directory <nodeDir>/context/<tenant> is built in ContextSpool.DirectoryFor only. The bare word
+        // "context" is also the §4 envelope type (EnvelopeWire), the bus folder BusPaths parses and the commit action (BusRepository), so the
+        // probe is a line that builds a path with it; the bus folder itself is pinned by Src_BusPathLiterals_OnlyInBusPaths.
+        var holders = SourceFiles()
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .Where(f => f.StartsWith("src/", StringComparison.Ordinal))
+            .Where(f => File.ReadAllLines(Path.Combine(RepoRoot(), f)).Any(l => l.Contains("\"context\"", StringComparison.Ordinal) && l.Contains("Path.", StringComparison.Ordinal)))
+            .ToList();
+
+        // Assert
+        holders.Should().Equal("src/Zyggy.Core/Bus/ContextSpool.cs");
+    }
+
+    [Fact]
+    public void Src_ContextVerbAndClasses_NeverNameAMemoryPrincipal()
+    {
+        // Arrange: spec 12 AC-22 — nodes never write durable memory and read no memory principal
+        string[] forbidden = ["ZYGGY_MEMORY_ROOT", "ZYGGY_TENANT", "ZYGGY_USER", "ZYGGY_TIMEZONE", "MemoryEnvironment", "MemoryPaths", "Principal", "inbox"];
+        var files = ContextSourceFiles().Where(f => f.StartsWith("src/", StringComparison.Ordinal)).ToList();
+
+        // Act
+        var offenders = files
+            .SelectMany(f => forbidden.Where(word => CommentLine().Replace(File.ReadAllText(Path.Combine(RepoRoot(), f)), string.Empty).Contains(word, StringComparison.Ordinal)).Select(word => $"{f}: {word}"))
+            .ToList();
+
+        // Assert
+        files.Should().HaveCountGreaterThanOrEqualTo(8);
+        offenders.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ContextTestsAndFixtures_NonDefaultIdentityOnly()
+    {
+        // Arrange: spec 12 AC-28 — public: acme, home-laptop, central, calizr and the fixture session id only
+        const string FixtureSession = "0b7c3d1e-4f5a-4b6c-8d7e-9f0a1b2c3d4e";
+        var texts = ContextSourceFiles().ToDictionary(f => f, f => File.ReadAllText(Path.Combine(RepoRoot(), f)), StringComparer.Ordinal);
+
+        // Act
+        var offenders = texts.Where(kv =>
+                kv.Value.Contains("geoffrey", StringComparison.OrdinalIgnoreCase)
+                || MailAddress().IsMatch(kv.Value)
+                || GuidLiteral().Matches(kv.Value).Any(m => !string.Equals(m.Value, FixtureSession, StringComparison.OrdinalIgnoreCase))
+                || kv.Value.Contains("/srv/", StringComparison.Ordinal)
+                || kv.Value.Contains("C:\\Users\\", StringComparison.Ordinal)
+                || (kv.Value.Contains("/home/", StringComparison.Ordinal) && !kv.Value.Contains("/home/alice/", StringComparison.Ordinal)))
+            .Select(kv => kv.Key)
+            .ToList();
+
+        // Assert
+        texts.Should().HaveCountGreaterThanOrEqualTo(18);
+        offenders.Should().BeEmpty();
+        texts.Values.Should().Contain(t => t.Contains("acme", StringComparison.Ordinal))
+            .And.Contain(t => t.Contains("home-laptop", StringComparison.Ordinal))
+            .And.Contain(t => t.Contains("calizr", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Readmes_ContextDocumented()
+    {
+        // Arrange: spec 12 Step 10 — the verb row, the troubleshooting table, the Core rows
+        static string Read(string relative) => File.ReadAllText(Path.Combine(RepoRoot(), relative));
+        var cli = Read("src/Zyggy.Cli/README.md");
+        var core = Read("src/Zyggy.Core/README.md");
+        var contextRow = cli.Split('\n').First(l => l.StartsWith("| `context [", StringComparison.Ordinal));
+
+        // Act + Assert
+        foreach (var text in new[] { "## Troubleshooting — Context", "refused: matches secret pattern", "context failed at pull", "committed locally, not yet pushed", "spool left behind", "cap reached", "bus-conflict.md" })
+        {
+            cli.Should().Contain(text);
+        }
+
+        contextRow.Should().Contain("--stop-hook").And.Contain("--flush").And.Contain("to: central");
+        foreach (var text in new[] { "ContextSubmitter", "ContextSpool", "ContextFlusher", "FactLine", "PublishContextAsync" })
+        {
+            core.Should().Contain(text);
+        }
+    }
+
+    /// <summary>The files of the context envelopes (spec 12) in src/ and both test projects.</summary>
+    private static List<string> ContextSourceFiles()
+    {
+        string[] roots = ["src/Zyggy.Core/Bus", "src/Zyggy.Cli/Commands", "tests/Zyggy.Core.Tests/Bus", "tests/Zyggy.Core.Tests/Infrastructure", "tests/Zyggy.Integration/Cli"];
+        return roots
+            .SelectMany(r => Directory.EnumerateFiles(Path.Combine(RepoRoot(), r), "*.cs", SearchOption.TopDirectoryOnly))
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .Where(f => Path.GetFileName(f) is var name && (name.StartsWith("Context", StringComparison.Ordinal) || name.StartsWith("HookInput", StringComparison.Ordinal) || name == "HookJson.cs"))
+            .Order(StringComparer.Ordinal)
+            .ToList();
     }
 
     private static List<string> CoreFilesContaining(string literal) =>
