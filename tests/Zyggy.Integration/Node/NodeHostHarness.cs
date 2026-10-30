@@ -65,6 +65,9 @@ internal sealed class NodeHostHarness : IAsyncDisposable
     /// <summary>Extra variables for the fake (<c>ZYGGY_FAKE_CLAUDE_DELAY_MS</c>, <c>_LINGER_MS</c>, <c>_AUTH</c>).</summary>
     public Dictionary<string, string> FakeEnvironment { get; } = [];
 
+    /// <summary>The host's environment (plan 13 A6); <see langword="null"/> means the process environment.</summary>
+    public Dictionary<string, string?>? Environment { get; set; }
+
     /// <summary>The single daily log file under the node directory.</summary>
     public string LogFile => Directory.GetFiles(Path.Combine(NodeDir, "logs")).Single();
 
@@ -100,12 +103,13 @@ internal sealed class NodeHostHarness : IAsyncDisposable
         int idleSeconds = 1,
         string? busLocalPath = null,
         string? tenantOverride = null,
-        bool omitSignWith = false)
+        bool omitSignWith = false,
+        MachineName? machine = null)
     {
         NodeJsonPath = NodeJson.Write(
             Scratch.File("config"),
             Acme,
-            HomeLaptop,
+            machine ?? HomeLaptop,
             omitSignWith ? null : TestKeys.Acme1,
             busLocalPath: busLocalPath ?? Bus.CloneDir,
             remote: TestHost.Remote.HttpsUrl!.ToString(),
@@ -155,21 +159,21 @@ internal sealed class NodeHostHarness : IAsyncDisposable
         more?.Invoke(services);
     }
 
-    public IHost Build(Action<IServiceCollection>? more = null) => NodeHost.Build(["--config", NodeJsonPath], s => Configure(s, more));
+    public IHost Build(Action<IServiceCollection>? more = null) => NodeHost.Build(["--config", NodeJsonPath], s => Configure(s, more), Environment);
 
     /// <summary>Runs the host in process until <paramref name="cancelAfter"/> or until the loop stops it; returns the exit code.</summary>
     public async Task<int> RunAsync(TimeSpan cancelAfter, CancellationToken ct, Action<IServiceCollection>? more = null)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(cancelAfter);
-        return await NodeHost.RunAsync(["--config", NodeJsonPath], cts.Token, s => Configure(s, more));
+        return await NodeHost.RunAsync(["--config", NodeJsonPath], cts.Token, s => Configure(s, more), Environment);
     }
 
     /// <summary>Runs the host in process until <paramref name="until"/> holds (then cancels) or <paramref name="timeout"/> elapses; returns the exit code.</summary>
     public async Task<int> RunUntilAsync(Func<Task<bool>> until, TimeSpan timeout, CancellationToken ct, Action<IServiceCollection>? more = null)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        Task<int> run = NodeHost.RunAsync(["--config", NodeJsonPath], cts.Token, s => Configure(s, more));
+        Task<int> run = NodeHost.RunAsync(["--config", NodeJsonPath], cts.Token, s => Configure(s, more), Environment);
         await WaitUntilAsync(until, timeout, ct, run);
         await cts.CancelAsync();
         return await run;

@@ -438,7 +438,7 @@ The context file pushed from `home-laptop` is archived on `main` in one commit `
 
 The pickup runs after the start-up pull (A7), after a `Changed` tick's pull and after a moved safety fetch's pull, each time after that pull's job pass. It never runs on a `304` or after the Idle→Active pass without a pull, and never twice for one pull (`pulledThisTick`). A listener without a pickup (every laptop, the probe verbs) behaves exactly as before. `PickupConfiguration.Load(environment, node)` returns the principal's paths, the zone and the loaded patterns, or one detail sentence (A8).
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Bus/BusListener.cs` *(modify)*:
@@ -508,7 +508,7 @@ The pickup runs after the start-up pull (A7), after a `Changed` tick's pull and 
 
 ## Step 5 — Polling every second stays sane: the quiet-branch jitter is at most half the interval, 10 s and 60 s are byte-identical, the back-off rules are unchanged at 1 s, and `node.json` accepts `poll.activeSeconds: 1`
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Bus/PollState.cs` *(modify)*:
@@ -552,7 +552,7 @@ The pickup runs after the start-up pull (A7), after a `Changed` tick's pull and 
 
 ## Step 6 — The production host as `central` at `activeSeconds: 1` picks a pushed context up within seconds; without the pickup configuration it refuses to start with exit 3 and one stderr line; a laptop host never builds a pickup
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Node/NodeHost.cs` *(modify, A6)*:
@@ -603,24 +603,24 @@ The pickup runs after the start-up pull (A7), after a `Changed` tick's pull and 
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: `dotnet test tests/Zyggy.Core.Tests --filter "FullyQualifiedName~BusListenerPickupTests|FullyQualifiedName~PickupConfigurationTests|FullyQualifiedName~PollStateTests"` and `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~NodeHostPickupTests|FullyQualifiedName~ZyggyNodeProcessTests"` are green. The executor pastes:
+- [x] Behavioral verification: `dotnet test tests/Zyggy.Core.Tests --filter "FullyQualifiedName~BusListenerPickupTests|FullyQualifiedName~PickupConfigurationTests|FullyQualifiedName~PollStateTests"` and `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~NodeHostPickupTests|FullyQualifiedName~ZyggyNodeProcessTests"` are green. The executor pastes:
   - the host log of the 1 s test (poll, pull, `picked up` lines with timestamps, showing the push-to-pickup delay in the test);
   - the exit-3 stderr line of the binary;
   - the AC-20 table (unit → next due) for 1 s, 10 s and 60 s.
-- [ ] Contract review:
+- [x] Contract review:
   - §5 item 2 as amended: the pickup runs after the job pass of the same pull, never on `304`, once per pull.
   - §5 item 3: the jitter cap, with 10 s and 60 s byte-identical.
   - §10: the pickup is Central-only by `machine`, with no new `node.json` key.
   - AC-16: the messages are the dream's.
-- [ ] ⚠️ Risk review (§5 shared contract): back-off and throttle at 1 s unchanged (AC-21 tests); one request in flight (`RunAsync_OneInFlightRequest` unedited).
-- [ ] Assumptions A6–A8 confirmed or corrected; nothing committed.
-- [ ] User approved — implementation may continue past this gate
+- [x] ⚠️ Risk review (§5 shared contract): back-off and throttle at 1 s unchanged (AC-21 tests); one request in flight (`RunAsync_OneInFlightRequest` unedited).
+- [x] Assumptions A6–A8 confirmed or corrected; nothing committed.
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 7 — Reports that left `reports/` are still found: `FindReportsAsync`, `FindUnverifiedReportsAsync` and the inventory's recent reports also read every `archive/YYYY-MM/` month
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Bus/ArchiveMonths.cs` *(create, A5)*.
@@ -666,7 +666,7 @@ The pickup runs after the start-up pull (A7), after a `Changed` tick's pull and 
 
 ## Step 8 — After a real pickup on the bare repository, `zyggy status`, `zyggy status --id <job>` and the probe's report search on Central still show the report the pickup archived
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `tests/Zyggy.Integration/Cli/StatusAfterPickupTests.cs` *(create)*.

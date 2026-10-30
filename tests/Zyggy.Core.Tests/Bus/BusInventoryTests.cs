@@ -102,21 +102,44 @@ public sealed class BusInventoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ListAsync_RecentTen_FiveReportsUlidDescendingUnverifiableTagged()
+    public async Task ListAsync_RecentTen_SixReportsUlidDescendingUnverifiableTagged()
     {
         // Act
         InventoryReport report = await Inventory().ListAsync(10, TestContext.Current.CancellationToken);
 
-        // Assert
-        report.RecentReports.Should().HaveCount(5);
+        // Assert: five live reports and, since spec 13 (AC-25), the archived one
+        report.RecentReports.Should().HaveCount(6);
         report.RecentReports.Select(r => r.Id.Value).Should().BeInDescendingOrder(StringComparer.Ordinal);
         EnvelopeSummary unverified = report.RecentReports.Single(r => !r.Verified);
         unverified.Problem.Should().Be("unknown_key");
         unverified.From.Should().Be(HomeLaptop);
         unverified.To.Should().Be(Central);
         unverified.InReplyTo.Should().Be(_unverifiedJob);
-        report.RecentReports.Where(r => r.Verified).Should().HaveCount(4).And.AllSatisfy(r => r.Problem.Should().BeNull());
+        report.RecentReports.Where(r => r.Verified).Should().HaveCount(5).And.AllSatisfy(r => r.Problem.Should().BeNull());
         report.RecentReports.Single(r => r.InReplyTo == _done).CostUsd.Should().Be(0.0123m);
+    }
+
+    // Spec 13 AC-25: archived reports are in the recent list and the total; the per-machine table stays live counts.
+    [Fact]
+    public async Task ListAsync_ArchivedReports_InRecentAndInTotal_LiveCountsUnchanged()
+    {
+        // Arrange: a second archived report (newest of all) and an archived context that is not a report
+        var ct = TestContext.Current.CancellationToken;
+        Report(BusPaths.Archive(Acme, 2026, 10), await TestEnvelopes.SignedReportBytesAsync(HomeLaptop, Central, EnvelopeId.New(T), _both, TestKeys.Acme1, "picked up\n", ct, created: T.AddMinutes(-1)));
+        var contextId = EnvelopeId.New(T);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Archive(Acme, 2026, 10), contextId), await TestEnvelopes.SignedContextBytesAsync(HomeLaptop, Central, _both, TestKeys.Acme1, "- a fact\n", T, ct, id: contextId));
+
+        // Act
+        InventoryReport report = await Inventory().ListAsync(10, ct);
+
+        // Assert
+        report.ReportsTotal.Should().Be(7);
+        report.RecentReports.Should().HaveCount(7);
+        report.RecentReports[0].RelativePath.Should().StartWith(BusPaths.Archive(Acme, 2026, 10));
+        report.RecentReports.Select(r => r.Id.Value).Should().BeInDescendingOrder(StringComparer.Ordinal).And.NotContain(contextId.Value);
+        report.Machines.Should().Equal(
+            new MachineCounts(Central, 0, 0, 0, 2, 0),
+            new MachineCounts(HomeLaptop, 1, 1, 1, 3, 0));
     }
 
     [Fact]

@@ -67,6 +67,12 @@ public sealed partial class BusInventory
             reportFiles.AddRange(Envelopes(BusPaths.Reports(_me.Tenant, machine)));
         }
 
+        // spec 13 AC-25: Central archives reports within seconds, so the archive months are part of the report list
+        foreach (string month in ArchiveMonths.Folders(_root, _me.Tenant))
+        {
+            reportFiles.AddRange(Envelopes(month).Where(f => EnvelopeParser.PeekHeader(File.ReadAllBytes(BusPaths.Resolve(_root, f.Path)))?.Type == EnvelopeType.Report));
+        }
+
         var summaries = new List<EnvelopeSummary>();
         foreach ((string path, EnvelopeId id) in reportFiles.OrderByDescending(f => f.Id.Value, StringComparer.Ordinal).Take(recent))
         {
@@ -74,7 +80,7 @@ public sealed partial class BusInventory
         }
 
         string? head = await _bus.HeadShaAsync(ct).ConfigureAwait(false);
-        return new InventoryReport(head, counts, summaries, TenantDirectories());
+        return new InventoryReport(head, counts, summaries, TenantDirectories()) { ReportsTotal = reportFiles.Count };
     }
 
     /// <summary>Where <paramref name="id"/> stands, with its job file (if any) and every report answering it.</summary>
@@ -204,13 +210,9 @@ public sealed partial class BusInventory
             candidates.AddRange(Envelopes(BusPaths.Reports(_me.Tenant, machine)));
         }
 
-        string archive = BusPaths.Resolve(_root, BusPaths.ArchiveRoot(_me.Tenant));
-        if (Directory.Exists(archive))
+        foreach (string month in ArchiveMonths.Folders(_root, _me.Tenant))
         {
-            foreach (string month in Directory.EnumerateDirectories(archive).Order(StringComparer.Ordinal))
-            {
-                candidates.AddRange(Envelopes(BusPaths.ArchiveRoot(_me.Tenant) + "/" + Path.GetFileName(month)));
-            }
+            candidates.AddRange(Envelopes(month));
         }
 
         foreach ((string path, EnvelopeId reportId) in candidates.OrderBy(c => c.Id.Value, StringComparer.Ordinal))

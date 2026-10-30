@@ -411,4 +411,95 @@ public sealed class PollStateTests
         // Assert
         act.Should().Throw<ArgumentOutOfRangeException>();
     }
+
+    // Spec 13 AC-20/AC-21 (§5 item 3 as amended by A13-7): the quiet jitter is at most half the interval; throttle and back-off keep theirs.
+    private static readonly PollOptions OneSecond = PollOptions.Default with { ActiveInterval = TimeSpan.FromSeconds(1) };
+
+    [Theory]
+    [InlineData(true, -1.0, 500)]
+    [InlineData(true, 0.0, 1000)]
+    [InlineData(true, 1.0, 1500)]
+    [InlineData(false, -1.0, 500)]
+    [InlineData(false, 1.0, 1500)]
+    public void Apply_OneSecondActive_JitterCappedAtHalf(bool changed, double jitterUnit, int expectedMilliseconds)
+    {
+        // Arrange
+        HeadProbe probe = changed ? new Changed("W/\"1\"", 4999) : new Unchanged(4999);
+
+        // Act
+        PollTransition t = Initial.Apply(probe, PollMode.Active, T, jitterUnit, OneSecond);
+
+        // Assert
+        t.State.NextDueUtc.Should().Be(T.AddMilliseconds(expectedMilliseconds));
+    }
+
+    [Theory]
+    [InlineData(PollMode.Active, -1.0, 8)]
+    [InlineData(PollMode.Active, 1.0, 12)]
+    [InlineData(PollMode.Idle, -1.0, 58)]
+    [InlineData(PollMode.Idle, 1.0, 62)]
+    public void Apply_TenAndSixtySeconds_ByteIdenticalToBefore(PollMode mode, double jitterUnit, int expectedSeconds)
+    {
+        // Act
+        PollTransition t = Initial.Apply(new Unchanged(4999), mode, T, jitterUnit, Options);
+
+        // Assert
+        t.State.NextDueUtc.Should().Be(T.AddSeconds(expectedSeconds));
+    }
+
+    [Theory]
+    [InlineData(-1.0, 58)]
+    [InlineData(1.0, 62)]
+    public void Apply_OneSecondWithPollIntervalSixty_JitterFromRaisedInterval(double jitterUnit, int expectedSeconds)
+    {
+        // Arrange
+        HeadProbe probe = new Unchanged(4999) { MinimumInterval = TimeSpan.FromSeconds(60) };
+
+        // Act
+        PollTransition t = Initial.Apply(probe, PollMode.Active, T, jitterUnit, OneSecond);
+
+        // Assert
+        t.State.NextDueUtc.Should().Be(T.AddSeconds(expectedSeconds));
+    }
+
+    [Fact]
+    public void Apply_OneSecondRemainingBelowFloor_ThrottledAtLeast120Seconds()
+    {
+        // Act
+        PollTransition t = Initial.Apply(new Unchanged(99), PollMode.Active, T, -1, OneSecond);
+
+        // Assert
+        t.State.Phase.Should().Be(PollPhase.Throttled);
+        t.State.BackoffUntilUtc.Should().Be(T.AddSeconds(120));
+        t.State.NextDueUtc.Should().Be(T.AddSeconds(118), "the throttle keeps the uncapped ±2 s jitter");
+    }
+
+    [Fact]
+    public void Apply_OneSecondThrottledRetryAfterAndReset_LaterWins()
+    {
+        // Act
+        PollTransition t = Initial.Apply(new Throttled(T.AddMinutes(10), TimeSpan.FromMinutes(5), 0), PollMode.Active, T, 0, OneSecond);
+
+        // Assert
+        t.State.BackoffUntilUtc.Should().Be(T.AddMinutes(10));
+    }
+
+    [Fact]
+    public void Apply_OneSecondUnreachable_TenSecondsDoublingToFiveMinutes_UncappedJitter()
+    {
+        // Arrange
+        PollState state = Initial;
+        var untils = new List<TimeSpan>();
+
+        // Act
+        for (int i = 0; i < 7; i++)
+        {
+            state = state.Apply(new Unreachable("HttpRequestException"), PollMode.Active, T, 1, OneSecond).State;
+            untils.Add(state.BackoffUntilUtc!.Value - T);
+        }
+
+        // Assert
+        untils.Select(u => (int)u.TotalSeconds).Should().Equal(10, 20, 40, 80, 160, 300, 300);
+        state.NextDueUtc.Should().Be(T.AddSeconds(302));
+    }
 }

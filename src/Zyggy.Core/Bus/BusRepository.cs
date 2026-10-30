@@ -530,21 +530,16 @@ public sealed partial class BusRepository
     {
         ArgumentNullException.ThrowIfNull(reporter);
         ArgumentNullException.ThrowIfNull(inReplyTo);
-        string full = BusPaths.Resolve(_checkoutRoot, BusPaths.Reports(_me.Tenant, reporter));
-        if (!Directory.Exists(full))
-        {
-            return [];
-        }
-
         var reports = new List<Model>();
-        foreach (string file in Directory.EnumerateFiles(full, "*" + EnvelopeExtension, SearchOption.TopDirectoryOnly).Order(StringComparer.Ordinal))
+        foreach ((string file, bool archived) in ReportFilesOf(reporter))
         {
             byte[] bytes = await File.ReadAllBytesAsync(file, ct).ConfigureAwait(false);
             EnvelopeResult result = await _signer.ParseAndVerifyAsync(bytes, _me.Tenant, ct).ConfigureAwait(false);
             if (result.IsAccepted
                 && result.Envelope!.Type == EnvelopeType.Report
                 && result.Envelope.Header.InReplyTo == inReplyTo
-                && result.Envelope.Header.To == _me.Machine)
+                && result.Envelope.Header.To == _me.Machine
+                && (!archived || result.Envelope.Header.From == reporter))
             {
                 reports.Add(result.Envelope);
             }
@@ -566,21 +561,16 @@ public sealed partial class BusRepository
     {
         ArgumentNullException.ThrowIfNull(reporter);
         ArgumentNullException.ThrowIfNull(inReplyTo);
-        string full = BusPaths.Resolve(_checkoutRoot, BusPaths.Reports(_me.Tenant, reporter));
-        if (!Directory.Exists(full))
-        {
-            return [];
-        }
-
         var rejections = new List<EnvelopeRejection>();
-        foreach (string file in Directory.EnumerateFiles(full, "*" + EnvelopeExtension, SearchOption.TopDirectoryOnly).Order(StringComparer.Ordinal))
+        foreach ((string file, bool archived) in ReportFilesOf(reporter))
         {
             byte[] bytes = await File.ReadAllBytesAsync(file, ct).ConfigureAwait(false);
             EnvelopeResult parsed = EnvelopeParser.Parse(bytes, _me.Tenant);
             if (!parsed.IsAccepted
                 || parsed.Envelope!.Type != EnvelopeType.Report
                 || parsed.Envelope.Header.InReplyTo != inReplyTo
-                || parsed.Envelope.Header.To != _me.Machine)
+                || parsed.Envelope.Header.To != _me.Machine
+                || (archived && parsed.Envelope.Header.From != reporter))
             {
                 continue;
             }
@@ -593,6 +583,31 @@ public sealed partial class BusRepository
         }
 
         return rejections;
+    }
+
+    /// <summary>
+    /// The files a report of <paramref name="reporter"/> may sit in (spec 13 AC-25): its live <c>reports/</c> folder and every
+    /// <c>archive/YYYY-MM/</c> month, ordered by file name across both; <c>Archived</c> marks a file whose sender is not implied by its folder.
+    /// </summary>
+    private List<(string Path, bool Archived)> ReportFilesOf(MachineName reporter)
+    {
+        var files = new List<(string Name, string Path, bool Archived)>();
+        void Add(string folder, bool archived)
+        {
+            string full = BusPaths.Resolve(_checkoutRoot, folder);
+            if (Directory.Exists(full))
+            {
+                files.AddRange(Directory.EnumerateFiles(full, "*" + EnvelopeExtension, SearchOption.TopDirectoryOnly).Select(f => (Path.GetFileName(f), f, archived)));
+            }
+        }
+
+        Add(BusPaths.Reports(_me.Tenant, reporter), archived: false);
+        foreach (string month in ArchiveMonths.Folders(_checkoutRoot, _me.Tenant))
+        {
+            Add(month, archived: true);
+        }
+
+        return [.. files.OrderBy(f => f.Name, StringComparer.Ordinal).Select(f => (f.Path, f.Archived))];
     }
 
     /// <summary>

@@ -116,7 +116,8 @@ public static class ServiceCollectionExtensions
                 sp.GetService<Random>() ?? Random.Shared,
                 sp.GetRequiredService<JobHandler>(),
                 log,
-                sp.GetService<JobGate>());
+                sp.GetService<JobGate>(),
+                sp.GetService<BusPickup>());
         });
         // Deliverable 08: the sender side. Resolving without a registered KeyId throws (the verb checks signWith first, as probe send does).
         services.TryAddSingleton(sp =>

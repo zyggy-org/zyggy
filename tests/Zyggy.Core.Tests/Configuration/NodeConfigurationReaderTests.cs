@@ -163,6 +163,29 @@ public sealed class NodeConfigurationReaderTests : IDisposable
         result.Field.Should().Be("poll.activeSeconds");
     }
 
+    // Spec 13 AC-22: Central's 1 s poll is a plain positive integer; nothing new in node.json.
+    [Fact]
+    public void Read_PollActiveOne_Accepted()
+    {
+        // Act
+        NodeConfigurationResult result = Read(Minimal.Replace("\"activeSeconds\": 10", "\"activeSeconds\": 1", StringComparison.Ordinal));
+
+        // Assert
+        result.Configuration!.Poll.ActiveSeconds.Should().Be(1);
+        result.Configuration.Poll.ToPollOptions().ActiveInterval.Should().Be(TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public void Read_PollActiveNegative_InvalidField()
+    {
+        // Act
+        NodeConfigurationResult result = Read(Minimal.Replace("\"activeSeconds\": 10", "\"activeSeconds\": -1", StringComparison.Ordinal));
+
+        // Assert
+        result.Error.Should().Be(NodeConfigurationError.InvalidField);
+        result.Field.Should().Be("poll.activeSeconds");
+    }
+
     [Fact]
     public void Read_RelativeLocalPath_InvalidField()
     {

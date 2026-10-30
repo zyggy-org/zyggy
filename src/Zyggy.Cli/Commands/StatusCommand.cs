@@ -165,7 +165,7 @@ internal static partial class StatusCommand
                 .Append('\n');
         }
 
-        int total = report.Machines.Sum(m => m.Reports);
+        int total = report.ReportsTotal;
         sb.Append("recent reports (").Append(report.RecentReports.Count.ToString(CultureInfo.InvariantCulture)).Append(" of ").Append(total.ToString(CultureInfo.InvariantCulture)).Append(")\n");
         foreach (EnvelopeSummary r in report.RecentReports)
         {

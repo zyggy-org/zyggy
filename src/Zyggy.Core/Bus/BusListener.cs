@@ -27,6 +27,7 @@ public sealed partial class BusListener : IDisposable
     private readonly JobHandler _handler;
     private readonly ILogger<BusListener> _log;
     private readonly JobGate? _gate;
+    private readonly BusPickup? _pickup;
     private readonly ConcurrentDictionary<string, Task> _runs = new(StringComparer.Ordinal);
     private readonly List<AcceptedJob> _deferredClaims = [];
     private bool _pullErrorLogged;
@@ -53,6 +54,7 @@ public sealed partial class BusListener : IDisposable
     /// <param name="handler">What to do with a verified, claimed job.</param>
     /// <param name="log">The logger.</param>
     /// <param name="gate">Consulted before every claim (spec 07); <see langword="null"/> admits every job and awaits its run inline.</param>
+    /// <param name="pickup">Central's pickup (spec 13), run after the job pass of every successful pull; <see langword="null"/> on every other machine.</param>
     /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
     public BusListener(
         IBusProvider provider,
@@ -63,7 +65,8 @@ public sealed partial class BusListener : IDisposable
         Random jitter,
         JobHandler handler,
         ILogger<BusListener> log,
-        JobGate? gate = null)
+        JobGate? gate = null,
+        BusPickup? pickup = null)
     {
         _provider = provider ?? throw new ArgumentNullException(nameof(provider));
         _bus = bus ?? throw new ArgumentNullException(nameof(bus));
@@ -74,6 +77,7 @@ public sealed partial class BusListener : IDisposable
         _handler = handler ?? throw new ArgumentNullException(nameof(handler));
         _log = log ?? throw new ArgumentNullException(nameof(log));
         _gate = gate;
+        _pickup = pickup;
         State = PollState.Initial(clock.GetUtcNow());
         Status = new ListenerStatus(State, null, null, null, null, 0, 0, PollMode.Active);
     }
@@ -124,6 +128,11 @@ public sealed partial class BusListener : IDisposable
         }
 
         await ProcessOnceAsync(ct).ConfigureAwait(false);
+        if (pull.Succeeded)
+        {
+            await PickupAsync(ct).ConfigureAwait(false);
+        }
+
         State = PollState.Initial(_clock.GetUtcNow());
         _nextSafetyFetchUtc = State.NextDueUtc + _options.SafetyFetchInterval;
         Publish();
@@ -345,6 +354,7 @@ public sealed partial class BusListener : IDisposable
                 if (await PullAndNoteAsync(ct).ConfigureAwait(false))
                 {
                     await ProcessOnceAsync(ct).ConfigureAwait(false);
+                    await PickupAsync(ct).ConfigureAwait(false);
                 }
             }
         }
@@ -353,6 +363,9 @@ public sealed partial class BusListener : IDisposable
             // the host asked us to stop
         }
     }
+
+    /// <summary>§5 item 2 as amended by A13-7: on Central, the pickup after the job pass of a successful pull; a no-op elsewhere.</summary>
+    private Task PickupAsync(CancellationToken ct) => _pickup is null ? Task.CompletedTask : _pickup.RunAsync(ct);
 
     /// <summary>The §5 item 6 safety fetch: Moved ⇒ one warning, the ETag forgotten, a pull and a pass; Failed ⇒ one warning per streak; Unchanged ⇒ silence. True when a pull happened.</summary>
     private async Task<bool> SafetyFetchAsync(CancellationToken ct)
@@ -371,6 +384,7 @@ public sealed partial class BusListener : IDisposable
                 if (await PullAndNoteAsync(ct).ConfigureAwait(false))
                 {
                     await ProcessOnceAsync(ct).ConfigureAwait(false);
+                    await PickupAsync(ct).ConfigureAwait(false);
                     return true;
                 }
 
