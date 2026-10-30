@@ -344,6 +344,73 @@ public sealed class ContextRankerTests
         Options.TopicMaxChars.Should().Be(200);
     }
 
+    // Spec 13 decision Q2: a third block of picked-up, not-yet-filed inbox lines between the files and the daily block.
+    private const string InboxHeading = "## inbox (picked up, not yet filed by the dream)";
+
+    [Fact]
+    public void Rank_InboxLinesMatchingTopic_ThirdBlockBetweenFilesAndDaily_HeadingVerbatim()
+    {
+        // Arrange
+        var entries = new[] { Entry("business/areas/zyggy.md", "name: zyggy\ndescription: The platform\n", "- body") };
+        DailyLine[] daily = [new(new DateOnly(2026, 10, 28), "- zyggy daily")];
+        InboxLine[] inbox = [new("bus-context-x-2026-10-28.md", new DateOnly(2026, 10, 28), "- zyggy picked up"), new("remember-2026-10-28.md", new DateOnly(2026, 10, 28), "- unrelated")];
+
+        // Act
+        var result = ContextRanker.Rank(new ContextRequest("zyggy", 2000), entries, daily, Options, MemoryTree.Alice, Generated, inbox);
+
+        // Assert
+        result.Text.Should().Be(
+            Wrapper + DataSentence
+            + "## business/areas/zyggy.md — The platform\n- body\n"
+            + InboxHeading + "\n- zyggy picked up\n"
+            + "## daily\n- zyggy daily\n"
+            + Foot);
+        result.InboxLinesIncluded.Should().Be(1);
+        result.InboxLinesOmitted.Should().Be(0);
+    }
+
+    [Fact]
+    public void Rank_InboxBlockNeverOverTwentyPercent_CutAtLineBoundaryWithInboxMarker()
+    {
+        // Arrange: 1,000 tokens = 4,000 bytes; the inbox may use 800
+        var inbox = Enumerable.Range(1, 60).Select(i => new InboxLine("remember-2026-10-28.md", new DateOnly(2026, 10, 28), $"- zyggy line {i:00}")).ToList();
+
+        // Act
+        var result = ContextRanker.Rank(new ContextRequest("zyggy", 1000), [], [], Options, MemoryTree.Alice, Generated, inbox);
+
+        // Assert
+        string block = result.Text[result.Text.IndexOf(InboxHeading, StringComparison.Ordinal)..result.Text.IndexOf(Foot, StringComparison.Ordinal)];
+        System.Text.Encoding.UTF8.GetByteCount(block).Should().BeLessThanOrEqualTo(800);
+        block.Should().EndWith($"[context truncated: {result.InboxLinesOmitted} more inbox lines not included]\n");
+        (result.InboxLinesIncluded + result.InboxLinesOmitted).Should().Be(60);
+        result.InboxLinesOmitted.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void Rank_OnlyInboxMatches_WrapperAndInboxBlockNotNoMatch()
+    {
+        // Act
+        var result = ContextRanker.Rank(new ContextRequest("staging", 2000), [], [], Options, MemoryTree.Alice, Generated, [new("bus-context-x-2026-10-28.md", new DateOnly(2026, 10, 28), "- The staging database is restored")]);
+
+        // Assert
+        result.Text.Should().Be(Wrapper + DataSentence + InboxHeading + "\n- The staging database is restored\n" + Foot);
+    }
+
+    [Fact]
+    public void Rank_InboxNull_ByteIdenticalToBefore()
+    {
+        // Arrange
+        var entries = new[] { Entry("business/areas/zyggy.md", "name: zyggy\ndescription: The platform\n", "- body") };
+
+        // Act
+        var without = Rank("zyggy", entries);
+        var empty = ContextRanker.Rank(new ContextRequest("zyggy", 2000), entries, [], Options, MemoryTree.Alice, Generated, []);
+
+        // Assert
+        empty.Should().Be(without);
+        without.Text.Should().NotContain("## inbox");
+    }
+
     private static ContextResult Rank(string topic, IReadOnlyList<MemoryEntry> entries, IReadOnlyList<DailyLine>? daily = null, int maxTokens = 2000) =>
         ContextRanker.Rank(new ContextRequest(topic, maxTokens), entries, daily ?? [], Options, MemoryTree.Alice, Generated);
 

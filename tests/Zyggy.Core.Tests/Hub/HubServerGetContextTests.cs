@@ -64,6 +64,8 @@ public sealed class HubServerGetContextTests
             "- [stated] 2026-10-20: Goal: an assistant on central.\n" +
             "## private/people/carol.md — Carol, who fixes the zyggy roof\n" +
             "- [stated] 2026-10-25: Carol is my sister.\n" +
+            "## inbox (picked up, not yet filed by the dream)\n" +
+            "- [stated] 2026-10-27: zyggy in the inbox\n" +
             "## daily\n" +
             "- [observed] 09:15 session 1a2b3c4d: zyggy hub planned\n" +
             Foot);
@@ -264,7 +266,65 @@ public sealed class HubServerGetContextTests
         exit.Should().Be(0);
     }
 
-    // The excluded places (daily roll-up, a daily file out of the window, inbox, auto, profile) all hold the topic word.
+    // Spec 13 decision Q2 (AC-26, AC-27): a picked-up line is returned before the dream files it, inside the data framing.
+    [Fact]
+    public async Task GetContext_PickedUpBusLine_ReturnedVerbatimUnderInboxHeadingInsideDataFraming()
+    {
+        // Arrange
+        using var tree = new MemoryTree(
+            ("inbox/bus-context-home-laptop-01K8ZX3P4Q5R6S7T8V9W0XYZAB-2026-10-28.md",
+                "---\nname: bus context 01K8ZX3P4Q5R6S7T8V9W0XYZAB\n---\n- [stated] 2026-10-28 (project:calizr): The staging database is restored from Sunday's snapshot\n"));
+        await using var hub = await HubHarness.StartAsync(tree);
+
+        // Act
+        var result = await hub.CallAsync("get_context", """{"topic":"staging database"}""");
+
+        // Assert
+        HubHarness.TextOf(result).Should().Be(
+            Wrapper + DataSentence
+            + "## inbox (picked up, not yet filed by the dream)\n"
+            + "- [stated] 2026-10-28 (project:calizr): The staging database is restored from Sunday's snapshot\n"
+            + Foot);
+    }
+
+    [Fact]
+    public async Task GetContext_ConsumedBusLine_NotReturned()
+    {
+        // Arrange
+        const string Line = "- [stated] 2026-10-28: The staging database is restored";
+        var ledger = Zyggy.Core.Dream.DreamLedger.Empty();
+        ledger.Consume("inbox/bus-context-home-laptop-01K8ZX3P4Q5R6S7T8V9W0XYZAB-2026-10-28.md", [Zyggy.Core.Dream.LineHash.Of(Line)], new DateOnly(2026, 10, 28));
+        using var tree = new MemoryTree(
+            ("inbox/bus-context-home-laptop-01K8ZX3P4Q5R6S7T8V9W0XYZAB-2026-10-28.md", Line + "\n"),
+            (".dream/ledger.json", ledger.Serialize()));
+        await using var hub = await HubHarness.StartAsync(tree);
+
+        // Act
+        var result = await hub.CallAsync("get_context", """{"topic":"staging database"}""");
+
+        // Assert
+        HubHarness.TextOf(result).Should().Be(Zyggy.Core.Memory.ContextRanker.NoMatch);
+    }
+
+    [Fact]
+    public async Task GetContext_InvalidLedger_LineReturned_NoError()
+    {
+        // Arrange
+        using var tree = new MemoryTree(
+            ("inbox/remember-2026-10-28.md", "- [stated] 2026-10-28: The staging database is restored\n"),
+            (".dream/ledger.json", "not json"));
+        await using var hub = await HubHarness.StartAsync(tree);
+
+        // Act
+        var result = await hub.CallAsync("get_context", """{"topic":"staging"}""");
+
+        // Assert
+        result.IsError.Should().NotBe(true);
+        HubHarness.TextOf(result).Should().Contain("- [stated] 2026-10-28: The staging database is restored\n");
+    }
+
+    // The excluded places (daily roll-up, a daily file out of the window, auto, profile) all hold the topic word; since spec 13 (Q2) the
+    // not-yet-filed remember- inbox line is returned in its own block.
     internal static MemoryTree Tree() => new(
         ("business/areas/zyggy.md",
             "---\nname: zyggy\naliases: [zyggy, zyggy platform]\ndescription: The platform Alice builds\nupdated: 2026-10-20\n---\n"

@@ -79,8 +79,10 @@ public sealed class HubMcpServerTests : IDisposable
         text.Should().Contain(
             "## business/areas/zyggy.md — The platform Alice builds\n- [stated] 2026-10-20: Goal: an assistant on central.\n"
             + "## private/people/carol.md — Carol, who fixes the zyggy roof\n- [stated] 2026-10-25: Carol is my sister.\n"
+            + "## inbox (picked up, not yet filed by the dream)\n- [stated] 2026-10-01: zyggy in the inbox\n"
             + "## daily\n- [observed] 09:15 session 1a2b3c4d: zyggy hub planned\n</zyggy-context>\n");
-        text.Should().NotContain("too old").And.NotContain("roll-up").And.NotContain("inbox").And.NotContain("auto").And.NotContain("profile");
+        // since spec 13 (Q2) the not-yet-filed remember- inbox line is returned in its own block; the rest stays excluded
+        text.Should().NotContain("too old").And.NotContain("roll-up").And.NotContain("auto").And.NotContain("profile");
         _fixture.Fingerprint().Should().Equal(before);
     }
 

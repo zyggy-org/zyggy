@@ -26,4 +26,10 @@ internal sealed record ContextOptions
 
     /// <summary>Gets the longest accepted topic, in Unicode scalar values after normalisation.</summary>
     public int TopicMaxChars { get; init; } = 200;
+
+    /// <summary>Gets the share of the budget, in percent, the picked-up inbox block may take at most (spec 13 decision Q2).</summary>
+    public int InboxBudgetPercent { get; init; } = 20;
+
+    /// <summary>Gets the inbox file-name prefixes whose not-yet-filed lines <c>get_context</c> returns (spec 13 decision Q2).</summary>
+    public IReadOnlyList<string> InboxFilePrefixes { get; init; } = ["bus-", "remember-"];
 }

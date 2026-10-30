@@ -12,3 +12,9 @@ internal sealed record MemoryEntry(string RelativePath, MemorySide Side, Categor
 /// <param name="Date">The date in the file name.</param>
 /// <param name="Text">The line, without its line ending.</param>
 internal sealed record DailyLine(DateOnly Date, string Text);
+
+/// <summary>A picked-up inbox line the dream has not consumed yet (spec 13 decision Q2).</summary>
+/// <param name="FileName">The inbox file name.</param>
+/// <param name="FileDate">The <c>-YYYY-MM-DD.md</c> date of the name, when it has one.</param>
+/// <param name="Text">The line as written.</param>
+internal sealed record InboxLine(string FileName, DateOnly? FileDate, string Text);

@@ -704,16 +704,16 @@ The pickup runs after the start-up pull (A7), after a `Changed` tick's pull and 
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: `dotnet test tests/Zyggy.Core.Tests --filter "FullyQualifiedName~BusRepositoryIntakeTests|FullyQualifiedName~BusInventoryTests"` and `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~StatusAfterPickupTests"` are green. The executor pastes the `zyggy status` and `zyggy status --id` output after a pickup.
-- [ ] Contract review: the per-machine table is live counts (it drops to 0 on Central after pickup, documented in Step 12); recent reports and the trace read the archive; `ArchiveMonths` is the only archive-month enumeration (A5); no new `BusPaths` member.
-- [ ] Assumptions A5 and A9 confirmed or corrected; nothing committed.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `dotnet test tests/Zyggy.Core.Tests --filter "FullyQualifiedName~BusRepositoryIntakeTests|FullyQualifiedName~BusInventoryTests"` and `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~StatusAfterPickupTests"` are green. The executor pastes the `zyggy status` and `zyggy status --id` output after a pickup.
+- [x] Contract review: the per-machine table is live counts (it drops to 0 on Central after pickup, documented in Step 12); recent reports and the trace read the archive; `ArchiveMonths` is the only archive-month enumeration (A5); no new `BusPaths` member.
+- [x] Assumptions A5 and A9 confirmed or corrected; nothing committed.
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 9 — `get_context` returns the dream-unconsumed lines of `inbox/bus-*.md` and `inbox/remember-*.md` in its own block of at most 20 % of the budget, newest file first; every other inbox file and the `SessionStart` digest stay inbox-free
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Memory/ContextOptions.cs` *(modify)*: `public int InboxBudgetPercent { get; init; } = 20;` and `public IReadOnlyList<string> InboxFilePrefixes { get; init; } = ["bus-", "remember-"];`.
@@ -776,7 +776,7 @@ The pickup runs after the start-up pull (A7), after a `Changed` tick's pull and 
 
 ## Step 10 — The Hub in process returns, verbatim and under the inbox heading, the line a real pickup copied from the bare repository a moment earlier
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `tests/Zyggy.Integration/Infrastructure/InProcessHub.cs` *(create)*: `HubServer.RunAsync` over two `Pipe`s with an SDK `McpClient`, as `HubHarness` does in Core.Tests (Integration sees Core's internals). The constructor takes `MemoryPaths` and `TimeZoneInfo`; it exposes `CallGetContextAsync(string topic, int? maxTokens = null)` and `DisposeAsync` (asserts the server returned 0).
@@ -812,7 +812,7 @@ The pickup runs after the start-up pull (A7), after a `Changed` tick's pull and 
 
 With the fake `claude` filing the batch, the dream classes a picked-up `bus-context-…` line as a stated inbox line and a picked-up `bus-report-…` line as an observed inbox line, files both and consumes both in the ledger. The dream reads and writes nothing on the bus.
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `tests/Zyggy.Core.Tests/Dream/BatchPlannerTests.cs` *(modify, append)*.
@@ -861,19 +861,19 @@ With the fake `claude` filing the batch, the dream classes a picked-up `bus-cont
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: `dotnet test tests/Zyggy.Core.Tests --filter "FullyQualifiedName~MemoryStoreTests|FullyQualifiedName~ContextRankerTests|FullyQualifiedName~HubServerGetContextTests|FullyQualifiedName~DigestBuilderPickupTests|FullyQualifiedName~BatchPlannerTests"` and `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~GetContextAfterPickupTests|FullyQualifiedName~DreamBusInboxTests"` are green. The executor pastes:
+- [x] Behavioral verification: `dotnet test tests/Zyggy.Core.Tests --filter "FullyQualifiedName~MemoryStoreTests|FullyQualifiedName~ContextRankerTests|FullyQualifiedName~HubServerGetContextTests|FullyQualifiedName~DigestBuilderPickupTests|FullyQualifiedName~BatchPlannerTests"` and `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~GetContextAfterPickupTests|FullyQualifiedName~DreamBusInboxTests"` are green. The executor pastes:
   - one `get_context` result with the inbox block;
   - the same result after the dream (no block);
   - the ledger entries for the `bus-context-…` and `bus-report-…` files.
-- [ ] Contract review (⚠️ §7, Q2 / A13-9):
+- [x] Contract review (⚠️ §7, Q2 / A13-9):
   - Only `bus-*` and `remember-*` inbox files, and only unconsumed `- ` lines.
   - ≤ 20 % of the budget, with its own marker; newest file first.
   - An invalid ledger means "nothing consumed".
   - The digest has no inbox line.
   - The tool description and the golden are unchanged.
-- [ ] Q-P1 = (b) end to end: the report's one `[observed]` line is returned by `get_context` (Step 10), then filed and consumed by the dream (Step 11), so its `bus-report-…` inbox file becomes eligible for the rollup like any other inbox file.
-- [ ] Assumptions A10–A11 confirmed or corrected; nothing committed.
-- [ ] User approved — implementation may continue past this gate
+- [x] Q-P1 = (b) end to end: the report's one `[observed]` line is returned by `get_context` (Step 10), then filed and consumed by the dream (Step 11), so its `bus-report-…` inbox file becomes eligible for the rollup like any other inbox file.
+- [x] Assumptions A10–A11 confirmed or corrected; nothing committed.
+- [x] User approved — implementation may continue past this gate
 
 ---
 

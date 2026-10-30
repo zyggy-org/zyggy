@@ -28,6 +28,28 @@ public sealed partial class SourceHygieneTests
         offenders.Should().BeEmpty();
     }
 
+    // Spec 13 AC-30 (decision Q1): the nightly dream reads only the memory repository; Central's node picks up from the bus.
+    [Fact]
+    public void Src_Dream_NeverReferencesTheBus()
+    {
+        // Arrange
+        var files = Directory.EnumerateFiles(Path.Combine(RepoRoot(), "src", "Zyggy.Core", "Dream"), "*.cs", SearchOption.AllDirectories)
+            .Append(Path.Combine(RepoRoot(), "src", "Zyggy.Cli", "Commands", "DreamCommand.cs"))
+            .Where(File.Exists)
+            .ToList();
+        string[] forbidden = ["BusRepository", "BusPaths", "IBusProvider", "BusPickup", "GitHubBusOptions"];
+
+        // Act
+        var offenders = files
+            .SelectMany(f => forbidden.Where(word => CommentLine().Replace(File.ReadAllText(f), string.Empty).Contains(word, StringComparison.Ordinal))
+                .Select(word => $"{Path.GetRelativePath(RepoRoot(), f)}: {word}"))
+            .ToList();
+
+        // Assert
+        files.Should().HaveCountGreaterThan(5);
+        offenders.Should().BeEmpty();
+    }
+
     [Theory]
     [InlineData("login.microsoftonline.com", "src/Zyggy.Core/M365/Graph/GraphEndpoints.cs")]
     [InlineData("graph.microsoft.com", "src/Zyggy.Core/M365/Graph/GraphEndpoints.cs")]
