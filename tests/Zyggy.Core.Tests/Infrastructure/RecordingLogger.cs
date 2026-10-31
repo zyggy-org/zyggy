@@ -5,6 +5,9 @@ namespace Zyggy.Core.Tests.Infrastructure;
 /// <summary>An <see cref="ILogger{T}"/> that records every entry (level, rendered message, active scopes) for the §11 "once per state change" counts.</summary>
 internal sealed class RecordingLogger<T> : ILogger<T>
 {
+    // Concurrent tests (JobDispatcherTests.AdmitAsync_Concurrent_*) log and open scopes from parallel callers.
+    private readonly Lock _gate = new();
+
     private readonly List<object?> _scopes = [];
 
     public List<LogEntry> Entries { get; } = [];
@@ -16,7 +19,11 @@ internal sealed class RecordingLogger<T> : ILogger<T>
     public IDisposable BeginScope<TState>(TState state)
         where TState : notnull
     {
-        _scopes.Add(state);
+        lock (_gate)
+        {
+            _scopes.Add(state);
+        }
+
         return new Scope(this, state);
     }
 
@@ -25,12 +32,22 @@ internal sealed class RecordingLogger<T> : ILogger<T>
     public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
     {
         ArgumentNullException.ThrowIfNull(formatter);
-        Entries.Add(new LogEntry(logLevel, formatter(state, exception), exception, [.. _scopes]));
+        string message = formatter(state, exception);
+        lock (_gate)
+        {
+            Entries.Add(new LogEntry(logLevel, message, exception, [.. _scopes]));
+        }
     }
 
     private sealed class Scope(RecordingLogger<T> owner, object? state) : IDisposable
     {
-        public void Dispose() => owner._scopes.Remove(state);
+        public void Dispose()
+        {
+            lock (owner._gate)
+            {
+                owner._scopes.Remove(state);
+            }
+        }
     }
 }
 

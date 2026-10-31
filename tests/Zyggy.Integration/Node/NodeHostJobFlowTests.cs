@@ -42,7 +42,9 @@ public sealed class NodeHostJobFlowTests
 
         // Act 1: two run at once (one per project), the third waits for its project
         await NodeHostHarness.WaitUntilAsync(async () => (await HealthAsync(client, ct)).GetProperty("jobsRunning").GetInt32() == 2, TimeSpan.FromSeconds(45), ct);
-        bool bothCapturesExist = File.Exists(Path.Combine(first.Path, "capture.bin")) && File.Exists(Path.Combine(second.Path, "capture.bin"));
+        // jobsRunning counts a run once it is admitted; the fake claude writes its capture when the process has started, which a slow
+        // runner can take a few seconds to do. 6 s stays inside the 8 s delay, so both still run at once.
+        bool bothCapturesExist = await CapturesWithinAsync([first, second], TimeSpan.FromSeconds(6), ct);
         int reportsWhileBothRun = (await harness.ReportsOnMainAsync(ct)).Count;
         string? deferredLine = harness.LogLines.FirstOrDefault(l => l.Contains("deferred: ProjectBusy", StringComparison.Ordinal));
         SeededJob deferred = deferredLine?.Contains(job3.Id.Value, StringComparison.Ordinal) == true ? job3 : job1;
@@ -192,5 +194,18 @@ public sealed class NodeHostJobFlowTests
     {
         using JsonDocument document = JsonDocument.Parse(await client.GetStringAsync(new Uri("/health", UriKind.Relative), ct));
         return document.RootElement.Clone();
+    }
+
+    private static async Task<bool> CapturesWithinAsync(IReadOnlyList<ScratchProject> projects, TimeSpan timeout, CancellationToken ct)
+    {
+        try
+        {
+            await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(projects.All(p => File.Exists(Path.Combine(p.Path, "capture.bin")))), timeout, ct);
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
     }
 }
