@@ -63,7 +63,7 @@ Six deliverables. Three are .NET binaries (`AgentBus.Hub` is served by the CLI b
 
 | Component | Kind | Where | Responsibility |
 | --- | --- | --- | --- |
-| `AgentBus.Node` | .NET Worker Service | every machine incl. Central | Poll GitHub, pull, claim, execute, report, push. Publish registry. |
+| `AgentBus.Node` | .NET Worker Service | every machine incl. Central | Poll GitHub, pull, claim, execute, report, push. Publish registry. On Central, pick up the reports and context addressed to Central into the memory inbox and archive them (§7 step 1). |
 | `AgentBus.Cli` (`agentbus`) | .NET console, single-file | every machine | `submit`, `status`, `report`, `context`, `discover`, `verify`, `dream`, `dream request`, `dream status`, `memory digest`, `memory archive add | list | remove`; `--version`. Called from Claude Code skills. |
 | `AgentBus.Hub` | .NET MCP server (stdio), served as the CLI verb `agentbus hub` from `AgentBus.Core/Hub/` (amended 28 October 2026, deliverable 11) | Central | `get_context`, `remember`, `list_nodes`, `submit_job`, `job_status`. |
 | `AgentBus.Core` | .NET class library | shared | Envelope model, signing, git wrapper, GitHub poller, job runner, registry model. |
@@ -74,7 +74,7 @@ Six deliverables. Three are .NET binaries (`AgentBus.Hub` is served by the CLI b
 
 - Working directory `/srv/agent/central` **is** the `agent-core` checkout (amended 30 September 2026, deliverable 27): `AGENTS.md` (identity and rules; Claude Code reads it natively — no `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` may exist in or above the working directory), `.claude/` (rules, hooks, skills, committed settings), the nested memory repo `memory/` (laid out `memory/<tenant>/<user>/…` per §7; v1 = `memory/geoffrey/geoffrey/`), and `.mcp.json` (Hub MCP local stdio, the `m365` server (`@softeria/ms-365-mcp-server`, pinned, running as a local service on the loopback interface that holds no credential; Claude Code obtains a fresh application access token, minted on Central from its certificate, for every connection and again when a token has expired, so the owner never reconnects — decision of 3 October 2026; only read tools, two Draft tools and three action tools — send a message, create a new OneDrive file, move a message — are loaded, and every action tool requires a permission prompt — decisions of 1 and 3 October 2026), Meta Graph MCP for the Facebook Page / Instagram professional account, read-only). Telegram is the official Claude Code channel plugin on the interactive session (owner-only allowlist), not an MCP entry.
 - Two long-running processes: `claude remote-control --name central --spawn=same-dir --permission-mode auto` (interactive access) and `AgentBus.Node` (bus loop, also used for cron-style jobs Central submits to itself).
-- Nightly at 03:00 and on the owner's request, `zyggy-dream.service` runs `zyggy dream` (timer and a request-file path unit); from 13 the timer submits a `dream` job instead.
+- Nightly at 03:00 and on the owner's request, `zyggy-dream.service` runs `zyggy dream` (timer and a request-file path unit). The dream reads no bus file: Central's `AgentBus.Node` copies what the machines send into the inbox as it arrives (§7 step 1; amended 29 October 2026, deliverable 13).
 
 **Node instance (laptops)**
 
@@ -121,7 +121,7 @@ agent-bus/
       jobs/rejected/                # failed signature, schema or tenant check
       reports/                      # results, written only by <machine>
       context/                      # facts for Central, written only by <machine>
-    archive/YYYY-MM/                # moved by Central's sweep after 14 days
+    archive/YYYY-MM/                # moved by Central: on pickup (files addressed to Central, §7 step 1) or by the sweep after 14 days; YYYY-MM = the envelope's created month
 ```
 
 All paths in the rest of this section are relative to `tenants/<org>/`. In code every path is produced by `BusPaths` from the configured tenant id (§9).
@@ -132,7 +132,7 @@ All paths in the rest of this section are relative to `tenants/<org>/`. In code 
 
 - A sender writes only into `nodes/<target>/jobs/`, and only inside its own tenant's prefix. A `context` envelope is addressed to Central (`to: central`) but written into the sender's own `nodes/<sender>/context/` folder, so that every `reports/` and `context/` file is written by the machine whose folder holds it (amended 28 October 2026, deliverable 12).
 - A machine writes its own `reports/`, `context/`, `registry/<machine>.yaml`, and moves files between its own `jobs/`, `jobs/claimed/`, `jobs/rejected/`.
-- Only Central writes `archive/`.
+- Only Central writes `archive/`, and the only writes there are `git mv` moves of `reports/` and `context/` files from any machine's folder of its own tenant (amended 29 October 2026, deliverable 13).
 - No machine reads or writes outside the `tenants/<org>/` prefix of the tenant recorded in its `node.json`; a file found under another tenant's prefix is ignored, never processed.
 - File name = ULID + `.md`. Two writers never touch the same file, so `git pull --rebase` never conflicts on content.
 
@@ -197,7 +197,8 @@ Timestamps are RFC 3339 date-times written as `YYYY-MM-DDTHH:MM:SSZ` (UTC, whole
 | `jobs/` | `jobs/claimed/` | target node | `git mv` + commit + push; push rejected → the §5 retry rule (pull --rebase, up to 3 attempts with jitter); still rejected → the claim stays a local, unpushed commit on the node and is pushed with the node's next write (§5) |
 | `jobs/claimed/` | `reports/<ulid>.md` + job deleted | target node | add report (fresh ULID file name, `in_reply_to` = job id), `git rm` job, commit, push |
 | `jobs/claimed/` older than `timeout_minutes` + 15 min | `jobs/` | Central (hourly sweep) | `git mv` back, `attempt: n+1`; after 3 attempts → report `status: failed` |
-| `reports/`, `context/` older than 14 days | `archive/YYYY-MM/` (same tenant prefix) | Central | `git mv` |
+| `reports/`, `context/` of another machine addressed to Central, after their body is in Central's inbox | `archive/YYYY-MM/` (same tenant prefix, month of `created`) | Central (pickup) | `git mv`, one commit per pass |
+| `reports/`, `context/` older than 14 days | `archive/YYYY-MM/` (same tenant prefix, month of `created`) | Central (sweep) | `git mv` |
 
 Every move stays inside one `tenants/<org>/` subtree; there is no cross-tenant transition.
 
@@ -234,8 +235,8 @@ One transport everywhere: GitHub as ledger (git) and as doorbell (conditional RE
 **Poll loop (`AgentBus.Node`)**
 
 1. `GET https://api.github.com/repos/{owner}/agent-bus/commits?sha=main&per_page=1` with headers `Authorization: Bearer <PAT>`, `If-None-Match: <etag>`, `User-Agent: agentbus/<version>`.
-2. `304` → sleep and repeat. `200` → store the new ETag, run `git pull --rebase`, process `tenants/<my tenant>/nodes/<me>/jobs/`, then continue. Commits touching other machines' folders or other tenants' subtrees wake the poller like any other commit but produce no work.
-3. Interval: 10 s inside `work_hours`, 60 s outside; jitter ±2 s; one in-flight request at a time.
+2. `304` → sleep and repeat. `200` → store the new ETag, run `git pull --rebase`, process `tenants/<my tenant>/nodes/<me>/jobs/`, on Central then run the pickup of §7 step 1, then continue. Commits touching other machines' folders or other tenants' subtrees wake the poller like any other commit but produce no work, except Central's pickup of files addressed to it (amended 29 October 2026, deliverable 13).
+3. Interval: 10 s inside `work_hours`, 60 s outside; Central, which has no work hours, uses 1 s (`poll.activeSeconds`, §10); jitter ±2 s, at most half the interval; one in-flight request at a time (amended 29 October 2026, deliverable 13).
 4. On HTTP 403/429 or `x-ratelimit-remaining < 100`: back off until the later of 120 s from now, the reset time in `x-ratelimit-reset` and `retry-after`. When a response carries `x-poll-interval`, the next interval is at least that many seconds. Conditional requests answered `304` do not count against GitHub's primary limit; all personal access tokens of one account share that limit.
 5. On network error: exponential back-off 10 s → 5 min, then keep polling; log once per state change, not per attempt.
 6. Safety net: unconditional `git fetch` + compare `origin/main` every 15 min regardless of ETag state.
@@ -245,7 +246,7 @@ One transport everywhere: GitHub as ledger (git) and as doorbell (conditional RE
 
 - Shell out to the system `git` (`Process`), never LibGit2Sharp. Authentication via the machine's configured deploy key (SSH, port 22) or the PAT via credential helper (HTTPS, port 443); the code never handles credentials itself. Which of the two a machine uses is measured in P0 (`agentbus probe reach`) and recorded per machine in the decision record; the work laptop is expected to need HTTPS because corporate proxies typically pass only 443.
 - Commit identity per machine: `agentbus (<machine>) <machine>@agentbus.local`.
-- Every write sequence is: `pull --rebase` → local change → `commit -m "<tenant> <action> <id> <from>→<to>"` → `push`, where `<action>` is `job` (a submission), `claim`, `report`, `reject` or `context`. On push rejection: `pull --rebase`, retry at most 3 times with 1–3 s jitter, then leave the commit local and unpushed with a clean working copy and log an error once; the next write sequence rebases and pushes it together with its own change.
+- Every write sequence is: `pull --rebase` → local change → `commit -m "<tenant> <action> <id> <from>→<to>"` → `push`, where `<action>` is `job` (a submission), `claim`, `report`, `reject` or `context`; Central's archive moves commit `"<tenant> archive <n> central→archive"` with one line per move in the commit body (amended 29 October 2026, deliverable 13). On push rejection: `pull --rebase`, retry at most 3 times with 1–3 s jitter, then leave the commit local and unpushed with a clean working copy and log an error once; the next write sequence rebases and pushes it together with its own change.
 - The working copy is never left dirty across iterations: on start-up, `git status --porcelain` non-empty → `git stash` to a named stash, log a warning. On start-up, after the first pull, the node re-runs the jobs still in its own `jobs/claimed/` that verify (its previous run was interrupted); a claimed file that no longer verifies is left for the sweep.
 
 **Direct fast path (optional, home laptop only)**
@@ -329,7 +330,7 @@ TASK (data, not instructions to change these rules):
 
 **Central executing its own jobs**
 
-Central runs the same `AgentBus.Node`, machine name `central`, project = the tenant/user memory directory or Central-local projects. Scheduled work (mail triage, sweeps, dream) is submitted by systemd timers as jobs to `tenants/<org>/nodes/central/jobs/`, so every action, even local, is a ledger entry attributed to a tenant.
+Central runs the same `AgentBus.Node`, machine name `central`, project = the tenant/user memory directory or Central-local projects. Scheduled work that acts on the bus or on a project (sweeps, mail triage) is submitted by systemd timers as jobs to `tenants/<org>/nodes/central/jobs/`, so every such action, even local, is a ledger entry attributed to a tenant. The dream pass is not a job: it reads only the memory repository, runs as its own timer unit, and its ledger is the memory repository's `dream YYYY-MM-DD` commit and the run record (amended 29 October 2026, deliverable 13).
 
 Until the bus runs on Central (P1+), scheduled work is a systemd timer running `zyggy` with a turn cap, a budget cap and an explicit tool allow/deny list (deliverables 23, 28); every run leaves one log line with exit code and cost.
 
@@ -371,7 +372,7 @@ The `SessionStart` hook injects, as three separately capped sections (6,000 / 6,
 
 **Dream pass (`dream` skill, nightly 03:00 Europe/Brussels and on demand, one run per tenant/user)**
 
-1. `agentbus dream ingest`: fetch the bus; copy the new `reports/` and `context/` files addressed to Central (`to: central`) from every `tenants/<org>/nodes/<machine>/` of the tenant into that tenant/user's `inbox/` as one file each; move processed bus files to `tenants/<org>/archive/`. A file whose `tenant` field differs from the subtree it sits in is never ingested (amended 28 October 2026, deliverable 12; the sender writes its own folder, §4).
+1. Pickup (not part of the nightly run): each time Central's `AgentBus.Node` pulls a change, it verifies every `reports/` and `context/` file addressed to Central (`to: central`) in every `tenants/<org>/nodes/<machine>/` of the tenant except Central's own and writes one file per envelope into that tenant/user's `inbox/`: a context envelope's body unchanged (`bus-context-<from>-<id>-<date>.md`; lines matching a secret pattern are dropped), a report as exactly one line `- [observed] <created date> [report <job id first 8>]: <first non-empty line of its body>` (`bus-report-<from>-<job>-<id>-<date>.md`; a `rejected` report, a report without a non-empty line, or one whose line matches a secret pattern gets no inbox file); the full report stays readable in the archive. It then moves the processed files to `tenants/<org>/archive/<YYYY-MM of created>/` in one commit. A file whose `tenant` field differs from the subtree it sits in, that does not verify, or whose `from` is not its folder's machine is never ingested and stays for the sweep (amended 29 October 2026, deliverable 13).
 2. Read unconsumed lines of `inbox/` and `daily/` (ledger), in capped batches.
 3. For each fact: decide side and category; create a category when none fits; decide destination file by subject; merge into an existing line if it restates or supersedes one; otherwise append. Keep provenance tags. Never upgrade a single mention into a generalisation.
 4. Rewrite any file over 300 lines: merge duplicates, drop moving state that has expired (a finished job, a past deadline), keep decisions and constraints. Update `description` when it no longer matches.
@@ -393,7 +394,7 @@ Every Hub call runs under a *principal* `(tenant, user)`. The principal is resol
 
 | Tool | Input | Output | Notes |
 | --- | --- | --- | --- |
-| `get_context` | `topic` (string), `max_tokens` (default 2,000, 100–8,000) | matching file bodies and daily lines | ranked by match on slug, `name`, `aliases` and `description` (exact, then all terms, then any term), then `updated` descending; searches only the principal's `<side>/<category>/<slug>.md` files and the last 30 `daily/YYYY-MM-DD.md` files (daily lines at most 20 % of the budget); `inbox/`, `auto/`, `archive/`, the monthly roll-ups and the identity files are never returned; the budget is `max_tokens × 4` bytes, cut at a line boundary with a marker (amended 28 October 2026) |
+| `get_context` | `topic` (string), `max_tokens` (default 2,000, 100–8,000) | matching file bodies and daily lines | ranked by match on slug, `name`, `aliases` and `description` (exact, then all terms, then any term), then `updated` descending; searches only the principal's `<side>/<category>/<slug>.md` files, the last 30 `daily/YYYY-MM-DD.md` files (daily lines at most 20 % of the budget) and the lines of `inbox/bus-*.md` and `inbox/remember-*.md` the dream has not yet consumed (at most 20 % of the budget, newest first), so a fact picked up from the bus or remembered on Central is usable before the nightly dream; the other inbox files, `auto/`, `archive/`, the monthly roll-ups and the identity files are never returned; the budget is `max_tokens × 4` bytes, cut at a line boundary with a marker (amended 28 and 29 October 2026, deliverables 11 and 13) |
 | `remember` | `fact`, `scope` | `remembered: <path>` and the line | one `[stated]` line in the principal's `inbox/remember-<date>.md`, through the same writer as `agentbus memory remember`; refuses secret patterns and stores nothing under `ZYGGY_HOOKS=off` (amended 28 October 2026) |
 | `list_nodes` | – | registry summary | from the principal's tenant `registry/*.yaml` |
 | `submit_job` | envelope fields (except `tenant`, `key_id`, `sig`) | job id | stamps `tenant` from the principal, signs with that tenant's key, pushes |
@@ -526,7 +527,7 @@ Each machine has one `node.json`; secrets are never in it.
   "role": "node",                        // node | central
   "signWith": "geoffrey/1",                // the key id this machine signs with (§4 rotation, §11 rotate-hmac.md)
   "bus": { "remote": "https://github.com/zyggy-org/zyggy-bus.git", "owner": "zyggy-org", "repo": "zyggy-bus", "branch": "main", "localPath": "C:/agents/bus" },   // Central: "remote": "git@github.com-zyggy-bus:zyggy-org/zyggy-bus.git"
-  "poll": { "activeSeconds": 10, "idleSeconds": 60, "safetyFetchMinutes": 15 },
+  "poll": { "activeSeconds": 10, "idleSeconds": 60, "safetyFetchMinutes": 15 },   // Central: "activeSeconds": 1 (deliverable 13)
   "workHours": { "timezone": "Europe/Brussels", "days": ["Mon","Tue","Wed","Thu","Fri"], "from": "08:00", "to": "19:00" },   // absent = always inside work hours (Central): active polling and jobs at any hour
   "devRoots": ["C:/src", "C:/work"],
   "nodeDir": "C:/agents/node",                  // transcripts under runs/<tenant>/, logs under logs/; default %LOCALAPPDATA%\zyggy on Windows, ~/.local/share/zyggy on Linux
@@ -544,7 +545,7 @@ The node refuses to start when `tenant` is missing or when the bus checkout has 
 **Central (Linux VM or container)**
 
 - Host: Azure VM Standard B2as v2, Ubuntu 24.04 (container variant on `mcr.microsoft.com/dotnet/runtime-deps:10.0` remains possible); Node 22 and the Claude Code CLI installed; Tailscale joined. Persistent volume `/srv/agent`: `/srv/agent/central` (the `agent-core` checkout and Central's working directory), `/srv/agent/central/memory` (memory repository), bus checkout, node state, `~/.claude`.
-- systemd units: `agentbus-node.service` (`Type=notify`, `Restart=on-failure`, `RestartPreventExitStatus=3 6` — a start-up refusal waits for a human, a crash restarts after 30 s; shipped as `deploy/systemd/zyggy-node.service` with the release, deliverable 10), `claude-remote.service` (runs `claude remote-control --name central --spawn=same-dir --permission-mode auto` under `tmux` or as a plain service, Restart=always), `zyggy-dream.timer`, `zyggy-dream.path`, `zyggy-dream.service`, `agent-sweep.timer` (hourly, submits a sweep job whose body runs `agentbus sweep`: stale claims, retries, archive, alert conditions).
+- systemd units: `agentbus-node.service` (`Type=notify`, `Restart=on-failure`, `RestartPreventExitStatus=3 6` — a start-up refusal waits for a human, a crash restarts after 30 s; shipped as `deploy/systemd/zyggy-node.service` with the release, deliverable 10; on Central the drop-in `zyggy-node.service.d/pickup.conf` names the memory principal and the secret-pattern file the pickup needs, and the node refuses to start without them, deliverable 13), `claude-remote.service` (runs `claude remote-control --name central --spawn=same-dir --permission-mode auto` under `tmux` or as a plain service, Restart=always), `zyggy-dream.timer`, `zyggy-dream.path`, `zyggy-dream.service`, `agent-sweep.timer` (hourly, submits a sweep job whose body runs `agentbus sweep`: stale claims, retries, archive, alert conditions).
 - Secrets via `LoadCredential=` in the units whose secret no command-line verb needs (the Graph key, the Telegram token). For the bus HMAC keys and the GitHub PAT both layers of the Linux store (§8) are usable: the `zyggy` user's 0600 file layer is the default — one source for the unit and for `agentbus submit`, `verify` and `secret` run from a shell — and the node unit can additionally load them through `LoadCredential=` (ids `agentbus.<tenant>.hmac.<n>`, `agentbus.<tenant>.github-pat`; the drop-in example `zyggy-node.service.d/credentials.conf.example` ships with the release) when the owner wants the unit's copy root-owned and read-only; inside the unit the credentials directory wins, the file layer serves every shell command, `agentbus secret set` says so when both hold a name, and `install-node.md` says when to choose which (deliverable 10). The container variant reads the same names from mounted files.
 - Claude Code auth: one interactive `claude login` at first boot; the OAuth token lives in `~/.claude` on the persistent volume.
 

@@ -77,13 +77,14 @@ public sealed class CiWorkflowTests
     }
 
     [Fact]
-    public void DeployTree_ExactlyTheFourFiles()
+    public void DeployTree_ExactlyTheFiveFiles()
     {
-        // Assert: a fifth shipped file is a plan change
+        // Assert: a sixth shipped file is a plan change (the fifth, pickup.conf.example, is spec 13 AC-33)
         DeployAssets.AllFiles().Should().Equal(
             "README.md",
             "systemd/zyggy-node.service",
             "systemd/zyggy-node.service.d/credentials.conf.example",
+            "systemd/zyggy-node.service.d/pickup.conf.example",
             "windows/install.ps1");
     }
 

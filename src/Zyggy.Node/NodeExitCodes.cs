@@ -12,7 +12,7 @@ public static class NodeExitCodes
     /// <summary>An unexpected exception ended the host (<c>BackgroundServiceExceptionBehavior.StopHost</c>); one <c>Error</c> line names the type.</summary>
     public const int Faulted = 1;
 
-    /// <summary>A refused <c>node.json</c>, or one without <c>signWith</c>: one stderr line <c>zyggy-node: configuration error: &lt;key&gt;: &lt;detail&gt;</c>; nothing else started.</summary>
+    /// <summary>A refused <c>node.json</c>, one without <c>signWith</c>, or Central without its pickup configuration (spec 13, <c>pickup: &lt;detail&gt;</c>): one stderr line <c>zyggy-node: configuration error: &lt;key&gt;: &lt;detail&gt;</c>; nothing else started.</summary>
     public const int Configuration = 3;
 
     /// <summary>A start-up condition: the log directory cannot be created, or the bus checkout fails the §5 start-up check; one stderr/<c>Error</c> line names it.</summary>

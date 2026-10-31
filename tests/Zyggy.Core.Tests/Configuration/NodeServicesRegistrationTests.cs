@@ -5,6 +5,7 @@ using Zyggy.Core.Bus;
 using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Jobs;
+using Zyggy.Core.Memory;
 using Zyggy.Core.Models;
 using Zyggy.Core.Policy;
 using Zyggy.Core.Secrets;
@@ -152,4 +153,89 @@ public sealed class NodeServicesRegistrationTests
 
     private static NodeConfiguration Configuration() =>
         new(Acme, HomeLaptop, TestKeys.Acme1, new BusSettings("acme-org", "acme-bus", "main", "/bus", "https://example.invalid/acme-org/acme-bus.git"), new PollSettings(), new SecretsSettings(SecretStoreKind.File, "/secrets"));
+
+    // Spec 12 Step 2 (A1, A14): the context submitter resolves only when the key and the secret patterns are registered.
+    [Fact]
+    public void AddNodeServices_WithKeyAndPatterns_ResolvesContextSubmitter()
+    {
+        // Arrange
+        IServiceCollection services = new ServiceCollection().AddNodeServices(Configuration());
+        services.AddSecretPatterns(new Dictionary<string, string?>(StringComparer.Ordinal) { ["ZYGGY_SECRET_PATTERNS"] = PatternsPath }).Should().BeNull();
+        using var provider = services.BuildServiceProvider();
+
+        // Act / Assert
+        provider.GetRequiredService<ContextSubmitter>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void AddNodeServices_WithoutPatterns_ResolvingContextSubmitterThrows()
+    {
+        // Arrange
+        using var provider = new ServiceCollection().AddNodeServices(Configuration()).BuildServiceProvider();
+
+        // Act
+        Action act = () => provider.GetRequiredService<ContextSubmitter>();
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void AddNodeServices_RegistersContextEnvelopeOptionsDefaults()
+    {
+        // Arrange
+        using var provider = new ServiceCollection().AddNodeServices(Configuration()).BuildServiceProvider();
+
+        // Act
+        var options = provider.GetRequiredService<ContextEnvelopeOptions>();
+
+        // Assert
+        options.Should().Be(new ContextEnvelopeOptions());
+        options.MaxFactChars.Should().Be(1000);
+        options.MaxHookLinesPerSession.Should().Be(150);
+        options.StaleSpoolAge.Should().Be(TimeSpan.FromMinutes(60));
+        options.MaxBodyBytes.Should().Be(65_536);
+    }
+
+    [Fact]
+    public void AddNodeServices_ResolvesContextSpoolUnderEffectiveNodeDir()
+    {
+        // Arrange
+        NodeConfiguration configuration = Configuration() with { NodeDir = "/node" };
+        using var provider = new ServiceCollection().AddNodeServices(configuration).BuildServiceProvider();
+
+        // Act
+        var spool = provider.GetRequiredService<ContextSpool>();
+
+        // Assert
+        spool.Directory.Should().Be(Path.GetFullPath(ContextSpool.DirectoryFor("/node", Acme)));
+    }
+
+    [Fact]
+    public void AddNodeServices_WithPatterns_ResolvesContextStopHook()
+    {
+        // Arrange
+        IServiceCollection services = new ServiceCollection().AddNodeServices(Configuration());
+        services.AddSecretPatterns(new Dictionary<string, string?>(StringComparer.Ordinal) { ["ZYGGY_SECRET_PATTERNS"] = PatternsPath }).Should().BeNull();
+        using var provider = services.BuildServiceProvider();
+
+        // Act / Assert
+        provider.GetRequiredService<ContextStopHook>().Should().NotBeNull();
+        Action withoutPatterns = () => new ServiceCollection().AddNodeServices(Configuration()).BuildServiceProvider().GetRequiredService<ContextStopHook>();
+        withoutPatterns.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void AddNodeServices_WithKeyAndPatterns_ResolvesContextFlusher()
+    {
+        // Arrange
+        IServiceCollection services = new ServiceCollection().AddNodeServices(Configuration());
+        services.AddSecretPatterns(new Dictionary<string, string?>(StringComparer.Ordinal) { ["ZYGGY_SECRET_PATTERNS"] = PatternsPath }).Should().BeNull();
+        using var provider = services.BuildServiceProvider();
+
+        // Act / Assert
+        provider.GetRequiredService<ContextFlusher>().Should().NotBeNull();
+    }
+
+    private static string PatternsPath => Path.Combine(Golden.Directory, "secret-patterns", "secret-patterns.txt");
 }

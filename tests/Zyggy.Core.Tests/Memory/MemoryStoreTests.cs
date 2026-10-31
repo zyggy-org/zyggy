@@ -143,6 +143,115 @@ public sealed class MemoryStoreTests
         store.DurableEntries().Should().BeEmpty();
     }
 
+    // Spec 13 decision Q2 (AC-27): the not-yet-filed lines of inbox/bus-*.md and inbox/remember-*.md, and nothing else of the inbox.
+    [Fact]
+    public void PickedUpLines_BusAndRememberFiles_Only_BackfillAndOthersNever()
+    {
+        // Arrange
+        using var tree = new MemoryTree(
+            ("inbox/bus-context-home-laptop-01K8ZX3P4Q5R6S7T8V9W0XYZAB-2026-10-27.md", "---\nname: bus context x\n---\n- context line\n"),
+            ("inbox/bus-report-home-laptop-01K8ZX2A3B4C5D6E7F8G9H0JKM-01K8ZX4Q5R6S7T8V9W0XYZAC-2026-10-27.md", "---\nname: bus report x\n---\n- report line\n"),
+            ("inbox/remember-2026-10-27.md", "- remembered line\n"),
+            ("inbox/files-2026-10-27.md", "- files line\n"),
+            ("inbox/m365-mail-backfill-2026-10-27.md", "- backfill line\n"),
+            ("inbox/github-inventory-2026-10-27.md", "- github line\n"),
+            ("inbox/_bus-hidden-2026-10-27.md", "- hidden line\n"));
+
+        // Act
+        var lines = new MemoryStore(tree.Paths).PickedUpLines(null, new ContextOptions());
+
+        // Assert
+        lines.Select(line => line.Text).Should().BeEquivalentTo("- context line", "- report line", "- remembered line");
+    }
+
+    [Fact]
+    public void PickedUpLines_LedgerConsumedLines_Skipped()
+    {
+        // Arrange
+        using var tree = new MemoryTree(("inbox/remember-2026-10-27.md", "- filed\n- not yet\n"));
+        var ledger = Zyggy.Core.Dream.DreamLedger.Empty();
+        ledger.Consume("inbox/remember-2026-10-27.md", [Zyggy.Core.Dream.LineHash.Of("- filed")], Today);
+
+        // Act
+        var lines = new MemoryStore(tree.Paths).PickedUpLines(ledger, new ContextOptions());
+
+        // Assert
+        lines.Select(line => line.Text).Should().Equal("- not yet");
+    }
+
+    [Fact]
+    public void PickedUpLines_LedgerNull_NothingConsumed()
+    {
+        // Arrange
+        using var tree = new MemoryTree(("inbox/remember-2026-10-27.md", "- one\n- two\n"));
+
+        // Act
+        var lines = new MemoryStore(tree.Paths).PickedUpLines(null, new ContextOptions());
+
+        // Assert
+        lines.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void PickedUpLines_NewestFileFirst_FileOrderKept()
+    {
+        // Arrange
+        using var tree = new MemoryTree(
+            ("inbox/remember-2026-10-25.md", "- old one\n- old two\n"),
+            ("inbox/bus-context-home-laptop-01K8ZX3P4Q5R6S7T8V9W0XYZAB-2026-10-27.md", "- new one\n- new two\n"),
+            ("inbox/remember-2026-10-27.md", "- remember new\n"));
+
+        // Act
+        var lines = new MemoryStore(tree.Paths).PickedUpLines(null, new ContextOptions());
+
+        // Assert: by the file-name date descending, then the file name descending, lines in file order
+        lines.Select(line => line.Text).Should().Equal("- remember new", "- new one", "- new two", "- old one", "- old two");
+        lines[0].FileDate.Should().Be(new DateOnly(2026, 10, 27));
+    }
+
+    [Fact]
+    public void PickedUpLines_FrontMatterAndNonDashLines_NotCandidates()
+    {
+        // Arrange
+        using var tree = new MemoryTree(("inbox/remember-2026-10-27.md", "---\nname: x\ndescription: - not a line\n---\nprose\n\n- a line\n"));
+
+        // Act
+        var lines = new MemoryStore(tree.Paths).PickedUpLines(null, new ContextOptions());
+
+        // Assert
+        lines.Select(line => line.Text).Should().Equal("- a line");
+    }
+
+    [Fact(SkipUnless = nameof(IsLinux), Skip = "Symbolic links need Linux (as MemoryPathsSymlinkTests).")]
+    public void PickedUpLines_SymlinkOutOfPrincipal_Skipped()
+    {
+        // Arrange
+        using var tree = new MemoryTree(("inbox/remember-2026-10-27.md", "- inside\n"));
+        var outside = Path.Combine(tree.Root, "outside.md");
+        File.WriteAllText(outside, "- outside\n");
+        File.CreateSymbolicLink(tree.Full("inbox/bus-context-x-2026-10-27.md"), outside);
+
+        // Act
+        var lines = new MemoryStore(tree.Paths).PickedUpLines(null, new ContextOptions());
+
+        // Assert
+        lines.Select(line => line.Text).Should().Equal("- inside");
+    }
+
+    [Fact]
+    public void Ledger_InvalidOrUnsupportedJson_Null_MissingFile_Empty()
+    {
+        // Arrange
+        using var missing = new MemoryTree();
+        using var invalid = new MemoryTree((".dream/ledger.json", "{}"));
+        using var unsupported = new MemoryTree((".dream/ledger.json", "{\"schema\": 99, \"files\": {}}"));
+
+        // Act + Assert
+        new MemoryStore(missing.Paths).Ledger().Should().NotBeNull().And.Match<Zyggy.Core.Dream.DreamLedger>(l => l.Files.Count == 0);
+        new MemoryStore(invalid.Paths).Ledger().Should().BeNull();
+        new MemoryStore(unsupported.Paths).Ledger().Should().BeNull();
+    }
+
     [Fact(SkipUnless = nameof(IsLinux), Skip = "Symbolic links need Linux (as MemoryPathsSymlinkTests).")]
     public void DurableEntries_SymlinkLeadingOutside_Skipped()
     {

@@ -8,6 +8,8 @@ using Zyggy.Core.Bus;
 using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Jobs;
+using Zyggy.Core.Memory;
+using Zyggy.Core.Tenancy;
 
 namespace Zyggy.Node;
 
@@ -36,8 +38,9 @@ public static class NodeHost
     /// <param name="args">The command line.</param>
     /// <param name="cancellationToken">Stops the host (the process-level SIGINT/SIGTERM handling is the generic host's own).</param>
     /// <param name="configure">Test hook (plan 07 A8): applied to the services after the production registrations.</param>
+    /// <param name="environment">The environment <c>node.json</c>'s location and Central's pickup configuration are read from (plan 13 A6); <see langword="null"/> means the process environment.</param>
     /// <returns>The process exit code (<see cref="NodeExitCodes"/>).</returns>
-    public static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken, Action<IServiceCollection>? configure = null)
+    public static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken, Action<IServiceCollection>? configure = null, IReadOnlyDictionary<string, string?>? environment = null)
     {
         ArgumentNullException.ThrowIfNull(args);
         if (args.Contains(VersionOption, StringComparer.Ordinal))
@@ -49,7 +52,7 @@ public static class NodeHost
         IHost host;
         try
         {
-            host = Build(args, configure);
+            host = Build(args, configure, environment);
         }
         catch (NodeStartupException ex)
         {
@@ -77,13 +80,15 @@ public static class NodeHost
     /// </summary>
     /// <param name="args">The command line.</param>
     /// <param name="configure">Test hook (plan 07 A8): applied to the services after the production registrations.</param>
+    /// <param name="environment">The environment <c>node.json</c>'s location and Central's pickup configuration are read from (plan 13 A6); <see langword="null"/> means the process environment.</param>
     /// <returns>The built, not yet started host.</returns>
     /// <exception cref="NodeStartupException">A refused <c>node.json</c>, a missing <c>signWith</c> or an unknown argument (exit 3); a log directory that cannot be created (exit 6).</exception>
-    public static IHost Build(string[] args, Action<IServiceCollection>? configure = null)
+    public static IHost Build(string[] args, Action<IServiceCollection>? configure = null, IReadOnlyDictionary<string, string?>? environment = null)
     {
         ArgumentNullException.ThrowIfNull(args);
         string? configOption = ParseConfigOption(args);
-        string path = NodeConfigurationReader.ResolvePath(configOption, ProcessEnvironment());
+        environment ??= ProcessEnvironment();
+        string path = NodeConfigurationReader.ResolvePath(configOption, environment);
         NodeConfigurationResult result = NodeConfigurationReader.Read(path);
         if (!result.IsOk)
         {
@@ -94,6 +99,17 @@ public static class NodeHost
         if (configuration.SignWith is null)
         {
             throw new NodeStartupException(NodeExitCodes.Configuration, "signWith missing: the node must sign its reports");
+        }
+
+        // Spec 13 (A13-8): only Central picks up, and it refuses to start without the drop-in's variables.
+        PickupConfigurationResult? pickup = null;
+        if (configuration.Machine == MachineName.Central)
+        {
+            pickup = PickupConfiguration.Load(environment, configuration);
+            if (pickup.Error is { } detail)
+            {
+                throw new NodeStartupException(NodeExitCodes.Configuration, "pickup: " + detail);
+            }
         }
 
         string logDirectory = LogDirectory(configuration.EffectiveNodeDir);
@@ -121,6 +137,10 @@ public static class NodeHost
         });
         builder.Services.AddOptions<NodeHostOptions>();
         builder.Services.AddNodeServices(configuration);
+        if (pickup is not null)
+        {
+            builder.Services.AddBusPickup(pickup);
+        }
         builder.Services.AddJobDispatcher();
         builder.Services.AddSingleton<NodeExitState>();
         builder.Services.AddSingleton<NodeStatus>();

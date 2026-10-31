@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Git;
+using Zyggy.Core.Memory;
 using Zyggy.Core.Processes;
 using Zyggy.Core.Secrets;
 
@@ -17,6 +18,37 @@ namespace Zyggy.Core.Bus;
 /// <summary>Registers the bus layer of <c>Zyggy.Core</c> (founding spec §5, §9).</summary>
 public static class ServiceCollectionExtensions
 {
+    /// <summary>
+    /// Registers Central's <see cref="BusPickup"/> (spec 13) over the registered <see cref="BusRepository"/> and envelope signer,
+    /// writing into the memory inbox <paramref name="configuration"/> names. Only Central's node calls this.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">A loaded pickup configuration.</param>
+    /// <returns><paramref name="services"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="configuration"/> carries an error.</exception>
+    public static IServiceCollection AddBusPickup(this IServiceCollection services, PickupConfigurationResult configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+        if (configuration.Paths is not { } paths || configuration.Zone is not { } zone || configuration.Patterns is not { } patterns)
+        {
+            throw new ArgumentException("The pickup configuration did not load: " + configuration.Error, nameof(configuration));
+        }
+
+        services.TryAddSingleton(sp =>
+        {
+            ILogger<BusPickup> log = sp.GetService<ILoggerFactory>()?.CreateLogger<BusPickup>() ?? NullLogger<BusPickup>.Instance;
+            return new BusPickup(
+                sp.GetRequiredService<BusRepository>(),
+                sp.GetRequiredService<EnvelopeSigner>(),
+                new PickupInbox(paths, zone, sp.GetRequiredService<TimeProvider>()),
+                patterns,
+                log);
+        });
+        return services;
+    }
+
     /// <summary>
     /// Registers the GitHub implementation of <see cref="IBusProvider"/>, the git client with this machine's commit identity
     /// (<c>zyggy (&lt;machine&gt;) &lt;machine&gt;@zyggy.org</c>, §5) and the <see cref="BusRepository"/> as singletons. Requires
@@ -84,7 +116,8 @@ public static class ServiceCollectionExtensions
                 sp.GetService<Random>() ?? Random.Shared,
                 sp.GetRequiredService<JobHandler>(),
                 log,
-                sp.GetService<JobGate>());
+                sp.GetService<JobGate>(),
+                sp.GetService<BusPickup>());
         });
         // Deliverable 08: the sender side. Resolving without a registered KeyId throws (the verb checks signWith first, as probe send does).
         services.TryAddSingleton(sp =>
@@ -94,6 +127,30 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<BusRepository>(),
                 sp.GetRequiredService<EnvelopeSigner>(),
                 sp.GetRequiredService<KeyId>(),
+                sp.GetRequiredService<TimeProvider>(),
+                log);
+        });
+        // Deliverable 12: the context sender. Resolving without a KeyId or the secret patterns throws (the verb checks both first — fail closed).
+        services.TryAddSingleton(sp =>
+        {
+            ILogger<ContextSubmitter> log = sp.GetService<ILoggerFactory>()?.CreateLogger<ContextSubmitter>() ?? NullLogger<ContextSubmitter>.Instance;
+            return new ContextSubmitter(
+                sp.GetRequiredService<BusRepository>(),
+                sp.GetRequiredService<EnvelopeSigner>(),
+                sp.GetRequiredService<KeyId>(),
+                sp.GetRequiredService<SecretPatterns>(),
+                sp.GetService<ContextEnvelopeOptions>() ?? new ContextEnvelopeOptions(),
+                sp.GetRequiredService<TimeProvider>(),
+                log);
+        });
+        // Deliverable 12: the SessionEnd flush over the spool and the context sender.
+        services.TryAddSingleton(sp =>
+        {
+            ILogger<ContextFlusher> log = sp.GetService<ILoggerFactory>()?.CreateLogger<ContextFlusher>() ?? NullLogger<ContextFlusher>.Instance;
+            return new ContextFlusher(
+                sp.GetRequiredService<ContextSpool>(),
+                sp.GetRequiredService<ContextSubmitter>(),
+                sp.GetRequiredService<SecretPatterns>(),
                 sp.GetRequiredService<TimeProvider>(),
                 log);
         });

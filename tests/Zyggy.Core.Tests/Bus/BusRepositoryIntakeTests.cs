@@ -478,6 +478,120 @@ public sealed class BusRepositoryIntakeTests : IAsyncLifetime
         EnvelopeWriter.Serialize(report).Should().Equal(mine);
     }
 
+    // Spec 13 AC-25: Central archives reports within seconds, so the sender side also reads every archive month.
+    [Fact]
+    public async Task FindReportsAsync_ReportArchived_Returned()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        using var central = new TempCheckout(Acme, Central);
+        var jobId = EnvelopeId.New(T);
+        byte[] report = await ReportBytesAsync(HomeLaptop, Central, jobId, ct);
+        central.Drop(BusPaths.EnvelopeFile(BusPaths.Archive(Acme, 2026, 10), IdOf(report)), report);
+
+        // Act
+        IReadOnlyList<Model> reports = await Repository(new BusIdentity(Acme, Central), central.Root).FindReportsAsync(HomeLaptop, jobId, ct);
+
+        // Assert
+        reports.Should().ContainSingle().Which.Header.InReplyTo.Should().Be(jobId);
+    }
+
+    [Fact]
+    public async Task FindReportsAsync_ReportInBothLiveAndArchive_BothOrderedById()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        using var central = new TempCheckout(Acme, Central);
+        var jobId = EnvelopeId.New(T);
+        byte[] first = await ReportBytesAsync(HomeLaptop, Central, jobId, ct);
+        byte[] second = await ReportBytesAsync(HomeLaptop, Central, jobId, ct);
+        (byte[] older, byte[] newer) = string.CompareOrdinal(IdOf(first).Value, IdOf(second).Value) < 0 ? (first, second) : (second, first);
+        central.Drop(BusPaths.EnvelopeFile(BusPaths.Reports(Acme, HomeLaptop), IdOf(newer)), newer);
+        central.Drop(BusPaths.EnvelopeFile(BusPaths.Archive(Acme, 2026, 10), IdOf(older)), older);
+
+        // Act
+        IReadOnlyList<Model> reports = await Repository(new BusIdentity(Acme, Central), central.Root).FindReportsAsync(HomeLaptop, jobId, ct);
+
+        // Assert
+        reports.Select(r => r.Header.Id).Should().Equal(IdOf(older), IdOf(newer));
+    }
+
+    [Fact]
+    public async Task FindReportsAsync_ArchivedReportFromAnotherReporter_NotReturned()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        using var central = new TempCheckout(Acme, Central);
+        var jobId = EnvelopeId.New(T);
+        byte[] report = await ReportBytesAsync(MachineName.Parse("work-laptop"), Central, jobId, ct);
+        central.Drop(BusPaths.EnvelopeFile(BusPaths.Archive(Acme, 2026, 10), IdOf(report)), report);
+
+        // Act
+        IReadOnlyList<Model> reports = await Repository(new BusIdentity(Acme, Central), central.Root).FindReportsAsync(HomeLaptop, jobId, ct);
+
+        // Assert
+        reports.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task FindReportsAsync_ArchivedContext_NotReturned()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        using var central = new TempCheckout(Acme, Central);
+        var id = EnvelopeId.New(T);
+        byte[] context = await TestEnvelopes.SignedContextBytesAsync(HomeLaptop, Central, _inner, TestKeys.Acme1, "- a fact\n", T, ct, id: id);
+        central.Drop(BusPaths.EnvelopeFile(BusPaths.Archive(Acme, 2026, 10), id), context);
+
+        // Act
+        IReadOnlyList<Model> reports = await Repository(new BusIdentity(Acme, Central), central.Root).FindReportsAsync(HomeLaptop, id, ct);
+
+        // Assert
+        reports.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task FindUnverifiedReportsAsync_TamperedArchivedReport_ReturnedRejection()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        using var central = new TempCheckout(Acme, Central);
+        var jobId = EnvelopeId.New(T);
+        byte[] report = await ReportBytesAsync(HomeLaptop, Central, jobId, ct);
+        EnvelopeId id = IdOf(report);
+        report[^1] ^= 0x01;
+        central.Drop(BusPaths.EnvelopeFile(BusPaths.Archive(Acme, 2026, 10), id), report);
+
+        // Act
+        IReadOnlyList<EnvelopeRejection> rejections = await Repository(new BusIdentity(Acme, Central), central.Root).FindUnverifiedReportsAsync(HomeLaptop, jobId, ct);
+
+        // Assert
+        rejections.Should().ContainSingle().Which.Reason.Should().Be(EnvelopeRejectionReason.InvalidSignature);
+    }
+
+    [Fact]
+    public async Task FindReportsAsync_ArchiveRootAbsentOrNonMonthFolder_Ignored()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        using var central = new TempCheckout(Acme, Central);
+        var jobId = EnvelopeId.New(T);
+        byte[] report = await ReportBytesAsync(HomeLaptop, Central, jobId, ct);
+        BusRepository repository = Repository(new BusIdentity(Acme, Central), central.Root);
+        IReadOnlyList<Model> noArchive = await repository.FindReportsAsync(HomeLaptop, jobId, ct);
+        central.Drop(BusPaths.ArchiveRoot(Acme) + "/notes/" + IdOf(report).Value + ".md", report);
+
+        // Act
+        IReadOnlyList<Model> notes = await repository.FindReportsAsync(HomeLaptop, jobId, ct);
+
+        // Assert
+        noArchive.Should().BeEmpty();
+        notes.Should().BeEmpty();
+    }
+
+    private static EnvelopeId IdOf(byte[] bytes) =>
+        EnvelopeId.Parse(Encoding.UTF8.GetString(bytes).Split('\n').First(l => l.StartsWith("id: ", StringComparison.Ordinal))[4..]);
+
     [Fact]
     public async Task FindReportsAsync_NoReportsFolder_Empty()
     {

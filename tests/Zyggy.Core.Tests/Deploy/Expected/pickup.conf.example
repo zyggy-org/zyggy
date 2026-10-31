@@ -1,0 +1,9 @@
+# Required on Central from deliverable 13: the memory principal and secret patterns the node's pickup needs (founding spec §7 step 1, §10).
+# Copy to /etc/systemd/system/zyggy-node.service.d/pickup.conf, replace <instance-dir>, then: systemctl daemon-reload && systemctl restart zyggy-node.
+# Without it the node on Central exits 3 (configuration error: pickup: …); laptops ignore these variables.
+[Service]
+Environment=ZYGGY_MEMORY_ROOT=<instance-dir>/memory
+Environment=ZYGGY_TENANT=acme
+Environment=ZYGGY_USER=alice
+Environment=ZYGGY_TIMEZONE=UTC
+Environment=ZYGGY_SECRET_PATTERNS=<instance-dir>/.claude/hooks/secret-patterns.txt

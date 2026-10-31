@@ -76,4 +76,8 @@ public sealed record EnvelopeTrace(EnvelopeId Id, TraceState State, MachineName?
 /// <param name="Machines">Every machine under <c>nodes/</c>, ordinal order.</param>
 /// <param name="RecentReports">The newest reports across all machines, newest first.</param>
 /// <param name="TenantDirectories">The directory names under <c>tenants/</c>, ordinal order (plan 08 A12: one per tenant is the rule; the auditor reports a second one).</param>
-public sealed record InventoryReport(string? HeadSha, IReadOnlyList<MachineCounts> Machines, IReadOnlyList<EnvelopeSummary> RecentReports, IReadOnlyList<string> TenantDirectories);
+public sealed record InventoryReport(string? HeadSha, IReadOnlyList<MachineCounts> Machines, IReadOnlyList<EnvelopeSummary> RecentReports, IReadOnlyList<string> TenantDirectories)
+{
+    /// <summary>Gets every report on the bus: the live <c>reports/</c> files plus the archived reports (spec 13 AC-25), the "of n" of <c>zyggy status</c>.</summary>
+    public int ReportsTotal { get; init; }
+}

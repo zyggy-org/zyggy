@@ -32,7 +32,7 @@ public sealed record PollState(
     /// <param name="outcome">What the doorbell told us.</param>
     /// <param name="mode">The host's current mode.</param>
     /// <param name="now">The current instant; the only time source.</param>
-    /// <param name="jitterUnit">A number in [−1, 1] from the host's random source; multiplied by <see cref="PollOptions.Jitter"/>.</param>
+    /// <param name="jitterUnit">A number in [−1, 1] from the host's random source; multiplied by <see cref="PollOptions.Jitter"/>, capped at half the interval on a quiet or changed branch (spec 13).</param>
     /// <param name="options">The intervals and thresholds.</param>
     /// <returns>The next state, whether to pull, and the new phase when it changed.</returns>
     /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
@@ -49,8 +49,8 @@ public sealed record PollState(
         TimeSpan jitter = options.Jitter * jitterUnit;
         PollState next = outcome switch
         {
-            Unchanged unchanged => Quiet(unchanged.RateLimitRemaining, ETag, outcome.MinimumInterval, mode, now, jitter, options),
-            Changed changed => Quiet(changed.RateLimitRemaining, changed.ETag, outcome.MinimumInterval, mode, now, jitter, options),
+            Unchanged unchanged => Quiet(unchanged.RateLimitRemaining, ETag, outcome.MinimumInterval, mode, now, jitterUnit, options),
+            Changed changed => Quiet(changed.RateLimitRemaining, changed.ETag, outcome.MinimumInterval, mode, now, jitterUnit, options),
             Throttled throttled => Throttle(
                 Later(now + options.ThrottleInterval, throttled.ResetUtc, throttled.RetryAfter is { } retry ? now + retry : null),
                 throttled.RateLimitRemaining ?? RateLimitRemaining,
@@ -62,11 +62,11 @@ public sealed record PollState(
         return new PollTransition(next, outcome is Changed, next.Phase == Phase ? null : next.Phase);
     }
 
-    private PollState Quiet(int? remaining, string? etag, TimeSpan? minimumInterval, PollMode mode, DateTimeOffset now, TimeSpan jitter, PollOptions options)
+    private PollState Quiet(int? remaining, string? etag, TimeSpan? minimumInterval, PollMode mode, DateTimeOffset now, double jitterUnit, PollOptions options)
     {
         if (remaining is { } r && r < options.RateLimitFloor)
         {
-            return Throttle(now + options.ThrottleInterval, remaining, jitter) with { ETag = etag };
+            return Throttle(now + options.ThrottleInterval, remaining, options.Jitter * jitterUnit) with { ETag = etag };
         }
 
         TimeSpan interval = mode == PollMode.Active ? options.ActiveInterval : options.IdleInterval;
@@ -75,6 +75,8 @@ public sealed record PollState(
             interval = minimum;
         }
 
+        // §5 item 3 as amended by A13-7: the jitter is at most half the interval, so 1 s stays 0.5–1.5 s; 10 s and 60 s are unchanged.
+        TimeSpan jitter = (options.Jitter < interval / 2 ? options.Jitter : interval / 2) * jitterUnit;
         return new PollState(etag, PollPhase.Polling, now + interval + jitter, null, 0, remaining);
     }
 

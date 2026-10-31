@@ -1,8 +1,10 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 using Zyggy.Core.Bus;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Jobs;
+using Zyggy.Core.Memory;
 using Zyggy.Core.Models;
 using Zyggy.Core.Policy;
 using Zyggy.Core.Processes;
@@ -33,6 +35,10 @@ public static class ServiceCollectionExtensions
         services.AddSecretStore(configuration);
         services.AddEnvelopeSigning();
         services.AddSingleton(configuration.Poll.ToPollOptions());
+        services.TryAddSingleton(new ContextEnvelopeOptions());
+        // Deliverable 12: the laptop hooks' spool and the Stop hook; the hook resolves only with the secret patterns registered (fail closed).
+        services.TryAddSingleton(sp => new ContextSpool(configuration.EffectiveNodeDir, configuration.Tenant, sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ContextEnvelopeOptions>()));
+        services.TryAddSingleton(sp => new ContextStopHook(sp.GetRequiredService<ContextSpool>(), sp.GetRequiredService<SecretPatterns>(), sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ContextEnvelopeOptions>()));
         if (configuration.SignWith is { } signWith)
         {
             services.AddSingleton<KeyId>(signWith);

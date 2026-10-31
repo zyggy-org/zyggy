@@ -489,4 +489,96 @@ public sealed class BusRepositoryWriteTests : IDisposable
         _checkout.Drop(path, EnvelopeWriter.Serialize(job));
         return new AcceptedJob(new BusFile(path, job.Header.Id), job);
     }
+
+    // Spec 12 Step 2 (D1): a context envelope is written into the sender's own context/ folder, addressed to central.
+    [Fact]
+    public async Task PublishContextAsync_SignedContextFromMe_FileUnderMyContextFolderAddCommitPushWithSubject()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Zyggy.Core.Envelope.Envelope context = await SignedContextAsync(HomeLaptop, ct);
+        string path = BusPaths.EnvelopeFile(BusPaths.Context(Acme, HomeLaptop), context.Header.Id);
+
+        // Act
+        WriteOutcome outcome = await Repository().PublishContextAsync(context, ct);
+
+        // Assert
+        outcome.Should().Be(new Pushed(1));
+        _checkout.Read(path).Should().Equal(EnvelopeWriter.Serialize(context));
+        _processes.CallsOf("add").Should().ContainSingle().Which.Arguments.Should().Contain(path);
+        _processes.CallsOf("commit").Should().ContainSingle().Which.StandardInput.Should().StartWith($"acme context {context.Header.Id.Value} home-laptop→central");
+    }
+
+    [Fact]
+    public async Task PublishContextAsync_Unsigned_ThrowsInvalidOperation()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Zyggy.Core.Envelope.Envelope unsigned = Zyggy.Core.Envelope.Envelope.CreateContext(
+            new EnvelopeHeader(Acme, EnvelopeId.New(T), HomeLaptop, Central, T), new ContextFields(ContextScope.Parse("general")), "- fact\n"u8.ToArray());
+
+        // Act
+        Func<Task> act = () => Repository().PublishContextAsync(unsigned, ct);
+
+        // Assert
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("write rule:*");
+        _processes.Calls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task PublishContextAsync_ForeignTenant_Throws()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Zyggy.Core.Envelope.Envelope context = await SignedContextAsync(HomeLaptop, ct, tenant: TenantId.Parse("globex"), signWith: KeyId.Parse("globex/1"));
+
+        // Act
+        Func<Task> act = () => Repository().PublishContextAsync(context, ct);
+
+        // Assert
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("write rule:*");
+        _processes.Calls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task PublishContextAsync_FromAnotherMachine_Throws()
+    {
+        // Arrange: a context signed as central, published by home-laptop's repository
+        var ct = TestContext.Current.CancellationToken;
+        Zyggy.Core.Envelope.Envelope context = await SignedContextAsync(Central, ct);
+
+        // Act
+        Func<Task> act = () => Repository().PublishContextAsync(context, ct);
+
+        // Assert
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("write rule:*");
+        _processes.Calls.Should().BeEmpty();
+        _checkout.FilesUnder(BusPaths.Context(Acme, Central)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task PublishContextAsync_NotAContextEnvelope_Throws()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        var store = await TestKeys.StoreWithBothAsync(ct);
+        Zyggy.Core.Envelope.Envelope job = await TestEnvelopes.SignedJobAsync(HomeLaptop, Central, store, TestKeys.Acme1, "probe\n", ct);
+
+        // Act
+        Func<Task> act = () => Repository().PublishContextAsync(job, ct);
+
+        // Assert
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("write rule:*");
+        _processes.Calls.Should().BeEmpty();
+    }
+
+    private static async Task<Zyggy.Core.Envelope.Envelope> SignedContextAsync(MachineName from, CancellationToken ct, TenantId? tenant = null, KeyId? signWith = null)
+    {
+        var store = signWith is null ? await TestKeys.StoreWithBothAsync(ct) : await TestKeys.StoreWithAsync(signWith, ct);
+        var header = new EnvelopeHeader(tenant ?? Acme, EnvelopeId.New(T), from, Central, T);
+        Zyggy.Core.Envelope.Envelope context = Zyggy.Core.Envelope.Envelope.CreateContext(header, new ContextFields(ContextScope.Parse("project:calizr")), "- [stated] 2026-09-30 (project:calizr): fact\n"u8.ToArray());
+        EnvelopeResult signed = await new EnvelopeSigner(store).SignAsync(context, signWith ?? TestKeys.Acme1, ct);
+        signed.IsAccepted.Should().BeTrue(signed.Rejection?.ToString());
+        return signed.Envelope!;
+    }
 }

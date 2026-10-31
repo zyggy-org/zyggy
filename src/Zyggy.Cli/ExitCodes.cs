@@ -10,6 +10,9 @@ internal static class ExitCodes
     public const int Locked = 4;
     public const int UnknownSection = 4;
     public const int Aborted = 5;
+
+    /// <summary>Refused by policy before anything was written (a secret-shaped fact, spec 12 AC-7): the number the bus-verb family shares with <see cref="Aborted"/>, as the m365 and linkedin verbs use it.</summary>
+    public const int Refused = 5;
     public const int Failed = 6;
     public const int PushDeferred = 7;
 

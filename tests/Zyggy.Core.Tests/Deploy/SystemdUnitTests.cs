@@ -15,6 +15,7 @@ public sealed partial class SystemdUnitTests
 {
     private const string Unit = "systemd/zyggy-node.service";
     private const string DropIn = "systemd/zyggy-node.service.d/credentials.conf.example";
+    private const string PickupDropIn = "systemd/zyggy-node.service.d/pickup.conf.example";
 
     // NodeHostOptions.ShutdownTimeout of deliverable 07 is 20 s; Zyggy.Core.Tests does not reference Zyggy.Node, so the literal is pinned here (plan 10 A8).
     private const int HostDrainSeconds = 20;
@@ -102,9 +103,46 @@ public sealed partial class SystemdUnitTests
             .And.Contain("Inside the unit the credentials directory wins");
     }
 
+    // Spec 13 AC-33 (A13-8): Central's pickup drop-in, required from this release, placeholders only (decision Q-P2).
+    [Fact]
+    public void PickupDropIn_EqualsTheExpectedTextByteForByte()
+    {
+        DeployAssets.Bytes(PickupDropIn).Should().Equal(DeployAssets.ExpectedBytes("pickup.conf.example"));
+    }
+
+    [Fact]
+    public void PickupDropIn_ExactlyTheFiveZyggyVariables_PlaceholdersAcmeAlice()
+    {
+        // Act
+        var settings = DeployAssets.Lines(DeployAssets.Text(PickupDropIn))
+            .Where(l => l.Length > 0 && !l.StartsWith('#') && !l.StartsWith('['))
+            .ToList();
+
+        // Assert
+        settings.Should().Equal(
+            "Environment=ZYGGY_MEMORY_ROOT=<instance-dir>/memory",
+            "Environment=ZYGGY_TENANT=acme",
+            "Environment=ZYGGY_USER=alice",
+            "Environment=ZYGGY_TIMEZONE=UTC",
+            "Environment=ZYGGY_SECRET_PATTERNS=<instance-dir>/.claude/hooks/secret-patterns.txt");
+        DeployAssets.Text(PickupDropIn).Should().NotContain("LoadCredential");
+    }
+
+    [Fact]
+    public void PickupDropIn_CommentsNameCopyTargetRestartAndExitThree()
+    {
+        string text = DeployAssets.Text(PickupDropIn);
+        text.Should().Contain("/etc/systemd/system/zyggy-node.service.d/pickup.conf")
+            .And.Contain("daemon-reload")
+            .And.Contain("systemctl restart zyggy-node")
+            .And.Contain("exits 3")
+            .And.Contain("Required on Central");
+    }
+
     [Theory]
     [InlineData(Unit)]
     [InlineData(DropIn)]
+    [InlineData(PickupDropIn)]
     public void SystemdFiles_LfOnlyPlaceholdersOnlyNoSecret(string relativePath)
     {
         // Act

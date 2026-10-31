@@ -36,7 +36,7 @@ internal static class CliApplication
         var root = new RootCommand("Zyggy: the personal agent platform command line.")
         {
             memory, DreamCommand.Create(environment), m365, brief, linkedin, hub, ProbeCommand.Create(environment, configure), SecretCommand.Create(environment, io, configure),
-            SubmitCommand.Create(environment, io, configure), StatusCommand.Create(environment, io, configure), VerifyCommand.Create(environment, io, configure),
+            SubmitCommand.Create(environment, io, configure), ContextCommand.Create(environment, io, configure), StatusCommand.Create(environment, io, configure), VerifyCommand.Create(environment, io, configure),
         };
         var parseResult = root.Parse(args);
         if (parseResult.Errors.Count > 0)

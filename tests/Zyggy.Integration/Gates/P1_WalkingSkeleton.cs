@@ -2,7 +2,7 @@
 //   Part 1  (deliverable 07, this region): submit → real zyggy-node host (production DI, tenant acme) → fake claude → signed report on main,
 //           opened by the ex-05 probe round trip, the tampered-job rejection and the foreign-tenant isolation.
 //   Part 1b (deliverable 08, below): `zyggy submit` → the same host → `zyggy status` / `status --id` / `zyggy verify` in process over the same bus.
-//   Part 2  (deliverable 13): the dream pass ingesting the bus — append a `#region Part 2 — 13` below.
+//   Part 2  (deliverable 13, below): `zyggy context` from home-laptop → the host as central picks it up → the Hub's get_context returns it; digest ≤ 20,000 bytes.
 // Rule: later parts append their own region and reuse the private helpers at the bottom; part 1 is never restructured.
 // Nothing in the wire format changed for this gate: PROTOCOL.md and the §4 envelope are as deliverables 03/04 left them.
 using System.Text;
@@ -275,6 +275,124 @@ public sealed partial class P1_WalkingSkeleton : IAsyncLifetime
         lines[5].Should().Be("recent reports (1 of 1)");
         SecretSweep.AssertAbsent([console.Stdout, console.Stderr]);
     }
+
+    #endregion
+
+    #region Part 2 — 13
+
+    [Fact]
+    public async Task Part2_ContextFromHomeLaptop_PickedUpByCentral_GetContextReturnsIt_DigestUnderSixKTokens()
+    {
+        // Arrange: Central's production host over the node clone with its pickup over a realistic memory tree (plan 13 A13)
+        var ct = TestContext.Current.CancellationToken;
+        const string Fact = "The staging database is restored from Sunday's snapshot";
+        var (memoryRoot, memoryEnv) = PickupTree();
+        _harness.WriteNodeJson(machine: NodeHostHarness.Central);
+        _harness.Environment = memoryEnv;
+        var fingerprint = TreeFingerprint.Of(memoryRoot).Where(f => !f.Path.Contains("/inbox/", StringComparison.Ordinal)).ToList();
+        using IHost host = _harness.Build();
+        await host.StartAsync(ct);
+        HealthServer server = host.Services.GetRequiredService<HealthServer>();
+        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(server.IsListening), TimeSpan.FromSeconds(10), ct);
+        using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{server.BoundPort}/") };
+        await NodeHostHarness.WaitUntilAsync(async () => (await HealthAsync(client, ct)).GetProperty("lastPollUtc").ValueKind == JsonValueKind.String, TimeSpan.FromSeconds(30), ct);
+
+        // Act (a): the fact, from home-laptop
+        var laptopEnv = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["ZYGGY_NODE_JSON"] = HomeLaptopNodeJsonOverSender(),
+            ["ZYGGY_SECRET_PATTERNS"] = Path.Combine(Golden.Directory, "secret-patterns", "secret-patterns.txt"),
+        };
+        var (contextExit, context) = await ZyggyCliInProcess.RunAsync(["context", "--scope", "project:calizr", "--", Fact], laptopEnv, CliServices, stdin: null, ct);
+
+        // Assert (a)
+        contextExit.Should().Be(0, context.Stderr);
+        Match sent = ContextSentLine().Match(context.Stdout);
+        sent.Success.Should().BeTrue(context.Stdout);
+        var id = EnvelopeId.Parse(sent.Groups["id"].Value);
+        string storedLine = context.Stdout.Split('\n')[1];
+        storedLine.Should().EndWith(": " + Fact);
+
+        // Act (b): Central's next pull picks it up
+        string archived = BusPaths.EnvelopeFile(BusPaths.Archive(NodeHostHarness.Acme, id.Timestamp.UtcDateTime.Year, id.Timestamp.UtcDateTime.Month), id);
+        string inbox = Path.Combine(memoryRoot, "acme", "alice", "inbox");
+        await NodeHostHarness.WaitUntilAsync(
+            async () => Directory.Exists(inbox)
+                && Directory.EnumerateFiles(inbox, $"bus-context-home-laptop-{id.Value}-*.md").Any()
+                && await _harness.Bus.ExistsOnMainAsync(archived, ct),
+            TimeSpan.FromSeconds(30),
+            ct);
+        await host.StopAsync(ct);
+
+        // Act (c): the Hub, the digest and the audit
+        string text;
+        await using (InProcessHub hub = await InProcessHub.StartAsync(new Zyggy.Core.Memory.MemoryPaths(memoryRoot, PickupMemory.Alice), TimeZoneInfo.Utc))
+        {
+            text = await hub.CallGetContextAsync("staging database");
+        }
+
+        var digests = new List<string>();
+        foreach (string section in new[] { "identity", "index", "daily" })
+        {
+            // the digest is a raw verb writing straight to the process's stdout: the real binary, as the SessionStart hook runs it
+            ZyggyRun digest = await ZyggyCli.RunAsync(["memory", "digest", section], memoryEnv, null, _harness.Scratch.Path, ct);
+            digest.ExitCode.Should().Be(0, digest.Stderr);
+            digests.Add(digest.Stdout);
+        }
+
+        var (verifyExit, verify) = await CliAsync(["verify"], _harness.NodeJsonPath, healthUrl: null, ct);
+
+        // Assert (c)
+        text.Should().Contain("## inbox (picked up, not yet filed by the dream)\n" + storedLine + "\n");
+        int digestBytes = digests.Sum(d => Encoding.UTF8.GetByteCount(d));
+        digestBytes.Should().BeGreaterThan(0).And.BeLessThanOrEqualTo(20_000, "the injected session memory stays under 6k tokens");
+        digests.Should().AllSatisfy(d => d.Should().NotContain(Fact));
+        (await _harness.Bus.ExistsOnMainAsync(BusPaths.EnvelopeFile(BusPaths.Context(NodeHostHarness.Acme, NodeHostHarness.HomeLaptop), id), ct)).Should().BeFalse();
+        verifyExit.Should().Be(0, verify.Stdout + verify.Stderr);
+        verify.Stdout.TrimEnd('\n').Split('\n')[^1].Should().MatchRegex(@"^verified \d+ ok, 0 failed, \d+ skipped; 1 tenant directory; HEAD [0-9a-f]{12}$");
+        TreeFingerprint.Of(memoryRoot).Where(f => !f.Path.Contains("/inbox/", StringComparison.Ordinal)).Should().Equal(fingerprint);
+        SecretSweep.AssertAbsent([context.Stdout, context.Stderr, text, verify.Stdout, verify.Stderr, .. digests]);
+        SecretSweep.AssertAbsent(_harness.LogLines);
+        SecretSweep.AssertAbsent(_harness.Hooks.Calls.SelectMany(SecretSweep.TextsOf));
+        _harness.Hooks.Calls.Should().NotContain(c => c.WorkingDirectory.StartsWith(memoryRoot, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>A <c>node.json</c> for <c>home-laptop</c> over the sender clone, signing with <c>acme/1</c> from the same file secret store.</summary>
+    private string HomeLaptopNodeJsonOverSender() =>
+        NodeJson.Write(
+            _harness.Scratch.File("home-laptop-sender-config"),
+            NodeHostHarness.Acme,
+            NodeHostHarness.HomeLaptop,
+            TestKeys.Acme1,
+            busLocalPath: _harness.Bus.SenderDir,
+            remote: TestHost.Remote.HttpsUrl!.ToString(),
+            secretsRoot: _harness.SecretsRoot,
+            nodeDir: _harness.Scratch.File("node-home-laptop-sender"));
+
+    /// <summary>A scratch copy of the golden <c>digest/sided</c> tree (identity files, two sides, a ledger, a remember inbox file) and Central's pickup variables over it.</summary>
+    private (string Root, Dictionary<string, string?> Env) PickupTree()
+    {
+        string root = _harness.Scratch.File("memory");
+        string source = Path.Combine(Golden.Directory, "digest", "sided");
+        foreach (string file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        {
+            string target = Path.Combine(root, Path.GetRelativePath(source, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Copy(file, target);
+        }
+
+        return (root, new Dictionary<string, string?>
+        {
+            ["ZYGGY_MEMORY_ROOT"] = root,
+            ["ZYGGY_TENANT"] = "acme",
+            ["ZYGGY_USER"] = "alice",
+            ["ZYGGY_TIMEZONE"] = "UTC",
+            ["ZYGGY_SECRET_PATTERNS"] = Path.Combine(Golden.Directory, "secret-patterns", "secret-patterns.txt"),
+        });
+    }
+
+    [GeneratedRegex(@"^context (?<id>[0-9A-HJKMNP-TV-Z]{26}) to central \(")]
+    private static partial Regex ContextSentLine();
 
     #endregion
 

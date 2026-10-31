@@ -71,7 +71,8 @@ internal sealed class GetContextTool(
             store.DailyLines(today, options.DailyWindowDays),
             options,
             paths.Principal,
-            now);
+            now,
+            store.PickedUpLines(store.Ledger(), options));
         return Result(result.Text, isError: false);
     }
 

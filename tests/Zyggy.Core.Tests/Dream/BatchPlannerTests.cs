@@ -213,4 +213,58 @@ public sealed class BatchPlannerTests
         batch.Lines[0].Hash.Should().Be(LineHash.Of("- [stated] 2026-09-30: a"));
         batch.Lines[2].RelativePath.Should().Be("daily/2026-09-30.md");
     }
+
+    // Spec 13 AC-30 and AC-3: the dream takes over what Central's pickup wrote, unchanged.
+    private const string ContextName = "inbox/bus-context-home-laptop-01K8ZX3P4Q5R6S7T8V9W0XYZAB-2026-10-29.md";
+
+    private const string ReportName = "inbox/bus-report-home-laptop-01K8ZX2A3B4C5D6E7F8G9H0JKM-01K8ZX4Q5R6S7T8V9W0XYZABC-2026-10-29.md";
+
+    private const string ContextLine = "- [stated] 2026-10-29 (project:calizr): The staging database is restored from Sunday's snapshot";
+
+    private const string ReportLine = "- [observed] 2026-10-29 [report 01K8ZX2A]: Root cause is the expired staging certificate";
+
+    [Fact]
+    public void Plan_BusContextInboxFile_DateFromNameStatedClass()
+    {
+        // Arrange
+        using var tree = new MemoryTree((ContextName, "---\nname: bus context 01K8ZX3P4Q5R6S7T8V9W0XYZAB\n---\n" + ContextLine + "\n"));
+
+        // Act
+        var batch = Plan(tree);
+
+        // Assert
+        var line = batch!.Lines.Should().ContainSingle().Subject;
+        line.Class.Should().Be(DreamLineClass.StatedInbox);
+        line.FileDate.Should().Be(new DateOnly(2026, 10, 29));
+        line.RelativePath.Should().Be(ContextName);
+    }
+
+    [Fact]
+    public void Plan_BusReportOneObservedLine_DateFromNameObservedClass()
+    {
+        // Arrange
+        using var tree = new MemoryTree((ReportName, "---\nname: bus report 01K8ZX4Q5R6S7T8V9W0XYZABC\n---\n" + ReportLine + "\n"));
+
+        // Act
+        var batch = Plan(tree);
+
+        // Assert
+        var line = batch!.Lines.Should().ContainSingle().Subject;
+        line.Text.Should().Be(ReportLine);
+        line.Class.Should().Be(DreamLineClass.ObservedInbox);
+        line.FileDate.Should().Be(new DateOnly(2026, 10, 29));
+    }
+
+    [Fact]
+    public void Plan_BusContextAndBusReport_StatedFirstThenObserved()
+    {
+        // Arrange
+        using var tree = new MemoryTree((ReportName, ReportLine + "\n"), (ContextName, ContextLine + "\n"));
+
+        // Act
+        var batch = Plan(tree);
+
+        // Assert
+        batch!.Lines.Select(l => (l.Id, l.Text)).Should().Equal(("L1", ContextLine), ("L2", ReportLine));
+    }
 }

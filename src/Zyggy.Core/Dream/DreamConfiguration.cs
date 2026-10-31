@@ -82,16 +82,10 @@ public static class DreamConfiguration
         }
 
         var instance = Get("ZYGGY_INSTANCE_DIR");
-        var patterns = Get("ZYGGY_SECRET_PATTERNS")
-            ?? (instance is null ? null : Path.GetFullPath(Path.Join(instance, "..", ".claude", "hooks", "secret-patterns.txt")));
+        var (patterns, patternsError) = Memory.SecretPatternsLocation.ResolveForInstance(environment);
         if (patterns is null)
         {
-            return DreamConfigurationResult.Fail("ZYGGY_SECRET_PATTERNS", "ZYGGY_SECRET_PATTERNS is not set (and no ZYGGY_INSTANCE_DIR to derive it from)");
-        }
-
-        if (!File.Exists(patterns))
-        {
-            return DreamConfigurationResult.Fail("ZYGGY_SECRET_PATTERNS", $"secret patterns {patterns} are missing (ZYGGY_SECRET_PATTERNS)");
+            return DreamConfigurationResult.Fail("ZYGGY_SECRET_PATTERNS", patternsError!);
         }
 
         var state = Get("ZYGGY_STATE_DIR")

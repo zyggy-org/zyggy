@@ -28,8 +28,7 @@ internal sealed class RememberService(MemoryPaths paths, TimeZoneInfo timeZone, 
 
         var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(clock.GetUtcNow(), timeZone).DateTime);
         var date = today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        var provenance = request.Source.Length == 0 ? string.Empty : $" [{request.Source}]";
-        var line = $"- [{request.Tag}] {date}{request.Hint}{provenance}: {request.Fact}";
+        var line = FactLine.Format(request.Tag, request.Hint, request.Source, date, request.Fact);
         var path = paths.InboxFile($"remember-{date}.md");
         FactLineWriter.Append(path, $"remember {date}", $"facts stated by the owner on {date} (remember skill)", today, [line]);
         return new RememberOutcome(null, path, line);

@@ -20,6 +20,10 @@ public sealed record Built(Envelope.Envelope Envelope, byte[] Bytes) : BuildResu
 /// <param name="Detail">Why.</param>
 public sealed record BuildRefused(string Field, string Detail) : BuildResult;
 
+/// <summary>A line of the context body matches a secret pattern; nothing was signed and the text is kept nowhere (spec 12 AC-7).</summary>
+/// <param name="PatternName">The pattern's name, the only thing reported.</param>
+public sealed record BuildRefusedByPattern(string PatternName) : BuildResult;
+
 /// <summary>What <c>JobSubmitter.SubmitAsync</c> did (spec 08 Contracts).</summary>
 public abstract record SubmitResult
 {
@@ -50,3 +54,7 @@ public sealed record SubmitFailed(string Stage, string Detail) : SubmitResult;
 /// <param name="Field">The field.</param>
 /// <param name="Detail">Why.</param>
 public sealed record SubmitRefused(string Field, string Detail) : SubmitResult;
+
+/// <summary>A context line matched a secret pattern; nothing was signed or written (spec 12 AC-7, exit 5).</summary>
+/// <param name="PatternName">The pattern's name.</param>
+public sealed record ContextRefused(string PatternName) : SubmitResult;

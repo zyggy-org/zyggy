@@ -78,6 +78,29 @@ public sealed partial class ZyggyNodeProcessTests : IDisposable
         Lines(run.Stderr).Should().ContainSingle().Which.Should().StartWith("zyggy-node: configuration error: node.json not found at ");
     }
 
+    // Spec 13 AC-16 through the real binary: Central without the drop-in's variables refuses to start.
+    [Fact]
+    public async Task ZyggyNode_CentralWithoutPickupConfiguration_ExitThreeOneStderrLine()
+    {
+        string nodeDir = _scratch.File("node");
+        string path = NodeJson.Write(
+            _scratch.File("config"),
+            Acme,
+            MachineName.Central,
+            TestKeys.Acme1,
+            busLocalPath: _scratch.File("bus"),
+            remote: "https://example.invalid/acme-org/acme-bus.git",
+            secretsRoot: _scratch.File("secrets"),
+            nodeDir: nodeDir);
+
+        ZyggyRun run = await ZyggyNode.RunAsync(["--config", path], NoEnvironment, _scratch.Path, TestContext.Current.CancellationToken);
+
+        run.ExitCode.Should().Be(3);
+        Lines(run.Stderr).Should().Equal("zyggy-node: configuration error: pickup: ZYGGY_MEMORY_ROOT is not set");
+        run.Stdout.Should().BeEmpty();
+        Directory.Exists(Path.Combine(nodeDir, "logs")).Should().BeFalse();
+    }
+
     public void Dispose() => _scratch.Dispose();
 
     private static string[] Lines(string text) => LineBreak().Split(text.TrimEnd('\r', '\n')).Where(l => l.Length > 0).ToArray();
