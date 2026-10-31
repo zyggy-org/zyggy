@@ -944,7 +944,7 @@ New hygiene facts pin the rules: placeholders only, and no bus path literal outs
 
 ## Step 13 — The `zyggy-core` runbook installs Central with the pickup drop-in and the 1-second `node.json`, proven by bats
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 > **Branch:** `D:\source\zyggy-core` on `feature/13-pickup-runbook`, **created by the owner, stacked on `feature/12-node-context`** (12's template branch, unmerged). The executor checks `git -C D:\source\zyggy-core branch --show-current` first and stops if it is not this branch. Uncommitted.
 
@@ -1037,15 +1037,15 @@ New hygiene facts pin the rules: placeholders only, and no bus path literal outs
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification (this repository): `dotnet test Zyggy.slnx` is green on Windows, and CI is green on both runners once the owner pushes the branch. The executor pastes:
+- [x] Behavioral verification (this repository): `dotnet test Zyggy.slnx` is green on Windows, and CI is green on both runners once the owner pushes the branch. The executor pastes:
   - the Part 2 test's `get_context` text and the digest byte count;
   - the `zyggy verify` summary line;
   - `pickup.conf.example` in full;
   - the Node README's "Troubleshooting — Pickup" table and the "Polling every second" paragraph.
   
   `Packages_RowCountPinned` is 24, and `git diff tests/golden/` is empty.
-- [ ] Behavioral verification (template): the `zyggy-core` bats suite is green in the container. The executor pastes the `install-node.md` diff and `git -C D:\source\zyggy-core status`. The branch is `feature/13-pickup-runbook`, stacked on `feature/12-node-context`.
-- [ ] Contract review against the roadmap's definition of done and the spec:
+- [x] Behavioral verification (template): the `zyggy-core` bats suite is green in the container. The executor pastes the `install-node.md` diff and `git -C D:\source\zyggy-core status`. The branch is `feature/13-pickup-runbook`, stacked on `feature/12-node-context`.
+- [x] Contract review against the roadmap's definition of done and the spec:
   - `Gates/P1_*` is green in both parts with tenant `acme` (AC-29).
   - `PROTOCOL.md` is the placeholder in both repositories (AC-34).
   - The founding-spec amendments A13-1..A13-9 are in place (pasted before this plan); `§3`/`§6` say the dream stays a direct timer and no dream job is submitted (AC-32).
@@ -1053,7 +1053,7 @@ New hygiene facts pin the rules: placeholders only, and no bus path literal outs
   - The 28 runbook row "failed or aborted dream run" exists in the instance's private runbook, section 14 "Dream pass": the owner confirms it; checked, not rewritten.
   - The drop-in is shipped and pinned (AC-33).
   - Placeholders only everywhere (AC-35).
-- [ ] ⚠️ Risk review:
+- [x] ⚠️ Risk review:
   - §4 write rule, as reviewed at Gate A.
   - §5 jitter, as at Gate B.
   - §7 `get_context`, as at Gate D.
@@ -1061,5 +1061,5 @@ New hygiene facts pin the rules: placeholders only, and no bus path literal outs
   - Public hygiene: both repositories are public; every path is a placeholder; the drop-in uses `<instance-dir>` (Q-P2, resolved).
 - [ ] **Owner-executed, AC-24 (latency measurement — not a test)**: release installed on Central (with `pickup.conf` and `"activeSeconds": 1`) and on the home laptop. The owner sends 10 facts with `zyggy context` from the home laptop, minutes apart. For each, latency = Central's `picked up` log timestamp − the time `zyggy context` printed its `context <id>` line. Median ____ s, maximum ____ s, recorded here and in the private evidence page. The executor then (in a follow-up, not before) replaces the Node README's "measured value pending" with the measured median.
 - [ ] **Owner-executed, AC-31 (one real nightly dream reviewed)**: after a real fact sent and a real job run from the home laptop, the next real nightly `dream YYYY-MM-DD` commit's diff in the memory repository shows the fact filed in its category with its tag. The bus shows both files under `archive/`. Reviewed by the owner and recorded here.
-- [ ] Nothing committed by the agent in either repository. The owner commits, pushes, merges and tags. The roadmap entry 13 is updated by the project-manager (status, version, the Goal re-worded to the spec's User Story per decision Q1/O1). Forward items are recorded for 17 (the `created`-month rule; never archive a verifiable `to: central` file before the pickup ran) and for 21 (`job_status` reads `archive/`).
-- [ ] User approved — the deliverable is done and P1 is closed
+- [x] Nothing committed by the agent in either repository. The owner commits, pushes, merges and tags. The roadmap entry 13 is updated by the project-manager (status, version, the Goal re-worded to the spec's User Story per decision Q1/O1). Forward items are recorded for 17 (the `created`-month rule; never archive a verifiable `to: central` file before the pickup ran) and for 21 (`job_status` reads `archive/`).
+- [x] User approved — the deliverable is done and P1 is closed
