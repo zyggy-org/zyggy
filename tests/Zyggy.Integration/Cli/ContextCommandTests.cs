@@ -196,15 +196,29 @@ public sealed partial class ContextCommandTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Context_FactBothPositionalAndStdin_ExitTwo()
+    public async Task Context_PositionalFactWithEmptyRedirectedStdin_SendsThePositionalFact()
     {
-        // Act
+        // Act: Claude Code's shell always redirects stdin (</dev/null included); the remember skill passes the fact as an argument
+        var ct = TestContext.Current.CancellationToken;
+        var (exit, console) = await _harness.RunAsync(["context", Fact], _harness.HomeLaptopNodeJson, stdin: "", ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        Model context = await _harness.ParseOnMainAsync(Published(console.Stdout).Path, ct);
+        context.BodyText.Should().Be($"- [stated] {Today}: {Fact}\n");
+    }
+
+    [Fact]
+    public async Task Context_PositionalFactAndTextOnStdin_ArgumentWinsStdinNeverRead()
+    {
+        // Act: an argument fact never reads stdin, so a pipe the caller keeps open cannot hang the verb
         var ct = TestContext.Current.CancellationToken;
         var (exit, console) = await _harness.RunAsync(["context", Fact], _harness.HomeLaptopNodeJson, stdin: "another\n", ct: ct);
 
         // Assert
-        exit.Should().Be(2);
-        console.Stderr.Should().Be("zyggy: fact: given both as an argument and on stdin\n");
+        exit.Should().Be(0, console.Stderr);
+        Model context = await _harness.ParseOnMainAsync(Published(console.Stdout).Path, ct);
+        context.BodyText.Should().Be($"- [stated] {Today}: {Fact}\n");
     }
 
     [Fact]

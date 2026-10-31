@@ -122,11 +122,8 @@ internal static class ContextCommand
 
             factText = await io.In.ReadToEndAsync(ct);
         }
-        else if (io.InputRedirected)
-        {
-            await io.Error.WriteLineAsync("zyggy: fact: given both as an argument and on stdin");
-            return ExitCodes.Usage;
-        }
+
+        // An argument fact never reads stdin: Claude Code's shell always redirects it, and a pipe left open would hang the verb.
 
         TimeProvider clock = services.GetRequiredService<TimeProvider>();
         ContextFactError? error = ContextRequest.TryCreateStated(scope, factText, DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime), out ContextRequest? request);
