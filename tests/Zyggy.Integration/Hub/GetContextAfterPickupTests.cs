@@ -108,12 +108,14 @@ public sealed class GetContextAfterPickupTests : IAsyncLifetime
         var outputs = new List<string>();
         foreach (string section in new[] { "identity", "index", "daily" })
         {
-            var (exit, console) = await ZyggyCliInProcess.RunAsync(["memory", "digest", section], _memory.Env(), _ => { }, null, ct);
-            exit.Should().Be(0, console.Stderr);
-            outputs.Add(console.Stdout);
+            // the digest is a raw verb writing straight to the process's stdout: the real binary, as the SessionStart hook runs it
+            ZyggyRun run = await ZyggyCli.RunAsync(["memory", "digest", section], _memory.Env(), null, Path.GetDirectoryName(_memory.Root)!, ct);
+            run.ExitCode.Should().Be(0, run.Stderr);
+            outputs.Add(run.Stdout);
         }
 
         // Assert
+        string.Concat(outputs).Should().NotBeEmpty("the profile is in the identity section");
         outputs.Should().AllSatisfy(o => o.Should().NotContain("staging database"));
     }
 

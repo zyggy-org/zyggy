@@ -991,6 +991,102 @@ public sealed partial class SourceHygieneTests
         }
     }
 
+    // Spec 13 AC-34/AC-35: the pickup is documented, its files use placeholder identities only, its classes hold no clock or state.
+    [Fact]
+    public void Readmes_PickupDocumented()
+    {
+        // Arrange
+        static string Read(string relative) => File.ReadAllText(Path.Combine(RepoRoot(), relative));
+        var node = Read("src/Zyggy.Node/README.md");
+        var deploy = Read("deploy/README.md");
+
+        // Act + Assert
+        foreach (var text in new[]
+                 {
+                     "## Troubleshooting — Pickup", "Pickup: configuration error", "Pickup: file left on the bus", "Pickup: archive failed / deferred",
+                     "Pickup: secret-shaped line dropped", "Pickup: slow (throttled)", "\"activeSeconds\": 1", "pickup.conf", "measured value pending",
+                 })
+        {
+            node.Should().Contain(text);
+        }
+
+        node.Should().NotContain("about a second");
+        deploy.Should().Contain("pickup.conf.example").And.Contain("Required on Central");
+    }
+
+    [Fact]
+    public void PickupTestsAndFixtures_NonDefaultIdentityOnly()
+    {
+        // Arrange
+        var texts = PickupSourceFiles().ToDictionary(f => f, f => File.ReadAllText(Path.Combine(RepoRoot(), f)), StringComparer.Ordinal);
+
+        // Act
+        var offenders = texts.Where(kv =>
+                kv.Value.Contains("geoffrey", StringComparison.OrdinalIgnoreCase)
+                || MailAddress().IsMatch(kv.Value)
+                || GuidLiteral().IsMatch(kv.Value)
+                || kv.Value.Contains("/srv/", StringComparison.Ordinal)
+                || kv.Value.Contains("/home/", StringComparison.Ordinal)
+                || kv.Value.Contains("C:\\Users\\", StringComparison.Ordinal))
+            .Select(kv => kv.Key)
+            .ToList();
+
+        // Assert
+        texts.Should().HaveCountGreaterThanOrEqualTo(20);
+        offenders.Should().BeEmpty();
+        foreach (var label in new[] { "acme", "alice", "home-laptop", "calizr" })
+        {
+            texts.Values.Should().Contain(t => t.Contains(label, StringComparison.Ordinal), label);
+        }
+    }
+
+    [Fact]
+    public void Src_PickupClasses_NoConsoleClockOrStaticState()
+    {
+        // Arrange
+        var texts = PickupSourceFiles().Where(f => f.StartsWith("src/", StringComparison.Ordinal))
+            .ToDictionary(f => f, f => CommentLine().Replace(File.ReadAllText(Path.Combine(RepoRoot(), f)), string.Empty), StringComparer.Ordinal);
+
+        // Act
+        var offenders = texts
+            .Where(kv => kv.Value.Contains("Console.", StringComparison.Ordinal)
+                || kv.Value.Contains("DateTime.UtcNow", StringComparison.Ordinal)
+                || kv.Value.Contains("DateTimeOffset.UtcNow", StringComparison.Ordinal)
+                || kv.Value.Contains("TimeProvider.System", StringComparison.Ordinal)
+                || StaticMutableField().IsMatch(kv.Value))
+            .Select(kv => kv.Key)
+            .ToList();
+
+        // Assert
+        texts.Keys.Should().BeEquivalentTo(
+            "src/Zyggy.Core/Bus/ArchiveMonths.cs", "src/Zyggy.Core/Bus/BusPickup.cs", "src/Zyggy.Core/Bus/PickupCandidate.cs",
+            "src/Zyggy.Core/Bus/PickupResult.cs", "src/Zyggy.Core/Memory/PickupConfiguration.cs", "src/Zyggy.Core/Memory/PickupInbox.cs");
+        offenders.Should().BeEmpty();
+    }
+
+    /// <summary>The files of the dream reading the bus (spec 13) in src/, both test projects, deploy/ and the dream-bus fixture.</summary>
+    private static List<string> PickupSourceFiles()
+    {
+        string[] named =
+        [
+            "src/Zyggy.Core/Bus/ArchiveMonths.cs", "src/Zyggy.Core/Bus/BusPickup.cs", "src/Zyggy.Core/Bus/PickupCandidate.cs", "src/Zyggy.Core/Bus/PickupResult.cs",
+            "src/Zyggy.Core/Memory/PickupConfiguration.cs", "src/Zyggy.Core/Memory/PickupInbox.cs",
+            "deploy/systemd/zyggy-node.service.d/pickup.conf.example", "tools/fake-claude/scenarios/dream-file-bus.jsonl",
+            "tests/Zyggy.Integration/Infrastructure/PickupMemory.cs", "tests/Zyggy.Integration/Infrastructure/InProcessHub.cs",
+        ];
+        string[] prefixes = ["BusPickup", "PickupInbox", "PickupConfiguration", "BusListenerPickup", "BusRepositoryArchive", "NodeHostPickup", "StatusAfterPickup", "GetContextAfterPickup", "DreamBusInbox", "DigestBuilderPickup"];
+        var tests = Directory.EnumerateFiles(Path.Combine(RepoRoot(), "tests"), "*.cs", SearchOption.AllDirectories)
+            .Where(f => prefixes.Any(p => Path.GetFileName(f).StartsWith(p, StringComparison.Ordinal)));
+        var fixture = Directory.EnumerateFiles(Path.Combine(RepoRoot(), "tests", "Zyggy.Integration", "Fixtures", "dream-bus"), "*", SearchOption.AllDirectories);
+        return tests.Concat(fixture)
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .Where(f => !f.Contains("/bin/", StringComparison.Ordinal) && !f.Contains("/obj/", StringComparison.Ordinal))
+            .Concat(named)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+    }
+
     /// <summary>The files of the context envelopes (spec 12) in src/ and both test projects.</summary>
     private static List<string> ContextSourceFiles()
     {

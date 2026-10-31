@@ -6,4 +6,6 @@ namespace Zyggy.Core.Tests.Infrastructure;
 internal static class TestGitIdentities
 {
     public static GitIdentity HomeLaptop { get; } = new("zyggy (home-laptop)", "home-laptop@zyggy.org");
+
+    public static GitIdentity Central { get; } = new("zyggy (central)", "central@zyggy.org");
 }

@@ -887,7 +887,7 @@ The release ships `deploy/systemd/zyggy-node.service.d/pickup.conf.example`, pin
 
 New hygiene facts pin the rules: placeholders only, and no bus path literal outside `BusPaths`.
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `deploy/systemd/zyggy-node.service.d/pickup.conf.example` *(create, LF, A12 — `<instance-dir>` confirmed by the owner, Q-P2)*: three comment lines in the `credentials.conf.example` style:
@@ -987,7 +987,7 @@ New hygiene facts pin the rules: placeholders only, and no bus path literal outs
 
 `zyggy context --scope project:calizr -- "<fact>"`, run in process with `home-laptop`'s `node.json`, goes through the production host running as `central` with the pickup configuration, and then the Hub's `get_context` in process returns the line verbatim. The three digest sections together are ≤ 20,000 bytes with no inbox line, the context file sits in `archive/` on `main`, and `zyggy verify` on Central reports every file `OK`.
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `tests/Zyggy.Integration/Gates/P1_WalkingSkeleton.cs` *(modify — append only)*:

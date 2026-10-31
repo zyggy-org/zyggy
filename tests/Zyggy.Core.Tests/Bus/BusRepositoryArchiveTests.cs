@@ -374,7 +374,7 @@ public sealed class BusRepositoryArchiveTests : IDisposable
     private BusRepository Repository(MachineName? machine = null)
     {
         MachineName me = machine ?? Central;
-        var git = new GitClient(_processes, new GitClientOptions { Identity = new GitIdentity("zyggy (" + me.Value + ")", me.Value + "@zyggy.org") }, _clock);
+        var git = new GitClient(_processes, new GitClientOptions { Identity = me == Central ? TestGitIdentities.Central : TestGitIdentities.HomeLaptop }, _clock);
         return new BusRepository(git, _provider, new BusIdentity(Acme, me), _checkout.Root, new EnvelopeSigner(new Zyggy.Core.Secrets.InMemorySecretStore()), _clock, () => 0.5, _log);
     }
 }
