@@ -484,3 +484,6 @@ $RECYCLE.BIN/
 # evolve plugin: per-session state and local labels are never committed
 evolution/.state/
 evolution/labelled/
+
+# owner-only draft with real machine ids (public repo)
+_specs/spec-work-boundary.md
