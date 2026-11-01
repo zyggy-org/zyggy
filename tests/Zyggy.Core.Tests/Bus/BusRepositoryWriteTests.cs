@@ -572,6 +572,75 @@ public sealed class BusRepositoryWriteTests : IDisposable
         _processes.Calls.Should().BeEmpty();
     }
 
+    // Spec 41 Step 4 (W41-7, W41-8): an item is written into the sender's own items/ folder, addressed to central.
+    [Fact]
+    public async Task PublishItemAsync_SignedItemFromMe_FileUnderMyItemsFolder_SubjectAcmeItemIdHomeLaptopToCentral()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Zyggy.Core.Envelope.Envelope item = await SignedItemAsync(HomeLaptop, Central, ct);
+        string path = BusPaths.EnvelopeFile(BusPaths.Items(Acme, HomeLaptop), item.Header.Id);
+
+        // Act
+        WriteOutcome outcome = await Repository().PublishItemAsync(item, ct);
+
+        // Assert
+        outcome.Should().Be(new Pushed(1));
+        path.Should().StartWith("tenants/acme/nodes/home-laptop/items/");
+        _checkout.Read(path).Should().Equal(EnvelopeWriter.Serialize(item));
+        _processes.CallsOf("add").Should().ContainSingle().Which.Arguments.Should().Contain(path);
+        _processes.CallsOf("commit").Should().ContainSingle().Which.StandardInput.Should().StartWith($"acme item {item.Header.Id.Value} home-laptop→central");
+    }
+
+    public static TheoryData<string> ItemWriteRuleBreaks() => ["unsigned", "foreign-tenant", "from-another-machine", "not-to-central", "not-an-item"];
+
+    [Theory]
+    [MemberData(nameof(ItemWriteRuleBreaks))]
+    public async Task PublishItemAsync_Unsigned_ForeignTenant_FromAnotherMachine_NotToCentral_NotAnItem_Throws(string breach)
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Zyggy.Core.Envelope.Envelope envelope = breach switch
+        {
+            "unsigned" => UnsignedItem(HomeLaptop, Central, Acme),
+            "foreign-tenant" => await SignedItemAsync(HomeLaptop, Central, ct, TenantId.Parse("globex"), KeyId.Parse("globex/1")),
+            "from-another-machine" => await SignedItemAsync(MachineName.Parse("work-laptop"), Central, ct),
+            "not-to-central" => await SignedItemAsync(HomeLaptop, MachineName.Parse("work-laptop"), ct),
+            _ => await SignedContextAsync(HomeLaptop, ct),
+        };
+
+        // Act
+        Func<Task> act = () => Repository().PublishItemAsync(envelope, ct);
+
+        // Assert
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("write rule:*");
+        _processes.Calls.Should().BeEmpty();
+    }
+
+    private static Zyggy.Core.Envelope.Envelope UnsignedItem(MachineName from, MachineName to, TenantId tenant)
+    {
+        byte[] file = "Restore the staging database from Sunday's snapshot.\n"u8.ToArray();
+        var fields = new ItemFields(
+            Zyggy.Core.Memory.Slug.Parse("calizr"),
+            Zyggy.Core.Memory.Slug.Parse("staging-restore-notes"),
+            "Staging restore notes",
+            "How the staging database was restored",
+            "restore-notes.md",
+            file.Length,
+            Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(file)),
+            ItemRoute.Bus,
+            null);
+        return Zyggy.Core.Envelope.Envelope.CreateItem(new EnvelopeHeader(tenant, EnvelopeId.New(T), from, to, T), fields, file);
+    }
+
+    private static async Task<Zyggy.Core.Envelope.Envelope> SignedItemAsync(MachineName from, MachineName to, CancellationToken ct, TenantId? tenant = null, KeyId? signWith = null)
+    {
+        var store = signWith is null ? await TestKeys.StoreWithBothAsync(ct) : await TestKeys.StoreWithAsync(signWith, ct);
+        EnvelopeResult signed = await new EnvelopeSigner(store).SignAsync(UnsignedItem(from, to, tenant ?? Acme), signWith ?? TestKeys.Acme1, ct);
+        signed.IsAccepted.Should().BeTrue(signed.Rejection?.ToString());
+        return signed.Envelope!;
+    }
+
     private static async Task<Zyggy.Core.Envelope.Envelope> SignedContextAsync(MachineName from, CancellationToken ct, TenantId? tenant = null, KeyId? signWith = null)
     {
         var store = signWith is null ? await TestKeys.StoreWithBothAsync(ct) : await TestKeys.StoreWithAsync(signWith, ct);

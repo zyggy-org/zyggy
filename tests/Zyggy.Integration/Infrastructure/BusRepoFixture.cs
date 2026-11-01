@@ -349,6 +349,58 @@ public class BusRepoFixture : IAsyncLifetime
         return new SeededJob(id, relativePath, bytes);
     }
 
+    /// <summary>
+    /// Signs an item envelope from <paramref name="from"/> to <paramref name="to"/> (the bus route for a non-empty <paramref name="fileBytes"/>,
+    /// as <paramref name="fields"/> says), writes it under <paramref name="from"/>'s <c>items/</c> and pushes it with the spec 41 subject
+    /// (plan 41 Step 2, additive; the <see cref="SeedSignedContextAsync"/> shape).
+    /// </summary>
+    public async Task<SeededJob> SeedSignedItemAsync(
+        MachineName from,
+        MachineName to,
+        KeyId key,
+        ISecretStore store,
+        ItemFields fields,
+        byte[] fileBytes,
+        DateTimeOffset? created = null,
+        Func<byte[], byte[]>? mutate = null,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(from);
+        ArgumentNullException.ThrowIfNull(to);
+        ArgumentNullException.ThrowIfNull(key);
+        ArgumentNullException.ThrowIfNull(fields);
+        DateTimeOffset at = created ?? FixedInstant;
+        var id = EnvelopeId.New(at);
+        var header = new EnvelopeHeader(key.Tenant, id, from, to, at);
+        Model item = Model.CreateItem(header, fields, fileBytes);
+        EnvelopeResult signed = await new EnvelopeSigner(store).SignAsync(item, key, ct);
+        if (!signed.IsAccepted)
+        {
+            throw new InvalidOperationException("Signing the seeded item failed: " + signed.Rejection);
+        }
+
+        byte[] bytes = EnvelopeWriter.Serialize(signed.Envelope!);
+        bytes = mutate is null ? bytes : mutate(bytes);
+        string relativePath = BusPaths.EnvelopeFile(BusPaths.Items(key.Tenant, from), id);
+        await SeedRawFileAsync(relativePath, bytes, string.Create(CultureInfo.InvariantCulture, $"{key.Tenant.Value} item {id.Value} {from.Value}→{to.Value}"), ct);
+        return new SeededJob(id, relativePath, bytes);
+    }
+
+    /// <summary>
+    /// Clones the bare repository into <c>&lt;root&gt;/&lt;name&gt;</c> with the fixture's isolated git configuration, as a further
+    /// machine's checkout (plan 41 Step 5: <c>work-laptop</c>, opt-in so the other tests keep two checkouts).
+    /// </summary>
+    public async Task<string> CloneAsync(string name, CancellationToken ct)
+    {
+        string clone = Path.Combine(RootDir, name);
+        await RunGitAsync(RootDir, ["clone", BareDir, clone], ct);
+        await RunGitAsync(clone, ["config", "user.name", "zyggy (" + name + ")"], ct);
+        await RunGitAsync(clone, ["config", "user.email", name + "@zyggy.org"], ct);
+        await RunGitAsync(clone, ["config", "commit.gpgsign", "false"], ct);
+        await RunGitAsync(clone, ["config", "core.autocrlf", "false"], ct);
+        return clone;
+    }
+
     /// <summary>Brings the node clone up to date with <c>main</c> (the pull the tenant seed ends with).</summary>
     public Task PullCloneAsync(CancellationToken ct) => RunGitAsync(CloneDir, ["pull", "--rebase", "origin", "main"], ct);
 

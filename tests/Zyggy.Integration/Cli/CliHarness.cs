@@ -15,7 +15,7 @@ namespace Zyggy.Integration.Cli;
 
 /// <summary>
 /// The bus and the two machines' <c>node.json</c> files for the in-process CLI verbs (plan 08 Step 3): a bare repository seeded for
-/// <c>central</c> and <c>home-laptop</c>, <c>central</c> working in the sender clone and <c>home-laptop</c> in the node clone, a file secret
+/// <c>central</c> and <c>home-laptop</c> (<c>work-laptop</c> only on request, <see cref="AddWorkLaptopAsync"/>: <c>zyggy status</c> lists every machine under <c>nodes/</c>), <c>central</c> working in the sender clone and <c>home-laptop</c> in the node clone, a file secret
 /// store with <c>acme/1</c> and the test PAT, every process recorded, the doorbell answered from the bare repository.
 /// </summary>
 internal sealed class CliHarness : IAsyncDisposable
@@ -25,6 +25,8 @@ internal sealed class CliHarness : IAsyncDisposable
     public static readonly MachineName Central = MachineName.Parse("central");
 
     public static readonly MachineName HomeLaptop = MachineName.Parse("home-laptop");
+
+    public static readonly MachineName WorkLaptop = MachineName.Parse("work-laptop");
 
     private CliHarness()
     {
@@ -68,6 +70,32 @@ internal sealed class CliHarness : IAsyncDisposable
         harness.HomeLaptopNodeJson = harness.WriteNodeJson(HomeLaptop, harness.Bus.CloneDir, "home-laptop");
         return harness;
     }
+
+    /// <summary>
+    /// Opt-in third machine (plan 41 Step 5): clones the bare repository for <c>work-laptop</c> and writes its <c>node.json</c> — no
+    /// <c>archive.oneDriveFolder</c>, <c>dlp.enabled: true</c>, optionally a lower <c>archive.itemMaxBytes</c> — and returns its path. Nothing
+    /// is seeded under <c>nodes/work-laptop/</c>, so the tests that do not call this see the bus exactly as before.
+    /// </summary>
+    public async Task<string> AddWorkLaptopAsync(CancellationToken ct, long? archiveItemMaxBytes = null, string? oneDriveFolder = null)
+    {
+        string clone = await Bus.CloneAsync("work", ct);
+        return NodeJson.Write(
+            Scratch.File("config-work-laptop"),
+            Acme,
+            WorkLaptop,
+            TestKeys.Acme1,
+            busLocalPath: clone,
+            remote: TestHost.Remote.HttpsUrl!.ToString(),
+            secretsRoot: SecretsRoot,
+            claudePath: FakeClaude.ExecutablePath,
+            nodeDir: Scratch.File("node-work-laptop"),
+            archiveItemMaxBytes: archiveItemMaxBytes,
+            oneDriveFolder: oneDriveFolder,
+            dlpEnabled: true);
+    }
+
+    /// <summary>The checkout <see cref="AddWorkLaptopAsync"/> cloned for <c>work-laptop</c>.</summary>
+    public string WorkLaptopDir => Path.Combine(Bus.RootDir, "work");
 
     /// <summary>Writes a <c>node.json</c> for <paramref name="machine"/> over <paramref name="busLocalPath"/>; signs with <c>acme/1</c> unless <paramref name="omitSignWith"/>.</summary>
     public string WriteNodeJson(MachineName machine, string busLocalPath, string name, bool omitSignWith = false, string? secretsRoot = null, string? nodeDir = null) =>

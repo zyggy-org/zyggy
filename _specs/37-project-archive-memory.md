@@ -133,7 +133,7 @@ Evidence kinds: **U** unit test (`tests/Zyggy.Core.Tests`, substitutes, `FakeTim
 | Runbook entries (brief; §12) | **Keep** | AC-27 | One entry per failure mode. |
 | 36b media folder relation (O39 (3)) | **Keep separate** (owner decision OQ-3) | A copy **from** `~/.local/share/zyggy/linkedin/media/` into the archive is an ordinary `archive add` (the folder is not denied); the reverse stays refused by 36b D2 | One-way, explicit, owner-driven. |
 | Hub `get_context` over the archive (§7) | **Defer** (11) | — | Roadmap non-goal. |
-| Full-text / vector search, node-side archive, harvesting (roadmap non-goals) | **Defer** | — | Non-goals. |
+| Full-text / vector search, harvesting (roadmap non-goals) | **Defer** | — | Non-goals. Node-side archive: superseded by deliverable 41 (2026-10-31). |
 | `IModelRunner` seam, `IProcessRunner`, no static state, `FakeTimeProvider` (§9) | **Keep** | as 28/33 | No new seam; no new package. |
 
 ---
@@ -321,7 +321,7 @@ Considered and rejected: `Mime-Detective` / `MimeDetective` (MIT, maintained) �
 - A contact-detail scan over archived item bytes (OQ-1 (b), decided).
 - Office formats (docx/xlsx/pptx), audio, video, archives (zip); conversion through MarkItDown or `zyggy m365 parse`.
 - Git LFS, history rewriting or repacking for size (OQ-2); a size report beyond `git count-objects` in the runbook.
-- Archiving from the work laptop or any node; automatic harvesting of mail bodies, attachments, OneDrive/SharePoint contents or clone files (23's facts-only rule and 32's clone rules stand; an owner-named file downloaded through `m365` and handed over in the conversation is an explicit act and is allowed).
+- Automatic harvesting of mail bodies, attachments, OneDrive/SharePoint contents or clone files (23's facts-only rule and 32's clone rules stand; an owner-named file downloaded through `m365` and handed over in the conversation is an explicit act and is allowed). Archiving from any node, the work laptop included, is deliverable 41 (2026-10-31).
 - Moving or bridging the 36b LinkedIn media folder into memory (OQ-3, decided: one-way copy only).
 - Image dimension or pixel checks; thumbnails; EXIF stripping (⚠️ noted: images may carry location metadata — recorded in Risks, not checked in v1).
 - A `show` verb, `--stdin` input, a longer `--summary` body, per-item retention or expiry.

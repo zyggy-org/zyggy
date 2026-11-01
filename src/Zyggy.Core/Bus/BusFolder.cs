@@ -26,4 +26,7 @@ public enum BusFolder
 
     /// <summary><c>tenants/&lt;org&gt;/archive/&lt;YYYY-MM&gt;</c>: envelopes moved out of the live folders by the sweep (§4).</summary>
     Archive,
+
+    /// <summary><c>…/items</c>: archive items written by the machine, addressed to Central (deliverable 41).</summary>
+    Items,
 }

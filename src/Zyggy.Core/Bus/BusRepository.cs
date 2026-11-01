@@ -24,6 +24,9 @@ public sealed partial class BusRepository
 
     private const string EnvelopeExtension = ".md";
 
+    /// <summary>How a pull or write that never got the checkout lock begins its detail; <see cref="ItemSubmitter"/> maps it to the stage <c>lock</c>.</summary>
+    internal const string BusyDetail = "the bus checkout is busy: another zyggy process held its lock";
+
     /// <summary>How long a write or pull waits for another process's checkout lock (one full write sequence incl. its push retries fits).</summary>
     private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(60);
 
@@ -426,6 +429,57 @@ public sealed partial class BusRepository
     }
 
     /// <summary>
+    /// §4 as amended by deliverable 41 (W41-7, W41-8): adds a signed item envelope of this node, addressed to Central, to this node's own
+    /// <c>nodes/&lt;me&gt;/items/</c> folder in one commit <c>&lt;tenant&gt; item &lt;id&gt; &lt;from&gt;→central</c> (W41-9).
+    /// </summary>
+    /// <param name="signedItem">The signed item envelope.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The write outcome.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="signedItem"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the envelope is not an item, is unsigned, belongs to another tenant, was not sent by this machine or is not addressed to central (a caller bug).</exception>
+    public Task<WriteOutcome> PublishItemAsync(Model signedItem, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(signedItem);
+        if (signedItem.Type != EnvelopeType.Item)
+        {
+            throw new InvalidOperationException("write rule: the item envelope is not an item");
+        }
+
+        if (signedItem.Signature is null)
+        {
+            throw new InvalidOperationException("write rule: the item envelope is unsigned");
+        }
+
+        if (signedItem.Header.Tenant != _me.Tenant)
+        {
+            throw new InvalidOperationException("write rule: the item envelope belongs to another tenant");
+        }
+
+        if (signedItem.Header.From != _me.Machine)
+        {
+            throw new InvalidOperationException("write rule: the item envelope was not sent by this machine");
+        }
+
+        if (signedItem.Header.To != MachineName.Central)
+        {
+            throw new InvalidOperationException("write rule: the item envelope is not addressed to central");
+        }
+
+        byte[] bytes = EnvelopeWriter.Serialize(signedItem);
+        string path = BusPaths.EnvelopeFile(BusPaths.Items(_me.Tenant, _me.Machine), signedItem.Header.Id);
+        AssertMayWrite(path, BusFolder.Items);
+        return WriteAsync(
+            Subject("item", signedItem.Header.Id, signedItem.Header.From.Value, MachineName.Central.Value),
+            [path],
+            async token =>
+            {
+                await WriteFileAsync(path, bytes, token).ConfigureAwait(false);
+                return Failure("add", await _git.AddAsync(_checkoutRoot, [path], token).ConfigureAwait(false));
+            },
+            ct);
+    }
+
+    /// <summary>
     /// Central's pickup input (spec 13): under the checkout write lock, the bytes of every top-level <c>*.md</c> in the
     /// <c>context/</c> then <c>reports/</c> folder of every machine of this tenant except <see cref="MachineName.Central"/>,
     /// machines and files in ordinal order. Never another tenant's subtree; nothing is verified here.
@@ -620,7 +674,7 @@ public sealed partial class BusRepository
     {
         using IDisposable? handle = await BusCheckoutLock.AcquireAsync(_checkoutRoot, BusCheckoutLock.WriteLockName, LockTimeout, _clock, ct).ConfigureAwait(false);
         return handle is null
-            ? new BusSyncResult(false, "the bus checkout is busy: another zyggy process held its lock for " + LockTimeout.TotalSeconds.ToString("0", CultureInfo.InvariantCulture) + " s")
+            ? new BusSyncResult(false, BusyDetail + " for " + LockTimeout.TotalSeconds.ToString("0", CultureInfo.InvariantCulture) + " s")
             : await PullUnlockedAsync(ct).ConfigureAwait(false);
     }
 
@@ -680,7 +734,7 @@ public sealed partial class BusRepository
         using IDisposable? handle = await BusCheckoutLock.AcquireAsync(_checkoutRoot, BusCheckoutLock.WriteLockName, LockTimeout, _clock, ct).ConfigureAwait(false);
         if (handle is null)
         {
-            const string Busy = "the bus checkout is busy: another zyggy process held its lock";
+            const string Busy = BusyDetail;
             LogWriteFailed(_me.Tenant.Value, _me.Machine.Value, subject, "lock", Busy);
             return new WriteFailed("lock", Busy);
         }

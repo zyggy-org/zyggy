@@ -35,10 +35,6 @@ internal static class ArchiveArguments
 
     public const string UsageSuffixOffload = " (usage: zyggy memory archive offload [--dry-run | --probe | --retry <project>/<slug>])";
 
-    private const int NameMax = 100;
-
-    private const int DescriptionMax = 149;
-
     private const int SlugMax = 60;
 
     public static (ArchiveAddRequest? Request, string? Error) ParseAdd(IReadOnlyList<string> args)
@@ -66,61 +62,70 @@ internal static class ArchiveArguments
             i++;
         }
 
-        foreach (var required in new[] { "--project", "--name", "--description", "--file" })
+        return Validate(values.GetValueOrDefault("--project"), values.GetValueOrDefault("--name"), values.GetValueOrDefault("--description"), values.GetValueOrDefault("--file"), values.GetValueOrDefault("--slug"));
+    }
+
+    /// <summary>
+    /// The checks after the options are collected, shared by <c>memory archive add</c> and the laptop's <c>zyggy archive</c> (spec 41 AC-9):
+    /// the four required options, the project slug, one-line name and description within their limits, an absolute file, the slug given
+    /// or derived from the name.
+    /// </summary>
+    internal static (ArchiveAddRequest? Request, string? Error) Validate(string? project, string? name, string? description, string? file, string? slug)
+    {
+        foreach (var (option, value) in new[] { ("--project", project), ("--name", name), ("--description", description), ("--file", file) })
         {
-            if (!values.ContainsKey(required))
+            if (value is null)
             {
-                return (null, $"{required} is required");
+                return (null, $"{option} is required");
             }
         }
 
-        if (!Slug.TryParse(values["--project"], out var project))
+        if (!Slug.TryParse(project, out var projectSlug))
         {
             return (null, "--project is not a slug");
         }
 
-        var name = TextCollapse.Line(values["--name"]);
-        if (name.Length == 0)
+        var oneLineName = TextCollapse.Line(name!);
+        if (oneLineName.Length == 0)
         {
             return (null, "--name is empty");
         }
 
-        if (TextCollapse.CharCount(name) > NameMax)
+        if (TextCollapse.CharCount(oneLineName) > ArchiveLimits.NameMax)
         {
-            return (null, $"--name longer than {NameMax} characters");
+            return (null, $"--name longer than {ArchiveLimits.NameMax} characters");
         }
 
-        var description = TextCollapse.Line(values["--description"]);
-        if (description.Length == 0)
+        var oneLineDescription = TextCollapse.Line(description!);
+        if (oneLineDescription.Length == 0)
         {
             return (null, "--description is empty");
         }
 
-        if (TextCollapse.CharCount(description) > DescriptionMax)
+        if (TextCollapse.CharCount(oneLineDescription) > ArchiveLimits.DescriptionMax)
         {
-            return (null, $"--description longer than {DescriptionMax} characters");
+            return (null, $"--description longer than {ArchiveLimits.DescriptionMax} characters");
         }
 
-        var file = values["--file"];
-        if (!Path.IsPathFullyQualified(file))
+        if (!Path.IsPathFullyQualified(file!))
         {
             return (null, "--file must be an absolute path");
         }
 
-        Slug? slug;
-        if (values.TryGetValue("--slug", out var given))
+        Slug? itemSlug;
+        if (slug is not null)
         {
-            if (!Slug.TryParse(given, out slug))
+            if (!Slug.TryParse(slug, out itemSlug))
             {
                 return (null, "--slug is not a slug");
             }
         }
-        else if (!Slug.TryParse(DeriveSlug(name), out slug))
+        else if (!Slug.TryParse(DeriveSlug(oneLineName), out itemSlug))
         {
             return (null, "cannot derive a slug from --name; pass --slug");
         }
 
-        return (new ArchiveAddRequest(project, name, description, file, slug), null);
+        return (new ArchiveAddRequest(projectSlug, oneLineName, oneLineDescription, file!, itemSlug), null);
     }
 
     public static (ArchiveRef? Reference, string? Error) ParseRemove(IReadOnlyList<string> args)

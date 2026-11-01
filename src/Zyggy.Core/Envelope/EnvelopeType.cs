@@ -11,4 +11,7 @@ public enum EnvelopeType
 
     /// <summary><c>context</c>: facts sent to Central's memory.</summary>
     Context,
+
+    /// <summary><c>item</c>: an archive item sent to Central (deliverable 41).</summary>
+    Item,
 }

@@ -7,7 +7,7 @@ namespace Zyggy.Core.Bus;
 
 /// <summary>
 /// The read side of <c>zyggy status</c> (spec 08 AC-5): the tenant's machines with their folder counts, the newest reports, and one
-/// job traced through <c>jobs/</c>, <c>claimed/</c>, <c>rejected/</c>, every <c>reports/</c> folder and the archive. Reads under the
+/// job or item traced through <c>jobs/</c>, <c>claimed/</c>, <c>rejected/</c>, <c>items/</c> (spec 41), every <c>reports/</c> folder and the archive. Reads under the
 /// checkout's write lock (so a concurrent claim or report never shows a half-moved file), never the listen lock, and writes nothing.
 /// Only this tenant's subtree is ever opened.
 /// </summary>
@@ -101,6 +101,7 @@ public sealed partial class BusInventory
                          (BusPaths.Jobs(_me.Tenant, machine), TraceState.Queued),
                          (BusPaths.Claimed(_me.Tenant, machine), TraceState.Claimed),
                          (BusPaths.Rejected(_me.Tenant, machine), TraceState.Rejected),
+                         (BusPaths.Items(_me.Tenant, machine), TraceState.Queued),
                      })
             {
                 string candidate = BusPaths.EnvelopeFile(folder, id);
@@ -233,7 +234,7 @@ public sealed partial class BusInventory
         if (result.IsAccepted)
         {
             Envelope.Envelope e = result.Envelope!;
-            return (new EnvelopeSummary(path, id, e.Type, e.Header.From, e.Header.To, e.Header.Created, e.Header.InReplyTo, e.Report?.Status, e.Report?.Reason, e.Report?.CostUsd, true, null, e.Job?.Project, e.Header.Priority), e);
+            return (new EnvelopeSummary(path, id, e.Type, e.Header.From, e.Header.To, e.Header.Created, e.Header.InReplyTo, e.Report?.Status, e.Report?.Reason, e.Report?.CostUsd, true, null, e.Job?.Project ?? e.Item?.Project.Value, e.Header.Priority, e.Item?.Via), e);
         }
 
         PeekedHeader? peeked = EnvelopeParser.PeekHeader(bytes);

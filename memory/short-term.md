@@ -45,3 +45,5 @@
 - 2026-10-31: az vm run-command from PowerShell: pass a multi-line script as `--scripts @<file>`; a multi-line string variable silently runs nothing.
 - 2026-10-31: the home laptop had an old zyggy 0.8.1 in %LOCALAPPDATA%\zyggy\bin ahead of %LOCALAPPDATA%\Programs\Zyggy on PATH; removed from PATH and renamed to zyggy-0.8.1.exe.old. install.ps1 does not detect a shadowing copy.
 - 2026-10-31: NodeHostStartupTests.Run_QuietTicks_WriteNothingAtInformation can fail under full-suite load (passes alone); a second known load flake besides NodeHostJobFlowTests.
+- 2026-10-31: the golden secret patterns match long runs of one character (e.g. `new string('n', 100)`); long-name/description fixtures for archive checks must use real words, or the secret check fires before the check under test.
+- 2026-10-31: `zyggy status` lists every machine folder under `nodes/`; tests that need `work-laptop` use the opt-in `CliHarness.AddWorkLaptopAsync` (third clone, nothing seeded) so the shared harness stays at two machines.

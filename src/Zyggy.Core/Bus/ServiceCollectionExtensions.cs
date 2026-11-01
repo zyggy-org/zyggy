@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
+using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Git;
 using Zyggy.Core.Memory;
@@ -140,6 +141,22 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<KeyId>(),
                 sp.GetRequiredService<SecretPatterns>(),
                 sp.GetService<ContextEnvelopeOptions>() ?? new ContextEnvelopeOptions(),
+                sp.GetRequiredService<TimeProvider>(),
+                log);
+        });
+        // Deliverable 41: the item sender. Resolving without a KeyId, the secret patterns or ItemSubmitterOptions throws (the verb registers them first — fail closed).
+        services.TryAddSingleton(sp =>
+        {
+            ILogger<ItemSubmitter> log = sp.GetService<ILoggerFactory>()?.CreateLogger<ItemSubmitter>() ?? NullLogger<ItemSubmitter>.Instance;
+            NodeConfiguration node = sp.GetRequiredService<NodeConfiguration>();
+            ItemSubmitterOptions options = sp.GetRequiredService<ItemSubmitterOptions>();
+            return new ItemSubmitter(
+                sp.GetRequiredService<BusRepository>(),
+                sp.GetRequiredService<EnvelopeSigner>(),
+                sp.GetRequiredService<KeyId>(),
+                sp.GetRequiredService<SecretPatterns>(),
+                node,
+                SourceDenyList.ForNode(options.Environment, node, options.NodeJsonPath),
                 sp.GetRequiredService<TimeProvider>(),
                 log);
         });

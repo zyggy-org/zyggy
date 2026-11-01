@@ -162,6 +162,41 @@ public sealed class BusPathsTests
     }
 
     [Fact]
+    public void Items_AcmeHomeLaptop_TenantPrefixedItemsFolder()
+    {
+        // Act: spec 41 AC-8
+        string path = BusPaths.Items(Acme, HomeLaptop);
+
+        // Assert
+        path.Should().Be("tenants/acme/nodes/home-laptop/items");
+    }
+
+    [Fact]
+    public void TryParse_ItemsFile_LocationWithItemsFolderAndId()
+    {
+        // Act
+        bool ok = BusPaths.TryParse(BusPaths.EnvelopeFile(BusPaths.Items(Acme, HomeLaptop), Id), out BusLocation? location);
+
+        // Assert
+        ok.Should().BeTrue();
+        location.Should().Be(new BusLocation(Acme, HomeLaptop, BusFolder.Items, Id));
+    }
+
+    [Theory]
+    [InlineData("tenants/ACME/nodes/home-laptop/items/" + Ulid + ".md")]
+    [InlineData("tenants/acme/nodes/home-laptop/items/readme.md")]
+    [InlineData("tenants/acme/nodes/home-laptop/items/sub/" + Ulid + ".md")]
+    public void TryParse_ItemsFileOtherTenantOrNonUlid_Refused(string relative)
+    {
+        // Act
+        bool ok = BusPaths.TryParse(relative, out BusLocation? location);
+
+        // Assert
+        ok.Should().BeFalse(relative);
+        location.Should().BeNull();
+    }
+
+    [Fact]
     public void Api_HasNoParameterlessOrStringTenantOverload()
     {
         // Arrange: only the file-system join and the folder of EnvelopeFile take raw strings; tenants and machines are typed.

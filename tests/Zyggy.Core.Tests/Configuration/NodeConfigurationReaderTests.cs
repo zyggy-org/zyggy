@@ -551,6 +551,79 @@ public sealed class NodeConfigurationReaderTests : IDisposable
         result.Configuration!.SignWith.Should().BeNull();
     }
 
+    // Spec 41 W41-15 / plan 41 A5: the laptop's `archive` object.
+    [Fact]
+    public void Read_ArchiveAbsent_Defaults()
+    {
+        // Act
+        NodeConfigurationResult result = Read(Minimal);
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        result.Configuration!.Archive.ItemMaxBytes.Should().Be(10_485_760);
+        result.Configuration.Archive.OneDriveFolder.Should().BeNull();
+    }
+
+    [Fact]
+    public void Read_ArchiveSet_Typed()
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"archive\": { \"itemMaxBytes\": 26214400, \"oneDriveFolder\": \"{root}/OneDrive - Example/Zyggy/archive\" },"));
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        result.Configuration!.Archive.ItemMaxBytes.Should().Be(ArchiveSettings.ItemCeiling);
+        result.Configuration.Archive.OneDriveFolder.Should().Be(Root + "/OneDrive - Example/Zyggy/archive");
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("26214401")]
+    [InlineData("\"10\"")]
+    [InlineData("1.5")]
+    public void Read_ArchiveItemMaxBytesOutOfRange_RefusedNamesKey(string value)
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"archive\": { \"itemMaxBytes\": " + value + " },"));
+
+        // Assert
+        result.Error.Should().Be(NodeConfigurationError.InvalidField);
+        result.Field.Should().Be("archive.itemMaxBytes");
+        result.ToString().Should().Be("archive.itemMaxBytes: must be an integer from 1 to 26214400");
+    }
+
+    [Fact]
+    public void Read_OneDriveFolderRelative_RefusedNamesKey()
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"archive\": { \"oneDriveFolder\": \"OneDrive/Zyggy/archive\" },"));
+
+        // Assert
+        result.Error.Should().Be(NodeConfigurationError.InvalidField);
+        result.ToString().Should().Be("archive.oneDriveFolder: must be an absolute path");
+    }
+
+    [Fact]
+    public void Read_OneDriveFolderNull_EqualsAbsent()
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"archive\": { \"oneDriveFolder\": null },"));
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        result.Configuration!.Archive.Should().Be(new ArchiveSettings());
+    }
+
+    [Fact]
+    public void Read_ArchiveNotAnObject_RefusedNamesKey()
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"archive\": 5,"));
+
+        // Assert
+        result.ToString().Should().Be("archive: must be an object");
+    }
+
     private const string Section10Keys = "\"workHours\": { \"timezone\": \"Europe/Brussels\", \"days\": [\"Mon\",\"Tue\",\"Wed\",\"Thu\",\"Fri\"], \"from\": \"08:00\", \"to\": \"19:00\" }, \"maxConcurrentJobs\": 2, \"log\": { \"level\": \"Information\" },";
 
     private static string WithTopLevel(string insert) =>

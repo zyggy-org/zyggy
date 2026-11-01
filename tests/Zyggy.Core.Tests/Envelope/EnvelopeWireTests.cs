@@ -9,6 +9,7 @@ public sealed class EnvelopeWireTests
         { EnvelopeType.Job, "job" },
         { EnvelopeType.Report, "report" },
         { EnvelopeType.Context, "context" },
+        { EnvelopeType.Item, "item" },
     };
 
     public static TheoryData<EnvelopePriority, string> Priorities => new()
@@ -157,6 +158,34 @@ public sealed class EnvelopeWireTests
         // Assert
         ok.Should().BeTrue();
         back.Should().Be(EnvelopeRejectionReason.WrongRecipient);
+    }
+
+    [Fact]
+    public void EnvelopeType_Item_WireIsItem()
+    {
+        // Act: spec 41 — the fourth type, appended last so the earlier members keep their values
+        string text = EnvelopeWire.ToWire(EnvelopeType.Item);
+
+        // Assert
+        text.Should().Be("item");
+        ((int)EnvelopeType.Item).Should().Be(3);
+    }
+
+    [Theory]
+    [InlineData(ItemRoute.Bus, "bus")]
+    [InlineData(ItemRoute.OneDrive, "onedrive")]
+    public void ItemRoute_EveryMember_WireAndBack(ItemRoute member, string wire)
+    {
+        // Act
+        string text = EnvelopeWire.ToWire(member);
+        bool ok = EnvelopeWire.TryFromWire(wire, out ItemRoute back);
+
+        // Assert
+        text.Should().Be(wire);
+        ok.Should().BeTrue();
+        back.Should().Be(member);
+        Enum.GetValues<ItemRoute>().Should().HaveCount(2);
+        EnvelopeWire.TryFromWire("OneDrive", out ItemRoute _).Should().BeFalse();
     }
 
     [Fact]

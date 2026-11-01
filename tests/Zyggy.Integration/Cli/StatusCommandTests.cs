@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.RegularExpressions;
 
 using Microsoft.Extensions.DependencyInjection;
 
@@ -214,6 +215,37 @@ public sealed partial class StatusCommandTests : IAsyncLifetime
         (await _harness.CommitCountOnMainAsync(ct)).Should().Be(commits);
         (await _harness.PorcelainAsync(_harness.Bus.CloneDir, ct)).Should().BeEmpty();
     }
+
+    // Spec 41 AC-44 (before the pickup): the sender traces its item, queued in its own items/ folder for central.
+    [Fact]
+    public async Task StatusId_ItemSentFromHomeLaptop_HeaderLineAndQueuedAtHomeLaptopForCentral()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        string source = _harness.Scratch.File(Path.Combine("sources", "restore-notes.md"));
+        Directory.CreateDirectory(Path.GetDirectoryName(source)!);
+        await File.WriteAllTextAsync(source, "# Staging restore\n\nRestore the staging database from Sunday's snapshot.\n", ct);
+        var (sent, archive) = await _harness.RunAsync(
+            ["archive", "--project", "calizr", "--name", "Staging restore notes", "--description", "How the staging database was restored", "--file", source],
+            _harness.HomeLaptopNodeJson,
+            ct: ct);
+        sent.Should().Be(0, archive.Stderr);
+        Match line = ItemLine().Match(archive.Stdout);
+        line.Success.Should().BeTrue(archive.Stdout);
+        string id = line.Groups["id"].Value;
+        Zyggy.Core.Envelope.Envelope item = await _harness.ParseOnMainAsync(line.Groups["path"].Value, ct);
+        string created = item.Header.Created.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture);
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["status", "--id", id], _harness.HomeLaptopNodeJson, extraEnvironment: ClosedHealth, ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        console.Stdout.Should().Be($"item    {id}  home-laptop→central  project calizr  via bus  created {created}\nstate   queued at home-laptop for central\n");
+    }
+
+    [GeneratedRegex(@"^item (?<id>[0-9A-HJKMNP-TV-Z]{26}) to central \((?<path>\S+)\)")]
+    private static partial Regex ItemLine();
 
     private async Task<Seeded> SeedTreeAsync(CancellationToken ct)
     {

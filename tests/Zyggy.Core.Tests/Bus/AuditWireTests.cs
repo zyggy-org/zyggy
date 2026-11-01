@@ -22,6 +22,7 @@ public sealed class AuditWireTests
     [InlineData(AuditOutcome.WriterMismatch, "writer_mismatch")]
     [InlineData(AuditOutcome.UnexpectedPath, "unexpected_path")]
     [InlineData(AuditOutcome.Skipped, "skipped")]
+    [InlineData(AuditOutcome.WrongRecipient, "wrong_recipient")]
     public void ToWire_EveryMember_ExactString(AuditOutcome outcome, string wire)
     {
         AuditWire.ToWire(outcome).Should().Be(wire);
@@ -37,6 +38,7 @@ public sealed class AuditWireTests
     [InlineData(EnvelopeRejectionReason.MissingSignature, AuditOutcome.MissingSignature)]
     [InlineData(EnvelopeRejectionReason.UnknownKey, AuditOutcome.UnknownKey)]
     [InlineData(EnvelopeRejectionReason.InvalidSignature, AuditOutcome.InvalidSignature)]
+    [InlineData(EnvelopeRejectionReason.WrongRecipient, AuditOutcome.WrongRecipient)]
     public void FromRejection_TwinMembers_SameWireName(EnvelopeRejectionReason reason, AuditOutcome outcome)
     {
         AuditWire.FromRejection(reason).Should().Be(outcome);
@@ -44,8 +46,8 @@ public sealed class AuditWireTests
     }
 
     [Fact]
-    public void Enum_HasFifteenMembers()
+    public void Enum_HasSixteenMembers()
     {
-        Enum.GetValues<AuditOutcome>().Should().HaveCount(15);
+        Enum.GetValues<AuditOutcome>().Should().HaveCount(16);
     }
 }

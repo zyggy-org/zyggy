@@ -28,6 +28,9 @@ All `schema: 1`, `tenant: acme`, LF line endings unless stated.
 | `context` | canonical style | `acme/2` | `scope: project:calizr`; the second key proves rotation (AC-13) |
 | `job-noncanonical` | by hand, **CRLF** front matter, unsorted | `acme/1` | sorting, block-to-flow sequence, `worktree: "true"` emitted plain, `deadline` with fraction and offset kept as text, the quoting ladder (`'a: b'`, `''`, `"it's: here"`), `x_null: null`, nested `x_meta` with a block sequence of mappings; unknown fields preserved and signed (AC-6) |
 | `context-crlf-body` | canonical style | `acme/1` | CRLF body, a body line `---`, no final newline (AC-19) |
+| `item-bus` | canonical style | `acme/1` | deliverable 41: `type: item`, `via: bus`, `home-laptop` → `central`, project `calizr`, slug `staging-restore-notes`; the body is the 68-byte text item of the `archive/` section below as 76-column base64 (two lines) (spec 41 AC-5) |
+| `item-bus-png` | canonical style | `acme/1` | deliverable 41: `via: bus`, the 65-byte 1×1 PNG (`ImageBytes.Png(1, 1)`), slug `roof-photo`, source `roof.png` (AC-5) |
+| `item-onedrive` | canonical style | `acme/1` | deliverable 41: `via: onedrive`, `drive_name: staging-restore-notes.txt` (a Markdown/text item is stored as `.txt`, plan 41 A1), empty body, the text item's size and SHA-256 (AC-5, AC-6) |
 
 ## How the oracle files are produced — never by the code under test
 
@@ -41,6 +44,23 @@ All `schema: 1`, `tenant: acme`, LF line endings unless stated.
 
    `context` uses `zyggy-golden-test-key-acme-00002`. Check: each `.sig` is 64 bytes.
 4. Write `sig: hmac-sha256:<those 64 hex chars>` into `<case>.md`, in its sorted position for canonical-style cases.
+
+The three `item-*` cases (deliverable 41) were produced the same way, in Git Bash, never by the code under test:
+
+- the text item: `printf 'Quote for the Zyggy roof repair.\nTotal 1 234,00 EUR, valid 30 days.\n'` → 68 bytes (`wc -c`), SHA-256
+  `c5f2cab5d3b4d46c44bee6f1ee037d471c419b739908f4a05251745fb4794f88` (`sha256sum`);
+- the PNG: `printf '\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02'` followed by 39 zero bytes
+  (`head -c 39 /dev/zero`) → 65 bytes, SHA-256 `3d85b2401c937238f9494e713afe3fdb723c038906f1bde9705b781336e27ab3`;
+- the bus bodies with GNU `base64 -w 76 <file>` (lines of 76, the last shorter, each ended by `\n`, the final newline included);
+  `item-onedrive` has no body (the file ends with the closing `---\n`);
+- the front matter written in sorted key order with `sig: PLACEHOLDER`, then `sed '1d;/^sig: /d' <case>.md > <case>.canonical`,
+  `openssl dgst -sha256 -hmac 'zyggy-golden-test-key-acme-00001' <case>.canonical | awk '{printf "%s", $2}' > <case>.sig`, and the
+  placeholder replaced by `hmac-sha256:<that digest>` with `sed -i`.
+
+`EnvelopeParserGoldenTests.ItemGolden_OneByteOrFieldChangedAfterSigning_InvalidSignature` swaps the first body character `U` → `V`
+(decoded `Quote` → `Uuote`, still 68 bytes) together with the hand-computed digest
+`9f21e3a595dcaa1a4e89d7006d10073d5099025827f05a1b84ac475028621650` (`sha256sum`), so only the signature catches it.
+`ExistingGoldens_Unchanged` pins the `sha256sum` of every `job*`, `report*` and `context*` file as it was before deliverable 41.
 
 Pasting `Zyggy.Core` output into a `.canonical` or `.sig` file is forbidden: that would make the code its own oracle. If a golden test is red, the only admissible fixture fix is a hand re-derivation against §4, recorded at the plan's human gate with the rule that was misapplied.
 

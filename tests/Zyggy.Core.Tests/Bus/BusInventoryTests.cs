@@ -251,6 +251,46 @@ public sealed class BusInventoryTests : IAsyncLifetime
         trace.ReportBody.Should().BeNull();
     }
 
+    // Spec 41 AC-44 (before the pickup): an item in its sender's items/ folder is queued there for central, with project and route.
+    [Fact]
+    public async Task TraceAsync_ItemInSendersItemsFolder_QueuedWithItemSummary()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        byte[] file = "Restore the staging database from Sunday's snapshot.\n"u8.ToArray();
+        var id = EnvelopeId.New(T.AddMinutes(-5));
+        var fields = new ItemFields(
+            Zyggy.Core.Memory.Slug.Parse("calizr"),
+            Zyggy.Core.Memory.Slug.Parse("staging-restore-notes"),
+            "Staging restore notes",
+            "How the staging database was restored",
+            "restore-notes.md",
+            file.Length,
+            Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(file)),
+            ItemRoute.Bus,
+            null);
+        var item = Zyggy.Core.Envelope.Envelope.CreateItem(new EnvelopeHeader(Acme, id, HomeLaptop, Central, T.AddMinutes(-5)), fields, file);
+        EnvelopeResult signed = await new EnvelopeSigner(_both).SignAsync(item, TestKeys.Acme1, ct);
+        string path = BusPaths.EnvelopeFile(BusPaths.Items(Acme, HomeLaptop), id);
+        _checkout.Drop(path, EnvelopeWriter.Serialize(signed.Envelope!));
+
+        // Act
+        EnvelopeTrace? trace = await Inventory().TraceAsync(id, ct);
+
+        // Assert
+        trace!.State.Should().Be(TraceState.Queued);
+        trace.Machine.Should().Be(HomeLaptop);
+        trace.Reports.Should().BeEmpty();
+        var summary = trace.Job!;
+        summary.RelativePath.Should().Be(path);
+        summary.Verified.Should().BeTrue();
+        summary.Type.Should().Be(EnvelopeType.Item);
+        summary.To.Should().Be(Central);
+        summary.Project.Should().Be("calizr");
+        summary.Via.Should().Be(ItemRoute.Bus);
+        summary.Created.Should().Be(T.AddMinutes(-5));
+    }
+
     [Fact]
     public async Task ListAsync_WriteLockHeldPast60Seconds_ThrowsBusBusy()
     {

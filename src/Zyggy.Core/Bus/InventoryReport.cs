@@ -25,8 +25,9 @@ public sealed record MachineCounts(MachineName Machine, int Queued, int Claimed,
 /// <param name="CostUsd">A report's <c>cost_usd</c>, when readable.</param>
 /// <param name="Verified"><see langword="true"/> when the file parsed and its signature verified.</param>
 /// <param name="Problem">The §4 rejection reason's wire name when not verified; <see langword="null"/> otherwise.</param>
-/// <param name="Project">A verified job's <c>project</c> (the trace line prints it).</param>
+/// <param name="Project">A verified job's or item's <c>project</c> (the trace line prints it).</param>
 /// <param name="Priority">A verified envelope's <c>priority</c>.</param>
+/// <param name="Via">A verified item's <c>via</c> (spec 41 AC-44).</param>
 public sealed record EnvelopeSummary(
     string RelativePath,
     EnvelopeId Id,
@@ -41,12 +42,13 @@ public sealed record EnvelopeSummary(
     bool Verified,
     string? Problem,
     string? Project = null,
-    EnvelopePriority? Priority = null);
+    EnvelopePriority? Priority = null,
+    ItemRoute? Via = null);
 
 /// <summary>Where a job stands (spec 08 AC-5): the §4 state machine read back from the files.</summary>
 public enum TraceState
 {
-    /// <summary>In a machine's <c>jobs/</c>.</summary>
+    /// <summary>In a machine's <c>jobs/</c>, or an item in its sender's <c>items/</c> waiting for Central (spec 41).</summary>
     Queued,
 
     /// <summary>In a machine's <c>jobs/claimed/</c>.</summary>

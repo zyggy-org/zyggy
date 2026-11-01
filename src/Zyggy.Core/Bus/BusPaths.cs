@@ -95,6 +95,13 @@ public static class BusPaths
     /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
     public static string Context(TenantId tenant, MachineName machine) => Node(tenant, machine) + "/context";
 
+    /// <summary>Returns a machine's archive items for Central: <c>tenants/&lt;org&gt;/nodes/&lt;machine&gt;/items</c> (deliverable 41, W41-6).</summary>
+    /// <param name="tenant">The tenant.</param>
+    /// <param name="machine">The machine that writes the items.</param>
+    /// <returns>The repository-relative path.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
+    public static string Items(TenantId tenant, MachineName machine) => Node(tenant, machine) + "/items";
+
     /// <summary>Returns a month's archive folder: <c>tenants/&lt;org&gt;/archive/YYYY-MM</c> (§4 sweep).</summary>
     /// <param name="tenant">The tenant.</param>
     /// <param name="year">The year.</param>
@@ -227,6 +234,9 @@ public static class BusPaths
                 break;
             case "context":
                 folder = BusFolder.Context;
+                break;
+            case "items":
+                folder = BusFolder.Items;
                 break;
             case "jobs":
                 folder = BusFolder.Jobs;

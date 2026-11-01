@@ -9,8 +9,8 @@ namespace Zyggy.Core.Envelope;
 /// </summary>
 /// <remarks>
 /// Immutable; equality is by reference. <see cref="FrontMatter"/> holds every field, known or unknown, and is what the
-/// signature covers; <see cref="Header"/>, <see cref="Job"/>, <see cref="Report"/> and <see cref="Context"/> are typed views
-/// built from it. Exactly one of the three per-type views is non-null, matching <see cref="Type"/>.
+/// signature covers; <see cref="Header"/>, <see cref="Job"/>, <see cref="Report"/>, <see cref="Context"/> and <see cref="Item"/> are
+/// typed views built from it. Exactly one of the four per-type views is non-null, matching <see cref="Type"/>.
 /// </remarks>
 public sealed class Envelope
 {
@@ -25,6 +25,7 @@ public sealed class Envelope
         JobFields? job,
         ReportFields? report,
         ContextFields? context,
+        ItemFields? item,
         KeyId? keyId,
         string? signature,
         FrontMatterMapping frontMatter,
@@ -36,6 +37,7 @@ public sealed class Envelope
         Job = job;
         Report = report;
         Context = context;
+        Item = item;
         KeyId = keyId;
         Signature = signature;
         FrontMatter = frontMatter;
@@ -60,6 +62,9 @@ public sealed class Envelope
 
     /// <summary>Gets the context fields when <see cref="Type"/> is <see cref="EnvelopeType.Context"/>.</summary>
     public ContextFields? Context { get; }
+
+    /// <summary>Gets the item fields when <see cref="Type"/> is <see cref="EnvelopeType.Item"/>.</summary>
+    public ItemFields? Item { get; }
 
     /// <summary>Gets the <c>key_id</c> the envelope is signed with; <see langword="null"/> until signed.</summary>
     public KeyId? KeyId { get; }
@@ -150,6 +155,47 @@ public sealed class Envelope
         return Create(entries, header, body);
     }
 
+    /// <summary>Creates an unsigned item envelope in canonical scalar text (§4 "Mandatory fields per type", row <c>item</c>, W41-6).</summary>
+    /// <remarks>
+    /// Same text rules as <see cref="CreateJob"/>. For <see cref="ItemRoute.Bus"/> the body is <paramref name="fileBytes"/> encoded by
+    /// <see cref="ItemBody.Encode"/>; for <see cref="ItemRoute.OneDrive"/> the body is empty and <c>drive_name</c> is written. The fields
+    /// and the body are validated by the parser's rules, so <see cref="ItemFields.Size"/> and <see cref="ItemFields.Sha256"/> must match
+    /// <paramref name="fileBytes"/> on the bus route.
+    /// </remarks>
+    /// <param name="header">The common fields.</param>
+    /// <param name="item">The item fields.</param>
+    /// <param name="fileBytes">The file for the bus route; empty for the OneDrive route.</param>
+    /// <returns>The unsigned envelope.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="header"/> or <paramref name="item"/> is null.</exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when a field breaks a §4 rule, the bus body does not match <c>size</c> or <c>sha256</c>, or file bytes are given for the
+    /// OneDrive route.
+    /// </exception>
+    public static Envelope CreateItem(EnvelopeHeader header, ItemFields item, ReadOnlyMemory<byte> fileBytes)
+    {
+        ArgumentNullException.ThrowIfNull(header);
+        ArgumentNullException.ThrowIfNull(item);
+        ArgumentNullException.ThrowIfNull(item.Project, nameof(item));
+        ArgumentNullException.ThrowIfNull(item.Slug, nameof(item));
+        if (item.Via == ItemRoute.OneDrive && !fileBytes.IsEmpty)
+        {
+            throw new ArgumentException("A OneDrive-route item carries no file bytes; the body is empty.", nameof(fileBytes));
+        }
+
+        Dictionary<string, FrontMatterNode> entries = Common(header, EnvelopeType.Item);
+        Add(entries, "via", EnvelopeWire.ToWire(item.Via));
+        Add(entries, "project", item.Project.Value);
+        Add(entries, "slug", item.Slug.Value);
+        AddOptional(entries, "drive_name", item.DriveName);
+        Add(entries, "name", item.Name);
+        Add(entries, "description", item.Description);
+        Add(entries, "source_name", item.SourceName);
+        Add(entries, "size", item.Size.ToString(CultureInfo.InvariantCulture));
+        Add(entries, "sha256", item.Sha256);
+        byte[] body = item.Via == ItemRoute.Bus ? ItemBody.Encode(fileBytes.Span) : [];
+        return Create(entries, header, body);
+    }
+
     /// <summary>Returns a copy with <c>key_id</c> set to <paramref name="keyId"/> and <c>sig</c> set, or removed when null.</summary>
     internal Envelope WithSignature(KeyId keyId, string? signature)
     {
@@ -166,7 +212,7 @@ public sealed class Envelope
             entries["sig"] = new FrontMatterScalar(signature);
         }
 
-        return new Envelope(Schema, Type, Header, Job, Report, Context, keyId, signature, new FrontMatterMapping(entries), Body);
+        return new Envelope(Schema, Type, Header, Job, Report, Context, Item, keyId, signature, new FrontMatterMapping(entries), Body);
     }
 
     private static Dictionary<string, FrontMatterNode> Common(EnvelopeHeader header, EnvelopeType type)

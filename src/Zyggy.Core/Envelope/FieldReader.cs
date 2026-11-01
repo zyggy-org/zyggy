@@ -63,6 +63,16 @@ internal static class FieldReader
     internal static bool TryInt(string text, out int value) =>
         int.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out value);
 
+    /// <summary>Parses a non-negative invariant integer: ASCII digits only, no sign, no leading zero (except <c>0</c> itself).</summary>
+    internal static bool TryLong(string text, out long value)
+    {
+        value = 0;
+        return text.Length > 0
+            && (text.Length == 1 || text[0] != '0')
+            && text.All(char.IsAsciiDigit)
+            && long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out value);
+    }
+
     internal static bool TryDecimal(string text, out decimal value) =>
         decimal.TryParse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out value);
 
