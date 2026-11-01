@@ -413,7 +413,7 @@ are the template and the definition of done. Never the real claude, never Graph,
 
 ## Step 8 — File given bytes through the one archive writer exactly as `zyggy memory archive add` would — same closed checks, sidecar (with the given source name), `[stated]` index line and memory commit — and recognise an item already filed (a sidecar with the same SHA-256, committed or not) without a second item or index line
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Memory/ArchiveService.cs` *(modify)*: `public Task<ArchiveOutcome> AddBytesAsync(ArchiveAddBytes request, CancellationToken ct)` — preflight → **already filed?** (sidecar at `paths.ArchiveSidecar(project, slug)` parses and its `Sha256` equals the bytes' digest → if the two paths are uncommitted (`git status --porcelain` through `GitClient`), `CommitAndPushAsync` them with the `ArchiveCommitMessage.Add` message; return `AlreadyFiled(item, sidecar, sha, pushed)`) → `ArchiveChecks.CheckContent(…, ArchiveCheckScope.Central, options, paths, …)` → write item + sidecar (`SourceName = request.SourceName`) → index line → commit + push — steps 3–5 of `AddAsync` moved into one private method both call. `AddAsync` = preflight → `CheckSource` → the same private method.
@@ -450,7 +450,7 @@ are the template and the definition of done. Never the real claude, never Graph,
 
 ## Step 9 — Central's pickup settles a `via: bus` item in one pass through fakes: filed through the one writer with a signed `done` report, refused by a check with `failed` / `archive_refused`, left untouched with one Warning when it does not verify or breaks the writer or recipient rule, or waiting (memory busy, archive configuration missing, report key unusable, any exception) — the `items/` file removed and the report written in the pass's single commit; a `via: onedrive` item waits with one Error until Slice E
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Bus/BusRepository.cs` *(modify)*: `ListPickupCandidatesAsync` per A11; `SettleAsync` + `SettledItem` per A10; `AssertMayArchive` accepts `BusFolder.Items` as a source.
@@ -505,7 +505,7 @@ are the template and the definition of done. Never the real claude, never Graph,
 
 ## Step 10 — Against a bare bus repository and a memory repository with a bare remote, Central's pickup files a `via: bus` item from `home-laptop` (item, sidecar, index line, memory commit pushed), removes the `items/` file and writes its signed report in one bus commit, refuses a type the instance does not allow and a crafted secret item with `archive_refused`, leaves a tampered and a wrong-tenant item untouched, waits while the memory repository is not on a branch, and `zyggy status --id` on the sender then shows `reported by central`
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `tests/Zyggy.Integration/Infrastructure/PickupArchiveMemory.cs` *(create)*: a `MemoryRepoFixture` (clone + bare remote, principal `acme/alice`) plus an instance directory with `archive.json`, and a `PickupConfigurationResult` loaded through `PickupConfiguration.Load(Env(), node)` (the five variables + `ZYGGY_INSTANCE_DIR`); `PickupMemory` stays as is for the spec-13 tests.
@@ -547,10 +547,10 @@ are the template and the definition of done. Never the real claude, never Graph,
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: `ArchiveServiceAddBytesTests`, `BusPickupItemTests` (unit and integration), `BusRepositorySettleTests`, `StatusAfterPickupTests.StatusId_ItemAfterPickup_…`, `NodeHostPickupTests` new methods green; the bus commit (subject + body) and Central's report file shown.
-- [ ] Contract review: §4 state-machine row 2 and write-rule bullet 3 (W41-7/W41-8); §5 subject and body lines (W41-9); report fields and body (A9, AC-28/AC-33); `archive_refused` (W41-14); A8 (pickup starts without the instance dir; items wait), A10, A11; `item_drive_wait_hours` key.
-- [ ] ⚠️ Risk review: one writer (`AddAsync` and `AddBytesAsync` share the write path); no secret text in memory, bus or log (sweeps); memory git only when an item is present (spec-13 tests unedited); the pickup never calls a model nor reads `ZYGGY_HOOKS` (AC-41 test).
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `ArchiveServiceAddBytesTests`, `BusPickupItemTests` (unit and integration), `BusRepositorySettleTests`, `StatusAfterPickupTests.StatusId_ItemAfterPickup_…`, `NodeHostPickupTests` new methods green; the bus commit (subject + body) and Central's report file shown.
+- [x] Contract review: §4 state-machine row 2 and write-rule bullet 3 (W41-7/W41-8); §5 subject and body lines (W41-9); report fields and body (A9, AC-28/AC-33); `archive_refused` (W41-14); A8 (pickup starts without the instance dir; items wait), A10, A11; `item_drive_wait_hours` key.
+- [x] ⚠️ Risk review: one writer (`AddAsync` and `AddBytesAsync` share the write path); no secret text in memory, bus or log (sweeps); memory git only when an item is present (spec-13 tests unedited); the pickup never calls a model nor reads `ZYGGY_HOOKS` (AC-41 test).
+- [x] User approved — implementation may continue past this gate
 
 ---
 

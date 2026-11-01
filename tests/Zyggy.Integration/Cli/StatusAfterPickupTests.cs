@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 using Zyggy.Core.Bus;
 using Zyggy.Core.Envelope;
+using Zyggy.Core.Memory;
 using Zyggy.Core.Tests.Infrastructure;
 using Zyggy.Integration.Infrastructure;
 
@@ -92,6 +93,38 @@ public sealed class StatusAfterPickupTests : IAsyncLifetime
         lines[4].Should().Be("        home-laptop        1        0         0        0        0", "the job is still queued; the report left reports/");
         lines[5].Should().Be("recent reports (1 of 1)");
         lines[6].Should().StartWith($"        {_report.Id.Value}  home-laptop→central  done  in_reply_to {_job.Value}  ");
+    }
+
+    [Fact]
+    public async Task StatusId_ItemAfterPickup_ReportedByCentral_ReportLineAndBodyAsData()
+    {
+        // Arrange: home-laptop's item filed by a pickup pass on central with Central's archive configuration (spec 41 AC-44 after).
+        var ct = TestContext.Current.CancellationToken;
+        byte[] file = "# Staging restore\n\nRestore the staging database from Sunday's snapshot.\n"u8.ToArray();
+        var fields = new ItemFields(
+            Slug.Parse("calizr"), Slug.Parse("staging-restore-notes"), "Staging restore notes", "How the staging database was restored", "restore-notes.md",
+            file.Length, Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(file)), ItemRoute.Bus, null);
+        SeededJob item = await _harness.Bus.SeedSignedItemAsync(CliHarness.HomeLaptop, CliHarness.Central, TestKeys.Acme1, _harness.Store, fields, file, Created, ct: ct);
+        await using var memory = new PickupArchiveMemory();
+        await memory.InitializeAsync();
+        await using ServiceProvider central = TestHost.Build(_harness.Bus, CliHarness.Central, _harness.Store, extend: s =>
+        {
+            s.AddSingleton(TestKeys.Acme1);
+            s.AddBusPickup(memory.Configuration(TestHost.NodeConfigurationFor(_harness.Bus, CliHarness.Central)));
+        });
+        await _harness.Bus.PullCloneAsync(ct);
+        PickupResult result = await central.GetRequiredService<BusPickup>().RunAsync(ct);
+        result.ItemsFiled.Should().Be(1);
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["status", "--id", item.Id.Value], _harness.HomeLaptopNodeJson, extraEnvironment: _closedHealth, ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        string[] lines = console.Stdout.Split('\n');
+        lines[1].Should().Be("state   reported by central");
+        lines.Should().Contain(l => l.StartsWith("report  ", StringComparison.Ordinal) && l.Contains("  done", StringComparison.Ordinal));
+        console.Stdout.Should().Contain("body:\narchived: archive/calizr/staging-restore-notes.txt\nsidecar: archive/calizr/staging-restore-notes.md\n- [stated] ");
     }
 
     [Fact]

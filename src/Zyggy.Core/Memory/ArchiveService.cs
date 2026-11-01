@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+
 namespace Zyggy.Core.Memory;
 
 /// <summary>
@@ -30,9 +32,83 @@ internal sealed class ArchiveService(
             return ArchiveOutcome.GitError(preflight.Detail);
         }
 
-        // 2. The closed checks.
+        // 2. The closed checks: the source half here, the content half in the one write path.
+        var source = ArchiveChecks.CheckSource(request.SourcePath, deny);
+        if (source.Refusal is { } refusal)
+        {
+            return ArchiveOutcome.Refused(refusal, source.Detail);
+        }
+
+        var content = new ArchiveContentRequest(request.Project, request.Name, request.Description, request.Slug, source.SourceName!, source.Bytes!, options.ItemMaxBytes)
+        {
+            TypeHintPath = request.SourcePath,
+        };
+        return await CheckAndWriteAsync(request, content, preflight.Branch!, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Spec 41: files bytes already obtained (Central's pickup) through the same write path as <see cref="AddAsync"/> — the git preflight,
+    /// then, when a sidecar at the slug already carries the bytes' SHA-256, <see cref="ArchiveOutcomeKind.AlreadyFiled"/> (its paths
+    /// committed and pushed when an earlier writer left them uncommitted; nothing written), else every content check and the write.
+    /// </summary>
+    public async Task<ArchiveOutcome> AddBytesAsync(ArchiveAddBytes request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var preflight = await publisher.PreflightAsync(repository, cancellationToken).ConfigureAwait(false);
+        if (preflight.Detail is not null)
+        {
+            return ArchiveOutcome.GitError(preflight.Detail);
+        }
+
+        var already = await AlreadyFiledAsync(request, preflight, cancellationToken).ConfigureAwait(false);
+        if (already is not null)
+        {
+            return already;
+        }
+
+        var content = new ArchiveContentRequest(request.Project, request.Name, request.Description, request.Slug, request.SourceName, request.Bytes, options.ItemMaxBytes);
+        var asAdd = new ArchiveAddRequest(request.Project, request.Name, request.Description, request.SourceName, request.Slug);
+        return await CheckAndWriteAsync(asAdd, content, preflight.Branch!, cancellationToken).ConfigureAwait(false);
+    }
+
+    // AC-39: a sidecar at the slug whose sha256 equals the bytes' digest means an earlier pass filed this item (committed, offloaded, or
+    // written but not committed). Uncommitted paths are committed with the archive add message and pushed.
+    private async Task<ArchiveOutcome?> AlreadyFiledAsync(ArchiveAddBytes request, PublisherPreflight preflight, CancellationToken cancellationToken)
+    {
+        var sidecarPath = paths.ArchiveSidecar(request.Project, request.Slug);
+        var sidecar = File.Exists(sidecarPath) ? ArchiveSidecar.TryParse(MemoryFileReader.Read(sidecarPath)) : null;
+        var sha = Convert.ToHexStringLower(SHA256.HashData(request.Bytes));
+        if (sidecar is null || !string.Equals(sidecar.Sha256, sha, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var itemRelative = paths.Relative(paths.ArchiveItem(request.Project, request.Slug, sidecar.MediaType));
+        var sidecarRelative = paths.Relative(sidecarPath);
+        var repoPaths = ArchiveCommitMessage.RepoPaths(paths.Principal, itemRelative, sidecarRelative);
+        var uncommitted = await publisher.UncommittedAsync(repository, repoPaths, cancellationToken).ConfigureAwait(false);
+        if (uncommitted is null)
+        {
+            return ArchiveOutcome.GitError("status_failed");
+        }
+
+        if (uncommitted.Count == 0)
+        {
+            return ArchiveOutcome.AlreadyFiled(itemRelative, sidecarRelative, null, !preflight.PushPending);
+        }
+
+        var message = ArchiveCommitMessage.Add(request.Project, request.Slug, sidecar.ItemExtension, sidecar.MediaType, sidecar.SizeBytes, sidecar.Sha256);
+        var publish = await publisher.CommitAndPushAsync(repository, preflight.Branch!, message, uncommitted, uncommitted, cancellationToken).ConfigureAwait(false);
+        return publish.Committed
+            ? ArchiveOutcome.AlreadyFiled(itemRelative, sidecarRelative, publish.Sha, publish.Pushed)
+            : ArchiveOutcome.GitError(publish.GitStep!);
+    }
+
+    // The one write path (spec 41 decision 1): the content checks, then item and sidecar, the index line, one commit pushed.
+    private async Task<ArchiveOutcome> CheckAndWriteAsync(ArchiveAddRequest request, ArchiveContentRequest content, string branch, CancellationToken cancellationToken)
+    {
         var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(clock.GetUtcNow(), zone).DateTime);
-        var check = ArchiveChecks.Check(request, options, paths, deny, secrets, today);
+        var check = ArchiveChecks.CheckContent(content, ArchiveCheckScope.Central, options, paths, secrets, today);
         if (check.Refusal is { } refusal)
         {
             return ArchiveOutcome.Refused(refusal, check.Detail);
@@ -66,7 +142,7 @@ internal sealed class ArchiveService(
         var sidecarRelative = paths.Relative(sidecarPath);
         var repoPaths = ArchiveCommitMessage.RepoPaths(paths.Principal, itemRelative, sidecarRelative);
         var message = ArchiveCommitMessage.Add(request.Project, request.Slug, sidecar.ItemExtension, candidate.Type, size, candidate.Sha256);
-        var publish = await publisher.CommitAndPushAsync(repository, preflight.Branch!, message, repoPaths, repoPaths, cancellationToken).ConfigureAwait(false);
+        var publish = await publisher.CommitAndPushAsync(repository, branch, message, repoPaths, repoPaths, cancellationToken).ConfigureAwait(false);
         if (!publish.Committed)
         {
             return ArchiveOutcome.GitError(publish.GitStep!);

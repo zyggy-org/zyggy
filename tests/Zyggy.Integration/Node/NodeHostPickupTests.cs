@@ -217,4 +217,96 @@ public sealed class NodeHostPickupTests
         (await harness.Bus.ExistsOnMainAsync(own.RelativePath, ct)).Should().BeTrue();
         TreeFingerprint.Of(memory.Root).Should().Equal(before);
     }
+
+    [Fact]
+    public async Task Central_WithInstanceDir_BusItemPushedWhileRunning_FiledWithinTenSeconds()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await using NodeHostHarness harness = await NodeHostHarness.CreateAsync(ct);
+        await using var memory = new PickupArchiveMemory();
+        await memory.InitializeAsync();
+        harness.WriteNodeJson(machine: Central, activeSeconds: 1, idleSeconds: 60);
+        harness.Environment = memory.Env();
+        SeededJob? item = null;
+        var started = DateTimeOffset.UtcNow;
+        TimeSpan delay = TimeSpan.Zero;
+
+        // Act
+        int exit = await harness.RunUntilAsync(
+            async () =>
+            {
+                if (item is null)
+                {
+                    if (!harness.LogLines.Any(l => l.Contains("listening", StringComparison.Ordinal) || l.Contains(" poll ", StringComparison.Ordinal)) && DateTimeOffset.UtcNow - started < TimeSpan.FromSeconds(3))
+                    {
+                        return false;
+                    }
+
+                    item = await harness.Bus.SeedSignedItemAsync(HomeLaptop, Central, TestKeys.Acme1, harness.Store, ItemFieldsFor(Notes), Notes, Created, ct: ct);
+                    started = DateTimeOffset.UtcNow;
+                    return false;
+                }
+
+                bool done = !await harness.Bus.ExistsOnMainAsync(item.RelativePath, ct)
+                    && harness.LogLines.Any(l => l.Contains("items filed 1", StringComparison.Ordinal));
+                if (done)
+                {
+                    delay = DateTimeOffset.UtcNow - started;
+                }
+
+                return done;
+            },
+            TimeSpan.FromSeconds(30),
+            ct,
+            s => s.AddSingleton(sp => sp.GetRequiredService<NodeConfiguration>().Poll.ToPollOptions()));
+
+        // Assert
+        exit.Should().Be(0, string.Join('\n', harness.LogLines));
+        delay.Should().BeLessThan(TimeSpan.FromSeconds(10), string.Join('\n', harness.LogLines));
+        (await memory.Repo.ShowBytesAsync("acme/alice/archive/calizr/staging-restore-notes.txt", ct)).Should().Equal(Notes);
+        harness.LogLines.Should().NotContain(l => l.Contains("Sunday's snapshot", StringComparison.Ordinal));
+        SecretSweep.AssertAbsent(harness.LogLines);
+    }
+
+    [Fact]
+    public async Task Central_WithoutInstanceDir_StartsAndPicksUpContexts_ItemWaitsErrorOnce()
+    {
+        // Arrange: plan 41 A8 — the archive part missing never stops start-up (exit 0, not 3).
+        var ct = TestContext.Current.CancellationToken;
+        await using NodeHostHarness harness = await NodeHostHarness.CreateAsync(ct);
+        await using var memory = new PickupArchiveMemory();
+        await memory.InitializeAsync();
+        harness.WriteNodeJson(machine: Central);
+        harness.Environment = memory.Env(withInstanceDir: false);
+        SeededJob item = await harness.Bus.SeedSignedItemAsync(HomeLaptop, Central, TestKeys.Acme1, harness.Store, ItemFieldsFor(Notes), Notes, Created, ct: ct);
+        SeededJob context = await harness.Bus.SeedSignedContextAsync(HomeLaptop, Central, TestKeys.Acme1, harness.Store, Fact, created: Created, ct: ct);
+        string archived = BusPaths.EnvelopeFile(BusPaths.Archive(Acme, 2026, 10), context.Id);
+        string memoryHead = await memory.Repo.GitAsync(memory.Repo.BareDir, ["rev-parse", "main"], ct);
+
+        // Act
+        int exit = await harness.RunUntilAsync(
+            async () => await harness.Bus.ExistsOnMainAsync(archived, ct) && harness.LogLines.Any(l => l.Contains("pickup: archive configuration missing", StringComparison.Ordinal)),
+            TimeSpan.FromSeconds(30),
+            ct);
+
+        // Assert
+        exit.Should().Be(0, string.Join('\n', harness.LogLines));
+        (await harness.Bus.ExistsOnMainAsync(item.RelativePath, ct)).Should().BeTrue();
+        harness.LogLines.Count(l => l.Contains("pickup: archive configuration missing: archive configuration missing (ZYGGY_INSTANCE_DIR not set)", StringComparison.Ordinal)).Should().Be(1);
+        (await memory.Repo.GitAsync(memory.Repo.BareDir, ["rev-parse", "main"], ct)).Should().Be(memoryHead);
+    }
+
+    private static readonly byte[] Notes = "# Staging restore\n\nRestore the staging database from Sunday's snapshot.\n"u8.ToArray();
+
+    private static ItemFields ItemFieldsFor(byte[] file) => new(
+        Zyggy.Core.Memory.Slug.Parse("calizr"),
+        Zyggy.Core.Memory.Slug.Parse("staging-restore-notes"),
+        "Staging restore notes",
+        "How the staging database was restored",
+        "restore-notes.md",
+        file.Length,
+        Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(file)),
+        ItemRoute.Bus,
+        null);
 }

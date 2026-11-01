@@ -40,12 +40,26 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton(sp =>
         {
             ILogger<BusPickup> log = sp.GetService<ILoggerFactory>()?.CreateLogger<BusPickup>() ?? NullLogger<BusPickup>.Instance;
+            TimeProvider clock = sp.GetRequiredService<TimeProvider>();
+
+            // Spec 41 (plan A8): the item path's one archive writer, over the pickup's memory paths; absent when archive.json did not load.
+            ItemFiler? items = null;
+            if (configuration.Archive is { } archive && configuration.Environment is { } environment)
+            {
+                var publisher = new MemoryPublisher(new GitClient(sp.GetRequiredService<IProcessRunner>(), new GitClientOptions(), clock));
+                var service = new ArchiveService(paths, zone, clock, patterns, archive, SourceDenyList.Build(environment, archive, paths), publisher, paths.RootDirectory);
+                items = new ItemFiler(service, archive);
+            }
+
             return new BusPickup(
                 sp.GetRequiredService<BusRepository>(),
                 sp.GetRequiredService<EnvelopeSigner>(),
-                new PickupInbox(paths, zone, sp.GetRequiredService<TimeProvider>()),
+                new PickupInbox(paths, zone, clock),
                 patterns,
-                log);
+                log,
+                sp.GetService<KeyId>(),
+                items,
+                configuration.ArchiveError ?? (items is null ? "archive configuration missing (ZYGGY_INSTANCE_DIR not set)" : null));
         });
         return services;
     }

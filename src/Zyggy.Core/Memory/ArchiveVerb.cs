@@ -199,10 +199,13 @@ public sealed class ArchiveVerb(IReadOnlyDictionary<string, string?> environment
     }
 
     // secret_pattern's detail is "<pattern> (line <n>|name|description)" (spec 37 AC-10); every other detail goes in parentheses.
-    private static string Render(ArchiveRefusal refusal, string? detail) =>
-        detail is null ? ArchiveRefusalWire.ToWire(refusal)
-        : refusal is ArchiveRefusal.SecretPattern ? $"{ArchiveRefusalWire.ToWire(refusal)} {detail}"
-        : $"{ArchiveRefusalWire.ToWire(refusal)} ({detail})";
+    internal static string Render(ArchiveRefusal refusal, string? detail) => Render(ArchiveRefusalWire.ToWire(refusal), detail);
+
+    /// <summary>The one rendering of a refusal word and its detail (spec 41: also the pickup's words <c>drive_missing</c>, <c>drive_mismatch</c>).</summary>
+    internal static string Render(string word, string? detail) =>
+        detail is null ? word
+        : word == ArchiveRefusalWire.ToWire(ArchiveRefusal.SecretPattern) ? $"{word} {detail}"
+        : $"{word} ({detail})";
 
     private async Task<int> RemoveAsync(string[] args, VerbIo io, ArchiveContext context, CancellationToken cancellationToken)
     {

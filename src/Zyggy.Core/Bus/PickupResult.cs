@@ -8,7 +8,17 @@ namespace Zyggy.Core.Bus;
 /// <param name="LinesDropped">Secret-shaped context lines dropped plus report lines refused.</param>
 /// <param name="Left">Files left where they are: refused by a check, or their inbox write failed.</param>
 /// <param name="Archive">The archive write; <see langword="null"/> when nothing was due.</param>
-public sealed record PickupResult(int Inboxed, int ArchivedOnly, int LinesDropped, int Left, WriteOutcome? Archive);
+public sealed record PickupResult(int Inboxed, int ArchivedOnly, int LinesDropped, int Left, WriteOutcome? Archive)
+{
+    /// <summary>Gets the items filed (or found already filed) and settled with a <c>done</c> report in this pass (spec 41).</summary>
+    public int ItemsFiled { get; init; }
+
+    /// <summary>Gets the items refused by a check and settled with a <c>failed</c> / <c>archive_refused</c> report in this pass (spec 41).</summary>
+    public int ItemsRefused { get; init; }
+
+    /// <summary>Gets the items left on the bus to retry: memory busy, configuration missing, report key unusable, OneDrive not ready, any exception (spec 41).</summary>
+    public int ItemsWaiting { get; init; }
+}
 
 /// <summary>Why the pickup left a file where it is (spec 13 AC-7/AC-8); the wire names reuse §4 and the audit's.</summary>
 public enum PickupLeftReason
@@ -51,6 +61,9 @@ public enum PickupLeftReason
 
     /// <summary><c>inbox_write_failed</c>.</summary>
     InboxWriteFailed,
+
+    /// <summary><c>wrong_recipient</c>: an item not addressed to Central (spec 41 AC-35).</summary>
+    WrongRecipient,
 }
 
 /// <summary>The wire names of <see cref="PickupLeftReason"/>.</summary>
@@ -71,6 +84,7 @@ internal static class PickupLeftWire
         PickupLeftReason.TypeFolderMismatch => AuditWire.ToWire(AuditOutcome.TypeFolderMismatch),
         PickupLeftReason.IdDiffers => AuditWire.ToWire(AuditOutcome.IdDiffers),
         PickupLeftReason.InboxWriteFailed => "inbox_write_failed",
+        PickupLeftReason.WrongRecipient => AuditWire.ToWire(AuditOutcome.WrongRecipient),
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "not a pickup reason"),
     };
 

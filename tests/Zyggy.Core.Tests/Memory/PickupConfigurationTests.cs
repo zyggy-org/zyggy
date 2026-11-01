@@ -180,6 +180,62 @@ public sealed class PickupConfigurationTests : IDisposable
         pickup.Should().NotBeNull().And.Be(dream);
     }
 
+    [Fact]
+    public void Load_NoInstanceDir_StartsWithArchiveError()
+    {
+        // Act
+        PickupConfigurationResult result = PickupConfiguration.Load(Env(), Node());
+
+        // Assert
+        result.Error.Should().BeNull();
+        result.Archive.Should().BeNull();
+        result.ArchiveError.Should().Be("archive configuration missing (ZYGGY_INSTANCE_DIR not set)");
+        result.Environment.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void Load_InvalidArchiveJson_ArchiveErrorNamesKey()
+    {
+        // Arrange
+        string instance = Instance("""{"item_max_bytes": "big"}""");
+        Dictionary<string, string?> env = Env();
+        env["ZYGGY_INSTANCE_DIR"] = instance;
+
+        // Act
+        PickupConfigurationResult result = PickupConfiguration.Load(env, Node());
+
+        // Assert
+        result.Error.Should().BeNull();
+        result.Archive.Should().BeNull();
+        result.ArchiveError.Should().Be("item_max_bytes has the wrong type (archive.json)");
+    }
+
+    [Fact]
+    public void Load_InstanceDir_ArchiveLoaded()
+    {
+        // Arrange
+        string instance = Instance("""{"item_max_bytes": 1048576, "item_drive_wait_hours": 12}""");
+        Dictionary<string, string?> env = Env();
+        env["ZYGGY_INSTANCE_DIR"] = instance;
+
+        // Act
+        PickupConfigurationResult result = PickupConfiguration.Load(env, Node());
+
+        // Assert
+        result.Error.Should().BeNull();
+        result.ArchiveError.Should().BeNull();
+        result.Archive!.ItemMaxBytes.Should().Be(1_048_576);
+        result.Archive.ItemDriveWaitHours.Should().Be(12);
+    }
+
+    private string Instance(string archiveJson)
+    {
+        string instance = Path.Combine(_tree.Root, "checkout", "instance");
+        Directory.CreateDirectory(instance);
+        File.WriteAllText(Path.Combine(instance, "archive.json"), archiveJson);
+        return instance;
+    }
+
     private static NodeConfiguration Node(string tenant = "acme") => new(
         TenantId.Parse(tenant),
         MachineName.Central,

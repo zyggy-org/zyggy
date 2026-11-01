@@ -15,6 +15,12 @@ internal enum ArchiveOutcomeKind
     /// <summary>Git refused before or after the write (exit 6); <see cref="ArchiveOutcome.Detail"/> names the step.</summary>
     GitError,
 
+    /// <summary>
+    /// Spec 41 AC-39: the item was filed earlier (a sidecar at the slug with the same SHA-256); nothing written. When its paths were still
+    /// uncommitted they were committed and pushed now (<see cref="ArchiveOutcome.Sha"/> set); otherwise <see cref="ArchiveOutcome.Sha"/> is <see langword="null"/>.
+    /// </summary>
+    AlreadyFiled,
+
     /// <summary>The composed index line is too long (exit 4, plan 39 assumption A2); <see cref="ArchiveOutcome.Detail"/> is the usage message. Nothing written.</summary>
     Usage,
 }
@@ -50,6 +56,9 @@ internal sealed record ArchiveOutcome(
 
     public static ArchiveOutcome Archived(string item, string sidecar, string inboxPath, string line, string? sha, bool pushed, string? note) =>
         new(ArchiveOutcomeKind.Archived, null, null, item, sidecar, inboxPath, line, sha, pushed, note);
+
+    public static ArchiveOutcome AlreadyFiled(string item, string sidecar, string? sha, bool pushed) =>
+        new(ArchiveOutcomeKind.AlreadyFiled, null, null, item, sidecar, null, null, sha, pushed, null);
 
     public static ArchiveOutcome Removed(string? item, string? sidecar, string inboxPath, string line, string? sha, bool pushed) =>
         new(ArchiveOutcomeKind.Removed, null, null, item, sidecar, inboxPath, line, sha, pushed, null);

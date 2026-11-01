@@ -36,9 +36,31 @@ public static class PickupConfiguration
         }
 
         SecretPatternsLoad patterns = SecretPatterns.Load(path);
-        return patterns.Patterns is null
-            ? new PickupConfigurationResult(null, null, patterns.Error)
-            : PickupConfigurationResult.For(memory.Paths, memory.TimeZone!, patterns.Patterns);
+        if (patterns.Patterns is null)
+        {
+            return new PickupConfigurationResult(null, null, patterns.Error);
+        }
+
+        // Spec 41 (plan A8): the archive part never stops start-up; without it every item waits.
+        (ArchiveOptions? archive, string? archiveError) = LoadArchive(environment);
+        return PickupConfigurationResult.For(memory.Paths, memory.TimeZone!, patterns.Patterns) with
+        {
+            Archive = archive,
+            ArchiveError = archiveError,
+            Environment = environment,
+        };
+    }
+
+    private static (ArchiveOptions? Options, string? Error) LoadArchive(IReadOnlyDictionary<string, string?> environment)
+    {
+        bool Set(string key) => environment.TryGetValue(key, out string? value) && !string.IsNullOrEmpty(value);
+        if (!Set("ZYGGY_ARCHIVE_CONFIG") && !Set("ZYGGY_INSTANCE_DIR"))
+        {
+            return (null, "archive configuration missing (ZYGGY_INSTANCE_DIR not set)");
+        }
+
+        ArchiveConfigurationResult result = ArchiveConfiguration.Load(environment, file => File.Exists(file) ? File.ReadAllText(file) : null);
+        return result.Options is null ? (null, result.Error) : (result.Options, null);
     }
 }
 
@@ -53,6 +75,15 @@ public sealed record PickupConfigurationResult(MemoryPaths? Paths, TimeZoneInfo?
 {
     /// <summary>Gets the loaded secret patterns; <see langword="null"/> on error.</summary>
     internal SecretPatterns? Patterns { get; init; }
+
+    /// <summary>Gets the archive options (spec 41, plan A8); <see langword="null"/> when <see cref="ArchiveError"/> is set.</summary>
+    internal ArchiveOptions? Archive { get; init; }
+
+    /// <summary>Gets why the archive part did not load (spec 41, plan A8): every item then waits; contexts and reports are unaffected.</summary>
+    public string? ArchiveError { get; init; }
+
+    /// <summary>Gets the node environment the configuration was read from (the archive source deny list, spec 41).</summary>
+    internal IReadOnlyDictionary<string, string?>? Environment { get; init; }
 
     /// <summary>A loaded configuration.</summary>
     internal static PickupConfigurationResult For(MemoryPaths paths, TimeZoneInfo zone, SecretPatterns patterns) =>
