@@ -25,8 +25,9 @@ public sealed record MachineCounts(MachineName Machine, int Queued, int Claimed,
 /// <param name="CostUsd">A report's <c>cost_usd</c>, when readable.</param>
 /// <param name="Verified"><see langword="true"/> when the file parsed and its signature verified.</param>
 /// <param name="Problem">The §4 rejection reason's wire name when not verified; <see langword="null"/> otherwise.</param>
-/// <param name="Project">A verified job's <c>project</c> (the trace line prints it).</param>
+/// <param name="Project">A verified job's or item's <c>project</c> (the trace line prints it).</param>
 /// <param name="Priority">A verified envelope's <c>priority</c>.</param>
+/// <param name="Via">A verified item's <c>via</c> (spec 41 AC-44).</param>
 public sealed record EnvelopeSummary(
     string RelativePath,
     EnvelopeId Id,
@@ -41,12 +42,13 @@ public sealed record EnvelopeSummary(
     bool Verified,
     string? Problem,
     string? Project = null,
-    EnvelopePriority? Priority = null);
+    EnvelopePriority? Priority = null,
+    ItemRoute? Via = null);
 
 /// <summary>Where a job stands (spec 08 AC-5): the §4 state machine read back from the files.</summary>
 public enum TraceState
 {
-    /// <summary>In a machine's <c>jobs/</c>.</summary>
+    /// <summary>In a machine's <c>jobs/</c>, or an item in its sender's <c>items/</c> waiting for Central (spec 41).</summary>
     Queued,
 
     /// <summary>In a machine's <c>jobs/claimed/</c>.</summary>
@@ -69,7 +71,14 @@ public enum TraceState
 /// <param name="Job">The job file, when one is still on the bus.</param>
 /// <param name="Reports">Every report answering it, oldest first, including the archive.</param>
 /// <param name="ReportBody">The body of the newest verified report; never of an unverified one.</param>
-public sealed record EnvelopeTrace(EnvelopeId Id, TraceState State, MachineName? Machine, EnvelopeSummary? Job, IReadOnlyList<EnvelopeSummary> Reports, string? ReportBody);
+public sealed record EnvelopeTrace(EnvelopeId Id, TraceState State, MachineName? Machine, EnvelopeSummary? Job, IReadOnlyList<EnvelopeSummary> Reports, string? ReportBody)
+{
+    /// <summary>
+    /// Gets a value indicating whether the file is gone and the newest verified report is Central's report on an item (spec 41; owner
+    /// 2026-11-02), so the trace still names the id an item.
+    /// </summary>
+    public bool AnsweredAsItem { get; init; }
+}
 
 /// <summary>The tenant's bus at a glance.</summary>
 /// <param name="HeadSha">The checkout's <c>HEAD</c> at the time of the read.</param>

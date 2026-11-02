@@ -84,6 +84,17 @@ public sealed class ArchiveConfigurationTests
     }
 
     [Fact]
+    public void Load_ItemDriveWaitHours_Parsed()
+    {
+        // Act
+        var result = ArchiveConfiguration.Load(Env(("ZYGGY_INSTANCE_DIR", Instance)), _ => """{"item_drive_wait_hours": 48}""");
+
+        // Assert
+        result.Error.Should().BeNull();
+        result.Options!.ItemDriveWaitHours.Should().Be(48);
+    }
+
+    [Fact]
     public void Load_Tightens_Applied()
     {
         // Act

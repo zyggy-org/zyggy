@@ -175,6 +175,7 @@ public sealed partial class BusAuditor
             BusFolder.Jobs or BusFolder.Claimed => EnvelopeType.Job,
             BusFolder.Reports => EnvelopeType.Report,
             BusFolder.Context => EnvelopeType.Context,
+            BusFolder.Items => EnvelopeType.Item,
             _ => null,
         };
         if (expected is { } type && envelope.Type != type)
@@ -186,8 +187,10 @@ public sealed partial class BusAuditor
         {
             switch (location.Folder)
             {
-                case BusFolder.Reports or BusFolder.Context when envelope.Header.From != machine:
+                case BusFolder.Reports or BusFolder.Context or BusFolder.Items when envelope.Header.From != machine:
                     return new AuditEntry(path, AuditOutcome.WriterMismatch, "from", "from " + envelope.Header.From.Value + " in " + machine.Value + "'s folder");
+                case BusFolder.Items when envelope.Header.To != MachineName.Central:
+                    return new AuditEntry(path, AuditOutcome.WrongRecipient, "to", "to " + envelope.Header.To.Value + ", items go to central");
                 case BusFolder.Jobs or BusFolder.Claimed or BusFolder.Rejected when envelope.Header.To != machine:
                     return new AuditEntry(path, AuditOutcome.WriterMismatch, "to", "to " + envelope.Header.To.Value + " in " + machine.Value + "'s folder");
                 default:

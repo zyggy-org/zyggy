@@ -60,6 +60,13 @@ internal interface IGraphReader
 
     /// <summary>The child <paramref name="name"/> of folder <paramref name="parentId"/>, or <see langword="null"/> for a 404.</summary>
     Task<GraphRead<DriveItemInfo?>> ChildAsync(string driveId, string parentId, string name, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Spec 41 (plan A15): the bytes of the file at <paramref name="path"/> below the drive root, or <see langword="null"/> for a 404 —
+    /// GET <c>root:/&lt;path&gt;:/content</c>, Graph's redirect followed once to the tenant's download host without the token, the body
+    /// refused past <paramref name="maxBytes"/>. Read-only.
+    /// </summary>
+    Task<GraphRead<byte[]?>> DownloadAsync(string driveId, string path, long maxBytes, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -437,6 +444,75 @@ internal sealed partial class GraphReader(GraphTokenClient tokens, GraphHttp htt
         return ItemAsync($"{GraphEndpoints.Graph}/drives/{driveId}/items/{parentId}:/{Uri.EscapeDataString(name)}?$select={DriveItemInfo.Select}", cancellationToken);
     }
 
+    public async Task<GraphRead<byte[]?>> DownloadAsync(string driveId, string path, long maxBytes, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(driveId);
+        ArgumentNullException.ThrowIfNull(path);
+        if (_token is null && await MintAsync(cancellationToken).ConfigureAwait(false) is { } mintFailure)
+        {
+            return GraphRead<byte[]?>.Fail(mintFailure);
+        }
+
+        var escaped = string.Join('/', path.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(Uri.EscapeDataString));
+        var url = $"{GraphEndpoints.Graph}/drives/{driveId}/root:/{escaped}:/content";
+        var reminted = false;
+        while (true)
+        {
+            var token = _token!;
+            var (content, transport) = await http.SendForStreamAsync(
+                () =>
+                {
+                    var request = new HttpRequestMessage(HttpMethod.Get, url);
+                    request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
+                    return request;
+                },
+                maxBytes,
+                cancellationToken).ConfigureAwait(false);
+            if (transport is not null)
+            {
+                return GraphRead<byte[]?>.Fail(new GraphFailure(6, transport));
+            }
+
+            if (content!.Status == 401 && !reminted)
+            {
+                if (await MintAsync(cancellationToken).ConfigureAwait(false) is { } failure)
+                {
+                    return GraphRead<byte[]?>.Fail(failure);
+                }
+
+                reminted = true;
+                continue;
+            }
+
+            if (content.Status is >= 300 and <= 399)
+            {
+                // The pre-authenticated download URL: followed once, without the bearer token, only to the tenant's download host.
+                if (content.Location is not { IsAbsoluteUri: true } location || !GraphEndpoints.IsDownloadHost(location))
+                {
+                    return GraphRead<byte[]?>.Fail(new GraphFailure(6, "download redirect to an unexpected host") { Status = content.Status });
+                }
+
+                (content, transport) = await http.SendForStreamAsync(() => new HttpRequestMessage(HttpMethod.Get, location), maxBytes, cancellationToken).ConfigureAwait(false);
+                if (transport is not null)
+                {
+                    return GraphRead<byte[]?>.Fail(new GraphFailure(6, transport));
+                }
+            }
+
+            return Downloaded(content!, maxBytes);
+        }
+    }
+
+    private static GraphRead<byte[]?> Downloaded(GraphStreamResult content, long maxBytes) => content switch
+    {
+        { TooLarge: true } => GraphRead<byte[]?>.Fail(new GraphFailure(6, $"download larger than {maxBytes.ToString(CultureInfo.InvariantCulture)} bytes")),
+        { Status: 404 } => GraphRead<byte[]?>.Ok(null),
+        { Status: >= 200 and <= 299 } => GraphRead<byte[]?>.Ok(content.Body),
+        { Status: 401 } => GraphRead<byte[]?>.Fail(new GraphFailure(6, "unauthorized (401) after a fresh token — runbook 13 \"Certificate rejected\"") { Status = 401 }),
+        { Status: 429 or 503 } => GraphRead<byte[]?>.Fail(new GraphFailure(6, GraphHttp.Throttled(content.Status)) { Status = content.Status, RetryAfter = content.RetryAfter }),
+        _ => GraphRead<byte[]?>.Fail(new GraphFailure(6, GraphHttp.Error(content.Status, System.Text.Encoding.UTF8.GetString(content.Body))) { Status = content.Status }),
+    };
+
     private async Task<GraphRead<DriveItemInfo?>> ItemAsync(string url, CancellationToken cancellationToken)
     {
         var item = await CallAsync(url, status => status == 404, cancellationToken).ConfigureAwait(false);
@@ -488,13 +564,13 @@ internal sealed partial class GraphReader(GraphTokenClient tokens, GraphHttp htt
                 cancellationToken).ConfigureAwait(false);
             if (result.Failure is not null)
             {
-                return GraphRead<GraphResponse>.Fail(new GraphFailure(6, result.Failure));
+                return GraphRead<GraphResponse>.Fail(new GraphFailure(6, result.Failure) { RetryAfter = result.RetryAfter, Status = result.Status });
             }
 
             var response = result.Response!;
             if (!response.Accepted)
             {
-                return GraphRead<GraphResponse>.Fail(new GraphFailure(6, GraphHttp.Error(response.Status, response.Body)));
+                return GraphRead<GraphResponse>.Fail(new GraphFailure(6, GraphHttp.Error(response.Status, response.Body)) { Status = response.Status });
             }
 
             if (response.Status == 401 && !tolerate(401))

@@ -27,7 +27,10 @@ internal static class NodeJson
         int? safetyFetchMinutes = null,
         string? logLevel = null,
         string? extraTopLevelJson = null,
-        string secretsStore = "file")
+        string secretsStore = "file",
+        long? archiveItemMaxBytes = null,
+        string? oneDriveFolder = null,
+        bool dlpEnabled = false)
     {
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "node.json");
@@ -40,10 +43,17 @@ internal static class NodeJson
         string safetyFetch = safetyFetchMinutes is null ? string.Empty : string.Create(CultureInfo.InvariantCulture, $", \"safetyFetchMinutes\": {safetyFetchMinutes}");
         string logLine = logLevel is null ? string.Empty : string.Create(CultureInfo.InvariantCulture, $"  \"log\": {{ \"level\": \"{logLevel}\" }},\n");
         string extraLine = extraTopLevelJson is null ? string.Empty : string.Create(CultureInfo.InvariantCulture, $"  {extraTopLevelJson},\n");
+        string?[] archiveKeys =
+        [
+            archiveItemMaxBytes is null ? null : string.Create(CultureInfo.InvariantCulture, $"\"itemMaxBytes\": {archiveItemMaxBytes}"),
+            oneDriveFolder is null ? null : $"\"oneDriveFolder\": \"{Slashes(oneDriveFolder)}\"",
+        ];
+        string archiveLine = archiveKeys.All(k => k is null) ? string.Empty : "  \"archive\": { " + string.Join(", ", archiveKeys.Where(k => k is not null)) + " },\n";
+        string dlpLine = dlpEnabled ? "  \"dlp\": { \"enabled\": true },\n" : string.Empty;
         string json = string.Create(CultureInfo.InvariantCulture, $$"""
             {
             {{tenantLine}}  "machine": "{{machine.Value}}",
-            {{signLine}}{{claudeLine}}{{nodeDirLine}}{{workHoursLine}}{{concurrencyLine}}{{logLine}}{{extraLine}}  "bus": {
+            {{signLine}}{{claudeLine}}{{nodeDirLine}}{{workHoursLine}}{{concurrencyLine}}{{logLine}}{{extraLine}}{{archiveLine}}{{dlpLine}}  "bus": {
                 "owner": "acme-org",
                 "repo": "acme-bus",
                 "branch": "{{branch}}",

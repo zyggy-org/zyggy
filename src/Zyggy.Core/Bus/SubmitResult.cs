@@ -1,4 +1,5 @@
 using Zyggy.Core.Envelope;
+using Zyggy.Core.Memory;
 
 namespace Zyggy.Core.Bus;
 
@@ -58,3 +59,21 @@ public sealed record SubmitRefused(string Field, string Detail) : SubmitResult;
 /// <summary>A context line matched a secret pattern; nothing was signed or written (spec 12 AC-7, exit 5).</summary>
 /// <param name="PatternName">The pattern's name.</param>
 public sealed record ContextRefused(string PatternName) : SubmitResult;
+
+/// <summary>A laptop check refused the file before anything was signed or written (spec 41 AC-12..AC-15, exit 5).</summary>
+/// <param name="Refusal">The archive's refusal.</param>
+/// <param name="Detail">Its detail token (a location word, a size, a pattern name with <c>line &lt;n&gt;</c> / <c>name</c> / <c>description</c>) — never item text.</param>
+public sealed record ItemRefused(ArchiveRefusal Refusal, string? Detail) : SubmitResult;
+
+/// <summary>A usage fault found only after the file was read: the composed index line would exceed 400 characters (spec 41 AC-9, exit 2).</summary>
+/// <param name="Message">The usage message.</param>
+public sealed record ItemUsage(string Message) : SubmitResult;
+
+/// <summary>The configured OneDrive archive folder cannot be used (spec 41 AC-21, exit 6); nothing was written and there is no silent fallback.</summary>
+/// <param name="Reason">The wire word: <c>missing</c>, <c>not_a_folder</c> or <c>access_denied</c>.</param>
+/// <param name="Folder">The configured folder.</param>
+public sealed record OneDriveUnavailable(string Reason, string Folder) : SubmitResult;
+
+/// <summary>Writing the file into the OneDrive archive folder failed or did not read back (spec 41 AC-22, exit 6); the file this call created was removed.</summary>
+/// <param name="Detail">The detail.</param>
+public sealed record OneDriveWriteFailed(string Detail) : SubmitResult;

@@ -146,6 +146,7 @@ public sealed class EnvelopeFactoryTests
     [InlineData(EnvelopeType.Job)]
     [InlineData(EnvelopeType.Report)]
     [InlineData(EnvelopeType.Context)]
+    [InlineData(EnvelopeType.Item)]
     public void Create_ExactlyOneTypedViewIsNonNull(EnvelopeType type)
     {
         // Act
@@ -153,12 +154,13 @@ public sealed class EnvelopeFactoryTests
         {
             EnvelopeType.Job => Model.CreateJob(Header(), new JobFields("calizr"), Body),
             EnvelopeType.Report => Model.CreateReport(Header(inReplyTo: JobId()), new ReportFields(ReportStatus.Done), Body),
+            EnvelopeType.Item => Model.CreateItem(ItemEnvelopeTests.Header(), ItemEnvelopeTests.Fields(ItemRoute.Bus, driveName: null), ItemEnvelopeTests.SampleText),
             _ => Model.CreateContext(Header(), new ContextFields(new ContextScope(ContextScopeKind.General, null)), Body),
         };
 
         // Assert
         envelope.Type.Should().Be(type);
-        new object?[] { envelope.Job, envelope.Report, envelope.Context }.Count(v => v is not null).Should().Be(1);
+        new object?[] { envelope.Job, envelope.Report, envelope.Context, envelope.Item }.Count(v => v is not null).Should().Be(1);
     }
 
     [Fact]

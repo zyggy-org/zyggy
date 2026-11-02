@@ -17,6 +17,9 @@ public sealed class EnvelopeWriterTests
     [InlineData("report")]
     [InlineData("context")]
     [InlineData("context-crlf-body")]
+    [InlineData("item-bus")]
+    [InlineData("item-bus-png")]
+    [InlineData("item-onedrive")]
     public void Serialize_CanonicalStyleGoldenCase_RoundTripsByteIdentically(string name)
     {
         // Arrange

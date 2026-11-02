@@ -16,7 +16,7 @@ internal sealed class GraphFixture : IDisposable
     private readonly TestCertificates _pair;
     private readonly GraphHttp _http;
 
-    public GraphFixture(string? configPatch = null)
+    public GraphFixture(string? configPatch = null, int retries = GraphHttp.Retries)
     {
         _pair = TestCertificates.Create(Path.Combine(_root, "config", "zyggy"));
         var config = Path.Combine(_root, "m365.json");
@@ -48,7 +48,7 @@ internal sealed class GraphFixture : IDisposable
         {
             Waits.Add(wait);
             return Task.CompletedTask;
-        });
+        }, retries: retries);
         Tokens = new GraphTokenClient(
             new CredentialFileSecretStore(TenantId.Parse("acme"), new Dictionary<string, string?>(), _pair.KeyFile, checkOwnership: false),
             TenantId.Parse("acme"), Configuration, _pair.CertificateFile, _http, Clock);

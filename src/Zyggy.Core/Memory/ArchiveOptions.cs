@@ -30,6 +30,9 @@ public sealed record ArchiveOptions
     /// <summary>Gets the instance's extra denied source locations, absolute paths after <c>~</c> expansion.</summary>
     public IReadOnlyList<string> SourceDeny { get; init; } = [];
 
+    /// <summary>Gets how long Central waits for a OneDrive-route item to appear on the drive before refusing it <c>drive_missing</c> (spec 41; 1–168 hours).</summary>
+    public int ItemDriveWaitHours { get; init; } = 24;
+
     /// <summary>Gets the archive offload's settings (spec 38); off by default.</summary>
     public OffloadOptions Offload { get; init; } = new();
 
@@ -51,6 +54,7 @@ public sealed record ArchiveOptions
         Check(TotalMaxBytes >= ProjectMaxBytes && TotalMaxBytes <= TotalCeiling, "total_max_bytes");
         Check(AllowedTypes.Count > 0 && AllowedTypes.All(Enum.IsDefined), "allowed_types");
         Check(SourceDeny.All(Path.IsPathFullyQualified), "source_deny");
+        Check(ItemDriveWaitHours is >= 1 and <= 168, "item_drive_wait_hours");
         offending.AddRange(Offload.Validate());
         return offending;
     }

@@ -41,4 +41,17 @@ public sealed class ArchiveOptionsTests
         // Assert
         offending.Should().Contain(key);
     }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(169)]
+    public void Validate_ItemDriveWaitHoursOutOfRange_Offending(int hours)
+    {
+        // Act
+        var offending = new ArchiveOptions { ItemDriveWaitHours = hours }.Validate();
+
+        // Assert
+        offending.Should().Equal("item_drive_wait_hours");
+        new ArchiveOptions().ItemDriveWaitHours.Should().Be(24);
+    }
 }

@@ -1,9 +1,11 @@
+using System.Security.Cryptography;
 using System.Text;
 
 using Microsoft.Extensions.DependencyInjection;
 
 using Zyggy.Core.Bus;
 using Zyggy.Core.Envelope;
+using Zyggy.Core.Memory;
 using Zyggy.Core.Tenancy;
 using Zyggy.Core.Tests.Infrastructure;
 using Zyggy.Integration.Infrastructure;
@@ -238,6 +240,70 @@ public sealed partial class VerifyCommandTests : IAsyncLifetime
             await foreign.DisposeAsync();
         }
     }
+
+    [Fact]
+    public async Task Verify_SignedItemInHomeLaptopsItemsFolder_OkLine()
+    {
+        // Arrange: spec 41 AC-43 — a well-formed bus item from home-laptop to central in home-laptop's own items/ folder
+        var ct = TestContext.Current.CancellationToken;
+        SeededJob item = await _harness.Bus.SeedSignedItemAsync(CliHarness.HomeLaptop, CliHarness.Central, TestKeys.Acme1, _harness.Store, ItemFields(), ItemFile, created: DateTimeOffset.UtcNow, ct: ct);
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["verify", "--verbose"], _harness.CentralNodeJson, ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        item.RelativePath.Should().StartWith("tenants/acme/nodes/home-laptop/items/");
+        console.Stdout.Split('\n').Should().Contain("OK " + item.RelativePath);
+        console.Stdout.Should().Contain($"verified {_envelopes + 1} ok, 0 failed,");
+    }
+
+    [Fact]
+    public async Task Verify_ItemAddressedToHomeLaptop_WrongRecipientDrift()
+    {
+        // Arrange: an item goes to central only
+        var ct = TestContext.Current.CancellationToken;
+        SeededJob item = await _harness.Bus.SeedSignedItemAsync(CliHarness.HomeLaptop, CliHarness.HomeLaptop, TestKeys.Acme1, _harness.Store, ItemFields(), ItemFile, created: DateTimeOffset.UtcNow, ct: ct);
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["verify"], _harness.CentralNodeJson, ct: ct);
+
+        // Assert
+        exit.Should().Be(6);
+        console.Stdout.Should().Contain($"FAIL {item.RelativePath} wrong_recipient (to)\n");
+        SecretSweep.AssertAbsent([console.Stdout]);
+    }
+
+    [Fact]
+    public async Task Verify_ItemFromWorkLaptopInHomeLaptopsFolder_WriterMismatch()
+    {
+        // Arrange: work-laptop's signed item placed in home-laptop's items/ folder breaks the W41-7 write rule
+        var ct = TestContext.Current.CancellationToken;
+        SeededJob item = await _harness.Bus.SeedSignedItemAsync(CliHarness.WorkLaptop, CliHarness.Central, TestKeys.Acme1, _harness.Store, ItemFields(), ItemFile, created: DateTimeOffset.UtcNow, ct: ct);
+        string misplaced = BusPaths.EnvelopeFile(BusPaths.Items(CliHarness.Acme, CliHarness.HomeLaptop), item.Id);
+        await _harness.Bus.SeedRawFileAsync(misplaced, item.Bytes, "seed: misplaced item", ct);
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["verify"], _harness.CentralNodeJson, ct: ct);
+
+        // Assert
+        exit.Should().Be(6);
+        console.Stdout.Should().Contain($"FAIL {misplaced} writer_mismatch (from)\n");
+        console.Stdout.Should().NotContain($"FAIL {item.RelativePath} ");
+    }
+
+    private static readonly byte[] ItemFile = "Quote for the Zyggy roof repair.\nTotal 1 234,00 EUR, valid 30 days.\n"u8.ToArray();
+
+    private static ItemFields ItemFields() => new(
+        Slug.Parse("calizr"),
+        Slug.Parse("staging-restore-notes"),
+        "Staging restore notes",
+        "How the staging database was restored",
+        "restore-notes.md",
+        ItemFile.Length,
+        Convert.ToHexStringLower(SHA256.HashData(ItemFile)),
+        ItemRoute.Bus,
+        null);
 
     private static byte[] FlipSignature(byte[] bytes)
     {

@@ -1,3 +1,5 @@
+using Zyggy.Core.Configuration;
+
 namespace Zyggy.Core.Memory;
 
 /// <summary>
@@ -41,6 +43,52 @@ internal sealed class SourceDenyList
         }
 
         entries.AddRange(options.SourceDeny.Select(entry => (entry, "denied_location", (string?)null)));
+        return new SourceDenyList(entries.Select(e => (Normalise(e.Item1), e.Item2, e.Item3 is null ? null : Normalise(e.Item3))).ToList());
+    }
+
+    /// <summary>
+    /// The laptop's list for <c>zyggy archive</c> (spec 41 AC-12): <c>~/.ssh</c>, <c>~/.config/zyggy</c>, <c>~/.local/state/zyggy</c>,
+    /// <c>~/.local/share/zyggy</c>, <c>$XDG_CONFIG_HOME/zyggy</c>, the folder of the <c>node.json</c> in use, <c>nodeDir</c>,
+    /// <c>bus.localPath</c>, the secret store's root, <c>CREDENTIALS_DIRECTORY</c>, <c>~/.claude</c> except <c>~/.claude/uploads/</c>, and
+    /// <c>archive.oneDriveFolder</c> itself — every entry labelled <c>denied_location</c>.
+    /// </summary>
+    public static SourceDenyList ForNode(IReadOnlyDictionary<string, string?> environment, NodeConfiguration node, string nodeJsonPath)
+    {
+        ArgumentNullException.ThrowIfNull(environment);
+        ArgumentNullException.ThrowIfNull(node);
+        ArgumentException.ThrowIfNullOrEmpty(nodeJsonPath);
+        string? Get(string key) => environment.TryGetValue(key, out var value) && !string.IsNullOrEmpty(value) ? value : null;
+
+        const string Denied = "denied_location";
+        var home = Get("HOME") ?? Get("USERPROFILE") ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var secretsRoot = node.Secrets.Root ?? Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "zyggy", "secrets");
+        var entries = new List<(string, string, string?)>
+        {
+            (Path.Join(home, ".ssh"), Denied, null),
+            (Path.Join(home, ".config", "zyggy"), Denied, null),
+            (Path.Join(home, ".local", "state", "zyggy"), Denied, null),
+            (Path.Join(home, ".local", "share", "zyggy"), Denied, null),
+            (Path.Join(home, ".claude"), Denied, Path.Join(home, ".claude", "uploads")),
+            (Path.GetDirectoryName(Path.GetFullPath(nodeJsonPath))!, Denied, null),
+            (node.EffectiveNodeDir, Denied, null),
+            (node.Bus.LocalPath, Denied, null),
+            (secretsRoot, Denied, null),
+        };
+        if (Get("XDG_CONFIG_HOME") is { } xdg)
+        {
+            entries.Add((Path.Join(xdg, "zyggy"), Denied, null));
+        }
+
+        if (Get("CREDENTIALS_DIRECTORY") is { } credentials)
+        {
+            entries.Add((credentials, Denied, null));
+        }
+
+        if (node.Archive.OneDriveFolder is { } oneDrive)
+        {
+            entries.Add((oneDrive, Denied, null));
+        }
+
         return new SourceDenyList(entries.Select(e => (Normalise(e.Item1), e.Item2, e.Item3 is null ? null : Normalise(e.Item3))).ToList());
     }
 

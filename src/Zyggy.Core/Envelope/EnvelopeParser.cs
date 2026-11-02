@@ -1,5 +1,6 @@
 using System.Globalization;
 
+using Zyggy.Core.Memory;
 using Zyggy.Core.Tenancy;
 
 namespace Zyggy.Core.Envelope;
@@ -154,7 +155,7 @@ public static class EnvelopeParser
 
             if (!EnvelopeWire.TryFromWire(typeText, out EnvelopeType type))
             {
-                return Fail<Envelope>(FieldReader.Invalid("type", "must be job, report or context"));
+                return Fail<Envelope>(FieldReader.Invalid("type", "must be job, report, context or item"));
             }
 
             // 5. key_id
@@ -187,10 +188,12 @@ public static class EnvelopeParser
             JobFields? job = null;
             ReportFields? report = null;
             ContextFields? context = null;
+            ItemFields? item = null;
             bool ok = type switch
             {
                 EnvelopeType.Job => ReadJob(out job),
                 EnvelopeType.Report => ReadReport(out report),
+                EnvelopeType.Item => ReadItem(out item, body),
                 _ => ReadContext(out context),
             };
             if (!ok)
@@ -202,7 +205,7 @@ public static class EnvelopeParser
             string? signature = signed ? ReadSignature() : null;
             return signed && signature is null
                 ? null
-                : new Envelope(schema, type, header, job, report, context, keyId, signature, map, body);
+                : new Envelope(schema, type, header, job, report, context, item, keyId, signature, map, body);
         }
 
         private EnvelopeHeader? ReadHeader(TenantId tenant, EnvelopeType type)
@@ -329,6 +332,114 @@ public static class EnvelopeParser
 
             context = new ContextFields(scope);
             return true;
+        }
+
+        // Field order (plan 41 Step 1): via, project, slug, drive_name, name, description, source_name, size, sha256, then the body.
+        private bool ReadItem(out ItemFields? item, ReadOnlyMemory<byte> body)
+        {
+            item = null;
+            if (!Text("via", true, out string? viaText))
+            {
+                return false;
+            }
+
+            if (!EnvelopeWire.TryFromWire(viaText, out ItemRoute via))
+            {
+                return Reject(FieldReader.Invalid("via", "must be bus or onedrive"));
+            }
+
+            if (!SlugField("project", out Slug? project) || !SlugField("slug", out Slug? slug) || !Text("drive_name", false, out string? driveName))
+            {
+                return false;
+            }
+
+            if (via == ItemRoute.Bus && driveName is not null)
+            {
+                return Reject(FieldReader.Invalid("drive_name", "must be absent when via is bus"));
+            }
+
+            if (via == ItemRoute.OneDrive && driveName is null)
+            {
+                return Reject(FieldReader.Invalid("drive_name", "must be present when via is onedrive"));
+            }
+
+            if (driveName is not null && !IsDriveName(driveName, slug!))
+            {
+                return Reject(FieldReader.Invalid("drive_name", "must be <slug>.<extension> with an archive item extension"));
+            }
+
+            if (!LineField("name", ArchiveLimits.NameMax, out string? name)
+                || !LineField("description", ArchiveLimits.DescriptionMax, out string? description)
+                || !Text("source_name", true, out string? sourceName))
+            {
+                return false;
+            }
+
+            if (sourceName!.Length > ArchiveLimits.SourceNameMax || sourceName.Any(char.IsControl))
+            {
+                return Reject(FieldReader.Invalid("source_name", "must be at most 100 characters without control characters"));
+            }
+
+            if (!Text("size", true, out string? sizeText))
+            {
+                return false;
+            }
+
+            if (!FieldReader.TryLong(sizeText!, out long size) || size < 1)
+            {
+                return Reject(FieldReader.Invalid("size", "must be a positive integer"));
+            }
+
+            if (!Text("sha256", true, out string? sha256))
+            {
+                return false;
+            }
+
+            if (sha256!.Length != 64 || !sha256.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f')))
+            {
+                return Reject(FieldReader.Invalid("sha256", "must be 64 lowercase hexadecimal characters"));
+            }
+
+            string? bodyRule = via == ItemRoute.OneDrive
+                ? body.IsEmpty ? null : "must be empty when via is onedrive"
+                : ItemBody.Check(body.Span, size, sha256, out _);
+            if (bodyRule is not null)
+            {
+                return Reject(FieldReader.Invalid("body", bodyRule));
+            }
+
+            item = new ItemFields(project!, slug!, name!, description!, sourceName, size, sha256, via, driveName);
+            return true;
+        }
+
+        private static bool IsDriveName(string driveName, Slug slug)
+        {
+            int dot = driveName.LastIndexOf('.');
+            return dot > 0
+                && driveName.AsSpan(0, dot).SequenceEqual(slug.Value)
+                && ArchiveMediaTypeWire.IsItemExtension(driveName[(dot + 1)..]);
+        }
+
+        private bool SlugField(string key, out Slug? slug)
+        {
+            slug = null;
+            if (!Text(key, true, out string? text))
+            {
+                return false;
+            }
+
+            return Slug.TryParse(text, out slug) || Reject(FieldReader.Invalid(key, "must be a slug"));
+        }
+
+        private bool LineField(string key, int max, out string? text)
+        {
+            if (!Text(key, true, out text))
+            {
+                return false;
+            }
+
+            return (TextCollapse.CharCount(text!) <= max && text!.AsSpan().IndexOfAny('\r', '\n') < 0)
+                || Reject(FieldReader.Invalid(key, "must be one line of at most " + max.ToString(CultureInfo.InvariantCulture) + " characters"));
         }
 
         private string? ReadSignature()

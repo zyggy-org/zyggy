@@ -41,6 +41,9 @@ public sealed record NodeConfiguration(
     /// <summary>Gets the <c>log</c> section (§11, A7-3); <c>Information</c> when absent.</summary>
     public LogSettings Log { get; init; } = new();
 
+    /// <summary>Gets the <c>archive</c> section (spec 41, W41-15); the defaults (10 MiB cap, no OneDrive folder) when absent.</summary>
+    public ArchiveSettings Archive { get; init; } = new();
+
     /// <summary>Gets <see cref="NodeDir"/> or, when it is <see langword="null"/>, the per-OS default (<c>%LOCALAPPDATA%\zyggy</c>, <c>~/.local/share/zyggy</c>) — the one place that rule lives (spec 07).</summary>
     public string EffectiveNodeDir => NodeDir ?? Jobs.TranscriptPaths.DefaultNodeDir();
 }

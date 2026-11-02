@@ -9,6 +9,7 @@ using Zyggy.Core.Envelope;
 using Zyggy.Core.Git;
 using Zyggy.Core.Secrets;
 using Zyggy.Core.Tenancy;
+using Zyggy.Core.Tests.Envelope;
 using Zyggy.Core.Tests.Infrastructure;
 
 using Model = Zyggy.Core.Envelope.Envelope;
@@ -23,6 +24,8 @@ public sealed class BusAuditorTests : IAsyncLifetime
     private static readonly MachineName Central = MachineName.Parse("central");
 
     private static readonly MachineName HomeLaptop = MachineName.Parse("home-laptop");
+
+    private static readonly MachineName WorkLaptop = MachineName.Parse("work-laptop");
 
     private static readonly DateTimeOffset T = new(2026, 10, 24, 10, 0, 0, TimeSpan.Zero);
 
@@ -271,6 +274,80 @@ public sealed class BusAuditorTests : IAsyncLifetime
         report.Skipped.Should().Be(1001);
     }
 
+    [Fact]
+    public async Task Judge_ItemFromFolderMachineToCentral_Ok()
+    {
+        // Arrange: spec 41 AC-43 — a well-formed item in its sender's own items/ folder
+        var ct = TestContext.Current.CancellationToken;
+        var id = EnvelopeId.New(T);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Items(Acme, HomeLaptop), id), await Item(id, HomeLaptop, Central, ct));
+
+        // Act
+        AuditReport report = await Auditor().RunAsync(null, ct);
+
+        // Assert
+        report.Entries.Should().ContainSingle().Which.Outcome.Should().Be(AuditOutcome.Ok);
+    }
+
+    [Fact]
+    public async Task Judge_ItemFromAnotherMachine_WriterMismatchFrom()
+    {
+        // Arrange: work-laptop's item in home-laptop's folder breaks the W41-7 write rule
+        var ct = TestContext.Current.CancellationToken;
+        var id = EnvelopeId.New(T);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Items(Acme, HomeLaptop), id), await Item(id, WorkLaptop, Central, ct));
+
+        // Act
+        AuditReport report = await Auditor().RunAsync(null, ct);
+
+        // Assert
+        AuditEntry entry = report.Entries.Should().ContainSingle().Subject;
+        (entry.Outcome, entry.Field).Should().Be((AuditOutcome.WriterMismatch, "from"));
+    }
+
+    [Fact]
+    public async Task Judge_ContextInItemsFolder_TypeFolderMismatch()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        var id = EnvelopeId.New(T);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Items(Acme, HomeLaptop), id), await Context(id, ct));
+
+        // Act
+        AuditReport report = await Auditor().RunAsync(null, ct);
+
+        // Assert
+        AuditEntry entry = report.Entries.Should().ContainSingle().Subject;
+        (entry.Outcome, entry.Field, entry.Detail).Should().Be((AuditOutcome.TypeFolderMismatch, "type", "context in items/"));
+    }
+
+    [Fact]
+    public async Task Judge_ItemToHomeLaptop_WrongRecipientTo()
+    {
+        // Arrange: spec 41 AC-43 — an item goes to central only
+        var ct = TestContext.Current.CancellationToken;
+        var id = EnvelopeId.New(T);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Items(Acme, HomeLaptop), id), await Item(id, HomeLaptop, HomeLaptop, ct));
+
+        // Act
+        AuditReport report = await Auditor().RunAsync(null, ct);
+
+        // Assert
+        AuditEntry entry = report.Entries.Should().ContainSingle().Subject;
+        (entry.Outcome, entry.Field, entry.Detail).Should().Be((AuditOutcome.WrongRecipient, "to", "to home-laptop, items go to central"));
+    }
+
+    [Fact]
+    public void AuditWire_WrongRecipient_IsWrongRecipient()
+    {
+        // Act
+        string wire = AuditWire.ToWire(AuditOutcome.WrongRecipient);
+
+        // Assert: the §4 twin, one mapping
+        wire.Should().Be("wrong_recipient");
+        AuditWire.FromRejection(EnvelopeRejectionReason.WrongRecipient).Should().Be(AuditOutcome.WrongRecipient);
+    }
+
     private BusAuditor Auditor()
     {
         var git = new GitClient(_processes, new GitClientOptions { Identity = new GitIdentity("zyggy (home-laptop)", "home-laptop@zyggy.org") }, _clock);
@@ -290,6 +367,15 @@ public sealed class BusAuditorTests : IAsyncLifetime
         var header = new EnvelopeHeader(Acme, id, HomeLaptop, Central, T);
         Model context = Model.CreateContext(header, new ContextFields(new ContextScope(ContextScopeKind.General, null)), "- a fact\n"u8.ToArray());
         EnvelopeResult signed = await new EnvelopeSigner(_both).SignAsync(context, TestKeys.Acme1, ct);
+        signed.IsAccepted.Should().BeTrue(signed.Rejection?.ToString());
+        return EnvelopeWriter.Serialize(signed.Envelope!);
+    }
+
+    private async Task<byte[]> Item(EnvelopeId id, MachineName from, MachineName to, CancellationToken ct)
+    {
+        var header = new EnvelopeHeader(Acme, id, from, to, T);
+        Model item = Model.CreateItem(header, ItemEnvelopeTests.Fields(ItemRoute.Bus, driveName: null), ItemEnvelopeTests.SampleText);
+        EnvelopeResult signed = await new EnvelopeSigner(_both).SignAsync(item, TestKeys.Acme1, ct);
         signed.IsAccepted.Should().BeTrue(signed.Rejection?.ToString());
         return EnvelopeWriter.Serialize(signed.Envelope!);
     }

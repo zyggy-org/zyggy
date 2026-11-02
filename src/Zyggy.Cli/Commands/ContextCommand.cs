@@ -195,17 +195,21 @@ internal static class ContextCommand
         return Rank(next) > Rank(current) ? next : current;
     }
 
-    /// <summary>Renders one submit outcome: the stored line follows the result line on success and deferral when given; every failure is one stderr line.</summary>
-    internal static async Task<int> RenderAsync(VerbIo io, NodeConfiguration configuration, SubmitResult result, string? storedLine)
+    /// <summary>
+    /// Renders one submit outcome: the stored line follows the result line on success and deferral when given; every failure is one stderr
+    /// line. <paramref name="noun"/> names the envelope in the lines that name it (<c>item</c> for <c>zyggy archive</c>, plan 41 A4); the
+    /// signing-key, store and lock lines are the same for every noun.
+    /// </summary>
+    internal static async Task<int> RenderAsync(VerbIo io, NodeConfiguration configuration, SubmitResult result, string? storedLine, string noun = "context")
     {
         switch (result)
         {
             case Submitted submitted:
-                await io.Out.WriteLineAsync($"context {submitted.Id.Value} to central ({submitted.RelativePath})");
+                await io.Out.WriteLineAsync($"{noun} {submitted.Id.Value} to central ({submitted.RelativePath})");
                 await WriteStoredLineAsync(io, storedLine);
                 return ExitCodes.Ok;
             case SubmitDeferred deferred:
-                await io.Out.WriteLineAsync($"context {deferred.Id.Value} to central ({deferred.RelativePath}) (committed locally, not yet pushed: the next bus write on this machine pushes it)");
+                await io.Out.WriteLineAsync($"{noun} {deferred.Id.Value} to central ({deferred.RelativePath}) (committed locally, not yet pushed: the next bus write on this machine pushes it)");
                 await WriteStoredLineAsync(io, storedLine);
                 return ExitCodes.PushDeferred;
             case ContextRefused refused:
@@ -221,13 +225,13 @@ internal static class ContextCommand
                 await io.Error.WriteLineAsync("zyggy: the bus checkout is busy: another zyggy process held its lock");
                 return ExitCodes.Failed;
             case SubmitFailed failed:
-                await io.Error.WriteLineAsync($"zyggy: context failed at {failed.Stage}: {failed.Detail}");
+                await io.Error.WriteLineAsync($"zyggy: {noun} failed at {failed.Stage}: {failed.Detail}");
                 return ExitCodes.Failed;
             case SubmitRefused selfCheck:
-                await io.Error.WriteLineAsync($"zyggy: refusing context: the envelope does not round-trip ({selfCheck.Field})");
+                await io.Error.WriteLineAsync($"zyggy: refusing {noun}: the envelope does not round-trip ({selfCheck.Field})");
                 return ExitCodes.Usage;
             default:
-                await io.Error.WriteLineAsync("zyggy: context failed: " + result.GetType().Name);
+                await io.Error.WriteLineAsync($"zyggy: {noun} failed: " + result.GetType().Name);
                 return ExitCodes.Failed;
         }
     }

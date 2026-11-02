@@ -7,8 +7,11 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
+using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Git;
+using Zyggy.Core.M365;
+using Zyggy.Core.M365.Graph;
 using Zyggy.Core.Memory;
 using Zyggy.Core.Processes;
 using Zyggy.Core.Secrets;
@@ -36,17 +39,53 @@ public static class ServiceCollectionExtensions
             throw new ArgumentException("The pickup configuration did not load: " + configuration.Error, nameof(configuration));
         }
 
+        services.TryAddSingleton(new ItemDriveOptions());
         services.TryAddSingleton(sp =>
         {
             ILogger<BusPickup> log = sp.GetService<ILoggerFactory>()?.CreateLogger<BusPickup>() ?? NullLogger<BusPickup>.Instance;
+            TimeProvider clock = sp.GetRequiredService<TimeProvider>();
+
+            // Spec 41 (plan A8): the item path's one archive writer, over the pickup's memory paths; absent when archive.json did not load.
+            ItemFiler? items = null;
+            ItemDriveFetcher? drive = null;
+            if (configuration.Archive is { } archive && configuration.Environment is { } environment)
+            {
+                IProcessRunner processes = sp.GetRequiredService<IProcessRunner>();
+                var publisher = new MemoryPublisher(new GitClient(processes, new GitClientOptions(), clock));
+                var service = new ArchiveService(paths, zone, clock, patterns, archive, SourceDenyList.Build(environment, archive, paths), publisher, paths.RootDirectory);
+                items = new ItemFiler(service, archive);
+
+                // Spec 41 (plan A13): the read-only Graph reader for OneDrive-route items, built once on first use from the node's environment.
+                ItemDriveOptions driveOptions = sp.GetRequiredService<ItemDriveOptions>();
+                var graph = new Lazy<(IGraphReader? Reader, string? Error)>(() => OpenGraphReader(environment, clock, processes, driveOptions));
+                drive = new ItemDriveFetcher(() => graph.Value, archive, clock, log);
+            }
+
             return new BusPickup(
                 sp.GetRequiredService<BusRepository>(),
                 sp.GetRequiredService<EnvelopeSigner>(),
-                new PickupInbox(paths, zone, sp.GetRequiredService<TimeProvider>()),
+                new PickupInbox(paths, zone, clock),
                 patterns,
-                log);
+                log,
+                sp.GetService<KeyId>(),
+                items,
+                configuration.ArchiveError ?? (items is null ? "archive configuration missing (ZYGGY_INSTANCE_DIR not set)" : null),
+                drive);
         });
         return services;
+    }
+
+    /// <summary>
+    /// Spec 41 (plan A13, A14; founding spec §8 Graph-certificate row as amended by W41-12): the instance's M365 session and its Graph
+    /// reader with no throttling retries — the key read only by <see cref="GraphTokenClient"/>; the drive writer is never taken from the
+    /// parts. A load error is the "not configured" detail.
+    /// </summary>
+    private static (IGraphReader? Reader, string? Error) OpenGraphReader(
+        IReadOnlyDictionary<string, string?> environment, TimeProvider clock, IProcessRunner processes, ItemDriveOptions options)
+    {
+        var context = new M365VerbContext(environment, clock, TimeZoneInfo.FindSystemTimeZoneById, processes, options.GraphHandlerFactory?.Invoke(), options.CheckKeyOwnership);
+        (M365Session? session, _, string? error) = M365Session.Load(context, baseOnly: false);
+        return session is null ? (null, error ?? "the M365 configuration did not load") : (session.CreateGraph(context, retries: 0).Reader, null);
     }
 
     /// <summary>
@@ -140,6 +179,22 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<KeyId>(),
                 sp.GetRequiredService<SecretPatterns>(),
                 sp.GetService<ContextEnvelopeOptions>() ?? new ContextEnvelopeOptions(),
+                sp.GetRequiredService<TimeProvider>(),
+                log);
+        });
+        // Deliverable 41: the item sender. Resolving without a KeyId, the secret patterns or ItemSubmitterOptions throws (the verb registers them first — fail closed).
+        services.TryAddSingleton(sp =>
+        {
+            ILogger<ItemSubmitter> log = sp.GetService<ILoggerFactory>()?.CreateLogger<ItemSubmitter>() ?? NullLogger<ItemSubmitter>.Instance;
+            NodeConfiguration node = sp.GetRequiredService<NodeConfiguration>();
+            ItemSubmitterOptions options = sp.GetRequiredService<ItemSubmitterOptions>();
+            return new ItemSubmitter(
+                sp.GetRequiredService<BusRepository>(),
+                sp.GetRequiredService<EnvelopeSigner>(),
+                sp.GetRequiredService<KeyId>(),
+                sp.GetRequiredService<SecretPatterns>(),
+                node,
+                SourceDenyList.ForNode(options.Environment, node, options.NodeJsonPath),
                 sp.GetRequiredService<TimeProvider>(),
                 log);
         });

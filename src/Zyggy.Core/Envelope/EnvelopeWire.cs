@@ -7,13 +7,14 @@ public static class EnvelopeWire
 {
     /// <summary>Returns the wire string of an envelope type.</summary>
     /// <param name="value">The member.</param>
-    /// <returns><c>job</c>, <c>report</c> or <c>context</c>.</returns>
+    /// <returns><c>job</c>, <c>report</c>, <c>context</c> or <c>item</c>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown for an undefined member.</exception>
     public static string ToWire(EnvelopeType value) => value switch
     {
         EnvelopeType.Job => "job",
         EnvelopeType.Report => "report",
         EnvelopeType.Context => "context",
+        EnvelopeType.Item => "item",
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 
@@ -51,6 +52,17 @@ public static class EnvelopeWire
         ContextScopeKind.Project => "project",
         ContextScopeKind.Machine => "machine",
         ContextScopeKind.General => "general",
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    /// <summary>Returns the wire string of an item route (founding spec §4, W41-6).</summary>
+    /// <param name="value">The member.</param>
+    /// <returns><c>bus</c> or <c>onedrive</c>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown for an undefined member.</exception>
+    public static string ToWire(ItemRoute value) => value switch
+    {
+        ItemRoute.Bus => "bus",
+        ItemRoute.OneDrive => "onedrive",
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 
@@ -96,6 +108,12 @@ public static class EnvelopeWire
     /// <param name="value">The member when recognised.</param>
     /// <returns><see langword="true"/> when <paramref name="wire"/> is an exact wire string.</returns>
     public static bool TryFromWire(string? wire, out ContextScopeKind value) => TryMatch(wire, Enum.GetValues<ContextScopeKind>(), ToWire, out value);
+
+    /// <summary>Maps a wire string to an item route.</summary>
+    /// <param name="wire">The wire string.</param>
+    /// <param name="value">The member when recognised.</param>
+    /// <returns><see langword="true"/> when <paramref name="wire"/> is an exact wire string.</returns>
+    public static bool TryFromWire(string? wire, out ItemRoute value) => TryMatch(wire, Enum.GetValues<ItemRoute>(), ToWire, out value);
 
     /// <summary>Maps a wire string to a rejection reason.</summary>
     /// <param name="wire">The wire string.</param>

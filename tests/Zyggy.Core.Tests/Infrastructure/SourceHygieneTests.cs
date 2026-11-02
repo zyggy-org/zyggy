@@ -1064,6 +1064,104 @@ public sealed partial class SourceHygieneTests
         offenders.Should().BeEmpty();
     }
 
+    // Spec 41 AC-48/AC-49, plan 41 Step 14: every failure mode has its runbook row in the README the spec names, the Central drop-in
+    // documents its two additions, and the files the deliverable added use placeholder identities only.
+    [Fact]
+    public void Readmes_ArchiveFromNodeDocumented()
+    {
+        // Arrange
+        static string Read(string relative) => File.ReadAllText(Path.Combine(RepoRoot(), relative));
+        var cli = Read("src/Zyggy.Cli/README.md");
+        var node = Read("src/Zyggy.Node/README.md");
+        var core = Read("src/Zyggy.Core/README.md");
+        var deploy = Read("deploy/README.md");
+        var dropIn = Read("deploy/systemd/zyggy-node.service.d/pickup.conf.example");
+
+        // Act + Assert
+        foreach (var text in new[]
+                 {
+                     "| `archive --project", "## Troubleshooting — Archive from a laptop", "Archive from a laptop: too large",
+                     "Archive from a laptop: OneDrive folder not available", "Context or item not sent", "archive.oneDriveFolder", "archive.itemMaxBytes",
+                 })
+        {
+            cli.Should().Contain(text);
+        }
+
+        foreach (var text in new[]
+                 {
+                     "Pickup: archive items", "Archive from a laptop: refused on Central", "drive_missing", "Archive from a laptop: item waits on the bus",
+                     "Pickup: OneDrive fetch failing", "Pickup: OneDrive fetch not configured", "Pickup: archive configuration missing",
+                     "Pickup: file left on the bus", "items/", "Bus repository too large", "Pickup: memory push deferred / files not committed",
+                 })
+        {
+            node.Should().Contain(text);
+        }
+
+        foreach (var text in new[] { "item_drive_wait_hours", "ItemSubmitter", "ItemFields", "ItemDriveFetcher", "AddBytesAsync", "SettleAsync" })
+        {
+            core.Should().Contain(text);
+        }
+
+        dropIn.Should().Contain("ZYGGY_INSTANCE_DIR").And.Contain("m365-app-key").And.Contain("deliverable 41");
+        deploy.Should().Contain("ZYGGY_INSTANCE_DIR").And.Contain("m365-app-key").And.Contain("Central before the laptops");
+    }
+
+    [Fact]
+    public void ArchiveFromNodeFiles_NonDefaultIdentityOnly()
+    {
+        // Arrange
+        const string Mailbox = "alice@acme.example";
+        var texts = ArchiveFromNodeFiles().ToDictionary(f => f, f => File.ReadAllText(Path.Combine(RepoRoot(), f)), StringComparer.Ordinal);
+
+        // Act
+        var offenders = texts.Where(kv =>
+                kv.Value.Contains("geoffrey", StringComparison.OrdinalIgnoreCase)
+                || MailAddress().Matches(kv.Value).Any(m => AnyAddress().Matches(m.Value).Any(a => !string.Equals(a.Value, Mailbox, StringComparison.Ordinal)))
+                || GuidLiteral().IsMatch(kv.Value)
+                || kv.Value.Contains("/srv/", StringComparison.Ordinal)
+                || kv.Value.Contains("/home/", StringComparison.Ordinal)
+                || kv.Value.Contains("C:\\Users\\", StringComparison.Ordinal))
+            .Select(kv => kv.Key)
+            .ToList();
+
+        // Assert
+        texts.Should().HaveCountGreaterThanOrEqualTo(45);
+        offenders.Should().BeEmpty();
+        foreach (var label in new[] { "acme", "home-laptop", "work-laptop", "calizr" })
+        {
+            texts.Values.Should().Contain(t => t.Contains(label, StringComparison.Ordinal), label);
+        }
+    }
+
+    /// <summary>The files plan 41 (archive from any node) added under src/, tests/ and deploy/, plus every test file named after its types.</summary>
+    private static List<string> ArchiveFromNodeFiles()
+    {
+        string[] named =
+        [
+            "src/Zyggy.Cli/Commands/ArchiveCommand.cs", "src/Zyggy.Core/Bus/ArchiveDropFolder.cs", "src/Zyggy.Core/Bus/ItemChecks.cs", "src/Zyggy.Core/Bus/ItemFiler.cs",
+            "src/Zyggy.Core/Bus/ItemRequest.cs", "src/Zyggy.Core/Bus/ItemSubmission.cs", "src/Zyggy.Core/Bus/ItemSubmitter.cs", "src/Zyggy.Core/Bus/ItemSubmitterOptions.cs",
+            "src/Zyggy.Core/Bus/ItemDriveFetcher.cs", "src/Zyggy.Core/Bus/ItemDriveOptions.cs", "src/Zyggy.Core/Bus/PickupItemReport.cs", "src/Zyggy.Core/Bus/SettledItem.cs",
+            "src/Zyggy.Core/Configuration/ArchiveSettings.cs", "src/Zyggy.Core/Envelope/ItemBody.cs", "src/Zyggy.Core/Envelope/ItemFields.cs", "src/Zyggy.Core/Envelope/ItemRoute.cs",
+            "src/Zyggy.Core/Memory/ArchiveAddBytes.cs", "src/Zyggy.Core/Memory/ArchiveLimits.cs", "src/Zyggy.Core/M365/Graph/GraphFailureClass.cs",
+            "tests/Zyggy.Integration/Infrastructure/PickupArchiveMemory.cs", "deploy/systemd/zyggy-node.service.d/pickup.conf.example",
+        ];
+        string[] prefixes =
+        [
+            "BusPickupItem", "BusPickupOneDriveItem", "BusRepositorySettle", "FileSystemArchiveDropFolder", "ItemChecks", "ItemRequest", "ItemSubmitter", "ItemDriveFetcher",
+            "PickupItemReport", "ItemBody", "ItemEnvelope", "ArchiveServiceAddBytes", "ArchiveCommandOneDrive", "ArchiveCommandTests", "GraphHttpRetryAfter",
+            "GraphReaderDownload", "ArchiveOffloadItemAdoption", "P1_ArchiveFromNode", "item-bus", "item-onedrive",
+        ];
+        var tests = Directory.EnumerateFiles(Path.Combine(RepoRoot(), "tests"), "*", SearchOption.AllDirectories)
+            .Where(f => prefixes.Any(p => Path.GetFileName(f).StartsWith(p, StringComparison.Ordinal)));
+        return tests
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .Where(f => !f.Contains("/bin/", StringComparison.Ordinal) && !f.Contains("/obj/", StringComparison.Ordinal))
+            .Concat(named)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+    }
+
     /// <summary>The files of the dream reading the bus (spec 13) in src/, both test projects, deploy/ and the dream-bus fixture.</summary>
     private static List<string> PickupSourceFiles()
     {
@@ -1130,6 +1228,9 @@ public sealed partial class SourceHygieneTests
 
     [GeneratedRegex(@"""[^""\s]*[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z]{2,}[^""\s]*""")]
     private static partial Regex MailAddress();
+
+    [GeneratedRegex(@"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")]
+    private static partial Regex AnyAddress();
 
     [GeneratedRegex(@"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")]
     private static partial Regex GuidLiteral();

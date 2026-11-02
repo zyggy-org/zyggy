@@ -232,6 +232,11 @@ public static partial class NodeConfigurationReader
             return Invalid("nodeDir", "must be an absolute path");
         }
 
+        if (!TryArchive(root, out ArchiveSettings archive, out failure))
+        {
+            return failure;
+        }
+
         return NodeConfigurationResult.Ok(new NodeConfiguration(
             tenant,
             machine,
@@ -246,7 +251,53 @@ public static partial class NodeConfigurationReader
             WorkHours = workHours,
             MaxConcurrentJobs = maxConcurrentJobs,
             Log = log,
+            Archive = archive,
         });
+    }
+
+    /// <summary>
+    /// The <c>archive</c> section (spec 41, W41-15, plan 41 A5): absent or <c>null</c> means the defaults; <c>itemMaxBytes</c> an integer
+    /// 1 … <see cref="ArchiveSettings.ItemCeiling"/>; <c>oneDriveFolder</c> an absolute path, <c>null</c> equal to absent.
+    /// </summary>
+    private static bool TryArchive(JsonElement root, out ArchiveSettings archive, out NodeConfigurationResult failure)
+    {
+        archive = new ArchiveSettings();
+        failure = null!;
+        if (!root.TryGetProperty("archive", out JsonElement section) || section.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (section.ValueKind != JsonValueKind.Object)
+        {
+            failure = Invalid("archive", "must be an object");
+            return false;
+        }
+
+        long itemMaxBytes = archive.ItemMaxBytes;
+        if (section.TryGetProperty("itemMaxBytes", out JsonElement cap) && cap.ValueKind != JsonValueKind.Null)
+        {
+            if (cap.ValueKind != JsonValueKind.Number || !cap.TryGetInt64(out itemMaxBytes) || itemMaxBytes < 1 || itemMaxBytes > ArchiveSettings.ItemCeiling)
+            {
+                failure = Invalid("archive.itemMaxBytes", string.Create(CultureInfo.InvariantCulture, $"must be an integer from 1 to {ArchiveSettings.ItemCeiling}"));
+                return false;
+            }
+        }
+
+        if (TryOptionalString(section, "oneDriveFolder", out string? folder, out NodeConfigurationResult? folderFailure, "archive.") is false)
+        {
+            failure = folderFailure!;
+            return false;
+        }
+
+        if (folder is not null && !Path.IsPathFullyQualified(folder))
+        {
+            failure = Invalid("archive.oneDriveFolder", "must be an absolute path");
+            return false;
+        }
+
+        archive = new ArchiveSettings { ItemMaxBytes = itemMaxBytes, OneDriveFolder = folder };
+        return true;
     }
 
     /// <summary>The <c>workHours</c> section (spec 07): absent means always inside; present means every part is required and checked.</summary>

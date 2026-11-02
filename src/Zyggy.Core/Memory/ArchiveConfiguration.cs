@@ -81,6 +81,7 @@ internal static class ArchiveConfiguration
                         "item_max_bytes" => options with { ItemMaxBytes = value.GetInt64() },
                         "project_max_bytes" => options with { ProjectMaxBytes = value.GetInt64() },
                         "total_max_bytes" => options with { TotalMaxBytes = value.GetInt64() },
+                        "item_drive_wait_hours" => options with { ItemDriveWaitHours = value.GetInt32() },
                         "source_deny" => options with { SourceDeny = Strings(value).Select(entry => ExpandHome(entry, home)).ToArray() },
                         _ => throw new KeyNotFoundException(),
                     };

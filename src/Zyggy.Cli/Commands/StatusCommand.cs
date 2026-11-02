@@ -198,7 +198,8 @@ internal static partial class StatusCommand
     internal static string RenderTrace(EnvelopeTrace trace, DateTimeOffset now)
     {
         var sb = new StringBuilder();
-        sb.Append("job     ").Append(trace.Id.Value).Append("  ");
+        bool item = trace.Job?.Type == EnvelopeType.Item || trace.AnsweredAsItem;
+        sb.Append(item ? "item    " : "job     ").Append(trace.Id.Value).Append("  ");
         if (trace.Job is null)
         {
             sb.Append("(file gone)");
@@ -215,7 +216,12 @@ internal static partial class StatusCommand
                 sb.Append("  project ").Append(project);
             }
 
-            if (trace.Job.Priority is { } priority)
+            if (trace.Job.Via is { } via)
+            {
+                sb.Append("  via ").Append(EnvelopeWire.ToWire(via));
+            }
+
+            if (!item && trace.Job.Priority is { } priority)
             {
                 sb.Append("  priority ").Append(EnvelopeWire.ToWire(priority));
             }
@@ -230,6 +236,7 @@ internal static partial class StatusCommand
         string machine = trace.Machine?.Value ?? "unknown";
         sb.Append("state   ").Append(trace.State switch
         {
+            TraceState.Queued when item => "queued at " + machine + " for central",
             TraceState.Queued => "queued at " + machine + " since " + AgeOrNever(now, trace.Job?.Created),
             TraceState.Claimed => "claimed by " + machine + " since " + AgeOrNever(now, trace.Job?.Created),
             TraceState.Rejected => "rejected by " + machine + ": " + (trace.Reports.LastOrDefault(r => r.Verified && r.Status == ReportStatus.Rejected)?.Reason ?? trace.Job?.Problem ?? "unknown"),

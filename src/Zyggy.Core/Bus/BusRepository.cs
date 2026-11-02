@@ -24,6 +24,9 @@ public sealed partial class BusRepository
 
     private const string EnvelopeExtension = ".md";
 
+    /// <summary>How a pull or write that never got the checkout lock begins its detail; <see cref="ItemSubmitter"/> maps it to the stage <c>lock</c>.</summary>
+    internal const string BusyDetail = "the bus checkout is busy: another zyggy process held its lock";
+
     /// <summary>How long a write or pull waits for another process's checkout lock (one full write sequence incl. its push retries fits).</summary>
     private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(60);
 
@@ -59,6 +62,9 @@ public sealed partial class BusRepository
 
     /// <summary>Gets this node's identity on the bus.</summary>
     public BusIdentity Me => _me;
+
+    /// <summary>Gets the clock this repository stamps its envelopes with (Central's reports on items, spec 41).</summary>
+    internal TimeProvider Clock => _clock;
 
     /// <summary>Whether this node's secret store holds a usable signing key for <paramref name="signWith"/> (the listener's start-up check).</summary>
     /// <param name="signWith">The key id.</param>
@@ -426,9 +432,61 @@ public sealed partial class BusRepository
     }
 
     /// <summary>
+    /// §4 as amended by deliverable 41 (W41-7, W41-8): adds a signed item envelope of this node, addressed to Central, to this node's own
+    /// <c>nodes/&lt;me&gt;/items/</c> folder in one commit <c>&lt;tenant&gt; item &lt;id&gt; &lt;from&gt;→central</c> (W41-9).
+    /// </summary>
+    /// <param name="signedItem">The signed item envelope.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The write outcome.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="signedItem"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the envelope is not an item, is unsigned, belongs to another tenant, was not sent by this machine or is not addressed to central (a caller bug).</exception>
+    public Task<WriteOutcome> PublishItemAsync(Model signedItem, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(signedItem);
+        if (signedItem.Type != EnvelopeType.Item)
+        {
+            throw new InvalidOperationException("write rule: the item envelope is not an item");
+        }
+
+        if (signedItem.Signature is null)
+        {
+            throw new InvalidOperationException("write rule: the item envelope is unsigned");
+        }
+
+        if (signedItem.Header.Tenant != _me.Tenant)
+        {
+            throw new InvalidOperationException("write rule: the item envelope belongs to another tenant");
+        }
+
+        if (signedItem.Header.From != _me.Machine)
+        {
+            throw new InvalidOperationException("write rule: the item envelope was not sent by this machine");
+        }
+
+        if (signedItem.Header.To != MachineName.Central)
+        {
+            throw new InvalidOperationException("write rule: the item envelope is not addressed to central");
+        }
+
+        byte[] bytes = EnvelopeWriter.Serialize(signedItem);
+        string path = BusPaths.EnvelopeFile(BusPaths.Items(_me.Tenant, _me.Machine), signedItem.Header.Id);
+        AssertMayWrite(path, BusFolder.Items);
+        return WriteAsync(
+            Subject("item", signedItem.Header.Id, signedItem.Header.From.Value, MachineName.Central.Value),
+            [path],
+            async token =>
+            {
+                await WriteFileAsync(path, bytes, token).ConfigureAwait(false);
+                return Failure("add", await _git.AddAsync(_checkoutRoot, [path], token).ConfigureAwait(false));
+            },
+            ct);
+    }
+
+    /// <summary>
     /// Central's pickup input (spec 13): under the checkout write lock, the bytes of every top-level <c>*.md</c> in the
     /// <c>context/</c> then <c>reports/</c> folder of every machine of this tenant except <see cref="MachineName.Central"/>,
-    /// machines and files in ordinal order. Never another tenant's subtree; nothing is verified here.
+    /// machines and files in ordinal order; then (spec 41, plan A11) every such machine's <c>items/</c> files in the same order.
+    /// Never another tenant's subtree; nothing is verified here.
     /// </summary>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The candidates.</returns>
@@ -444,24 +502,127 @@ public sealed partial class BusRepository
         }
 
         var candidates = new List<PickupCandidate>();
-        IEnumerable<MachineName> machines = Directory.EnumerateDirectories(nodes)
+        List<MachineName> machines = Directory.EnumerateDirectories(nodes)
             .Select(d => MachineName.TryParse(Path.GetFileName(d), out MachineName? machine) ? machine : null)
             .OfType<MachineName>()
             .Where(m => m != MachineName.Central)
-            .OrderBy(m => m.Value, StringComparer.Ordinal);
+            .OrderBy(m => m.Value, StringComparer.Ordinal)
+            .ToList();
         foreach (MachineName machine in machines)
         {
             foreach ((string folder, BusFolder kind) in new[] { (BusPaths.Context(_me.Tenant, machine), BusFolder.Context), (BusPaths.Reports(_me.Tenant, machine), BusFolder.Reports) })
             {
-                foreach (BusFile file in await ListFolderAsync(folder, ct).ConfigureAwait(false))
-                {
-                    byte[] bytes = await File.ReadAllBytesAsync(BusPaths.Resolve(_checkoutRoot, file.RelativePath), ct).ConfigureAwait(false);
-                    candidates.Add(new PickupCandidate(file, machine, kind, bytes));
-                }
+                await AddCandidatesAsync(candidates, folder, machine, kind, ct).ConfigureAwait(false);
             }
         }
 
+        // Spec 41 (plan A11): every machine's items/ after every context and report.
+        foreach (MachineName machine in machines)
+        {
+            await AddCandidatesAsync(candidates, BusPaths.Items(_me.Tenant, machine), machine, BusFolder.Items, ct).ConfigureAwait(false);
+        }
+
         return candidates;
+    }
+
+    /// <summary>
+    /// §4 state machine as amended by deliverable 41 (W41-8) and A13-5: Central's one pass commit — each picked-up <c>reports/</c> and
+    /// <c>context/</c> file moved to <c>archive/&lt;YYYY-MM of created&gt;/</c>, each settled <c>items/</c> file removed and Central's
+    /// signed report on it added to <c>nodes/central/reports/</c>. Subject <c>&lt;tenant&gt; archive &lt;n&gt; central→archive</c>
+    /// (n = moves + items); body: one line per move, then one <c>&lt;items path&gt; → &lt;outcome&gt;</c> line per item (W41-9).
+    /// </summary>
+    /// <param name="moves">The files to move and their envelopes' <c>created</c> instants.</param>
+    /// <param name="items">The settled items.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The write outcome; the first failed step stops the change and restores the checkout.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
+    /// <exception cref="ArgumentException">Thrown when both lists are empty.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when this machine is not Central or a path or report breaks the §4 write rule (a caller bug).</exception>
+    public Task<WriteOutcome> SettleAsync(IReadOnlyList<(BusFile File, DateTimeOffset Created)> moves, IReadOnlyList<SettledItem> items, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(moves);
+        ArgumentNullException.ThrowIfNull(items);
+        if (moves.Count == 0 && items.Count == 0)
+        {
+            throw new ArgumentException("Nothing to archive.", nameof(moves));
+        }
+
+        if (_me.Machine != MachineName.Central)
+        {
+            throw new InvalidOperationException("write rule: only central archives");
+        }
+
+        var moved = new List<(string From, string To, string Month)>(moves.Count);
+        foreach ((BusFile file, DateTimeOffset created) in moves)
+        {
+            DateTime utc = created.UtcDateTime;
+            string month = BusPaths.Archive(_me.Tenant, utc.Year, utc.Month);
+            string to = BusPaths.EnvelopeFile(month, file.Id);
+            AssertMayArchive(file.RelativePath, ArchiveRole.Source);
+            AssertMayArchive(to, ArchiveRole.Target);
+            moved.Add((file.RelativePath, to, month));
+        }
+
+        var settled = new List<(string Item, string Report, byte[] Bytes, string Outcome)>(items.Count);
+        foreach (SettledItem item in items)
+        {
+            AssertMayArchive(item.Item.RelativePath, ArchiveRole.Item);
+            Model report = item.SignedReport;
+            if (report.Type != EnvelopeType.Report || report.Signature is null || report.Header.Tenant != _me.Tenant || report.Header.From != _me.Machine)
+            {
+                throw new InvalidOperationException("write rule: the report on " + item.Item.RelativePath + " is not a signed report of this machine");
+            }
+
+            string reportPath = BusPaths.EnvelopeFile(BusPaths.Reports(_me.Tenant, _me.Machine), report.Header.Id);
+            AssertMayWrite(reportPath, BusFolder.Reports);
+            settled.Add((item.Item.RelativePath, reportPath, EnvelopeWriter.Serialize(report), item.Outcome));
+        }
+
+        IEnumerable<string> lines = moved.Select(m => m.From + " → " + m.To).Concat(settled.Select(s => s.Item + " → " + s.Outcome));
+        return WriteAsync(
+            ArchiveSubject(moved.Count + settled.Count),
+            [.. moved.Select(m => m.From), .. moved.Select(m => m.To), .. settled.Select(s => s.Item), .. settled.Select(s => s.Report)],
+            async token =>
+            {
+                foreach ((string from, string to, string month) in moved)
+                {
+                    Directory.CreateDirectory(BusPaths.Resolve(_checkoutRoot, month));
+                    WriteFailed? failed = Failure("mv", await _git.MoveAsync(_checkoutRoot, from, to, token).ConfigureAwait(false));
+                    if (failed is not null)
+                    {
+                        return failed;
+                    }
+                }
+
+                if (settled.Count == 0)
+                {
+                    return null;
+                }
+
+                WriteFailed? removed = Failure("rm", await _git.RemoveAsync(_checkoutRoot, [.. settled.Select(s => s.Item)], token).ConfigureAwait(false));
+                if (removed is not null)
+                {
+                    return removed;
+                }
+
+                foreach ((_, string reportPath, byte[] bytes, _) in settled)
+                {
+                    await WriteFileAsync(reportPath, bytes, token).ConfigureAwait(false);
+                }
+
+                return Failure("add", await _git.AddAsync(_checkoutRoot, [.. settled.Select(s => s.Report)], token).ConfigureAwait(false));
+            },
+            ct,
+            string.Join('\n', lines));
+    }
+
+    private async Task AddCandidatesAsync(List<PickupCandidate> candidates, string folder, MachineName machine, BusFolder kind, CancellationToken ct)
+    {
+        foreach (BusFile file in await ListFolderAsync(folder, ct).ConfigureAwait(false))
+        {
+            byte[] bytes = await File.ReadAllBytesAsync(BusPaths.Resolve(_checkoutRoot, file.RelativePath), ct).ConfigureAwait(false);
+            candidates.Add(new PickupCandidate(file, machine, kind, bytes));
+        }
     }
 
     /// <summary>
@@ -483,41 +644,7 @@ public sealed partial class BusRepository
             throw new ArgumentException("Nothing to archive.", nameof(files));
         }
 
-        if (_me.Machine != MachineName.Central)
-        {
-            throw new InvalidOperationException("write rule: only central archives");
-        }
-
-        var moves = new List<(string From, string To, string Month)>(files.Count);
-        foreach ((BusFile file, DateTimeOffset created) in files)
-        {
-            DateTime utc = created.UtcDateTime;
-            string month = BusPaths.Archive(_me.Tenant, utc.Year, utc.Month);
-            string to = BusPaths.EnvelopeFile(month, file.Id);
-            AssertMayArchive(file.RelativePath, source: true);
-            AssertMayArchive(to, source: false);
-            moves.Add((file.RelativePath, to, month));
-        }
-
-        return WriteAsync(
-            ArchiveSubject(moves.Count),
-            [.. moves.Select(m => m.From), .. moves.Select(m => m.To)],
-            async token =>
-            {
-                foreach ((string from, string to, string month) in moves)
-                {
-                    Directory.CreateDirectory(BusPaths.Resolve(_checkoutRoot, month));
-                    WriteFailed? failed = Failure("mv", await _git.MoveAsync(_checkoutRoot, from, to, token).ConfigureAwait(false));
-                    if (failed is not null)
-                    {
-                        return failed;
-                    }
-                }
-
-                return null;
-            },
-            ct,
-            string.Join('\n', moves.Select(m => m.From + " → " + m.To)));
+        return SettleAsync(files, [], ct);
     }
 
     /// <summary>The sender side: the verified reports of <paramref name="reporter"/> that answer <paramref name="inReplyTo"/> and are addressed to this machine.</summary>
@@ -620,7 +747,7 @@ public sealed partial class BusRepository
     {
         using IDisposable? handle = await BusCheckoutLock.AcquireAsync(_checkoutRoot, BusCheckoutLock.WriteLockName, LockTimeout, _clock, ct).ConfigureAwait(false);
         return handle is null
-            ? new BusSyncResult(false, "the bus checkout is busy: another zyggy process held its lock for " + LockTimeout.TotalSeconds.ToString("0", CultureInfo.InvariantCulture) + " s")
+            ? new BusSyncResult(false, BusyDetail + " for " + LockTimeout.TotalSeconds.ToString("0", CultureInfo.InvariantCulture) + " s")
             : await PullUnlockedAsync(ct).ConfigureAwait(false);
     }
 
@@ -680,7 +807,7 @@ public sealed partial class BusRepository
         using IDisposable? handle = await BusCheckoutLock.AcquireAsync(_checkoutRoot, BusCheckoutLock.WriteLockName, LockTimeout, _clock, ct).ConfigureAwait(false);
         if (handle is null)
         {
-            const string Busy = "the bus checkout is busy: another zyggy process held its lock";
+            const string Busy = BusyDetail;
             LogWriteFailed(_me.Tenant.Value, _me.Machine.Value, subject, "lock", Busy);
             return new WriteFailed("lock", Busy);
         }
@@ -793,10 +920,10 @@ public sealed partial class BusRepository
     }
 
     /// <summary>
-    /// The one archive branch of the §4 write rule (A13-4): only Central, only its own tenant, a source in any machine's
-    /// <c>reports/</c> or <c>context/</c>, a target in <c>archive/YYYY-MM/</c>.
+    /// The one archive branch of the §4 write rule (A13-4, W41-7): only Central, only its own tenant, a moved source in any machine's
+    /// <c>reports/</c> or <c>context/</c>, a target in <c>archive/YYYY-MM/</c>, and (spec 41) a removed item in any machine's <c>items/</c>.
     /// </summary>
-    private void AssertMayArchive(string relativePath, bool source)
+    private void AssertMayArchive(string relativePath, ArchiveRole role)
     {
         if (!BusPaths.TryParse(relativePath, out BusLocation? location))
         {
@@ -808,10 +935,21 @@ public sealed partial class BusRepository
             throw new InvalidOperationException("write rule: '" + relativePath + "' belongs to another tenant");
         }
 
-        bool allowed = source ? location.Folder is BusFolder.Reports or BusFolder.Context : location.Folder == BusFolder.Archive;
+        bool allowed = role switch
+        {
+            ArchiveRole.Source => location.Folder is BusFolder.Reports or BusFolder.Context,
+            ArchiveRole.Target => location.Folder == BusFolder.Archive,
+            _ => location.Folder == BusFolder.Items,
+        };
         if (!allowed)
         {
-            throw new InvalidOperationException("write rule: '" + relativePath + "' may not be " + (source ? "archived" : "an archive target"));
+            string what = role switch
+            {
+                ArchiveRole.Source => "archived",
+                ArchiveRole.Target => "an archive target",
+                _ => "removed as a settled item",
+            };
+            throw new InvalidOperationException("write rule: '" + relativePath + "' may not be " + what);
         }
     }
 
@@ -849,4 +987,17 @@ public sealed partial class BusRepository
 
     [LoggerMessage(Level = LogLevel.Error, Message = "{Tenant}/{Machine}: '{Subject}' failed at {Stage}; working copy restored: {Detail}")]
     private partial void LogWriteFailed(string tenant, string machine, string subject, string stage, string detail);
+}
+
+/// <summary>What a path is in Central's pass commit (the archive branch of the §4 write rule).</summary>
+internal enum ArchiveRole
+{
+    /// <summary>A <c>reports/</c> or <c>context/</c> file moved to the archive.</summary>
+    Source,
+
+    /// <summary>Its target under <c>archive/YYYY-MM/</c>.</summary>
+    Target,
+
+    /// <summary>A settled <c>items/</c> file removed (spec 41).</summary>
+    Item,
 }

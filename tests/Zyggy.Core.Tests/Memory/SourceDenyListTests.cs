@@ -124,4 +124,61 @@ public sealed class SourceDenyListTests : IDisposable
         };
         return SourceDenyList.Build(env, options ?? new ArchiveOptions(), _tree.Paths);
     }
+
+    private static readonly string NodeRoot = Path.Combine(Path.GetTempPath(), "zyggy-ut-deny", "node");
+
+    public static TheoryData<string> Ac12Locations() => new()
+    {
+        Path.Combine(Home, ".ssh", "id_ed25519"),
+        Path.Combine(Home, ".config", "zyggy", "x"),
+        Path.Combine(Home, ".local", "state", "zyggy", "x"),
+        Path.Combine(Home, ".local", "share", "zyggy", "x"),
+        Path.Combine(Xdg, "zyggy", "x"),
+        Path.Combine(NodeRoot, "config", "x"),
+        Path.Combine(NodeRoot, "node-dir", "runs", "x"),
+        Path.Combine(NodeRoot, "bus", "tenants", "acme", "x.md"),
+        Path.Combine(NodeRoot, "secrets", "acme", "hmac-1"),
+        Path.Combine(Credentials, "x"),
+        Path.Combine(Home, ".claude", ".credentials.json"),
+        Path.Combine(NodeRoot, "OneDrive - Example", "Zyggy", "archive", "calizr", "x.txt"),
+    };
+
+    // Spec 41 AC-12: the laptop's list — the built-in folders, the node's own folders and the OneDrive archive folder itself.
+    [Theory]
+    [MemberData(nameof(Ac12Locations))]
+    public void ForNode_CoversEveryAc12Location_AndTheOneDriveFolder(string path)
+    {
+        // Act & Assert
+        ForNode().Covers(path).Should().Be("denied_location");
+    }
+
+    [Fact]
+    public void ForNode_SessionUploadAndDownloads_Null()
+    {
+        // Act & Assert
+        ForNode().Covers(Path.Combine(Home, ".claude", "uploads", "s", "x.png")).Should().BeNull();
+        ForNode().Covers(Path.Combine(Home, "Downloads", "x.txt")).Should().BeNull();
+    }
+
+    private static SourceDenyList ForNode()
+    {
+        var env = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["HOME"] = Home,
+            ["XDG_CONFIG_HOME"] = Xdg,
+            ["CREDENTIALS_DIRECTORY"] = Credentials,
+        };
+        var node = new Zyggy.Core.Configuration.NodeConfiguration(
+            Zyggy.Core.Tenancy.TenantId.Parse("acme"),
+            Zyggy.Core.Tenancy.MachineName.Parse("work-laptop"),
+            null,
+            new Zyggy.Core.Configuration.BusSettings("acme-org", "acme-bus", "main", Path.Combine(NodeRoot, "bus"), "https://example.invalid/acme-org/acme-bus.git"),
+            new Zyggy.Core.Configuration.PollSettings(),
+            new Zyggy.Core.Configuration.SecretsSettings(Zyggy.Core.Secrets.SecretStoreKind.File, Path.Combine(NodeRoot, "secrets")))
+        {
+            NodeDir = Path.Combine(NodeRoot, "node-dir"),
+            Archive = new Zyggy.Core.Configuration.ArchiveSettings { OneDriveFolder = Path.Combine(NodeRoot, "OneDrive - Example", "Zyggy", "archive") },
+        };
+        return SourceDenyList.ForNode(env, node, Path.Combine(NodeRoot, "config", "node.json"));
+    }
 }

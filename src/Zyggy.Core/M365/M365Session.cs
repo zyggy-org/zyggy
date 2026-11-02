@@ -47,13 +47,16 @@ internal sealed record M365Session(
             : (new M365Session(memory.Paths!, memory.TimeZone!, m365, config, configuration.Warning, patterns.Patterns), 0, null);
     }
 
-    /// <summary>The Graph objects of this session: the stub handler in tests, the real network otherwise.</summary>
-    public GraphParts CreateGraph(M365VerbContext context)
+    /// <summary>
+    /// The Graph objects of this session: the stub handler in tests, the real network otherwise. Central's pickup passes
+    /// <paramref name="retries"/> 0 so a throttled answer returns at once (spec 41, plan A14).
+    /// </summary>
+    public GraphParts CreateGraph(M365VerbContext context, int retries = GraphHttp.Retries)
     {
         ArgumentNullException.ThrowIfNull(context);
         var http = context.GraphHandler is { } handler
-            ? new GraphHttp(handler, context.Clock, Patterns)
-            : new GraphHttp(context.Clock, Patterns);
+            ? new GraphHttp(handler, context.Clock, Patterns, retries: retries)
+            : new GraphHttp(context.Clock, Patterns, retries);
         var store = new CredentialFileSecretStore(Tenant, context.Environment, Instance.Paths.KeyFile, context.CheckKeyOwnership);
         var tokens = new GraphTokenClient(store, Tenant, Configuration, Instance.Paths.CertificateFile, http, context.Clock);
         return new GraphParts(http, tokens, new GraphReader(tokens, http, Configuration, context.Clock));

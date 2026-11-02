@@ -4,7 +4,20 @@ using System.Text.Json;
 namespace Zyggy.Core.M365.Graph;
 
 /// <summary>A failed Graph read: the exit code (5 refused, 6 Graph or identity, 3 configuration or key) and the shell's message.</summary>
-internal sealed record GraphFailure(int ExitCode, string Message);
+internal sealed record GraphFailure(int ExitCode, string Message)
+{
+    /// <summary>Gets the throttled answer's <c>Retry-After</c> (spec 41, plan A14), when it carried one.</summary>
+    public TimeSpan? RetryAfter { get; init; }
+
+    /// <summary>Gets the HTTP status of a failed answer, when there was one (none for a transport or sign-in failure).</summary>
+    public int? Status { get; init; }
+
+    /// <summary>Two failures are equal when the verbs would print the same thing: exit code and message (the details only classify).</summary>
+    public bool Equals(GraphFailure? other) => other is not null && ExitCode == other.ExitCode && string.Equals(Message, other.Message, StringComparison.Ordinal);
+
+    /// <inheritdoc/>
+    public override int GetHashCode() => HashCode.Combine(ExitCode, Message);
+}
 
 /// <summary>A Graph read's value or its failure. Never thrown to the verbs.</summary>
 internal sealed record GraphRead<T>(T? Value, GraphFailure? Failure)

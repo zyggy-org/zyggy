@@ -73,6 +73,22 @@ internal sealed class MemoryPublisher(GitClient git)
         return new PublishResult(true, sha, pushed, null);
     }
 
+    /// <summary>
+    /// Which of <paramref name="paths"/> (repository-relative) <c>git status</c> lists as changed or untracked (spec 41 AC-39: an item written
+    /// by an earlier writer whose commit failed); <see langword="null"/> when <c>git status</c> itself fails.
+    /// </summary>
+    public async Task<IReadOnlyList<string>?> UncommittedAsync(string repository, IReadOnlyList<string> paths, CancellationToken cancellationToken)
+    {
+        var status = await git.StatusPorcelainAsync(repository, cancellationToken).ConfigureAwait(false);
+        if (!status.Succeeded)
+        {
+            return null;
+        }
+
+        var changed = GitStatus.Parse(status.Stdout).Select(e => e.Path).ToHashSet(StringComparer.Ordinal);
+        return paths.Where(changed.Contains).ToList();
+    }
+
     /// <summary><c>git rm</c> of exactly <paramref name="paths"/>; <see langword="null"/> on success, else <c>rm_failed</c> or <c>index_lock</c>.</summary>
     public async Task<string?> RemoveAsync(string repository, IReadOnlyList<string> paths, CancellationToken cancellationToken)
     {

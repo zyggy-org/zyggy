@@ -3,8 +3,8 @@ using Zyggy.Core.Envelope;
 namespace Zyggy.Core.Bus;
 
 /// <summary>
-/// What <c>zyggy verify</c> says about one file (spec 08 AC-4, ex-Q2, A8-2): the first ten are the §4 rejection reasons (one mapping,
-/// never a second table), the rest are verify's own checks. Not a §4 change: <see cref="EnvelopeRejectionReason"/> and <c>PROTOCOL.md</c> are untouched.
+/// What <c>zyggy verify</c> says about one file (spec 08 AC-4, ex-Q2, A8-2): the first ten and the last are the §4 rejection reasons (one
+/// mapping, never a second table), the rest are verify's own checks. Not a §4 change: <see cref="EnvelopeRejectionReason"/> and <c>PROTOCOL.md</c> are untouched.
 /// </summary>
 public enum AuditOutcome
 {
@@ -44,7 +44,7 @@ public enum AuditOutcome
     /// <summary>The envelope's <c>type</c> does not belong in its folder (a report in <c>jobs/</c>).</summary>
     TypeFolderMismatch,
 
-    /// <summary>The §4 write rule: a report or context whose <c>from</c>, or a job whose <c>to</c>, is not the folder's machine.</summary>
+    /// <summary>The §4 write rule: a report, context or item whose <c>from</c>, or a job whose <c>to</c>, is not the folder's machine.</summary>
     WriterMismatch,
 
     /// <summary>A path §4 does not know (a stray folder, a file at the tenant root other than the ones skipped).</summary>
@@ -52,6 +52,9 @@ public enum AuditOutcome
 
     /// <summary>Not judged: a non-envelope file name, the registry file (unsigned in v1), the root <c>policy.yaml</c> until deliverable 18.</summary>
     Skipped,
+
+    /// <summary>§4 (deliverable 41, W41-7): an item whose <c>to</c> is not <c>central</c>; the twin of <see cref="EnvelopeRejectionReason.WrongRecipient"/>, appended last so the earlier values are unchanged.</summary>
+    WrongRecipient,
 }
 
 /// <summary>The wire names of <see cref="AuditOutcome"/>: the §4 ones through <see cref="EnvelopeWire"/>, the rest verify's.</summary>
@@ -77,6 +80,7 @@ public static class AuditWire
         AuditOutcome.WriterMismatch => "writer_mismatch",
         AuditOutcome.UnexpectedPath => "unexpected_path",
         AuditOutcome.Skipped => "skipped",
+        AuditOutcome.WrongRecipient => EnvelopeWire.ToWire(EnvelopeRejectionReason.WrongRecipient),
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "not an audit outcome"),
     };
 
@@ -94,8 +98,8 @@ public static class AuditWire
         EnvelopeRejectionReason.MissingSignature => AuditOutcome.MissingSignature,
         EnvelopeRejectionReason.UnknownKey => AuditOutcome.UnknownKey,
         EnvelopeRejectionReason.InvalidSignature => AuditOutcome.InvalidSignature,
-        // The intake's own check (the listener's "to" rule) cannot come out of ParseAndVerifyAsync; mapped for completeness.
-        EnvelopeRejectionReason.WrongRecipient => AuditOutcome.WriterMismatch,
+        // The intake's own check (the listener's "to" rule) cannot come out of ParseAndVerifyAsync; its twin since deliverable 41.
+        EnvelopeRejectionReason.WrongRecipient => AuditOutcome.WrongRecipient,
         _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "not a rejection reason"),
     };
 }

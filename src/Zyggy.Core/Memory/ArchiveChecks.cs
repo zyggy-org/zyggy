@@ -24,14 +24,39 @@ internal sealed record ArchiveCheckResult(ArchiveCandidate? Candidate, ArchiveRe
     public static ArchiveCheckResult Usage(string message) => new(null, null, null) { UsageError = message };
 }
 
+/// <summary>The outcome of <see cref="ArchiveChecks.CheckSource"/>: the bytes read once with the cleaned source file name, or the refusal with its detail token.</summary>
+internal sealed record ArchiveSourceResult(byte[]? Bytes, string? SourceName, ArchiveRefusal? Refusal, string? Detail)
+{
+    public static ArchiveSourceResult Refuse(ArchiveRefusal refusal, string? detail = null) => new(null, null, refusal, detail);
+}
+
+/// <summary>Who runs the content checks (spec 41): Central runs them all; a laptop runs no allowed-types, cap or slug check (it has no archive).</summary>
+internal enum ArchiveCheckScope
+{
+    Central,
+    Laptop,
+}
+
+/// <summary>
+/// The content an archive check judges (spec 41): the request's text, the bytes read once, their source file name and the item cap
+/// that applies (Central's <c>item_max_bytes</c>, or the laptop's <c>archive.itemMaxBytes</c>).
+/// </summary>
+internal sealed record ArchiveContentRequest(Slug Project, string Name, string Description, Slug Slug, string SourceName, byte[] Bytes, long MaxBytes)
+{
+    /// <summary>
+    /// Gets the path whose extension says whether a text file is Markdown; <see cref="SourceName"/> when <see langword="null"/>. Central's
+    /// <c>archive add</c> passes the full source path, so its result does not depend on how the file name is cleaned.
+    /// </summary>
+    public string? TypeHintPath { get; init; }
+}
+
 /// <summary>
 /// The closed checks of <c>archive add</c> (spec 37 AC-7..AC-11), in the spec's order: source, bytes read once, type, size and caps,
-/// secret patterns on text lines and on name and description, contact details on name and description, slug free.
+/// secret patterns on text lines and on name and description, contact details on name and description, slug free. Spec 41 splits them
+/// into the source half and the content half, so a laptop runs the same checks before anything leaves it.
 /// </summary>
 internal static class ArchiveChecks
 {
-    private const int SourceNameMax = 100;
-
     public static ArchiveCheckResult Check(
         ArchiveAddRequest request,
         ArchiveOptions options,
@@ -46,27 +71,45 @@ internal static class ArchiveChecks
         ArgumentNullException.ThrowIfNull(deny);
         ArgumentNullException.ThrowIfNull(secrets);
 
+        var source = CheckSource(request.SourcePath, deny);
+        if (source.Refusal is { } refusal)
+        {
+            return ArchiveCheckResult.Refuse(refusal, source.Detail);
+        }
+
+        var content = new ArchiveContentRequest(request.Project, request.Name, request.Description, request.Slug, source.SourceName!, source.Bytes!, options.ItemMaxBytes)
+        {
+            TypeHintPath = request.SourcePath,
+        };
+        return CheckContent(content, ArchiveCheckScope.Central, options, paths, secrets, today);
+    }
+
+    /// <summary>Steps 1–2: the source (not a regular file, denied, not found, a symbolic link or not normalised), then the bytes read once; empty is refused.</summary>
+    public static ArchiveSourceResult CheckSource(string source, SourceDenyList deny)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(source);
+        ArgumentNullException.ThrowIfNull(deny);
+
         // 1. Source (AC-7).
-        var source = request.SourcePath;
         if (Directory.Exists(source))
         {
-            return ArchiveCheckResult.Refuse(ArchiveRefusal.SourceRefused, "not_regular_file");
+            return ArchiveSourceResult.Refuse(ArchiveRefusal.SourceRefused, "not_regular_file");
         }
 
         if (deny.Covers(source) is { } covered)
         {
-            return ArchiveCheckResult.Refuse(ArchiveRefusal.SourceRefused, covered);
+            return ArchiveSourceResult.Refuse(ArchiveRefusal.SourceRefused, covered);
         }
 
         var file = new FileInfo(source);
         if (!file.Exists)
         {
-            return ArchiveCheckResult.Refuse(ArchiveRefusal.SourceRefused, "not_found");
+            return ArchiveSourceResult.Refuse(ArchiveRefusal.SourceRefused, "not_found");
         }
 
         if (file.LinkTarget is not null || HasLinkedAncestor(file.Directory) || !string.Equals(Path.GetFullPath(source), source, StringComparison.Ordinal))
         {
-            return ArchiveCheckResult.Refuse(ArchiveRefusal.SourceRefused, "symlink");
+            return ArchiveSourceResult.Refuse(ArchiveRefusal.SourceRefused, "symlink");
         }
 
         // 2. Bytes, read once.
@@ -77,16 +120,43 @@ internal static class ArchiveChecks
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return ArchiveCheckResult.Refuse(ArchiveRefusal.SourceRefused, "not_regular_file");
+            return ArchiveSourceResult.Refuse(ArchiveRefusal.SourceRefused, "not_regular_file");
         }
 
         if (bytes.Length == 0)
         {
-            return ArchiveCheckResult.Refuse(ArchiveRefusal.Empty);
+            return ArchiveSourceResult.Refuse(ArchiveRefusal.Empty);
         }
 
+        return new ArchiveSourceResult(bytes, SourceName(source), null, null);
+    }
+
+    /// <summary>
+    /// Steps 3–6 on bytes already read: type and Office content, the allowed types (Central), size against <see cref="ArchiveContentRequest.MaxBytes"/>,
+    /// the project and total caps (Central), secrets on text lines, name and description, contact details, the composed index line and its
+    /// length, the slug free (Central). <paramref name="options"/> and <paramref name="paths"/> are needed only for <see cref="ArchiveCheckScope.Central"/>.
+    /// </summary>
+    public static ArchiveCheckResult CheckContent(
+        ArchiveContentRequest request,
+        ArchiveCheckScope scope,
+        ArchiveOptions? options,
+        MemoryPaths? paths,
+        SecretPatterns secrets,
+        DateOnly today)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(secrets);
+        var central = scope == ArchiveCheckScope.Central;
+        if (central)
+        {
+            ArgumentNullException.ThrowIfNull(options);
+            ArgumentNullException.ThrowIfNull(paths);
+        }
+
+        var bytes = request.Bytes;
+
         // 3. Type (AC-8; spec 39 AC-5: an Office-shaped file is judged by its content and refused with the closed detail word).
-        var extension = Path.GetExtension(source);
+        var extension = Path.GetExtension(request.TypeHintPath ?? request.SourceName);
         var markdownName = extension.Equals(".md", StringComparison.OrdinalIgnoreCase) || extension.Equals(".markdown", StringComparison.OrdinalIgnoreCase);
         var sniff = MediaSniffer.Sniff(bytes, markdownName);
         if (sniff.OfficeRefusal is { } officeDetail)
@@ -99,23 +169,23 @@ internal static class ArchiveChecks
             return ArchiveCheckResult.Refuse(ArchiveRefusal.TypeRefused);
         }
 
-        if (!options.AllowedTypes.Contains(type))
+        if (central && !options!.AllowedTypes.Contains(type))
         {
             return ArchiveCheckResult.Refuse(ArchiveRefusal.TypeNotAllowed, wire);
         }
 
         // 4. Size and caps (AC-9); existing bytes count items and sidecars (plan assumption A3).
-        if (bytes.LongLength > options.ItemMaxBytes)
+        if (bytes.LongLength > request.MaxBytes)
         {
-            return ArchiveCheckResult.Refuse(ArchiveRefusal.TooLarge, string.Create(CultureInfo.InvariantCulture, $"{bytes.LongLength} > {options.ItemMaxBytes}"));
+            return ArchiveCheckResult.Refuse(ArchiveRefusal.TooLarge, string.Create(CultureInfo.InvariantCulture, $"{bytes.LongLength} > {request.MaxBytes}"));
         }
 
-        if (BytesUnder(paths.ArchiveProject(request.Project)) + bytes.LongLength > options.ProjectMaxBytes)
+        if (central && BytesUnder(paths!.ArchiveProject(request.Project)) + bytes.LongLength > options!.ProjectMaxBytes)
         {
             return ArchiveCheckResult.Refuse(ArchiveRefusal.ProjectCap);
         }
 
-        if (BytesUnder(paths.ArchiveDirectory) + bytes.LongLength > options.TotalMaxBytes)
+        if (central && BytesUnder(paths!.ArchiveDirectory) + bytes.LongLength > options!.TotalMaxBytes)
         {
             return ArchiveCheckResult.Refuse(ArchiveRefusal.TotalCap);
         }
@@ -148,7 +218,8 @@ internal static class ArchiveChecks
         }
 
         // The composed line itself, so RememberService can never refuse after the files are written.
-        var indexLine = ArchiveIndexLine.Added(today, request, type, bytes.LongLength);
+        var asAdd = new ArchiveAddRequest(request.Project, request.Name, request.Description, request.TypeHintPath ?? request.SourceName, request.Slug);
+        var indexLine = ArchiveIndexLine.Added(today, asAdd, type, bytes.LongLength);
         if (secrets.TryMatch(indexLine, out var lineMatch))
         {
             return ArchiveCheckResult.Refuse(ArchiveRefusal.SecretPattern, $"{lineMatch} (line)");
@@ -169,14 +240,31 @@ internal static class ArchiveChecks
         }
 
         // 6. Slug (AC-11): any archive/<project>/<slug>.* already present.
-        var project = paths.ArchiveProject(request.Project);
-        if (Directory.Exists(project) && Directory.EnumerateFiles(project, request.Slug.Value + ".*").Any())
+        if (central)
         {
-            return ArchiveCheckResult.Refuse(ArchiveRefusal.SlugTaken);
+            var project = paths!.ArchiveProject(request.Project);
+            if (Directory.Exists(project) && Directory.EnumerateFiles(project, request.Slug.Value + ".*").Any())
+            {
+                return ArchiveCheckResult.Refuse(ArchiveRefusal.SlugTaken);
+            }
         }
 
         var sha = Convert.ToHexStringLower(SHA256.HashData(bytes));
-        return new ArchiveCheckResult(new ArchiveCandidate(bytes, type, sha, SourceName(source), indexLine), null, null);
+        return new ArchiveCheckResult(new ArchiveCandidate(bytes, type, sha, request.SourceName, indexLine), null, null);
+    }
+
+    /// <summary>The source's file name as the sidecar keeps it: control characters removed, cut to <see cref="ArchiveLimits.SourceNameMax"/>.</summary>
+    internal static string SourceName(string source)
+    {
+        var name = Path.GetFileName(source);
+        var builder = new StringBuilder(name.Length);
+        foreach (var c in name.Where(c => !char.IsControl(c)))
+        {
+            builder.Append(c);
+        }
+
+        var cleaned = builder.ToString();
+        return cleaned.Length > ArchiveLimits.SourceNameMax ? cleaned[..ArchiveLimits.SourceNameMax] : cleaned;
     }
 
     private static bool HasLinkedAncestor(DirectoryInfo? directory)
@@ -196,17 +284,4 @@ internal static class ArchiveChecks
         Directory.Exists(directory)
             ? Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories).Sum(f => new FileInfo(f).Length)
             : 0;
-
-    private static string SourceName(string source)
-    {
-        var name = Path.GetFileName(source);
-        var builder = new StringBuilder(name.Length);
-        foreach (var c in name.Where(c => !char.IsControl(c)))
-        {
-            builder.Append(c);
-        }
-
-        var cleaned = builder.ToString();
-        return cleaned.Length > SourceNameMax ? cleaned[..SourceNameMax] : cleaned;
-    }
 }
