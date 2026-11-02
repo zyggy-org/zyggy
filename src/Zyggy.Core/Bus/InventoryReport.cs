@@ -71,7 +71,14 @@ public enum TraceState
 /// <param name="Job">The job file, when one is still on the bus.</param>
 /// <param name="Reports">Every report answering it, oldest first, including the archive.</param>
 /// <param name="ReportBody">The body of the newest verified report; never of an unverified one.</param>
-public sealed record EnvelopeTrace(EnvelopeId Id, TraceState State, MachineName? Machine, EnvelopeSummary? Job, IReadOnlyList<EnvelopeSummary> Reports, string? ReportBody);
+public sealed record EnvelopeTrace(EnvelopeId Id, TraceState State, MachineName? Machine, EnvelopeSummary? Job, IReadOnlyList<EnvelopeSummary> Reports, string? ReportBody)
+{
+    /// <summary>
+    /// Gets a value indicating whether the file is gone and the newest verified report is Central's report on an item (spec 41; owner
+    /// 2026-11-02), so the trace still names the id an item.
+    /// </summary>
+    public bool AnsweredAsItem { get; init; }
+}
 
 /// <summary>The tenant's bus at a glance.</summary>
 /// <param name="HeadSha">The checkout's <c>HEAD</c> at the time of the read.</param>

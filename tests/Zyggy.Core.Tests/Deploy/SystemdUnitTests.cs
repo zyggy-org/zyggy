@@ -110,8 +110,9 @@ public sealed partial class SystemdUnitTests
         DeployAssets.Bytes(PickupDropIn).Should().Equal(DeployAssets.ExpectedBytes("pickup.conf.example"));
     }
 
+    // Spec 41 W41-15 (plan 41 Step 14): the five spec-13 variables, then the instance directory and the Graph key's one credential line.
     [Fact]
-    public void PickupDropIn_ExactlyTheFiveZyggyVariables_PlaceholdersAcmeAlice()
+    public void PickupDropIn_TheFiveZyggyVariablesThenInstanceDirAndGraphKey_PlaceholdersAcmeAlice()
     {
         // Act
         var settings = DeployAssets.Lines(DeployAssets.Text(PickupDropIn))
@@ -124,8 +125,9 @@ public sealed partial class SystemdUnitTests
             "Environment=ZYGGY_TENANT=acme",
             "Environment=ZYGGY_USER=alice",
             "Environment=ZYGGY_TIMEZONE=UTC",
-            "Environment=ZYGGY_SECRET_PATTERNS=<instance-dir>/.claude/hooks/secret-patterns.txt");
-        DeployAssets.Text(PickupDropIn).Should().NotContain("LoadCredential");
+            "Environment=ZYGGY_SECRET_PATTERNS=<instance-dir>/.claude/hooks/secret-patterns.txt",
+            "Environment=ZYGGY_INSTANCE_DIR=<instance-dir>/instance",
+            "LoadCredential=m365-app-key:<zyggy-home>/.config/zyggy/m365-app.key");
     }
 
     [Fact]

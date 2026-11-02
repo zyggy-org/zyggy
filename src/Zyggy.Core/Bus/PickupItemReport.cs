@@ -1,6 +1,8 @@
 using System.Text;
 
+using Zyggy.Core.Envelope;
 using Zyggy.Core.Memory;
+using Zyggy.Core.Tenancy;
 
 namespace Zyggy.Core.Bus;
 
@@ -33,6 +35,24 @@ internal static class PickupItemReport
         }
 
         return Encoding.UTF8.GetBytes(body.ToString());
+    }
+
+    /// <summary>
+    /// Whether <paramref name="report"/> is Central's report on an item (owner 2026-11-02, so <c>zyggy status --id</c> still says
+    /// <c>item</c> once the <c>items/</c> file is gone): from <c>central</c>, and either <c>failed</c> with <c>reason: archive_refused</c>
+    /// (a reason no job report carries) or <c>done</c> with the body this class writes (<c>archived:</c> then <c>sidecar:</c>).
+    /// </summary>
+    /// <param name="report">A verified report answering the id.</param>
+    /// <param name="body">That report's body.</param>
+    public static bool IsItemReport(EnvelopeSummary report, string? body)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        return report.Verified && report.From == MachineName.Central && report.Status switch
+        {
+            ReportStatus.Failed => report.Reason == BusPickup.ArchiveRefusedReason,
+            ReportStatus.Done => body is not null && body.StartsWith("archived: ", StringComparison.Ordinal) && body.Contains("\nsidecar: ", StringComparison.Ordinal),
+            _ => false,
+        };
     }
 
     /// <summary>

@@ -464,12 +464,13 @@ internal sealed class OffloadService(
         };
 
         // GraphReader's exit-6 messages: forbidden (a read the grant does not allow), throttled, a transport failure, an auth failure, the rest.
-        public static Classified FromRead(GraphFailure failure) =>
-            failure.Message.StartsWith("forbidden", StringComparison.Ordinal) ? new(OffloadReason.Forbidden, "forbidden — runbook \"Grant OneDrive write for the archive folder\"", true)
-            : failure.Message.StartsWith("throttled", StringComparison.Ordinal) ? new(OffloadReason.Throttled, null, false)
-            : failure.Message.StartsWith("request failed", StringComparison.Ordinal) ? new(OffloadReason.TransportError, null, false)
-            : failure.Message.StartsWith("unauthorized", StringComparison.Ordinal) || failure.Message.StartsWith("auth", StringComparison.Ordinal) || failure.ExitCode == 3
-                ? new(OffloadReason.AuthFailed, null, false)
-            : new(OffloadReason.ServerError, null, false);
+        public static Classified FromRead(GraphFailure failure) => GraphFailureClass.Classify(failure) switch
+        {
+            GraphFailureKind.Forbidden => new(OffloadReason.Forbidden, "forbidden — runbook \"Grant OneDrive write for the archive folder\"", true),
+            GraphFailureKind.Throttled => new(OffloadReason.Throttled, null, false),
+            GraphFailureKind.Transport => new(OffloadReason.TransportError, null, false),
+            GraphFailureKind.Auth => new(OffloadReason.AuthFailed, null, false),
+            _ => new(OffloadReason.ServerError, null, false),
+        };
     }
 }

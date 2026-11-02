@@ -314,7 +314,7 @@ public sealed class ItemSubmitterBusTests : IAsyncLifetime
 
     private ItemSubmitter Submitter(ISecretStore? store = null, Func<Model, byte[]>? serializer = null, KeyId? signWith = null, NodeConfiguration? node = null, string? nodeJsonPath = null)
     {
-        var git = new GitClient(_processes, new GitClientOptions { Identity = new GitIdentity("zyggy (work-laptop)", "work-laptop@zyggy.org") }, _clock);
+        var git = new GitClient(_processes, new GitClientOptions { Identity = TestGitIdentities.WorkLaptop }, _clock);
         var signer = new EnvelopeSigner(store ?? _store);
         var bus = new BusRepository(git, _provider, new BusIdentity(Acme, WorkLaptop), _checkout.Root, signer, _clock, () => 0, new RecordingLogger<BusRepository>());
         var patterns = SecretPatterns.Load(Path.Combine(Golden.Directory, "secret-patterns", "secret-patterns.txt")).Patterns!;

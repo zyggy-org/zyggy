@@ -20,7 +20,7 @@ public sealed class ArchiveServiceAddBytesTests : IDisposable
 
     private const string Rejected = " ! [rejected]        HEAD -> main (fetch first)\nerror: failed to push some refs";
 
-    private const string Locked = "fatal: Unable to create '/srv/memory/.git/index.lock': File exists.";
+    private const string Locked = "fatal: Unable to create 'memory/.git/index.lock': File exists.";
 
     private static readonly TimeZoneInfo Zone = TimeZoneInfo.CreateCustomTimeZone("Europe/Brussels", TimeSpan.FromHours(2), "Test/Brussels", "Test/Brussels");
 

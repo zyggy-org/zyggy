@@ -33,6 +33,7 @@ public sealed partial class BusPickup
     private readonly KeyId? _signWith;
     private readonly ItemFiler? _items;
     private readonly string? _archiveError;
+    private readonly ItemDriveFetcher? _drive;
     private bool _archiveFailureLogged;
     private bool _inboxFailureLogged;
     private bool _archiveMissingLogged;
@@ -46,7 +47,8 @@ public sealed partial class BusPickup
 
     /// <summary>
     /// Spec 41: the pickup that also settles <c>items/</c>. <paramref name="items"/> is <see langword="null"/> when the archive part did
-    /// not load (<paramref name="archiveError"/> says why): every item then waits.
+    /// not load (<paramref name="archiveError"/> says why): every item then waits. <paramref name="drive"/> fetches a <c>via: onedrive</c>
+    /// item's bytes read-only; without it those items wait.
     /// </summary>
     internal BusPickup(
         BusRepository bus,
@@ -56,7 +58,8 @@ public sealed partial class BusPickup
         ILogger<BusPickup> log,
         KeyId? signWith,
         ItemFiler? items,
-        string? archiveError)
+        string? archiveError,
+        ItemDriveFetcher? drive = null)
     {
         _bus = bus;
         _signer = signer;
@@ -66,6 +69,7 @@ public sealed partial class BusPickup
         _signWith = signWith;
         _items = items;
         _archiveError = archiveError;
+        _drive = drive;
     }
 
     private enum PickupItemOutcome
@@ -295,7 +299,6 @@ public sealed partial class BusPickup
 
     private async Task<(PickupItemOutcome Outcome, SettledItem? Item)> SettleItemCoreAsync(PickupCandidate candidate, Model envelope, CancellationToken ct)
     {
-        string id = envelope.Header.Id.Value;
         if (_signWith is null)
         {
             NoteSignFailed("signWith missing: the node must sign its reports");
@@ -313,18 +316,14 @@ public sealed partial class BusPickup
             return (PickupItemOutcome.Waits, null);
         }
 
-        if (envelope.Item!.Via == ItemRoute.OneDrive)
+        bool oneDrive = envelope.Item!.Via == ItemRoute.OneDrive;
+        if (oneDrive && _drive is null)
         {
-            if (!_oneDriveLogged)
-            {
-                _oneDriveLogged = true;
-                LogOneDriveNotConfigured();
-            }
-
+            NoteOneDriveNotConfigured("the pickup was built without a OneDrive fetcher");
             return (PickupItemOutcome.Waits, null);
         }
 
-        // The report key first, so nothing is filed that could not be answered.
+        // The report key first, so nothing is fetched or filed that could not be answered.
         SigningKeyCheck key = await _signer.CheckKeyAsync(_signWith, ct).ConfigureAwait(false);
         if (key.State != SigningKeyState.Usable)
         {
@@ -332,33 +331,58 @@ public sealed partial class BusPickup
             return (PickupItemOutcome.Waits, null);
         }
 
-        ArchiveOutcome filed = await _items.FileBusAsync(envelope, ct).ConfigureAwait(false);
-        PickupItemOutcome outcome;
-        ReportFields fields;
-        byte[] body;
-        string line;
+        if (!oneDrive)
+        {
+            return await SettleAsync(candidate, envelope, await _items.FileBusAsync(envelope, ct).ConfigureAwait(false), null, ct).ConfigureAwait(false);
+        }
+
+        // Spec 41 AC-29: the bytes downloaded read-only, then filed exactly like a bus item.
+        DriveFetch fetch = await _drive!.FetchAsync(envelope, ct).ConfigureAwait(false);
+        switch (fetch)
+        {
+            case DriveNotConfigured notConfigured:
+                NoteOneDriveNotConfigured(notConfigured.Detail);
+                return (PickupItemOutcome.Waits, null);
+            case DriveNotDue:
+                return (PickupItemOutcome.Waits, null);
+            case DriveWaiting:
+                _oneDriveLogged = false;
+                return (PickupItemOutcome.Waits, null);
+        }
+
+        _oneDriveLogged = false;
+        return fetch switch
+        {
+            DriveRefused refused => await RefuseAsync(candidate, envelope, refused.Word, refused.Detail, refused.DrivePath, ct).ConfigureAwait(false),
+            DriveFetched fetched when ItemFiler.DriveTypeDiffers(envelope.Item, fetched.Bytes) =>
+                await RefuseAsync(candidate, envelope, "drive_mismatch", "type", fetched.DrivePath, ct).ConfigureAwait(false),
+            DriveFetched fetched =>
+                await SettleAsync(candidate, envelope, await _items.FileAsync(envelope, fetched.Bytes, ct).ConfigureAwait(false), fetched.DrivePath, ct).ConfigureAwait(false),
+            _ => throw new InvalidOperationException("unknown drive fetch " + fetch.GetType().Name),
+        };
+    }
+
+    // The writer's outcome as a settled item, or a wait (memory busy, push rejected before the commit, …).
+    private async Task<(PickupItemOutcome Outcome, SettledItem? Item)> SettleAsync(
+        PickupCandidate candidate, Model envelope, ArchiveOutcome filed, string? drivePath, CancellationToken ct)
+    {
+        string id = envelope.Header.Id.Value;
         switch (filed.Kind)
         {
             case ArchiveOutcomeKind.Archived or ArchiveOutcomeKind.AlreadyFiled:
-                outcome = filed.Kind == ArchiveOutcomeKind.Archived ? PickupItemOutcome.Filed : PickupItemOutcome.AlreadyFiled;
-                fields = new ReportFields(ReportStatus.Done);
-                body = PickupItemReport.DoneBody(filed, null);
-                line = "filed " + filed.Item;
-                break;
+                PickupItemOutcome outcome = filed.Kind == ArchiveOutcomeKind.Archived ? PickupItemOutcome.Filed : PickupItemOutcome.AlreadyFiled;
+                (PickupItemOutcome, SettledItem?) done = await ReportAsync(
+                    candidate, envelope, outcome, new ReportFields(ReportStatus.Done), PickupItemReport.DoneBody(filed, drivePath), "filed " + filed.Item, ct).ConfigureAwait(false);
+                if (done.Item2 is not null && filed.Kind == ArchiveOutcomeKind.Archived && !filed.Pushed && _itemNotes.Add(id + "|deferred"))
+                {
+                    LogItemPushDeferred(id);
+                }
+
+                return done;
             case ArchiveOutcomeKind.Refused or ArchiveOutcomeKind.Usage:
                 // A composed index line over 400 characters cannot come from a checked laptop; it is refused like any other check.
                 string word = filed.Refusal is { } refusal ? ArchiveRefusalWire.ToWire(refusal) : "line_too_long";
-                string? detail = filed.Refusal is null ? null : filed.Detail;
-                outcome = PickupItemOutcome.Refused;
-                fields = new ReportFields(ReportStatus.Failed, ArchiveRefusedReason);
-                body = PickupItemReport.RefusedBody(word, detail, null);
-                line = "refused " + word;
-                if (_itemNotes.Add(id + "|refused"))
-                {
-                    LogItemRefused(id, word, detail ?? "-");
-                }
-
-                break;
+                return await RefuseAsync(candidate, envelope, word, filed.Refusal is null ? null : filed.Detail, drivePath, ct).ConfigureAwait(false);
             default:
                 if (_itemNotes.Add(id + "|waits|" + filed.Detail))
                 {
@@ -367,10 +391,35 @@ public sealed partial class BusPickup
 
                 return (PickupItemOutcome.Waits, null);
         }
+    }
 
+    // A refusal (a writer check, or drive_missing / drive_mismatch / too_large before the writer): failed / archive_refused, one Warning per id.
+    private Task<(PickupItemOutcome Outcome, SettledItem? Item)> RefuseAsync(
+        PickupCandidate candidate, Model envelope, string word, string? detail, string? drivePath, CancellationToken ct)
+    {
+        string id = envelope.Header.Id.Value;
+        if (_itemNotes.Add(id + "|refused"))
+        {
+            LogItemRefused(id, word, detail ?? "-");
+        }
+
+        return ReportAsync(
+            candidate,
+            envelope,
+            PickupItemOutcome.Refused,
+            new ReportFields(ReportStatus.Failed, ArchiveRefusedReason),
+            PickupItemReport.RefusedBody(word, detail, drivePath),
+            "refused " + word,
+            ct);
+    }
+
+    // Central's signed report to the sender, in reply to the item; a signing failure makes the item wait.
+    private async Task<(PickupItemOutcome Outcome, SettledItem? Item)> ReportAsync(
+        PickupCandidate candidate, Model envelope, PickupItemOutcome outcome, ReportFields fields, byte[] body, string line, CancellationToken ct)
+    {
         DateTimeOffset now = _bus.Clock.GetUtcNow();
         var header = new EnvelopeHeader(_bus.Me.Tenant, EnvelopeId.New(now), MachineName.Central, envelope.Header.From, now, EnvelopePriority.Normal, envelope.Header.Id);
-        EnvelopeResult signed = await _signer.SignAsync(Model.CreateReport(header, fields, body), _signWith, ct).ConfigureAwait(false);
+        EnvelopeResult signed = await _signer.SignAsync(Model.CreateReport(header, fields, body), _signWith!, ct).ConfigureAwait(false);
         if (!signed.IsAccepted)
         {
             NoteSignFailed(signed.Rejection!.Detail);
@@ -378,12 +427,16 @@ public sealed partial class BusPickup
         }
 
         _signFailureLogged = false;
-        if (filed.Kind == ArchiveOutcomeKind.Archived && !filed.Pushed && _itemNotes.Add(id + "|deferred"))
-        {
-            LogItemPushDeferred(id);
-        }
-
         return (outcome, new SettledItem(candidate.File, signed.Envelope!, line));
+    }
+
+    private void NoteOneDriveNotConfigured(string detail)
+    {
+        if (!_oneDriveLogged)
+        {
+            _oneDriveLogged = true;
+            LogOneDriveNotConfigured(detail);
+        }
     }
 
     private void NoteSignFailed(string detail)
@@ -501,8 +554,8 @@ public sealed partial class BusPickup
     [LoggerMessage(Level = LogLevel.Error, Message = "pickup: cannot sign reports: {Detail}")]
     private partial void LogCannotSign(string detail);
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "pickup: OneDrive fetch not configured (OneDrive-route items wait)")]
-    private partial void LogOneDriveNotConfigured();
+    [LoggerMessage(Level = LogLevel.Error, Message = "pickup: OneDrive fetch not configured: {Detail} (OneDrive-route items wait)")]
+    private partial void LogOneDriveNotConfigured(string detail);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "pickup: left {Path}: {Reason} ({Field})")]
     private partial void LogLeft(string path, string reason, string field);

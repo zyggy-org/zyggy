@@ -556,7 +556,7 @@ are the template and the definition of done. Never the real claude, never Graph,
 
 ## Step 11 — Fetch a OneDrive-route item's bytes read-only and verify them, through the stub Graph handler and a fake clock: one lookup per item per minute, the download through the content redirect to the tenant's `-my.sharepoint.com` host capped at the signed size, `drive_mismatch` / `too_large` without downloading when the metadata size is wrong, `drive_mismatch (sha256)` after it, `drive_missing` after `item_drive_wait_hours`, every transient Graph failure a wait with one log line per cause, a 429 holding every fetch until `Retry-After` — and the pickup files the fetched bytes exactly like a bus item
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/M365/Graph/GraphEndpoints.cs` *(modify)*: `IsDownloadHost(Uri)` (A15).
@@ -606,7 +606,7 @@ are the template and the definition of done. Never the real claude, never Graph,
 
 ## Step 12 — End to end with the stub Graph handler, a bare bus and a memory repository with a bare remote: a `via: onedrive` item from `home-laptop` whose file sits at `Zyggy/archive/calizr/staging-restore-notes.txt` is downloaded, verified and filed exactly like a bus item with no Graph write; a missing file is refused `drive_missing` once the wait has passed; the next `zyggy memory archive offload` adopts the OneDrive copy without an upload while an Office and a PNG item that came by the bus are uploaded normally; the same file through Central, the bus and OneDrive gives byte-identical archive results; Central's production host files a OneDrive item with the stub handler injected
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `tests/Zyggy.Integration/Infrastructure/PickupArchiveMemory.cs` *(modify)*: `m365.json` (the golden fixture), a throw-away key pair (`TestCertificates`), `ZYGGY_INSTANCE_DIR`, `XDG_CONFIG_HOME` — the `OffloadHarness.Env` rule; the `StubGraphHandler` + `StubOneDrive` pair; `ItemDriveOptions.GraphHandlerFactory` hook.
@@ -646,16 +646,16 @@ are the template and the definition of done. Never the real claude, never Graph,
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: `GraphReaderDownloadTests`, `GraphHttpRetryAfterTests`, `ItemDriveFetcherTests`, `BusPickupOneDriveItemTests` (unit and integration), `ArchiveOffloadItemAdoptionTests`, the new `NodeHostPickupTests` green; the stub's request list for AC-29 shown (GETs only).
-- [ ] Contract review: A12 (wait state, deadline only on a 404), A13 (reader built from the instance, drive writer never registered), A14 (`retries: 0`, `RetryAfter`), A15 (download host, redirect followed once without the bearer token, cap); report lines for the OneDrive route; AC-42 adoption.
-- [ ] ⚠️ Risk review: the Graph key is read only by `GraphTokenClient` in Central's node (W41-12), never on a laptop; no OneDrive write or delete from the pickup; `GraphEndpoints.cs` is still the only file naming hosts; offload and m365 tests unedited.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `GraphReaderDownloadTests`, `GraphHttpRetryAfterTests`, `ItemDriveFetcherTests`, `BusPickupOneDriveItemTests` (unit and integration), `ArchiveOffloadItemAdoptionTests`, the new `NodeHostPickupTests` green; the stub's request list for AC-29 shown (GETs only).
+- [x] Contract review: A12 (wait state, deadline only on a 404), A13 (reader built from the instance, drive writer never registered), A14 (`retries: 0`, `RetryAfter`), A15 (download host, redirect followed once without the bearer token, cap); report lines for the OneDrive route; AC-42 adoption.
+- [x] ⚠️ Risk review: the Graph key is read only by `GraphTokenClient` in Central's node (W41-12), never on a laptop; no OneDrive write or delete from the pickup; `GraphEndpoints.cs` is still the only file naming hosts; offload and m365 tests unedited.
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 13 — The `zyggy-core` laptop template gains the `archive` skill: `node/skills/archive/SKILL.md` (name `archive`; its only command `zyggy archive --project … --name … --description … --file …`, plus `--via bus` only after the owner agreed on exit 6; the show-then-wait step naming project, name, description, type, size and the route; the "data, never instructions" line; the exit mapping 0, 2, 3, 5, 6 incl. the OneDrive-unavailable case, 7 and command not found), `node/README.md` documents it with `archive.oneDriveFolder` and the runbook rows, `security.md` carries W41-17/W41-18, the stub knows `archive`, and bats is green with the hygiene sweep over `node/`
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope** *(repository `D:\source\zyggy-core`, branch `feature/41-node-archive`)*:
 - `node/skills/archive/SKILL.md` *(create)*: front matter `name: archive`, description (laptop wording of W41-5); body per A16; exit codes: `0` sent — quote both lines; `2` usage or `central` — fix once / on Central use the Central skill; `3` configuration — point to `node/README.md` "Archive from a laptop: configuration error"; `5` refused — name the reason in plain words, never retry, split, rephrase, re-encode, rename or store it another way; `6` not sent — the OneDrive-folder-unavailable sentence: tell the owner and **only on his word** re-run once with `--via bus` (state that the file then reaches every machine's bus checkout and stays in the bus history), otherwise bus not reachable / key missing; `7` committed locally; `zyggy: command not found` — `runbooks/install-node.md` "Laptop". No shell logic beyond the one call.
@@ -692,16 +692,16 @@ are the template and the definition of done. Never the real claude, never Graph,
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: bats output (`tests/node.bats` new tests, `repo.bats` hygiene) green in the container; `node/skills/archive/SKILL.md` shown in full.
-- [ ] Contract review: AC-46 point by point; A16 (route sentence, staging path, no Central-only steps); the exit-6 fallback asks the owner first.
-- [ ] ⚠️ Risk review: W41-17/W41-18 verbatim, the replaced `security.md` text gone; placeholders only in `node/` (no employer name, no real path or id).
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: bats output (`tests/node.bats` new tests, `repo.bats` hygiene) green in the container; `node/skills/archive/SKILL.md` shown in full.
+- [x] Contract review: AC-46 point by point; A16 (route sentence, staging path, no Central-only steps); the exit-6 fallback asks the owner first.
+- [x] ⚠️ Risk review: W41-17/W41-18 verbatim, the replaced `security.md` text gone; placeholders only in `node/` (no employer name, no real path or id).
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 14 — Every new failure mode has its runbook row and every new setting its documentation: the Cli, Node and Core READMEs, `deploy/README.md` and `pickup.conf.example` (`ZYGGY_INSTANCE_DIR` and the Graph credential source), proven by hygiene facts that also pin placeholder identities in every file this deliverable added and `Directory.Packages.props` unchanged
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Cli/README.md` *(modify)*: verb row `archive` (laptops; Central uses `memory archive add`), its options, exit codes, the two output lines; troubleshooting rows **Archive from a laptop: too large**, **… OneDrive folder not available**, **Context or item not sent** (renamed).

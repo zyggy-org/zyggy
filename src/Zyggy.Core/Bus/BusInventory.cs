@@ -144,8 +144,12 @@ public sealed partial class BusInventory
             return null;
         }
 
-        MachineName? where = hit?.Machine ?? reports.LastOrDefault(r => r.Verified)?.From ?? reports.LastOrDefault()?.From;
-        return new EnvelopeTrace(id, state.Value, where, job, reports, body);
+        EnvelopeSummary? newest = reports.LastOrDefault(r => r.Verified);
+        MachineName? where = hit?.Machine ?? newest?.From ?? reports.LastOrDefault()?.From;
+        return new EnvelopeTrace(id, state.Value, where, job, reports, body)
+        {
+            AnsweredAsItem = job is null && newest is not null && PickupItemReport.IsItemReport(newest, body),
+        };
     }
 
     private async Task<IDisposable> LockAsync(CancellationToken ct) =>

@@ -198,7 +198,7 @@ internal static partial class StatusCommand
     internal static string RenderTrace(EnvelopeTrace trace, DateTimeOffset now)
     {
         var sb = new StringBuilder();
-        bool item = trace.Job?.Type == EnvelopeType.Item;
+        bool item = trace.Job?.Type == EnvelopeType.Item || trace.AnsweredAsItem;
         sb.Append(item ? "item    " : "job     ").Append(trace.Id.Value).Append("  ");
         if (trace.Job is null)
         {

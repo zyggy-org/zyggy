@@ -259,7 +259,7 @@ public sealed class ItemSubmitterOneDriveTests : IAsyncLifetime
 
     private ItemSubmitter Submitter(NodeConfiguration? node = null)
     {
-        var git = new GitClient(_processes, new GitClientOptions { Identity = new GitIdentity("zyggy (home-laptop)", "home-laptop@zyggy.org") }, _clock);
+        var git = new GitClient(_processes, new GitClientOptions { Identity = TestGitIdentities.HomeLaptop }, _clock);
         var signer = new EnvelopeSigner(_store);
         var bus = new BusRepository(git, _provider, new BusIdentity(Acme, HomeLaptop), _checkout.Root, signer, _clock, () => 0, new RecordingLogger<BusRepository>());
         var patterns = SecretPatterns.Load(Path.Combine(Golden.Directory, "secret-patterns", "secret-patterns.txt")).Patterns!;

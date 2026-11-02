@@ -68,9 +68,29 @@ internal sealed partial class StubOneDrive
     /// <summary>The next read of a file by id reports a wrong QuickXorHash.</summary>
     public void CorruptNextHash() => _corruptNext = true;
 
+    /// <summary>Gets the content downloads served from the download host (plan 41 A15).</summary>
+    public int Downloads { get; private set; }
+
+    /// <summary>Replaces the bytes of the file <paramref name="id"/> (a file edited in OneDrive before Central fetched it).</summary>
+    public void Edit(string id, byte[] bytes) => _nodes[id] = _nodes[id] with { Bytes = bytes };
+
     public HttpResponseMessage? Handle(HttpMethod method, Uri uri, byte[]? body)
     {
         var path = Uri.UnescapeDataString(uri.AbsolutePath);
+
+        // Plan 41 A15: the content redirect's target on the tenant's download host serves the file's bytes.
+        if (uri.Host == StubGraphHandler.Download)
+        {
+            if (method != HttpMethod.Get || !path.StartsWith("/download/", StringComparison.Ordinal)
+                || !_nodes.TryGetValue(path["/download/".Length..], out var file) || file.Folder)
+            {
+                return NotFound();
+            }
+
+            Downloads++;
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(file.Bytes!) };
+        }
+
         if (method == HttpMethod.Get && path == "/v1.0/users/alice@acme.example/drive" && uri.Query == "?$select=id")
         {
             return Json(200, $$"""{"id":"{{DriveId}}"}""");
@@ -84,14 +104,28 @@ internal sealed partial class StubOneDrive
         var rest = match.Groups["rest"].Value;
         if (method == HttpMethod.Get && rest.StartsWith("root:/", StringComparison.Ordinal))
         {
+            var content = rest.EndsWith(":/content", StringComparison.Ordinal);
             var node = _nodes[DriveRootId];
-            foreach (var segment in rest["root:/".Length..].Split('/'))
+            foreach (var segment in rest["root:/".Length..(content ? rest.Length - ":/content".Length : rest.Length)].Split('/'))
             {
                 node = Child(node.Id, segment);
                 if (node is null)
                 {
                     return NotFound();
                 }
+            }
+
+            if (content)
+            {
+                // Graph answers a file's content with a 302 to a pre-authenticated URL on the download host.
+                if (node.Folder)
+                {
+                    return NotFound();
+                }
+
+                var redirect = new HttpResponseMessage(HttpStatusCode.Found) { Content = new StringContent(string.Empty) };
+                redirect.Headers.Location = new Uri($"https://{StubGraphHandler.Download}/download/{node.Id}");
+                return redirect;
             }
 
             return Item(node);

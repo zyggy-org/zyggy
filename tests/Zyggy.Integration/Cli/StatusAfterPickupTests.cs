@@ -127,6 +127,40 @@ public sealed class StatusAfterPickupTests : IAsyncLifetime
         console.Stdout.Should().Contain("body:\narchived: archive/calizr/staging-restore-notes.txt\nsidecar: archive/calizr/staging-restore-notes.md\n- [stated] ");
     }
 
+    [Theory]
+    [InlineData("Staging restore notes", "done")]
+    [InlineData("Notes for alice@acme.example", "failed")]
+    public async Task StatusId_ItemFileGoneAfterPickup_LineOneSaysItemNotJob(string name, string status)
+    {
+        // Arrange: owner 2026-11-02 — once Central's pickup removed the items/ file, the only trace is Central's report (done, or failed
+        // archive_refused for a name Central refuses as a contact detail); line 1 must still call the id an item.
+        var ct = TestContext.Current.CancellationToken;
+        byte[] file = "# Staging restore\n\nRestore the staging database from Sunday's snapshot.\n"u8.ToArray();
+        var fields = new ItemFields(
+            Slug.Parse("calizr"), Slug.Parse("staging-restore-notes"), name, "How the staging database was restored", "restore-notes.md",
+            file.Length, Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(file)), ItemRoute.Bus, null);
+        SeededJob item = await _harness.Bus.SeedSignedItemAsync(CliHarness.HomeLaptop, CliHarness.Central, TestKeys.Acme1, _harness.Store, fields, file, Created, ct: ct);
+        await using var memory = new PickupArchiveMemory();
+        await memory.InitializeAsync();
+        await using ServiceProvider central = TestHost.Build(_harness.Bus, CliHarness.Central, _harness.Store, extend: s =>
+        {
+            s.AddSingleton(TestKeys.Acme1);
+            s.AddBusPickup(memory.Configuration(TestHost.NodeConfigurationFor(_harness.Bus, CliHarness.Central)));
+        });
+        await _harness.Bus.PullCloneAsync(ct);
+        await central.GetRequiredService<BusPickup>().RunAsync(ct);
+        (await _harness.Bus.ExistsOnMainAsync(item.RelativePath, ct)).Should().BeFalse();
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["status", "--id", item.Id.Value], _harness.HomeLaptopNodeJson, extraEnvironment: _closedHealth, ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        string[] lines = console.Stdout.Split('\n');
+        lines[0].Should().Be($"item    {item.Id.Value}  (file gone)");
+        lines.Should().Contain(l => l.StartsWith("report  ", StringComparison.Ordinal) && l.Contains("  " + status, StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task FindReportsAsync_AfterPickup_ProbeStillFindsItsAnswer()
     {

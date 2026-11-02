@@ -8,10 +8,13 @@ namespace Zyggy.Core.Tests.Infrastructure;
 /// The login host and Graph for tests (the shell's curl stub in .NET): answers from a route table modelled on the copied
 /// <c>golden/m365/graph/routes.tsv</c>, with one-shot scenario overrides consumed first. Records every request (method, URI, headers,
 /// body). Records a violation — never a network call — for any host other than the two contracted ones, any <c>/me</c> path, any
-/// method other than GET (and the one token POST), and any non-HTTPS URI. No test may leave a violation.
+/// method other than GET (and the one token POST), and any non-HTTPS URI. No test may leave a violation. Plan 41 A15: GETs to the
+/// tenant's OneDrive download host <see cref="Download"/> (where Graph's content redirect points) are allowed too.
 /// </summary>
 internal sealed partial class StubGraphHandler : HttpMessageHandler
 {
+    public const string Download = "acme-my.sharepoint.com";
+
     private const string Login = "login.microsoftonline.com";
     private const string Graph = "graph.microsoft.com";
 
@@ -75,6 +78,13 @@ internal sealed partial class StubGraphHandler : HttpMessageHandler
         return AllowDriveWrites();
     }
 
+    /// <summary>Plan 41: answers drive requests from <paramref name="drive"/> read-only — every write stays a violation (Central's pickup).</summary>
+    public StubGraphHandler ReadDrive(StubOneDrive drive)
+    {
+        Drive = drive;
+        return this;
+    }
+
     public IEnumerable<RecordedRequest> To(string urlPattern) => Requests.Where(r => Regex.IsMatch(r.Uri.ToString(), urlPattern, RegexOptions.CultureInvariant));
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -99,7 +109,7 @@ internal sealed partial class StubGraphHandler : HttpMessageHandler
         }
 
         var isToken = uri.Host == Login && request.Method == HttpMethod.Post && uri.AbsolutePath.EndsWith("/oauth2/v2.0/token", StringComparison.Ordinal);
-        if (uri.Host is not (Login or Graph))
+        if (uri.Host is not (Login or Graph) && !(uri.Host == Download && request.Method == HttpMethod.Get))
         {
             Violations.Add("host: " + uri.Host);
         }

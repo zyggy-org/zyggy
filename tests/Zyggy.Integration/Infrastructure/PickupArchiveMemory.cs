@@ -1,5 +1,7 @@
+using Zyggy.Core.Bus;
 using Zyggy.Core.Configuration;
 using Zyggy.Core.Memory;
+using Zyggy.Core.Tests.Infrastructure;
 
 namespace Zyggy.Integration.Infrastructure;
 
@@ -13,12 +15,34 @@ internal sealed class PickupArchiveMemory : IAsyncLifetime
 {
     private readonly string _archiveJson;
 
-    public PickupArchiveMemory(string archiveJson = "{}")
+    private readonly bool _m365;
+
+    private TestCertificates? _pair;
+
+    /// <param name="archiveJson">The instance's <c>archive.json</c>.</param>
+    /// <param name="m365">
+    /// Plan 41 Step 12: also give Central's node the offload's M365 instance — <c>m365.json</c> (the golden fixture), a throw-away key pair
+    /// under <c>XDG_CONFIG_HOME</c> — and the stub Graph handler over the in-memory OneDrive (read-only: every write is a violation).
+    /// </param>
+    public PickupArchiveMemory(string archiveJson = "{}", bool m365 = false)
     {
         _archiveJson = archiveJson;
+        _m365 = m365;
     }
 
     public MemoryRepoFixture Repo { get; } = new();
+
+    /// <summary>Gets the in-memory OneDrive with the <c>Zyggy/archive</c> root (plan 41: the laptop's OneDrive client uploaded there).</summary>
+    public StubOneDrive Drive { get; } = new();
+
+    /// <summary>Gets the stub Graph handler answering from <see cref="Drive"/> read-only.</summary>
+    public StubGraphHandler Graph { get; } = StubGraphHandler.FromGoldenRoutes();
+
+    /// <summary>Gets the pickup's Graph hook: the stub handler, the key-file ownership check only where the test key's mode is set (Linux).</summary>
+    public ItemDriveOptions DriveOptions => new() { GraphHandlerFactory = () => Graph, CheckKeyOwnership = OperatingSystem.IsLinux() };
+
+    /// <summary>Gets the throw-away Graph key file (never the real one; the sweep's needle).</summary>
+    public string KeyFile => _pair!.KeyFile;
 
     public string InstanceDir => Path.Combine(Repo.RootDir, "instance");
 
@@ -37,9 +61,24 @@ internal sealed class PickupArchiveMemory : IAsyncLifetime
         await Repo.GitAsync(Repo.CloneDir, ["add", "--", "acme/alice/profile.md"], CancellationToken.None);
         await Repo.GitAsync(Repo.CloneDir, ["commit", "-q", "-m", "seed"], CancellationToken.None);
         await Repo.GitAsync(Repo.CloneDir, ["push", "-q", "origin", "HEAD:main"], CancellationToken.None);
+        Graph.ReadDrive(Drive);
+        if (_m365)
+        {
+            // The in-process node resolves IANA ids only on Linux here: elsewhere the instance's zone is UTC (the OffloadHarness rule).
+            string config = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "golden", "m365", "fixtures", "m365.json"));
+            await File.WriteAllTextAsync(
+                Path.Combine(InstanceDir, "m365.json"),
+                OperatingSystem.IsLinux() ? config : config.Replace("\"Europe/Brussels\"", "\"UTC\"", StringComparison.Ordinal));
+            _pair = TestCertificates.Create(Path.Combine(HomeDir, ".config", "zyggy"));
+        }
     }
 
-    public ValueTask DisposeAsync() => Repo.DisposeAsync();
+    public async ValueTask DisposeAsync()
+    {
+        Graph.Violations.Should().BeEmpty();
+        _pair?.Dispose();
+        await Repo.DisposeAsync();
+    }
 
     /// <summary>The drop-in's five variables, <c>ZYGGY_INSTANCE_DIR</c> and a <c>HOME</c> under the fixture (deterministic deny list).</summary>
     public Dictionary<string, string?> Env(bool withInstanceDir = true)
@@ -53,6 +92,11 @@ internal sealed class PickupArchiveMemory : IAsyncLifetime
             ["ZYGGY_SECRET_PATTERNS"] = PickupMemory.PatternsPath,
             ["HOME"] = HomeDir,
             ["USERPROFILE"] = HomeDir,
+
+            // Every variable that could place a Graph key elsewhere is inside the fixture or removed (the M365InstanceFixture.Env rule).
+            ["XDG_CONFIG_HOME"] = Path.Combine(HomeDir, ".config"),
+            ["XDG_STATE_HOME"] = Path.Combine(HomeDir, ".local", "state"),
+            ["CREDENTIALS_DIRECTORY"] = null,
         };
         if (withInstanceDir)
         {

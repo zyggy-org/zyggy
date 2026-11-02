@@ -297,7 +297,103 @@ public sealed class NodeHostPickupTests
         (await memory.Repo.GitAsync(memory.Repo.BareDir, ["rev-parse", "main"], ct)).Should().Be(memoryHead);
     }
 
+    [Fact]
+    public async Task Central_WithInstanceAndStubGraph_OneDriveItemPushedWhileRunning_Filed_NoDriveWriterInContainer()
+    {
+        // Arrange: plan 41 Step 12 — the production host with the instance's M365 configuration, the stub Graph handler injected.
+        var ct = TestContext.Current.CancellationToken;
+        await using NodeHostHarness harness = await NodeHostHarness.CreateAsync(ct);
+        await using var memory = new PickupArchiveMemory(m365: true);
+        await memory.InitializeAsync();
+        memory.Drive.Add(memory.Drive.Add(StubOneDrive.RootId, "calizr"), "staging-restore-notes.txt", Notes);
+        harness.WriteNodeJson(machine: Central, activeSeconds: 1, idleSeconds: 60);
+        harness.Environment = memory.Env();
+        using (IHost host = harness.Build(s => s.AddSingleton(memory.DriveOptions)))
+        {
+            host.Services.GetService<BusPickup>().Should().NotBeNull();
+            host.Services.GetService<Zyggy.Core.M365.Graph.IGraphDriveWriter>().Should().BeNull();
+        }
+
+        SeededJob? item = null;
+        var started = DateTimeOffset.UtcNow;
+
+        // Act
+        int exit = await harness.RunUntilAsync(
+            async () =>
+            {
+                if (item is null)
+                {
+                    if (!harness.LogLines.Any(l => l.Contains("listening", StringComparison.Ordinal) || l.Contains(" poll ", StringComparison.Ordinal)) && DateTimeOffset.UtcNow - started < TimeSpan.FromSeconds(3))
+                    {
+                        return false;
+                    }
+
+                    item = await harness.Bus.SeedSignedItemAsync(HomeLaptop, Central, TestKeys.Acme1, harness.Store, ItemFieldsFor(Notes, ItemRoute.OneDrive), [], DateTimeOffset.UtcNow, ct: ct);
+                    return false;
+                }
+
+                return !await harness.Bus.ExistsOnMainAsync(item.RelativePath, ct) && harness.LogLines.Any(l => l.Contains("items filed 1", StringComparison.Ordinal));
+            },
+            TimeSpan.FromSeconds(30),
+            ct,
+            s =>
+            {
+                s.AddSingleton(sp => sp.GetRequiredService<NodeConfiguration>().Poll.ToPollOptions());
+                s.AddSingleton(memory.DriveOptions);
+            });
+
+        // Assert
+        exit.Should().Be(0, string.Join('\n', harness.LogLines));
+        (await memory.Repo.ShowBytesAsync("acme/alice/archive/calizr/staging-restore-notes.txt", ct)).Should().Equal(Notes);
+        memory.Graph.Requests.Should().Contain(r => r.Uri.Host == StubGraphHandler.Download)
+            .And.NotContain(r => r.Method != HttpMethod.Get && !(r.Method == HttpMethod.Post && r.Uri.Host == "login.microsoftonline.com"));
+        memory.Drive.Puts.Should().Be(0);
+        harness.LogLines.Should().NotContain(l => l.Contains("Sunday's snapshot", StringComparison.Ordinal));
+        SecretSweep.AssertAbsent(harness.LogLines);
+    }
+
+    [Fact]
+    public async Task Central_NoM365Config_OneDriveItemWaits_ErrorNotConfiguredOnce_BusItemFiled()
+    {
+        // Arrange: spec 41 AC-37 — the instance has archive.json but no m365.json.
+        var ct = TestContext.Current.CancellationToken;
+        await using NodeHostHarness harness = await NodeHostHarness.CreateAsync(ct);
+        await using var memory = new PickupArchiveMemory();
+        await memory.InitializeAsync();
+        harness.WriteNodeJson(machine: Central);
+        harness.Environment = memory.Env();
+        SeededJob oneDrive = await harness.Bus.SeedSignedItemAsync(HomeLaptop, Central, TestKeys.Acme1, harness.Store, ItemFieldsFor(Notes, ItemRoute.OneDrive), [], DateTimeOffset.UtcNow, ct: ct);
+        SeededJob bus = await harness.Bus.SeedSignedItemAsync(
+            HomeLaptop, Central, TestKeys.Acme1, harness.Store, ItemFieldsFor(Notes, ItemRoute.Bus, "staging-notes-bus"), Notes, DateTimeOffset.UtcNow.AddSeconds(1), ct: ct);
+
+        // Act
+        int exit = await harness.RunUntilAsync(
+            async () => !await harness.Bus.ExistsOnMainAsync(bus.RelativePath, ct)
+                && harness.LogLines.Any(l => l.Contains("pickup: OneDrive fetch not configured", StringComparison.Ordinal)),
+            TimeSpan.FromSeconds(30),
+            ct,
+            s => s.AddSingleton(memory.DriveOptions));
+
+        // Assert
+        exit.Should().Be(0, string.Join('\n', harness.LogLines));
+        (await harness.Bus.ExistsOnMainAsync(oneDrive.RelativePath, ct)).Should().BeTrue();
+        (await memory.Repo.ShowBytesAsync("acme/alice/archive/calizr/staging-notes-bus.txt", ct)).Should().Equal(Notes);
+        harness.LogLines.Count(l => l.Contains("pickup: OneDrive fetch not configured", StringComparison.Ordinal)).Should().Be(1);
+        memory.Graph.Requests.Should().BeEmpty();
+    }
+
     private static readonly byte[] Notes = "# Staging restore\n\nRestore the staging database from Sunday's snapshot.\n"u8.ToArray();
+
+    private static ItemFields ItemFieldsFor(byte[] file, ItemRoute via, string slug = "staging-restore-notes") => new(
+        Zyggy.Core.Memory.Slug.Parse("calizr"),
+        Zyggy.Core.Memory.Slug.Parse(slug),
+        "Staging restore notes",
+        "How the staging database was restored",
+        "restore-notes.md",
+        file.Length,
+        Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(file)),
+        via,
+        via == ItemRoute.OneDrive ? slug + ".txt" : null);
 
     private static ItemFields ItemFieldsFor(byte[] file) => new(
         Zyggy.Core.Memory.Slug.Parse("calizr"),

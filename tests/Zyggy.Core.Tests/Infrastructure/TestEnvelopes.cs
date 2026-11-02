@@ -90,7 +90,13 @@ public static class TestEnvelopes
     }
 
     /// <summary>The bytes of a signed OneDrive-route item pointer (plan 41, additive): <c>drive_name</c> = <c>&lt;slug&gt;.txt</c>, empty body.</summary>
-    public static async Task<byte[]> SignedOneDriveItemBytesAsync(MachineName from, ISecretStore store, KeyId signWith, byte[] file, DateTimeOffset created, CancellationToken ct, EnvelopeId? id = null)
+    public static async Task<byte[]> SignedOneDriveItemBytesAsync(
+        MachineName from, ISecretStore store, KeyId signWith, byte[] file, DateTimeOffset created, CancellationToken ct, EnvelopeId? id = null, string driveName = "staging-restore-notes.txt") =>
+        EnvelopeWriter.Serialize(await SignedOneDriveItemAsync(from, store, signWith, file, created, ct, id, driveName));
+
+    /// <summary>A signed OneDrive-route item pointer (plan 41 Step 11): <c>drive_name</c> = <paramref name="driveName"/>, empty body.</summary>
+    public static async Task<Model> SignedOneDriveItemAsync(
+        MachineName from, ISecretStore store, KeyId signWith, byte[] file, DateTimeOffset created, CancellationToken ct, EnvelopeId? id = null, string driveName = "staging-restore-notes.txt")
     {
         var header = new EnvelopeHeader(signWith.Tenant, id ?? EnvelopeId.New(created), from, MachineName.Central, created);
         var fields = new ItemFields(
@@ -102,10 +108,10 @@ public static class TestEnvelopes
             file.Length,
             Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(file)),
             ItemRoute.OneDrive,
-            "staging-restore-notes.txt");
+            driveName);
         EnvelopeResult signed = await new EnvelopeSigner(store).SignAsync(Model.CreateItem(header, fields, ReadOnlyMemory<byte>.Empty), signWith, ct);
         signed.IsAccepted.Should().BeTrue(signed.Rejection?.ToString());
-        return EnvelopeWriter.Serialize(signed.Envelope!);
+        return signed.Envelope!;
     }
 
     /// <summary>The bytes of a signed job, optionally mutated after signing.</summary>

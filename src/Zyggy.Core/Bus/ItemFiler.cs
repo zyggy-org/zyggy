@@ -1,6 +1,7 @@
 using System.Globalization;
 
 using Zyggy.Core.Envelope;
+using Zyggy.Core.Media;
 using Zyggy.Core.Memory;
 
 using Model = Zyggy.Core.Envelope.Envelope;
@@ -34,6 +35,22 @@ internal sealed class ItemFiler(ArchiveService archive, ArchiveOptions options)
         return ItemBody.TryDecode(item, out byte[]? bytes)
             ? FileAsync(item, bytes, ct)
             : throw new InvalidOperationException("the bus item body does not decode");
+    }
+
+    /// <summary>
+    /// Spec 41 (plan Step 11): whether a <c>via: onedrive</c> item's <c>drive_name</c> extension differs from the type Central sniffs in
+    /// the downloaded bytes (<c>drive_mismatch (type)</c>). Bytes the sniff refuses are not a mismatch: the writer's checks refuse them.
+    /// </summary>
+    public static bool DriveTypeDiffers(ItemFields fields, byte[] bytes)
+    {
+        ArgumentNullException.ThrowIfNull(fields);
+        ArgumentNullException.ThrowIfNull(bytes);
+        string extension = Path.GetExtension(fields.DriveName ?? string.Empty).TrimStart('.');
+        string sourceExtension = Path.GetExtension(fields.SourceName);
+        bool markdownName = sourceExtension.Equals(".md", StringComparison.OrdinalIgnoreCase) || sourceExtension.Equals(".markdown", StringComparison.OrdinalIgnoreCase);
+        return MediaSniffer.Sniff(bytes, markdownName).MediaType is { } wire
+            && ArchiveMediaTypeWire.TryFromWire(wire, out ArchiveMediaType type)
+            && !string.Equals(ArchiveMediaTypeWire.Extension(type), extension, StringComparison.Ordinal);
     }
 
     /// <summary>Files <paramref name="bytes"/> under the item's signed project, slug, name, description and source name.</summary>
