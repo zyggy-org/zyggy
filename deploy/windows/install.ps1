@@ -20,16 +20,37 @@ param(
     [Parameter(Mandatory)] [string] $Machine,
     [string] $SignWith,
     [string] $BusLocalPath = 'C:\agents\bus',
-    [string] $Source = $PSScriptRoot,
-    [string] $NodeJson = (Join-Path $env:LOCALAPPDATA 'zyggy\node.json'),
+    [string] $Source,
+    [string] $NodeJson,
     [switch] $Uninstall
 )
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
+# The per-user folders come from the shell API, not the environment: $env:LOCALAPPDATA was empty in a Windows PowerShell 5.1
+# process started from pwsh 7 (seen 2026-11-02), and a param default built on it failed before any step ran.
+$localAppData = [Environment]::GetFolderPath('LocalApplicationData')
+$userProfile = [Environment]::GetFolderPath('UserProfile')
+if ([string]::IsNullOrWhiteSpace($localAppData)) {
+    Write-Host 'install: FAILED - this process has no per-user local application data folder'
+    Write-Host 'install: remedy - run the script from a normal logged-on PowerShell window of this user'
+    exit 1
+}
+if ([string]::IsNullOrWhiteSpace($NodeJson)) {
+    $NodeJson = Join-Path $localAppData 'zyggy\node.json'
+}
+# The release zip holds the binaries at its root and this script in deploy\windows: without -Source, the script's own folder
+# when it holds zyggy.exe, else the release root two levels up.
+if ([string]::IsNullOrWhiteSpace($Source)) {
+    $Source = $PSScriptRoot
+    if (-not (Test-Path (Join-Path $PSScriptRoot 'zyggy.exe'))) {
+        $Source = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+    }
+}
+
 $taskName = 'zyggy-node'
-$programs = Join-Path $env:LOCALAPPDATA 'Programs\Zyggy'
+$programs = Join-Path $localAppData 'Programs\Zyggy'
 $nodeExe = Join-Path $programs 'zyggy-node.exe'
 $zyggyExe = Join-Path $programs 'zyggy.exe'
 $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
@@ -42,6 +63,19 @@ function Fail([string] $reason, [string] $remedy) {
     Write-Host "install: FAILED - $reason"
     Write-Host "install: remedy - $remedy"
     exit 1
+}
+
+# Reads an optional property of a parsed node.json object; under strict mode a missing property would otherwise throw
+# PropertyNotFoundStrict before the script's own Fail and its remedy (seen 2026-11-02 on a 0.8.1 node.json without claude).
+function Get-Optional($object, [string] $name) {
+    if ($null -eq $object) {
+        return $null
+    }
+    $property = $object.PSObject.Properties[$name]
+    if ($null -eq $property) {
+        return $null
+    }
+    return $property.Value
 }
 
 function Get-TaskOrNull {
@@ -162,7 +196,7 @@ if (Test-Path $NodeJson) {
         Fail 'node.json is absent and -SignWith was not given' "run again with -SignWith $Tenant/<n> (the key number this machine signs with)"
     }
     $json = $template.Replace('<tenant>', $Tenant).Replace('<machine>', $Machine).Replace('<signWith>', $SignWith)
-    $json = $json.Replace('<busLocalPath>', $BusLocalPath.Replace('\', '/')).Replace('<userprofile>', $env:USERPROFILE.Replace('\', '/'))
+    $json = $json.Replace('<busLocalPath>', $BusLocalPath.Replace('\', '/')).Replace('<userprofile>', $userProfile.Replace('\', '/'))
     New-Item -ItemType Directory -Force -Path (Split-Path $NodeJson -Parent) | Out-Null
     [IO.File]::WriteAllText($NodeJson, $json, (New-Object Text.UTF8Encoding $false))
     Step "node.json: written ($NodeJson); edit workHours, maxConcurrentJobs or claude.path by hand if this laptop differs"
@@ -187,12 +221,16 @@ if ($secretList -match 'file secret store selected on Windows') {
 }
 if ($secretList -notmatch '(?m)^hmac/\d+\s.*\ssigns') {
     $config = Get-Content $NodeJson -Raw | ConvertFrom-Json
-    $keyNumber = ($config.signWith -split '/')[-1]
-    Fail "the signing key $($config.signWith) is not in this user's store" "zyggy secret set hmac/$keyNumber --hex  (paste the tenant's key at the hidden prompt; compare fingerprints with zyggy secret list)"
+    $signWith = [string](Get-Optional $config 'signWith')
+    $keyNumber = ($signWith -split '/')[-1]
+    if ([string]::IsNullOrWhiteSpace($keyNumber)) {
+        $keyNumber = '<n>'
+    }
+    Fail "the signing key $signWith is not in this user's store" "zyggy secret set hmac/$keyNumber --hex  (paste the tenant's key at the hidden prompt; compare fingerprints with zyggy secret list)"
 }
 Step 'secrets: the signing key is present (zyggy secret list shows it as signs)'
 $config = Get-Content $NodeJson -Raw | ConvertFrom-Json
-$claudePath = $config.claude.path
+$claudePath = [string](Get-Optional (Get-Optional $config 'claude') 'path')
 if ([string]::IsNullOrWhiteSpace($claudePath) -or -not (Test-Path $claudePath)) {
     Fail "claude.path ($claudePath) does not exist" 'install Claude Code for this user and set claude.path in node.json to its absolute path'
 }
@@ -223,5 +261,10 @@ do {
     $state = (Get-ScheduledTask -TaskName $taskName).State
 } while ($state -ne 'Running' -and (Get-Date) -lt $deadline)
 Step "task: $state"
-$status = (Invoke-Native $zyggyExe @('status', '--config', $NodeJson)) -split "`n" | Where-Object { $_ -notmatch '^\s*(info|warn|fail|crit):' -and $_.Trim() -ne '' } | Select-Object -First 1
+# Only the overview's first line (`node    <machine> (<tenant>) ...`): PowerShell 5.1 renders a merged stderr log line as
+# `zyggy.exe : info: ...`, so filtering log prefixes is not enough (seen 2026-11-02).
+$status = (Invoke-Native $zyggyExe @('status', '--config', $NodeJson)) -split "`r?`n" | Where-Object { $_ -match '^node\s' } | Select-Object -First 1
+if ($null -eq $status) {
+    $status = "no node line; run zyggy status --config $NodeJson"
+}
 Step "status: $status"

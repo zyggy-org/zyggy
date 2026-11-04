@@ -120,7 +120,65 @@ public sealed partial class InstallScriptTests
     {
         Code.Should().NotContain(forbidden);
         Code.Should().Contain("'User')");
-        Code.Should().Contain("$env:LOCALAPPDATA").And.Contain("Programs\\Zyggy");
+        Code.Should().Contain("GetFolderPath('LocalApplicationData')").And.Contain("Programs\\Zyggy");
+    }
+
+    [Fact]
+    public void Script_SourceNotGiven_UsesTheScriptFolderWhenItHoldsZyggyExeElseTheReleaseRoot()
+    {
+        // Bugfix 2026-11-02: `$Source = $PSScriptRoot` pointed at deploy\windows of the unpacked release, where the binaries are not.
+        // Act
+        string block = ParamBlock().Match(Text).Groups["block"].Value;
+
+        // Assert
+        block.Should().NotContain("$PSScriptRoot", "the default is computed in the body");
+        Code.Should().Contain("if ([string]::IsNullOrWhiteSpace($Source)) {");
+        Code.Should().Contain("Test-Path (Join-Path $PSScriptRoot 'zyggy.exe')");
+        Code.Should().Contain("Split-Path (Split-Path $PSScriptRoot -Parent) -Parent", "deploy\\windows -> the release root");
+        Code.IndexOf("IsNullOrWhiteSpace($Source)", StringComparison.Ordinal).Should().BeLessThan(Code.IndexOf("Join-Path $Source 'SHA256SUMS'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Script_LocalAppDataEmptyInTheProcess_PerUserFoldersComeFromGetFolderPathAndNodeJsonDefaultsInTheBody()
+    {
+        // Bugfix 2026-11-02: $env:LOCALAPPDATA was empty in a 5.1 process started from pwsh 7, and the param default
+        // `Join-Path $env:LOCALAPPDATA ...` failed at binding before any step ran.
+        // Act
+        string block = ParamBlock().Match(Text).Groups["block"].Value;
+
+        // Assert
+        block.Should().NotContain("Join-Path").And.NotContain("$env:");
+        Code.Should().NotContain("$env:LOCALAPPDATA").And.NotContain("$env:USERPROFILE");
+        Code.Should().Contain("[Environment]::GetFolderPath('LocalApplicationData')").And.Contain("[Environment]::GetFolderPath('UserProfile')");
+        Code.Should().Contain("if ([string]::IsNullOrWhiteSpace($NodeJson)) {");
+        Code.IndexOf("IsNullOrWhiteSpace($NodeJson)", StringComparison.Ordinal).Should().BeLessThan(Code.IndexOf("if ($Uninstall)", StringComparison.Ordinal), "the uninstall branch names node.json too");
+    }
+
+    [Fact]
+    public void Script_NodeJsonWithoutClaudeOrSignWith_ReadsOptionalPropertiesWithoutAStrictModeCrash()
+    {
+        // Bugfix 2026-11-02: under Set-StrictMode -Version 2.0 `$config.claude.path` threw PropertyNotFoundStrict on a 0.8.1
+        // node.json without a claude object, instead of reaching the script's own Fail with its remedy.
+        // Act
+        var directReads = Regex.Matches(Code, @"\$config\.[A-Za-z]").Select(m => m.Value).ToList();
+
+        // Assert
+        Code.Should().Contain("Set-StrictMode -Version 2.0");
+        directReads.Should().BeEmpty("every node.json property is read through PSObject.Properties");
+        Code.Should().Contain("PSObject.Properties");
+        Code.Should().Contain("Fail \"claude.path ($claudePath) does not exist\"");
+    }
+
+    [Fact]
+    public void Script_StatusStep_PrintsTheFirstNodeLineNotALogLine()
+    {
+        // Bugfix 2026-11-02: PowerShell 5.1 renders a merged stderr line as `zyggy.exe : info: ...`, which slipped past the
+        // `^\s*info:` filter and was printed as the status line.
+        // Act
+        string statusLine = DeployAssets.Lines(Code).Single(l => l.Contains("@('status'", StringComparison.Ordinal));
+
+        // Assert
+        statusLine.Should().Contain("-match '^node\\s'").And.Contain("Select-Object -First 1");
     }
 
     [Theory]

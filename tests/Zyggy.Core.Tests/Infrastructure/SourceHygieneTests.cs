@@ -286,12 +286,13 @@ public sealed partial class SourceHygieneTests
 
     [Theory]
     [InlineData("api.github.com")]
-    [InlineData("github.com")]
+    [InlineData("github.com", "src/Zyggy.Core/Setup/SetupRequest.cs")]
     [InlineData("x-ratelimit")]
     [InlineData("x-poll-interval")]
-    public void Src_GitHubLiterals_OnlyInGitHubBusProvider(string literal)
+    public void Src_GitHubLiterals_OnlyInGitHubBusProvider(string literal, string? alsoAllowed = null)
     {
-        // Arrange: spec 04 AC-2 — only the GitHub implementation of IBusProvider knows GitHub (the file arrives in Step 4)
+        // Arrange: spec 04 AC-2 — only the GitHub implementation of IBusProvider knows GitHub (the file arrives in Step 4); spec 42 adds
+        // the public zyggy-core template remote SetupRequest.DefaultCoreRemote (a clone URL, never the bus or its API)
         const string Allowed = "src/Zyggy.Core/Bus/GitHubBusProvider.cs";
 
         // Act
@@ -301,7 +302,7 @@ public sealed partial class SourceHygieneTests
             .ToList();
 
         // Assert
-        holders.Should().BeSubsetOf([Allowed]);
+        holders.Should().BeSubsetOf(alsoAllowed is null ? [Allowed] : [Allowed, alsoAllowed]);
     }
 
     [Fact]
@@ -336,13 +337,15 @@ public sealed partial class SourceHygieneTests
     public void Src_ClaudeProgramLiteral_OnlyInModelAdapterAndM365Preflight()
     {
         // Arrange: spec 06 AC-16 — "claude" as a program name lives in the model adapter; RunPreflight's is 33's (plan 06 A5), and
-        // NodeConfigurationReader's is the node.json section key, not a program name (spec 06 Configuration).
+        // NodeConfigurationReader's is the node.json section key, not a program name (spec 06 Configuration); so is
+        // NodeJsonCompletion's, which completes that section's path (spec 42 AC-7).
         string[] allowed =
         [
             "src/Zyggy.Core/Configuration/NodeConfigurationReader.cs",
             "src/Zyggy.Core/M365/Runs/RunPreflight.cs",
             "src/Zyggy.Core/Models/ClaudeCodeCliRunner.cs",
             "src/Zyggy.Core/Models/ClaudeCodeOptions.cs",
+            "src/Zyggy.Core/Setup/NodeJsonCompletion.cs",
         ];
 
         // Act
