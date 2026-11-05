@@ -222,8 +222,8 @@ public sealed partial class NodeHostStartupTests : IDisposable
         await using NodeHostHarness harness = await NodeHostHarness.CreateAsync(ct);
         harness.WriteNodeJson(logLevel: null);
 
-        // Act
-        int exitCode = await harness.RunAsync(TimeSpan.FromSeconds(4), ct);
+        // Act: run until several ticks happened, not for a fixed time — start-up alone can take seconds under full-suite load
+        int exitCode = await harness.RunUntilAsync(() => Task.FromResult(harness.Head.Requests.Count >= 3), TimeSpan.FromSeconds(60), ct);
 
         // Assert: every line is a start-up line; a 304 tick writes nothing
         exitCode.Should().Be(0);

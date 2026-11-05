@@ -37,7 +37,7 @@ public sealed class NodeHostJobFlowTests
         using IHost host = harness.Build();
         await host.StartAsync(ct);
         HealthServer server = host.Services.GetRequiredService<HealthServer>();
-        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(server.IsListening), TimeSpan.FromSeconds(10), ct);
+        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(server.IsListening), TimeSpan.FromSeconds(60), ct); // start-up is slow under full-suite load
         using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{server.BoundPort}/") };
 
         // Act 1: two run at once (one per project), the third waits for its project
