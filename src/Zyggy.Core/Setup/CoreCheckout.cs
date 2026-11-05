@@ -9,17 +9,18 @@ namespace Zyggy.Core.Setup;
 /// The <c>zyggy-core</c> item of <c>zyggy setup</c> (spec 42 AC-18, plan 42 A6/R6): clones the template on <c>main</c> when the folder is
 /// absent (or empty), fast-forwards a clean checkout on <c>main</c>, leaves a dirty, other-branch or diverged checkout as it is, and refuses a
 /// folder that is not a checkout of its own or has another <c>origin</c>. Git runs through <see cref="GitClient"/> only, never prompts
-/// (<c>GIT_TERMINAL_PROMPT=0</c>, <c>GCM_INTERACTIVE=never</c>), and nothing is ever reset, stashed or deleted.
+/// (<c>GIT_TERMINAL_PROMPT=0</c>, <c>GCM_INTERACTIVE=never</c>), speaks English (<c>LC_ALL=C</c>, so the diverged refusal text is recognised),
+/// and nothing is ever reset, stashed or deleted.
 /// </summary>
 internal sealed class CoreCheckout(GitClient git)
 {
     private const string Branch = "main";
     private const int ShortSha = 12;
 
-    /// <summary>The checkout over <paramref name="processes"/>: <paramref name="gitEnvironment"/> plus <c>GCM_INTERACTIVE=never</c> on every call.</summary>
+    /// <summary>The checkout over <paramref name="processes"/>: <paramref name="gitEnvironment"/> plus <c>GCM_INTERACTIVE=never</c> and <c>LC_ALL=C</c> on every call.</summary>
     public static CoreCheckout Create(IProcessRunner processes, IReadOnlyDictionary<string, string?> gitEnvironment, TimeProvider clock)
     {
-        var environment = new Dictionary<string, string?>(gitEnvironment) { ["GCM_INTERACTIVE"] = "never" };
+        var environment = new Dictionary<string, string?>(gitEnvironment) { ["GCM_INTERACTIVE"] = "never", ["LC_ALL"] = "C" };
         return new CoreCheckout(new GitClient(processes, new GitClientOptions { Environment = environment, Timeout = TimeSpan.FromMinutes(5) }, clock));
     }
 

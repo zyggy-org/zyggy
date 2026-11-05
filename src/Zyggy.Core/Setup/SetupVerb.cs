@@ -18,6 +18,8 @@ public sealed class SetupVerb
 {
     private const string Central = "central";
 
+    private static readonly (SetupItem Item, string Name)[] Skills = [(SetupItem.SkillRemember, "remember"), (SetupItem.SkillArchive, "archive")];
+
     private readonly IReadOnlyDictionary<string, string?> _environment;
     private readonly Func<NodeConfiguration, ISecretStore> _stores;
     private readonly CoreCheckout _checkout;
@@ -90,6 +92,21 @@ public sealed class SetupVerb
 
         SetupLine core = await _checkout.ApplyAsync(request.CorePath, request.CoreRemote, ct).ConfigureAwait(false);
         await PrintAsync(io, lines, [core], signWith).ConfigureAwait(false);
+
+        // The settings env value is written whatever the checkout's outcome; the skills need the checkout's files (plan 42 R5).
+        string corePath = Path.GetFullPath(request.CorePath);
+        string claudeDir = Path.GetFullPath(request.ClaudeDir);
+        IReadOnlyList<SetupLine> settings = ClaudeSettingsMerge.Apply(SetupPaths.SettingsFile(claudeDir), SetupPaths.SecretPatterns(corePath), request.BackupStamp);
+        await PrintAsync(io, lines, settings, signWith).ConfigureAwait(false);
+        foreach ((SetupItem item, string name) in Skills)
+        {
+            SetupLine skill = SkillInstaller.Apply(
+                item,
+                SetupPaths.SkillSource(corePath, name),
+                SetupPaths.SkillTarget(claudeDir, name),
+                SetupPaths.SkillBackup(request.LocalAppData, request.BackupStamp, name));
+            await PrintAsync(io, lines, [skill], signWith).ConfigureAwait(false);
+        }
 
         IReadOnlyList<SetupLine> secrets = await SecretReport.ReportAsync(_stores(configuration), request, signWith, configuration.Secrets.Store, ct).ConfigureAwait(false);
         await PrintAsync(io, lines, secrets, signWith).ConfigureAwait(false);

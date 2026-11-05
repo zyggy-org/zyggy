@@ -94,14 +94,34 @@ internal sealed class SetupTestFiles : IDisposable
         TenantId.Parse(tenant),
         MachineName.Parse(machine),
         signWith,
-        Path.Combine(Root, "core"),
+        CorePath,
         new Uri(SetupRequest.DefaultCoreRemote),
         Path.Combine(UserProfile, ".claude"),
         UserProfile,
         LocalAppData,
         Now);
 
+    /// <summary>The <c>zyggy-core</c> checkout of <see cref="Request"/>.</summary>
+    public string CorePath => Path.Combine(Root, "core");
+
+    /// <summary>
+    /// What a clone of the template leaves at <see cref="CorePath"/> for the settings and skill items (Step 5): both node skills and the
+    /// secret-pattern file (the recorded git runner never writes files itself).
+    /// </summary>
+    public void SeedCoreTemplate()
+    {
+        WriteFile(Path.Combine(CorePath, "node", "skills", "remember", "SKILL.md"), "---\nname: remember\n---\nKeep a fact the owner stated.\n");
+        WriteFile(Path.Combine(CorePath, "node", "skills", "archive", "SKILL.md"), "---\nname: archive\n---\nKeep a file the owner handed over.\n");
+        WriteFile(Path.Combine(CorePath, ".claude", "hooks", "secret-patterns.txt"), "synthetic-pattern-[0-9]{8}\n");
+    }
+
     public static string Slashes(string path) => path.Replace('\\', '/');
+
+    private static void WriteFile(string path, string content)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, content);
+    }
 
     public void Dispose()
     {

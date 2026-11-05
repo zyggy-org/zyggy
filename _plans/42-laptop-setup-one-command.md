@@ -267,16 +267,16 @@ definition of done. Never the real claude, never GitHub, never a real PowerShell
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: `CoreCheckoutTests`, `SetupCoreCheckoutTests` green; the executor shows the recorded git argument vectors of one clone run and one second run.
-- [ ] Contract review: the five states and their lines (A6 against AC-18); `main` by fast-forward only (Q3, W42-4); `--core-remote` documented as "for tests and forks"; the default `--core-path` per OS.
-- [ ] ⚠️ Risk review: every git call carries the two no-prompt variables and no credential source (§5/§8: a public clone needs none); no proxy set by `setup`; a `left as is` checkout is never reset or stashed; nothing committed in any repository.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `CoreCheckoutTests`, `SetupCoreCheckoutTests` green; the executor shows the recorded git argument vectors of one clone run and one second run.
+- [x] Contract review: the five states and their lines (A6 against AC-18); `main` by fast-forward only (Q3, W42-4); `--core-remote` documented as "for tests and forks"; the default `--core-path` per OS. *(Owner approved 2026-11-04: up-to-date by HEAD comparison, checkout identity by `--show-prefix`, an empty folder is cloned into, `LC_ALL=C` added to the setup git environment so the diverged text is always English.)*
+- [x] ⚠️ Risk review: every git call carries the two no-prompt variables and no credential source (§5/§8: a public clone needs none); no proxy set by `setup`; a `left as is` checkout is never reset or stashed; nothing committed in any repository.
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 5 — Wire the user-scope Claude Code settings and the two skills on temp directories: `settings.json` created with exactly `env.ZYGGY_SECRET_PATTERNS` and the three deny rules when absent, merged additively with a backup when present (existing keys, values and order kept, `deny`/`allow` never shortened, `hooks` never touched, an existing other `ZYGGY_SECRET_PATTERNS` left as is and failed only when its file is missing, invalid JSON / empty file / BOM handled), `remember` and `archive` copied from `<core>/node/skills/` with a differing folder moved to `<LocalAppData>/zyggy/backup/<stamp>/skills/<name>/` first; `--claude-dir` / `CLAUDE_CONFIG_DIR` decide the target
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Setup/ClaudeSettingsMerge.cs` *(create)*: `internal static class ClaudeSettingsMerge { public static IReadOnlyList<SetupLine> Apply(string settingsFile, string patternsFile, string stamp); public static readonly string[] DenyRules = ["Bash(zyggy secret*)", "Bash(zyggy context --stop-hook*)", "Bash(zyggy context --flush*)"]; }` (A7).
@@ -319,7 +319,7 @@ definition of done. Never the real claude, never GitHub, never a real PowerShell
 
 ## Step 6 — The whole verb end to end on a temp profile with a bare `zyggy-core` stand-in and a file secret store: the first `zyggy setup` run completes the spike-shaped `node.json`, clones the template, creates `settings.json`, copies both skills and reports both secrets present (exit 0, nine lines in order); the second identical run prints only `already done` lines, creates no backup and rewrites no file (content and last-write time unchanged); with `github-pat` missing the exit is 6 and the line names `zyggy secret set github-pat`; with an invalid `settings.json` the file is untouched and the exit is 6; `CLAUDE_CONFIG_DIR` redirects the settings and skills; no secret value appears in any stream, file or process argument
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `tests/Zyggy.Integration/Setup/SetupEndToEndTests.cs` *(create)*.

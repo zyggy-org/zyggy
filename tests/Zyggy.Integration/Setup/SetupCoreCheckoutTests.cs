@@ -164,6 +164,7 @@ public sealed class SetupCoreCheckoutTests
             c.FileName.Should().Be("git");
             c.Environment["GIT_TERMINAL_PROMPT"].Should().Be("0");
             c.Environment["GCM_INTERACTIVE"].Should().Be("never");
+            c.Environment["LC_ALL"].Should().Be("C");
             c.Environment.Should().NotContainKey("GIT_ASKPASS");
             c.Arguments.Should().NotContain(a => a.Contains("credential", StringComparison.OrdinalIgnoreCase));
         });

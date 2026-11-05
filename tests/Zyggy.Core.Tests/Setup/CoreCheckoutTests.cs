@@ -217,7 +217,7 @@ public sealed class CoreCheckoutTests : IDisposable
     public async Task ApplyAsync_EveryGitCall_NoPromptVariablesAndNoCredentialSource()
     {
         // Arrange: a clone run, then a pull run over an existing folder; the isolation hook even tries to make GCM interactive
-        var hook = new Dictionary<string, string?> { ["GIT_CONFIG_GLOBAL"] = "gitconfig", ["GCM_INTERACTIVE"] = "always" };
+        var hook = new Dictionary<string, string?> { ["GIT_CONFIG_GLOBAL"] = "gitconfig", ["GCM_INTERACTIVE"] = "always", ["LC_ALL"] = "de_DE.UTF-8" };
         CoreCheckout checkout = CoreCheckout.Create(_processes, hook, _clock);
         await checkout.ApplyAsync(CorePath, Remote, Ct);
         ExistingClone();
@@ -231,6 +231,7 @@ public sealed class CoreCheckoutTests : IDisposable
                 c.FileName == "git"
                 && c.Environment["GIT_TERMINAL_PROMPT"] == "0"
                 && c.Environment["GCM_INTERACTIVE"] == "never"
+                && c.Environment["LC_ALL"] == "C"
                 && c.Environment["GIT_CONFIG_GLOBAL"] == "gitconfig"
                 && !c.Environment.ContainsKey("GIT_ASKPASS")
                 && !c.Arguments.Any(a => a.Contains("credential", StringComparison.OrdinalIgnoreCase)))

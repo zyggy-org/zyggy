@@ -20,7 +20,7 @@ public sealed partial class SetupCommandTests
     private static string PatFingerprint => SecretFingerprint.Of(Encoding.UTF8.GetBytes(TestKeys.TestPat));
 
     [Fact]
-    public async Task Setup_OldSpikeNodeJsonWithoutClaudeOrSignWith_SignWithGiven_CompletedWithBackup_SecretLinesPresent_ExitZeroOrSix()
+    public async Task Setup_OldSpikeNodeJsonWithoutClaudeOrSignWith_SignWithGiven_CompletedWithBackup_AllEightLines_ExitZero()
     {
         // Arrange
         await using SetupHarness harness = await SetupHarness.CreateAsync(Ct);
@@ -31,17 +31,13 @@ public sealed partial class SetupCommandTests
         // Act
         (int exit, VerbConsole console) = await harness.RunAsync(harness.Args(signWith: "acme/1"), Ct);
 
-        // Assert: exit 0 while settings and skills are not built yet (revisited in Step 6)
+        // Assert: a file store, so no spike line: eight lines
         exit.Should().Be(SetupExit.Ok, console.Stdout + console.Stderr);
         string backup = Directory.GetFiles(Path.GetDirectoryName(config)!, "node.json.bak-*").Should().ContainSingle().Subject;
         BackupSuffix().IsMatch(backup).Should().BeTrue(backup);
         File.ReadAllBytes(backup).Should().Equal(original);
         string[] lines = console.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        lines.Should().Equal(
-            $"setup: node.json: done - added claude.path; added signWith (backup {backup})",
-            $"setup: zyggy-core: done - cloned {harness.CoreRemote} at {head[..12]}",
-            $"setup: signing key acme/1: already done - present (fingerprint {SecretFingerprint.Of(TestKeys.Secret1)})",
-            $"setup: github-pat: already done - present (fingerprint {PatFingerprint})");
+        lines.Should().Equal(harness.FirstRunLines($"added claude.path; added signWith (backup {backup})", head));
         JsonNode written = JsonNode.Parse(File.ReadAllText(config))!;
         written["claude"]!["path"]!.GetValue<string>().Should().Be(Path.GetFullPath(harness.ClaudeExe).Replace('\\', '/'));
         written["signWith"]!.GetValue<string>().Should().Be("acme/1");
@@ -112,7 +108,7 @@ public sealed partial class SetupCommandTests
 
         // Assert
         exit.Should().Be(SetupExit.SigningKeyMissing);
-        console.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Skip(2).Should().Equal(
+        console.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Skip(6).Should().Equal(
             "setup: signing key acme/1: missing - run: zyggy secret set hmac/1 --hex",
             $"setup: github-pat: already done - present (fingerprint {PatFingerprint})");
     }

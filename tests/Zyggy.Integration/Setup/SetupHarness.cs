@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Zyggy.Core.Bus;
 using Zyggy.Core.Processes;
 using Zyggy.Core.Secrets;
+using Zyggy.Core.Setup;
 using Zyggy.Core.Tenancy;
 using Zyggy.Core.Tests.Infrastructure;
 using Zyggy.Integration.Infrastructure;
@@ -57,6 +58,31 @@ internal sealed class SetupHarness : IAsyncDisposable
     public string CoreRemote => Core.RemoteUrl;
 
     public string ConfigPath => Path.Combine(Scratch.File("config"), "node.json");
+
+    /// <summary>The user-scope Claude Code directory of the temp profile (no <c>CLAUDE_CONFIG_DIR</c>, no <c>--claude-dir</c>).</summary>
+    public string ClaudeDir => Path.Combine(Profile, ".claude");
+
+    /// <summary>The user-scope <c>settings.json</c> under <see cref="ClaudeDir"/>.</summary>
+    public string SettingsFile => SetupPaths.SettingsFile(ClaudeDir);
+
+    /// <summary>The value <c>setup</c> writes into <c>env.ZYGGY_SECRET_PATTERNS</c> for <see cref="CorePath"/>.</summary>
+    public string Patterns => SetupPaths.SecretPatterns(CorePath);
+
+    /// <summary>
+    /// The eight lines of a first run over the spike <c>node.json</c> (file store, so no spike line), given the <c>node.json</c> line's detail
+    /// and the template's <c>main</c>: everything done, both secrets present.
+    /// </summary>
+    public string[] FirstRunLines(string nodeJsonDetail, string head) =>
+    [
+        "setup: node.json: done - " + nodeJsonDetail,
+        $"setup: zyggy-core: done - cloned {CoreRemote} at {head[..12]}",
+        $"setup: settings: done - env.ZYGGY_SECRET_PATTERNS set to {Patterns} (created {SettingsFile})",
+        $"setup: settings: done - permissions.deny gained Bash(zyggy secret*), Bash(zyggy context --stop-hook*), Bash(zyggy context --flush*) (created {SettingsFile})",
+        $"setup: skill remember: done - copied from {SetupPaths.SkillSource(CorePath, "remember")}",
+        $"setup: skill archive: done - copied from {SetupPaths.SkillSource(CorePath, "archive")}",
+        $"setup: signing key acme/1: already done - present (fingerprint {SecretFingerprint.Of(TestKeys.Secret1)})",
+        $"setup: github-pat: already done - present (fingerprint {SecretFingerprint.Of(Encoding.UTF8.GetBytes(TestKeys.TestPat))})",
+    ];
 
     /// <summary>A profile whose file store holds <c>acme/1</c> and the PAT (or only what <paramref name="signingKey"/>/<paramref name="pat"/> allow).</summary>
     public static async Task<SetupHarness> CreateAsync(CancellationToken ct, bool signingKey = true, bool pat = true)
@@ -136,6 +162,60 @@ internal sealed class SetupHarness : IAsyncDisposable
     /// <summary>Runs <c>zyggy</c> in process with the harness's environment, recorded processes and git isolation.</summary>
     public Task<(int Exit, VerbConsole Console)> RunAsync(string[] args, CancellationToken ct) =>
         ZyggyCliInProcess.RunAsync(args, Environment(), Configure, stdin: null, ct);
+
+    /// <summary>
+    /// Runs <c>zyggy</c> in process with <paramref name="extraEnvironment"/> over the harness's environment (e.g. <c>CLAUDE_CONFIG_DIR</c>) and
+    /// <paramref name="more"/> registered after the harness's own services (e.g. a file store standing in for the OS store).
+    /// </summary>
+    public Task<(int Exit, VerbConsole Console)> RunAsync(string[] args, IReadOnlyDictionary<string, string?>? extraEnvironment, Action<IServiceCollection>? more, CancellationToken ct)
+    {
+        Dictionary<string, string?> environment = Environment();
+        foreach ((string key, string? value) in extraEnvironment ?? new Dictionary<string, string?>())
+        {
+            environment[key] = value;
+        }
+
+        return ZyggyCliInProcess.RunAsync(args, environment, services =>
+        {
+            Configure(services);
+            more?.Invoke(services);
+        }, stdin: null, ct);
+    }
+
+    /// <summary>Writes <paramref name="json"/> as the user-scope <c>settings.json</c> (no BOM) and returns the path.</summary>
+    public string SeedSettings(string json)
+    {
+        Directory.CreateDirectory(ClaudeDir);
+        File.WriteAllText(SettingsFile, json, new UTF8Encoding(false));
+        return SettingsFile;
+    }
+
+    /// <summary>Writes a user-scope skill <c>&lt;claude-dir&gt;/skills/&lt;name&gt;/SKILL.md</c> with <paramref name="content"/> and returns its folder.</summary>
+    public string SeedSkill(string name, string content)
+    {
+        string folder = SetupPaths.SkillTarget(ClaudeDir, name);
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "SKILL.md"), content, new UTF8Encoding(false));
+        return folder;
+    }
+
+    /// <summary>
+    /// The owner-visible state for AC-21: every file under the profile (the claude directory and the checkout's working tree included, every
+    /// <c>.git</c> folder excluded — a fetch touches those), under <c>localappdata/</c> and beside <c>node.json</c>, as relative path →
+    /// (SHA-256, last-write time).
+    /// </summary>
+    public IReadOnlyDictionary<string, (string Sha256, DateTime LastWriteUtc)> Snapshot()
+    {
+        string gitSegment = Path.DirectorySeparatorChar + ".git" + Path.DirectorySeparatorChar;
+        return new[] { Profile, LocalAppData, Path.GetDirectoryName(ConfigPath)! }
+            .Where(Directory.Exists)
+            .SelectMany(root => Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+            .Where(f => !f.Contains(gitSegment, StringComparison.Ordinal))
+            .ToDictionary(
+                f => Path.GetRelativePath(Scratch.Path, f),
+                f => (Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(f))), File.GetLastWriteTimeUtc(f)),
+                StringComparer.Ordinal);
+    }
 
     /// <summary>Every file under the scratch root, with its content and last-write time.</summary>
     public IReadOnlyDictionary<string, (string Content, DateTime LastWriteUtc)> WrittenFiles() =>
