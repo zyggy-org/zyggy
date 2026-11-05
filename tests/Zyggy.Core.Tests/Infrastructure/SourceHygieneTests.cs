@@ -1136,6 +1136,79 @@ public sealed partial class SourceHygieneTests
         }
     }
 
+    // Spec 42 AC-24/AC-28, plan 42 Step 8: every failure mode of `zyggy setup` and the installer has its row in the Cli README, the Core
+    // and deploy READMEs document the new surface, and the files the deliverable added use placeholder identities only.
+    [Fact]
+    public void Readmes_SetupDocumented()
+    {
+        // Arrange
+        static string Read(string relative) => File.ReadAllText(Path.Combine(RepoRoot(), relative));
+        var cli = Read("src/Zyggy.Cli/README.md");
+        var core = Read("src/Zyggy.Core/README.md");
+        var deploy = Read("deploy/README.md");
+
+        // Act + Assert
+        foreach (var text in new[]
+                 {
+                     "| `setup --config", "## Troubleshooting — Setup", "Old zyggy still on PATH", "Old node holds port 4711", "`node.json` refused by setup",
+                     "GitHub token missing", "Spike file store left on the laptop", "Claude settings not valid JSON — left untouched",
+                     "zyggy-core clone fails behind the proxy", "zyggy-core path taken", "zyggy-core not updated", "PATH or settings not seen",
+                     "`/status`", "`setup` never writes managed files", "`install.ps1` (`zyggy setup`) sets it", "setup: spike file store: left as is",
+                 })
+        {
+            cli.Should().Contain(text);
+        }
+
+        foreach (var text in new[] { "Setup/", "CoreCheckout", "ClaudeSettingsMerge", "SkillInstaller", "3 > 4 > 6 > 0" })
+        {
+            core.Should().Contain(text);
+        }
+
+        deploy.Should().Contain("-CorePath").And.Contain("zyggy setup").And.Contain("the laptop runbook is one command: `zyggy-core/runbooks/install-node.md` \"Laptop\"");
+    }
+
+    [Fact]
+    public void SetupFiles_NonDefaultIdentityOnly()
+    {
+        // Arrange: the one address allowed is the harness's git committer, the same placeholder every fixture uses
+        const string Committer = "test@zyggy.org";
+        var texts = SetupFiles().ToDictionary(f => f, f => File.ReadAllText(Path.Combine(RepoRoot(), f)), StringComparer.Ordinal);
+
+        // Act
+        var offenders = texts.Where(kv =>
+                kv.Value.Contains("geoffrey", StringComparison.OrdinalIgnoreCase)
+                || MailAddress().Matches(kv.Value).Any(m => AnyAddress().Matches(m.Value).Any(a => !string.Equals(a.Value, Committer, StringComparison.Ordinal)))
+                || GuidLiteral().IsMatch(kv.Value)
+                || kv.Value.Contains("/srv/", StringComparison.Ordinal)
+                || kv.Value.Contains("/home/", StringComparison.Ordinal)
+                || kv.Value.Contains("/Users/", StringComparison.Ordinal)
+                || kv.Value.Contains("C:\\Users\\", StringComparison.Ordinal))
+            .Select(kv => kv.Key)
+            .ToList();
+
+        // Assert
+        texts.Should().HaveCountGreaterThanOrEqualTo(30);
+        offenders.Should().BeEmpty();
+        foreach (var label in new[] { "acme", "home-laptop" })
+        {
+            texts.Values.Should().Contain(t => t.Contains(label, StringComparison.Ordinal), label);
+        }
+    }
+
+    /// <summary>The files plan 42 (laptop setup in one command) added under src/ and tests/.</summary>
+    private static List<string> SetupFiles()
+    {
+        string[] folders = ["src/Zyggy.Core/Setup", "tests/Zyggy.Core.Tests/Setup", "tests/Zyggy.Integration/Setup"];
+        string[] named = ["src/Zyggy.Cli/Commands/SetupCommand.cs", "tests/Zyggy.Integration/Infrastructure/CoreTemplateFixture.cs"];
+        return folders
+            .SelectMany(d => Directory.EnumerateFiles(Path.Combine(RepoRoot(), d), "*", SearchOption.AllDirectories))
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .Concat(named)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+    }
+
     /// <summary>The files plan 41 (archive from any node) added under src/, tests/ and deploy/, plus every test file named after its types.</summary>
     private static List<string> ArchiveFromNodeFiles()
     {

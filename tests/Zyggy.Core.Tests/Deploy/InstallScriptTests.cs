@@ -59,10 +59,11 @@ public sealed partial class InstallScriptTests
         var names = Regex.Matches(block, @"\]\s*\$(?<name>[A-Za-z]+)").Select(m => m.Groups["name"].Value).Distinct(StringComparer.Ordinal).ToList();
 
         // Assert
-        names.Should().Equal("Tenant", "Machine", "SignWith", "BusLocalPath", "Source", "NodeJson", "Uninstall");
+        names.Should().Equal("Tenant", "Machine", "SignWith", "BusLocalPath", "CorePath", "Source", "NodeJson", "Uninstall");
         block.Should().MatchRegex(@"\[Parameter\(Mandatory\)\]\s*\[string\]\s*\$Tenant");
         block.Should().MatchRegex(@"\[Parameter\(Mandatory\)\]\s*\[string\]\s*\$Machine");
         block.Should().Contain("$BusLocalPath = 'C:\\agents\\bus'");
+        block.Should().Contain("$CorePath = 'C:\\agents\\zyggy-core'");
         block.Should().MatchRegex(@"\[switch\]\s*\$Uninstall");
     }
 
@@ -210,6 +211,7 @@ public sealed partial class InstallScriptTests
     [InlineData("core.autocrlf false")]
     [InlineData("git clone https://github.com/zyggy-org/zyggy-bus.git")]
     [InlineData("claude.path")]
+    [InlineData(".local\\bin\\claude.exe")]
     public void Script_PreflightNamesTheTwoRefusalRemedies(string token)
     {
         Text.Should().Contain(token);
@@ -242,13 +244,16 @@ public sealed partial class InstallScriptTests
         // Act
         var stopLines = DeployAssets.Lines(Code).Where(l => l.Contains("Stop-ScheduledTask", StringComparison.Ordinal)).ToList();
         string helper = Regex.Match(Code, @"function Stop-Node\b.*?\n\}", RegexOptions.Singleline).Value;
+        string processes = Regex.Match(Code, @"function Stop-NodeProcesses\b.*?\n\}", RegexOptions.Singleline).Value;
 
         // Assert
         helper.Should().NotBeEmpty("the stop lives in one helper");
+        processes.Should().NotBeEmpty("the wait-then-force pattern lives in one helper (plan 42 Step 7)");
         stopLines.Should().ContainSingle("every stop goes through the helper");
         helper.Should().Contain(stopLines[0]);
-        helper.Should().Contain("Get-Process -Name zyggy-node").And.Contain("$nodeExe").And.Contain("Wait-Process").And.Contain("Stop-Process -Force");
-        DeployAssets.Lines(Code).Count(l => l.TrimStart().StartsWith("Stop-Node", StringComparison.Ordinal)).Should().Be(2, "the uninstall branch and the upgrade both stop through it");
+        helper.Should().Contain("Get-Process -Name zyggy-node").And.Contain("$nodeExe").And.Contain("Stop-NodeProcesses");
+        processes.Should().Contain("Wait-Process").And.Contain("Stop-Process -Force");
+        DeployAssets.Lines(Code).Count(l => l.TrimStart().StartsWith("Stop-Node ", StringComparison.Ordinal)).Should().Be(2, "the uninstall branch and the upgrade both stop through it");
     }
 
     [Fact]
@@ -264,7 +269,101 @@ public sealed partial class InstallScriptTests
         helper.Should().NotBeEmpty("native output is read in one place");
         helper.Should().Contain("$ErrorActionPreference = 'Continue'").And.Contain("2>&1").And.Contain("Out-String");
         mergesOutsideHelper.Should().BeEmpty("no other line merges or discards a native command's stderr");
-        DeployAssets.Lines(Code).Count(l => l.Contains("Invoke-Native ", StringComparison.Ordinal) && !l.TrimStart().StartsWith("function", StringComparison.Ordinal)).Should().Be(3, "git --version, secret list and status");
+        DeployAssets.Lines(Code).Count(l => l.Contains("Invoke-Native ", StringComparison.Ordinal) && !l.TrimStart().StartsWith("function", StringComparison.Ordinal)).Should().Be(3, "git --version, setup and status");
+    }
+
+    [Fact]
+    public void Script_Step2_RemovesAnOlderZyggyFolderFromTheUserPathOnlyWhenItHoldsOnlyZyggyFiles_NeverDeletesIt()
+    {
+        // Spec 42 AC-1/AC-2, R3: the user PATH only, only a zyggy*-only folder, files kept; other copies get one warning line.
+        // Act
+        string oldDirs = DeployAssets.Lines(Code).Single(l => l.TrimStart().StartsWith("$oldDirs =", StringComparison.Ordinal));
+        Match removal = Regex.Match(Code, @"try \{\n(?<body>(?:(?!\} catch \{).)*?)\} catch \{\n\s*Step ""warning: could not remove \$dir from the user PATH: ", RegexOptions.Singleline);
+        var removeItems = DeployAssets.Lines(Code).Where(l => l.Contains("Remove-Item", StringComparison.Ordinal)).ToList();
+
+        // Assert
+        oldDirs.Should().Contain("$userPath").And.Contain("'zyggy.exe'").And.Contain("'zyggy-node.exe'").And.Contain("$programs");
+        Code.Should().Contain("-notlike 'zyggy*'");
+        removal.Success.Should().BeTrue("the user-PATH write sits inside a try whose catch only warns");
+        removal.Groups["body"].Value.Should().Contain("SetEnvironmentVariable('Path'").And.Contain("'User')")
+            .And.Contain("Step \"removed $dir from the user PATH (an older zyggy; its files are kept - delete the folder by hand when you no longer need it)\"");
+        Code.Should().Contain("Step \"warning: $dir holds an older zyggy next to other files and shadows the new one; move the zyggy files out or edit the user PATH by hand (rundll32 sysdm.cpl,EditEnvironmentVariables)\"");
+        Code.Should().Contain("Step \"warning: $dir holds an older zyggy and is not on the user PATH (the machine PATH needs whoever administers this machine)\"");
+        Code.Should().NotContain("'Machine'", "a machine-PATH copy is found as a session entry that is not on the user PATH (plan 42 R3)");
+        removeItems.Should().NotContain(l => l.Contains("$dir", StringComparison.Ordinal) || l.Contains("$old", StringComparison.Ordinal), "nothing is deleted");
+    }
+
+    [Fact]
+    public void Script_Step2_StopsAnOldFolderNodeThroughTheWaitThenForceHelper_BeforeTheCopy()
+    {
+        // Spec 42 AC-3: an older zyggy-node from an old folder would hold port 4711.
+        // Act
+        string processes = Regex.Match(Code, @"function Stop-NodeProcesses\b.*?\n\}", RegexOptions.Singleline).Value;
+        string stopNode = Regex.Match(Code, @"function Stop-Node\b.*?\n\}", RegexOptions.Singleline).Value;
+        string outsideHelpers = Code.Replace(processes, string.Empty).Replace(stopNode, string.Empty);
+        var lines = DeployAssets.Lines(Code).ToList();
+        int oldStop = lines.FindIndex(l => l.TrimStart().StartsWith("Stop-NodeProcesses", StringComparison.Ordinal) && !stopNode.Contains(l, StringComparison.Ordinal));
+        int firstCopy = lines.FindIndex(l => l.Contains("Copy-Item", StringComparison.Ordinal));
+
+        // Assert
+        processes.Should().NotBeEmpty();
+        DeployAssets.Lines(outsideHelpers).Should().NotContain(l => l.Contains("Wait-Process", StringComparison.Ordinal) || l.Contains("Stop-Process -Force", StringComparison.Ordinal), "the helper is the only place with the pattern");
+        stopNode.Should().Contain("Stop-NodeProcesses");
+        oldStop.Should().BePositive("the old-folder stop calls the helper too");
+        oldStop.Should().BeLessThan(firstCopy, "the old node is stopped before the copy");
+        lines.Where(l => l.Contains("Stop-Process -Id", StringComparison.Ordinal)).Should().OnlyContain(l => l.TrimStart().StartsWith("Fail ", StringComparison.Ordinal), "a manual stop is only ever a remedy");
+        Code.Should().Contain("stopped the older zyggy-node in $dir (it would hold port 4711)").And.Contain("could not be stopped");
+    }
+
+    [Fact]
+    public void Script_Step2_PutsTheProgramsFolderFirstInTheSessionPath_AndTheReopenLineIsLastOnSuccess()
+    {
+        // Spec 42 AC-4.
+        // Act
+        string incomplete = Regex.Match(Code, @"if \(\$setupIncomplete\) \{.*?\n\}", RegexOptions.Singleline).Value;
+        var steps = DeployAssets.Lines(Code.Replace(incomplete, string.Empty)).Where(l => l.TrimStart().StartsWith("Step ", StringComparison.Ordinal)).ToList();
+        int session = Code.IndexOf("$env:Path = $programs + ';'", StringComparison.Ordinal);
+
+        // Assert
+        session.Should().BePositive();
+        session.Should().BeGreaterThan(Code.IndexOf("Step \"removed $dir from the user PATH", StringComparison.Ordinal), "the session PATH drops what was removed");
+        session.Should().BeLessThan(Code.IndexOf("$busParent =", StringComparison.Ordinal), "it is part of step 2");
+        Code.Should().Contain("session PATH: $programs first");
+        steps[^1].Should().Contain("reopen: terminals, VS Code windows and Claude Code sessions opened before this install still have the old PATH and environment - close and reopen them (VS Code: all windows)");
+        incomplete.Should().Contain("Step 'incomplete - see the setup lines above'").And.Contain("exit 1");
+        Code.IndexOf(incomplete, StringComparison.Ordinal).Should().BeGreaterThan(Code.IndexOf("reopen: terminals", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Script_CallsSetupOnceThroughInvokeNativeByAbsolutePath_WithTheOptions_AndBranchesOnThreeFourAndSix()
+    {
+        // Spec 42 AC-5.
+        // Act
+        var lines = DeployAssets.Lines(Code).ToList();
+        string setupArgs = lines.Single(l => l.Contains("'setup'", StringComparison.Ordinal));
+        string call = lines.Single(l => l.Contains("$setupArgs", StringComparison.Ordinal) && l.Contains("Invoke-Native", StringComparison.Ordinal));
+        int callIndex = Code.IndexOf(call, StringComparison.Ordinal);
+        int register = Code.IndexOf("Register-ScheduledTask", StringComparison.Ordinal);
+
+        // Assert
+        setupArgs.Should().Contain("$setupArgs = @('setup', '--config', $NodeJson, '--tenant', $Tenant, '--machine', $Machine, '--core-path', $CorePath)");
+        call.Trim().Should().Be("$setupOutput = Invoke-Native $zyggyExe $setupArgs");
+        Code.Should().MatchRegex(@"if \(-not \[string\]::IsNullOrWhiteSpace\(\$SignWith\)\) \{\n\s*\$setupArgs \+= @\('--sign-with', \$SignWith\)\n", "--sign-with only when -SignWith was given");
+        Code.Should().MatchRegex(@"if \(\$setupExit -eq 3\) \{\n\s*Fail ").And.MatchRegex(@"if \(\$setupExit -eq 4\) \{\n\s*Fail ");
+        Code.IndexOf("$setupExit -eq 3", StringComparison.Ordinal).Should().BeGreaterThan(callIndex).And.BeLessThan(register);
+        Code.IndexOf("$setupExit -eq 4", StringComparison.Ordinal).Should().BeGreaterThan(callIndex).And.BeLessThan(register);
+        Code.Should().Contain("$setupIncomplete = ($setupExit -eq 6)");
+        Code.IndexOf("if ($setupIncomplete)", StringComparison.Ordinal).Should().BeGreaterThan(Code.IndexOf("Start-ScheduledTask", StringComparison.Ordinal));
+        callIndex.Should().BeGreaterThan(Code.IndexOf("holds tenants", StringComparison.Ordinal), "setup runs after the checkout pre-flight")
+            .And.BeLessThan(Code.IndexOf("$claudePath =", StringComparison.Ordinal), "the claude.path pre-flight reads what setup completed");
+        Code.Should().Contain("'incomplete - see the setup lines above'");
+    }
+
+    [Fact]
+    public void Script_NoSecretListParsing()
+    {
+        // Spec 42 AC-5: setup owns the secret report.
+        Code.Should().NotContain("'secret', 'list'").And.NotContain("\\ssigns").And.NotContain("file secret store selected");
     }
 
     [Theory]
