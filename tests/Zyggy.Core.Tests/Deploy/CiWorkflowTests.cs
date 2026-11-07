@@ -34,6 +34,84 @@ public sealed class CiWorkflowTests
     }
 
     [Fact]
+    public void Ci_CopiesTheFourReadmesIntoDocs()
+    {
+        // Act
+        string text = Workflow;
+        string step = Section(text, "Copy release documents", "Write SHA256SUMS");
+        int copyDeploy = text.IndexOf("Copy deploy assets", StringComparison.Ordinal);
+        int copyDocs = text.IndexOf("Copy release documents", StringComparison.Ordinal);
+        int sums = text.IndexOf("Write SHA256SUMS", StringComparison.Ordinal);
+
+        // Assert: spec 40 AC-14 — the four product READMEs travel as docs/Zyggy.<Project>.md, after deploy, before the checksums
+        step.Should().Contain("New-Item -ItemType Directory -Force artifacts/${{ matrix.rid }}/docs");
+        foreach (string project in new[] { "Node", "Cli", "Core", "Hub" })
+        {
+            step.Should().Contain($"Copy-Item src/Zyggy.{project}/README.md artifacts/${{{{ matrix.rid }}}}/docs/Zyggy.{project}.md");
+        }
+
+        copyDocs.Should().BeGreaterThan(copyDeploy);
+        sums.Should().BeGreaterThan(copyDocs);
+    }
+
+    [Fact]
+    public void Ci_Sha256SumsEnumeratesDocsFiles()
+    {
+        // Act
+        string step = Section(Workflow, "Write SHA256SUMS", "Smoke-run the published binaries");
+
+        // Assert: spec 40 AC-15 — docs/ enumerated like deploy/, same sha256sum format
+        step.Should().Contain("Get-ChildItem -Recurse -File \"$dir/docs\"");
+        step.Should().Contain("+ @($deploy) + @($docs)");
+        step.Should().Contain("\"$hash  $name`n\"");
+        step.Should().Contain("[IO.File]::WriteAllText");
+    }
+
+    [Theory]
+    [InlineData("Node")]
+    [InlineData("Cli")]
+    [InlineData("Core")]
+    [InlineData("Hub")]
+    public void ReleaseDocs_SourceReadmeExistsAndNamesNoAbsoluteHomePath(string project)
+    {
+        // Act
+        string path = Path.Combine(RepoRoot.Find(), "src", $"Zyggy.{project}", "README.md");
+
+        // Assert: spec 40 AC-16 — the file becomes part of every public release
+        File.Exists(path).Should().BeTrue(path);
+        string text = File.ReadAllText(path);
+        text.Should().NotContain("/srv/");
+        text.Should().NotContain("/home/");
+        text.Should().NotContain("/Users/");
+        text.Should().NotContain("C:\\Users\\");
+    }
+
+    [Theory]
+    [InlineData("Node", "## What it does")]
+    [InlineData("Node", "## Running it")]
+    [InlineData("Node", "## node.json")]
+    [InlineData("Node", "## Exit codes")]
+    [InlineData("Node", "## /health")]
+    [InlineData("Node", "## Log")]
+    [InlineData("Node", "## Central")]
+    [InlineData("Node", "## Polling every second")]
+    [InlineData("Cli", "## node.json")]
+    [InlineData("Core", "## Responsibilities")]
+    [InlineData("Core", "## The five seams")]
+    [InlineData("Core", "## Troubleshooting — Secrets")]
+    [InlineData("Core", "## Troubleshooting — Bus")]
+    public void ReleaseDocs_KeepTheHeadingsTheHelpSkillNames(string project, string heading)
+    {
+        // Act
+        string[] lines = File.ReadAllLines(Path.Combine(RepoRoot.Find(), "src", $"Zyggy.{project}", "README.md"));
+
+        // Assert: plan 40 A1 — the zyggy-help skill's source index names these sections; a rename stales the skill
+        lines.Should().Contain(
+            line => line == heading || line.StartsWith(heading + " ", StringComparison.Ordinal),
+            $"the zyggy-help skill reads {project} section '{heading}'");
+    }
+
+    [Fact]
     public void Ci_ParsesInstallScriptOnBothRunners()
     {
         // Act

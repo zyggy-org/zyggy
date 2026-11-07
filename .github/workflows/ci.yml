@@ -82,8 +82,20 @@ jobs:
         shell: pwsh
         run: Copy-Item -Recurse deploy artifacts/${{ matrix.rid }}/deploy
 
+      # Deliverable 40: the four product READMEs travel in the release as docs/Zyggy.<Project>.md, under the same
+      # checksums; Central installs them beside the binaries of the same version for the zyggy-help skill (spec 40 Q1).
+      - name: Copy release documents (${{ matrix.rid }})
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/${{ matrix.rid }}/docs | Out-Null
+          Copy-Item src/Zyggy.Node/README.md artifacts/${{ matrix.rid }}/docs/Zyggy.Node.md
+          Copy-Item src/Zyggy.Cli/README.md artifacts/${{ matrix.rid }}/docs/Zyggy.Cli.md
+          Copy-Item src/Zyggy.Core/README.md artifacts/${{ matrix.rid }}/docs/Zyggy.Core.md
+          Copy-Item src/Zyggy.Hub/README.md artifacts/${{ matrix.rid }}/docs/Zyggy.Hub.md
+
       # sha256sum format (<64 lowercase hex>  <name>\n, LF) so Central can check the pinned binaries (spec 28) and, since
-      # deliverable 10, every file under deploy/ by its relative name with / separators.
+      # deliverable 10, every file under deploy/ by its relative name with / separators and, since deliverable 40, every
+      # file under docs/.
       - name: Write SHA256SUMS
         shell: pwsh
         run: |
@@ -91,7 +103,9 @@ jobs:
           $ext = if ($IsWindows) { '.exe' } else { '' }
           $deploy = Get-ChildItem -Recurse -File "$dir/deploy" | ForEach-Object {
             [IO.Path]::GetRelativePath((Resolve-Path $dir).Path, $_.FullName).Replace('\', '/') }
-          $lines = foreach ($name in @('${{ matrix.exe }}', "zyggy-node$ext") + @($deploy)) {
+          $docs = Get-ChildItem -Recurse -File "$dir/docs" | ForEach-Object {
+            [IO.Path]::GetRelativePath((Resolve-Path $dir).Path, $_.FullName).Replace('\', '/') }
+          $lines = foreach ($name in @('${{ matrix.exe }}', "zyggy-node$ext") + @($deploy) + @($docs)) {
             $hash = (Get-FileHash -LiteralPath "$dir/$name" -Algorithm SHA256).Hash.ToLowerInvariant()
             "$hash  $name`n"
           }

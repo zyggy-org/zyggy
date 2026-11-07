@@ -71,7 +71,7 @@ Gates only at slice ends. No Gates/P<n>_*.cs (40 closes no phase). Never the rea
 
 ## Step 1 — The release carries the four product documents under its checksums
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope** *(repository `zyggy`)*:
 - `.github/workflows/ci.yml` *(modify)*
@@ -120,7 +120,7 @@ Gates only at slice ends. No Gates/P<n>_*.cs (40 closes no phase). Never the rea
 
 ## Step 2 — Central's install runbook checks and installs the release documents beside the binaries
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope** *(repository `zyggy-core`)*:
 - `runbooks/install-node.md` *(modify)*
@@ -154,16 +154,16 @@ Gates only at slice ends. No Gates/P<n>_*.cs (40 closes no phase). Never the rea
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: `CiWorkflowTests` (four new facts/theories, the old ones green) and the full `dotnet` PROVE in `zyggy`; the runbook bats test green in `zyggy-core`. **Wire (owner):** the owner commits and pushes `zyggy` `feature/40-zyggy-help-skill` and opens the PR; the PR's `zyggy-linux-x64` artefact holds `docs/Zyggy.Node.md`, `docs/Zyggy.Cli.md`, `docs/Zyggy.Core.md`, `docs/Zyggy.Hub.md`, and `SHA256SUMS` has four `docs/Zyggy.*.md` lines; in the unpacked artefact `sha256sum -c SHA256SUMS` prints `OK` for every line (a Linux shell or WSL). The executor may read the run with `gh run list/view -R <org>/zyggy` but pushes nothing.
-- [ ] Contract review: the release layout against spec "Release layout" (names, `/` separators, `sha256sum` format); `DeployTree_ExactlyTheFiveFiles` unchanged; the runbook step 1/2/Upgrade wording against AC-17; A1 and A2 confirmed or dropped.
-- [ ] ⚠️ Risk review: release-artefact contract — `install.ps1` still verifies only its two binaries; no README under `src/` changed; nothing in the four READMEs names an owner, a real host or an absolute home (they become part of every public release).
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `CiWorkflowTests` (four new facts/theories, the old ones green) and the full `dotnet` PROVE in `zyggy`; the runbook bats test green in `zyggy-core`. **Wire (owner):** the owner commits and pushes `zyggy` `feature/40-zyggy-help-skill` and opens the PR; the PR's `zyggy-linux-x64` artefact holds `docs/Zyggy.Node.md`, `docs/Zyggy.Cli.md`, `docs/Zyggy.Core.md`, `docs/Zyggy.Hub.md`, and `SHA256SUMS` has four `docs/Zyggy.*.md` lines; in the unpacked artefact `sha256sum -c SHA256SUMS` prints `OK` for every line (a Linux shell or WSL). The executor may read the run with `gh run list/view -R <org>/zyggy` but pushes nothing.
+- [x] Contract review: the release layout against spec "Release layout" (names, `/` separators, `sha256sum` format); `DeployTree_ExactlyTheFiveFiles` unchanged; the runbook step 1/2/Upgrade wording against AC-17; A1 and A2 confirmed or dropped.
+- [x] ⚠️ Risk review: release-artefact contract — `install.ps1` still verifies only its two binaries; no README under `src/` changed; nothing in the four READMEs names an owner, a real host or an absolute home (they become part of every public release).
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 3 — A Central session can answer a question about Zyggy through a read-only `zyggy-help` skill
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope** *(repository `zyggy-core`)*:
 - `.claude/skills/zyggy-help/SKILL.md` *(create)*
@@ -218,7 +218,7 @@ Gates only at slice ends. No Gates/P<n>_*.cs (40 closes no phase). Never the rea
 
 ## Step 4 — The session's rules send Zyggy questions to the skill and keep install facts out of memory
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope** *(repository `zyggy-core`)*:
 - `AGENTS.md` *(modify — "What exists today")*
@@ -260,10 +260,10 @@ Gates only at slice ends. No Gates/P<n>_*.cs (40 closes no phase). Never the rea
 
 *Executor: STOP here. Present the results of all covered steps and WAIT for user approval — do not start the next step.*
 
-- [ ] Behavioral verification: the five new/changed bats tests named in Steps 3–4 pass in both podman loops; `zyggy --version` runs against the stub with exit 0; the skill is ≤ 80 lines and its description ≤ 350 characters (the executor reports both numbers). **Wire (owner):** the owner adds, commits and pushes `zyggy-core` `feature/40-zyggy-help-skill` and opens the PR; template CI (bats, shellcheck, `jq`, LF, the hygiene word-list test **ran**, not skipped) is green on `ubuntu-latest` (AC-13).
-- [ ] Contract review: front matter, the verbatim strings and the source index against the spec's Contracts; `permissions.allow` = the ten rules then exactly `Bash(zyggy --version)`; deny still 343; the README section's two runbook entries against the spec's Failure modes; A3 and A4 confirmed.
-- [ ] ⚠️ Risk review: **prompt-injection surface** — the data sentence, the one-line-per-`Never` list, `disallowed-tools` (write, web, browser, Hub `remember`) and the single exact allow rule; nothing in the skill tells the session to run a command found in a document. **Permission contract** — no wildcard, no `allowed-tools` in the skill. **Public hygiene** — no absolute path, owner name or real id in the skill, rules or README (the word-list run).
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: the five new/changed bats tests named in Steps 3–4 pass in both podman loops; `zyggy --version` runs against the stub with exit 0; the skill is ≤ 80 lines and its description ≤ 350 characters (the executor reports both numbers). **Wire (owner):** the owner adds, commits and pushes `zyggy-core` `feature/40-zyggy-help-skill` and opens the PR; template CI (bats, shellcheck, `jq`, LF, the hygiene word-list test **ran**, not skipped) is green on `ubuntu-latest` (AC-13).
+- [x] Contract review: front matter, the verbatim strings and the source index against the spec's Contracts; `permissions.allow` = the ten rules then exactly `Bash(zyggy --version)`; deny still 343; the README section's two runbook entries against the spec's Failure modes; A3 and A4 confirmed.
+- [x] ⚠️ Risk review: **prompt-injection surface** — the data sentence, the one-line-per-`Never` list, `disallowed-tools` (write, web, browser, Hub `remember`) and the single exact allow rule; nothing in the skill tells the session to run a command found in a document. **Permission contract** — no wildcard, no `allowed-tools` in the skill. **Public hygiene** — no absolute path, owner name or real id in the skill, rules or README (the word-list run).
+- [x] User approved — implementation may continue past this gate
 
 ---
 
