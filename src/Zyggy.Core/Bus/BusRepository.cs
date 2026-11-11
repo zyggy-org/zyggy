@@ -386,6 +386,57 @@ public sealed partial class BusRepository
     }
 
     /// <summary>
+    /// Reads this machine's own registry file from the checkout (spec 14; never another machine's or tenant's), without the write lock —
+    /// a read of the checkout like <see cref="ListNewJobsAsync"/>.
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The file bytes, or <see langword="null"/> when this machine has no registry file yet.</returns>
+    public async Task<byte[]?> ReadOwnRegistryAsync(CancellationToken ct)
+    {
+        string full = BusPaths.Resolve(_checkoutRoot, BusPaths.Registry(_me.Tenant, _me.Machine));
+        return File.Exists(full) ? await File.ReadAllBytesAsync(full, ct).ConfigureAwait(false) : null;
+    }
+
+    /// <summary>
+    /// §4 "Registry file" as amended by A14-1: writes this machine's registry file in one commit <c>&lt;tenant&gt; registry &lt;machine&gt;</c>
+    /// through the one write path (lock, pull, change, commit, push with the retry rule).
+    /// </summary>
+    /// <param name="document">The document; its tenant and machine must be this machine's.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The write outcome.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="document"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the document belongs to another tenant or machine (a caller bug).</exception>
+    public Task<WriteOutcome> PublishRegistryAsync(Registry.RegistryDocument document, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        if (document.Tenant != _me.Tenant)
+        {
+            throw new InvalidOperationException("write rule: the registry document belongs to another tenant");
+        }
+
+        if (document.Machine != _me.Machine)
+        {
+            throw new InvalidOperationException("write rule: the registry document belongs to another machine");
+        }
+
+        byte[] bytes = document.Serialize();
+        string path = BusPaths.Registry(_me.Tenant, _me.Machine);
+        AssertMayWrite(path, BusFolder.Registry);
+        return WriteAsync(
+            string.Create(CultureInfo.InvariantCulture, $"{_me.Tenant.Value} registry {_me.Machine.Value}"),
+            [path],
+            async token =>
+            {
+                await WriteFileAsync(path, bytes, token).ConfigureAwait(false);
+                return Failure("add", await _git.AddAsync(_checkoutRoot, [path], token).ConfigureAwait(false));
+            },
+            ct);
+    }
+
+    /// <summary>Redacts URL user information from a git detail and keeps its first two lines (the one redaction rule of every bus write).</summary>
+    internal static string Redacted(string detail) => RedactedDetail(detail);
+
+    /// <summary>
     /// §4 as amended by deliverable 12 (D1): adds a signed context envelope of this node, addressed to Central, to this node's own
     /// <c>nodes/&lt;me&gt;/context/</c> folder in one commit <c>&lt;tenant&gt; context &lt;id&gt; &lt;from&gt;→central</c>.
     /// </summary>

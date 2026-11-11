@@ -111,6 +111,36 @@ internal sealed class GitClient(IProcessRunner processes, GitClientOptions optio
         return result.Succeeded && result.Stdout.Trim() is { Length: > 0 } branch ? branch : null;
     }
 
+    /// <summary>
+    /// The repository's default branch (spec 14, P7): <c>origin/HEAD</c> without its remote prefix, else a local <c>main</c>, else a
+    /// local <c>master</c>, else the current branch, else <see langword="null"/>. Reading <c>origin/HEAD</c> first keeps a feature
+    /// checkout from changing the answer.
+    /// </summary>
+    public async Task<string?> DefaultBranchAsync(string repository, CancellationToken cancellationToken)
+    {
+        var originHead = await RunAsync(repository, ["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"], null, cancellationToken).ConfigureAwait(false);
+        if (originHead.Succeeded && originHead.Stdout.Trim() is { Length: > 0 } remoteHead)
+        {
+            const string Prefix = "origin/";
+            string branch = remoteHead.StartsWith(Prefix, StringComparison.Ordinal) ? remoteHead[Prefix.Length..] : remoteHead;
+            if (branch.Length > 0)
+            {
+                return branch;
+            }
+        }
+
+        foreach (string candidate in (string[])["main", "master"])
+        {
+            var local = await RunAsync(repository, ["rev-parse", "--verify", "-q", "refs/heads/" + candidate], null, cancellationToken).ConfigureAwait(false);
+            if (local.Succeeded)
+            {
+                return candidate;
+            }
+        }
+
+        return await CurrentBranchAsync(repository, cancellationToken).ConfigureAwait(false);
+    }
+
     public Task<GitResult> FetchAsync(string repository, CancellationToken cancellationToken) =>
         RunAsync(repository, ["fetch", "origin"], null, cancellationToken);
 

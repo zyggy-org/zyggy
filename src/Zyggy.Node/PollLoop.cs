@@ -1,5 +1,6 @@
 using Zyggy.Core.Bus;
 using Zyggy.Core.Configuration;
+using Zyggy.Core.Registry;
 
 namespace Zyggy.Node;
 
@@ -20,6 +21,7 @@ public sealed partial class PollLoop : BackgroundService
     private readonly NodeConfiguration _configuration;
     private readonly HealthServer _health;
     private readonly ClaudeAuthProbe _auth;
+    private readonly DiscoveryLoop _discovery;
     private readonly ILogger<PollLoop> _log;
     private Task? _authTask;
 
@@ -32,6 +34,7 @@ public sealed partial class PollLoop : BackgroundService
         NodeConfiguration configuration,
         HealthServer health,
         ClaudeAuthProbe auth,
+        DiscoveryLoop discovery,
         ILogger<PollLoop> log)
     {
         _listener = listener;
@@ -42,6 +45,7 @@ public sealed partial class PollLoop : BackgroundService
         _configuration = configuration;
         _health = health;
         _auth = auth;
+        _discovery = discovery;
         _log = log;
     }
 
@@ -81,6 +85,9 @@ public sealed partial class PollLoop : BackgroundService
         LogNodeStarted(_configuration.Tenant.Value, _configuration.Machine.Value, version);
         try
         {
+            // Plan 14 A1: the first discovery scan completes before the listener admits any job, so a job named by registry name
+            // waiting at start is resolved against a snapshot that exists. The scan touches no bus file.
+            await _discovery.FirstScan.WaitAsync(stoppingToken).ConfigureAwait(false);
             BusStartupResult result = await _listener.StartAsync(stoppingToken).ConfigureAwait(false);
             if (result is not (BusStartupResult.Clean or BusStartupResult.Stashed))
             {
@@ -114,6 +121,7 @@ public sealed partial class PollLoop : BackgroundService
                 return;
             }
 
+            _status.MarkListenerStarted();
             await _listener.ResumeClaimedAsync(stoppingToken).ConfigureAwait(false);
             await _listener.RunAsync(_mode, stoppingToken).ConfigureAwait(false);
         }

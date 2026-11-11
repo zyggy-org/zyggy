@@ -21,9 +21,6 @@ namespace Zyggy.Cli.Commands;
 /// </summary>
 internal static partial class StatusCommand
 {
-    /// <summary>The loopback-only test hook for the health URL (spec 08 Configuration): never a production override.</summary>
-    private const string HealthUrlVariable = "ZYGGY_HEALTH_URL";
-
     private const int RecentReports = 10;
 
     private const string Dot = " · ";
@@ -70,7 +67,7 @@ internal static partial class StatusCommand
         Uri url;
         try
         {
-            url = environment.Get(HealthUrlVariable) is { } text ? new Uri(text) : HealthClient.DefaultUrl;
+            url = environment.Get(BusHost.HealthUrlVariable) is { } text ? new Uri(text) : HealthClient.DefaultUrl;
             using var client = new HealthClient(url, clock);
             HealthProbe probe = await client.ReadAsync(ct);
             DateTimeOffset now = clock.GetUtcNow();

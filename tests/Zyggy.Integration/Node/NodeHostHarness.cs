@@ -9,6 +9,7 @@ using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Jobs;
 using Zyggy.Core.Processes;
+using Zyggy.Core.Registry;
 using Zyggy.Core.Secrets;
 using Zyggy.Core.Tenancy;
 using Zyggy.Core.Tests.Infrastructure;
@@ -65,8 +66,45 @@ internal sealed class NodeHostHarness : IAsyncDisposable
     /// <summary>Extra variables for the fake (<c>ZYGGY_FAKE_CLAUDE_DELAY_MS</c>, <c>_LINGER_MS</c>, <c>_AUTH</c>).</summary>
     public Dictionary<string, string> FakeEnvironment { get; } = [];
 
-    /// <summary>The host's environment (plan 13 A6); <see langword="null"/> means the process environment.</summary>
+    /// <summary>
+    /// The host's environment (plan 13 A6); <see langword="null"/> means the process environment plus <c>ZYGGY_SECRET_PATTERNS</c> = the
+    /// golden pattern file (plan 14 A10/A11: the scanner publishes descriptions). A test that sets it keeps exactly what it set.
+    /// </summary>
     public Dictionary<string, string?>? Environment { get; set; }
+
+    /// <summary>The folder every <see cref="ProjectAsync"/> project lives in and the default <c>devRoots</c> entry (plan 14 A10).</summary>
+    public string ProjectsRoot
+    {
+        get
+        {
+            string root = Scratch.File("projects");
+            Directory.CreateDirectory(root);
+            return root;
+        }
+    }
+
+    /// <summary>A short discovery interval for rescan tests (plan 14 A5); <see langword="null"/> keeps the configured minutes.</summary>
+    public TimeSpan? DiscoveryInterval { get; set; }
+
+    private IReadOnlyDictionary<string, string?> HostEnvironment
+    {
+        get
+        {
+            if (Environment is not null)
+            {
+                return Environment;
+            }
+
+            var variables = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+            foreach (System.Collections.DictionaryEntry entry in System.Environment.GetEnvironmentVariables())
+            {
+                variables[(string)entry.Key] = entry.Value as string;
+            }
+
+            variables["ZYGGY_SECRET_PATTERNS"] = Path.Combine(Golden.Directory, "secret-patterns", "secret-patterns.txt");
+            return variables;
+        }
+    }
 
     /// <summary>The single daily log file under the node directory.</summary>
     public string LogFile => Directory.GetFiles(Path.Combine(NodeDir, "logs")).Single();
@@ -104,7 +142,9 @@ internal sealed class NodeHostHarness : IAsyncDisposable
         string? busLocalPath = null,
         string? tenantOverride = null,
         bool omitSignWith = false,
-        MachineName? machine = null)
+        MachineName? machine = null,
+        IReadOnlyList<string>? devRoots = null,
+        string? discoveryJson = null)
     {
         NodeJsonPath = NodeJson.Write(
             Scratch.File("config"),
@@ -121,7 +161,9 @@ internal sealed class NodeHostHarness : IAsyncDisposable
             workHoursJson: workHoursJson,
             maxConcurrentJobs: maxConcurrentJobs,
             safetyFetchMinutes: safetyFetchMinutes,
-            logLevel: logLevel);
+            logLevel: logLevel,
+            devRoots: devRoots ?? [ProjectsRoot],
+            discoveryJson: discoveryJson);
         if (idleSeconds != activeSeconds)
         {
             string json = File.ReadAllText(NodeJsonPath).Replace(
@@ -156,34 +198,51 @@ internal sealed class NodeHostHarness : IAsyncDisposable
         });
         services.AddSingleton<IProcessRunner>(Hooks);
         services.AddSingleton(sp => sp.GetRequiredService<NodeConfiguration>().Poll.ToPollOptions() with { Jitter = TimeSpan.FromMilliseconds(200) });
+        if (DiscoveryInterval is { } interval)
+        {
+            services.Configure<DiscoveryOptions>(o => o.IntervalOverride = interval);
+        }
+
         more?.Invoke(services);
     }
 
-    public IHost Build(Action<IServiceCollection>? more = null) => NodeHost.Build(["--config", NodeJsonPath], s => Configure(s, more), Environment);
+    public IHost Build(Action<IServiceCollection>? more = null) => NodeHost.Build(["--config", NodeJsonPath], s => Configure(s, more), HostEnvironment);
 
     /// <summary>Runs the host in process until <paramref name="cancelAfter"/> or until the loop stops it; returns the exit code.</summary>
     public async Task<int> RunAsync(TimeSpan cancelAfter, CancellationToken ct, Action<IServiceCollection>? more = null)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(cancelAfter);
-        return await NodeHost.RunAsync(["--config", NodeJsonPath], cts.Token, s => Configure(s, more), Environment);
+        return await NodeHost.RunAsync(["--config", NodeJsonPath], cts.Token, s => Configure(s, more), HostEnvironment);
     }
 
     /// <summary>Runs the host in process until <paramref name="until"/> holds (then cancels) or <paramref name="timeout"/> elapses; returns the exit code.</summary>
     public async Task<int> RunUntilAsync(Func<Task<bool>> until, TimeSpan timeout, CancellationToken ct, Action<IServiceCollection>? more = null)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        Task<int> run = NodeHost.RunAsync(["--config", NodeJsonPath], cts.Token, s => Configure(s, more), Environment);
+        Task<int> run = NodeHost.RunAsync(["--config", NodeJsonPath], cts.Token, s => Configure(s, more), HostEnvironment);
         await WaitUntilAsync(until, timeout, ct, run);
         await cts.CancelAsync();
         return await run;
     }
 
-    public async Task<ScratchProject> ProjectAsync(CancellationToken ct)
+    /// <summary>
+    /// Creates a scratch project under <see cref="ProjectsRoot"/> (plan 14 A10: inside <c>devRoots</c>, found by the host's scan): a repository
+    /// on <c>main</c> with <c>.claude/</c>, named <paramref name="name"/> or a fresh GUID label, optionally with an agent.
+    /// </summary>
+    public async Task<ScratchProject> ProjectAsync(CancellationToken ct, string? name = null, string? agent = null, string? agentDescription = null)
     {
-        ScratchProject project = await ScratchProject.CreateAsync(Bus, ct);
+        ScratchProject project = await ScratchProject.CreateInAsync(Bus, ProjectsRoot, name ?? Guid.NewGuid().ToString("N"), ct, agent, agentDescription);
+        await File.WriteAllTextAsync(Path.Combine(project.Path, "README.md"), "Scratch project for a job round trip.\n", ct);
         _projects.Add(project);
         return project;
+    }
+
+    /// <summary>The registry file of <paramref name="machine"/> on <c>main</c>, parsed; <see langword="null"/> when absent.</summary>
+    public async Task<RegistryDocument?> RegistryOnMainAsync(MachineName machine, CancellationToken ct)
+    {
+        string path = BusPaths.Registry(Acme, machine);
+        return await Bus.ExistsOnMainAsync(path, ct) ? RegistryDocument.Parse(await Bus.ShowBytesAsync(path, ct)).Document : null;
     }
 
     /// <summary>Seeds a signed job from <c>central</c> to <c>home-laptop</c> naming <paramref name="project"/>, on <c>main</c>.</summary>

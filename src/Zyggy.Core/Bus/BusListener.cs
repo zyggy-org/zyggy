@@ -402,6 +402,28 @@ public sealed partial class BusListener : IDisposable
                 return false;
             default:
                 _safetyFetchFailedLogged = false;
+
+                // Plan 14 Step 8: another writer on this checkout (the node's registry publish, a CLI verb) pulls before it commits, so the
+                // remote and the local head can agree while the listener never saw the commits that pull brought in. A head that moved
+                // since the listener's last pass gets one pass now, without a pull.
+                // The warning is the same as for a moved remote, and only when jobs actually arrived that way — never for the listener's own commits.
+                if (await _bus.HeadShaAsync(ct).ConfigureAwait(false) is { } head && !string.Equals(head, _busHeadSha, StringComparison.Ordinal))
+                {
+                    _busHeadSha = head;
+                    Publish();
+                    if ((await _bus.ListNewJobsAsync(ct).ConfigureAwait(false)).Count > 0)
+                    {
+                        using (Scope("pull"))
+                        {
+                            LogSafetyFetchMoved();
+                        }
+                    }
+
+                    await ProcessOnceAsync(ct).ConfigureAwait(false);
+                    await PickupAsync(ct).ConfigureAwait(false);
+                    return true;
+                }
+
                 return false;
         }
     }

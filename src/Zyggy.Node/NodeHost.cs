@@ -9,6 +9,7 @@ using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Jobs;
 using Zyggy.Core.Memory;
+using Zyggy.Core.Registry;
 using Zyggy.Core.Tenancy;
 
 namespace Zyggy.Node;
@@ -136,6 +137,10 @@ public static class NodeHost
             o.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.StopHost;
         });
         builder.Services.AddOptions<NodeHostOptions>();
+
+        // Plan 14 A11: the discovery scanner publishes descriptions only with the secret patterns; their absence is no start-up refusal
+        // (the scanner publishes names only and warns once).
+        _ = builder.Services.AddSecretPatterns(environment);
         builder.Services.AddNodeServices(configuration);
         if (pickup is not null)
         {
@@ -172,7 +177,15 @@ public static class NodeHost
             configuration,
             sp.GetRequiredService<HealthServer>(),
             sp.GetRequiredService<ClaudeAuthProbe>(),
+            sp.GetRequiredService<DiscoveryLoop>(),
             sp.GetRequiredService<ILogger<PollLoop>>()));
+        // Spec 14: registered after the loop, which awaits its first scan before admitting any job (plan A1).
+        builder.Services.AddSingleton<IHostedService>(sp => new DiscoveryTimer(
+            sp.GetRequiredService<DiscoveryLoop>(),
+            sp.GetRequiredService<NodeStatus>(),
+            sp.GetRequiredService<HealthServer>(),
+            sp.GetRequiredService<PollOptions>(),
+            sp.GetRequiredService<TimeProvider>()));
         configure?.Invoke(builder.Services);
         return builder.Build();
     }

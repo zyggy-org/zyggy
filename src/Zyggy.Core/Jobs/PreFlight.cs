@@ -1,5 +1,3 @@
-using System.Text.RegularExpressions;
-
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Git;
 using Zyggy.Core.Runs;
@@ -10,7 +8,7 @@ namespace Zyggy.Core.Jobs;
 /// The §6 pre-flight in its P1 form (O18: a path, before the registry exists): absolute, exists, a git repository, has <c>.claude/</c>,
 /// and the named agent exists under <c>.claude/agents/</c>. Read-only: nothing is created and nothing but <c>git rev-parse --git-dir</c> runs.
 /// </summary>
-internal static partial class PreFlight
+internal static class PreFlight
 {
     public static async Task<PreFlightResult> CheckAsync(JobFields job, GitClient git, CancellationToken ct)
     {
@@ -44,7 +42,7 @@ internal static partial class PreFlight
         if (job.Agent is { } agent)
         {
             // A separator or a space would make the existence check look outside .claude/agents/.
-            if (!SafeAgentName().IsMatch(agent))
+            if (!AgentNames.IsSafe(agent))
             {
                 return new PreFlightResult.Rejected(RunFailureReason.UnknownAgent, "unsafe agent name");
             }
@@ -57,7 +55,4 @@ internal static partial class PreFlight
 
         return new PreFlightResult.Ok(path, job.Agent);
     }
-
-    [GeneratedRegex(@"^[A-Za-z0-9._-]+\z", RegexOptions.CultureInvariant)]
-    private static partial Regex SafeAgentName();
 }

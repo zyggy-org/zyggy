@@ -30,7 +30,9 @@ internal static class NodeJson
         string secretsStore = "file",
         long? archiveItemMaxBytes = null,
         string? oneDriveFolder = null,
-        bool dlpEnabled = false)
+        bool dlpEnabled = false,
+        IReadOnlyList<string>? devRoots = null,
+        string? discoveryJson = null)
     {
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "node.json");
@@ -50,10 +52,12 @@ internal static class NodeJson
         ];
         string archiveLine = archiveKeys.All(k => k is null) ? string.Empty : "  \"archive\": { " + string.Join(", ", archiveKeys.Where(k => k is not null)) + " },\n";
         string dlpLine = dlpEnabled ? "  \"dlp\": { \"enabled\": true },\n" : string.Empty;
+        string devRootsLine = devRoots is null ? string.Empty : "  \"devRoots\": [" + string.Join(", ", devRoots.Select(r => "\"" + Slashes(r) + "\"")) + "],\n";
+        string discoveryLine = discoveryJson is null ? string.Empty : "  \"discovery\": " + discoveryJson + ",\n";
         string json = string.Create(CultureInfo.InvariantCulture, $$"""
             {
             {{tenantLine}}  "machine": "{{machine.Value}}",
-            {{signLine}}{{claudeLine}}{{nodeDirLine}}{{workHoursLine}}{{concurrencyLine}}{{logLine}}{{extraLine}}{{archiveLine}}{{dlpLine}}  "bus": {
+            {{signLine}}{{claudeLine}}{{nodeDirLine}}{{workHoursLine}}{{concurrencyLine}}{{logLine}}{{extraLine}}{{archiveLine}}{{dlpLine}}{{devRootsLine}}{{discoveryLine}}  "bus": {
                 "owner": "acme-org",
                 "repo": "acme-bus",
                 "branch": "{{branch}}",

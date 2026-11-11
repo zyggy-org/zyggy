@@ -734,14 +734,14 @@ public sealed partial class SourceHygieneTests
     [Fact]
     public void Src_HealthUrlOverride_TestHookOnly()
     {
-        // Act: spec 08 Configuration — ZYGGY_HEALTH_URL is a loopback-only test hook read by the status verb, never a node.json key
+        // Act: spec 08 Configuration — ZYGGY_HEALTH_URL is a loopback-only test hook, never a node.json key; plan 14 A12 moved the one constant into BusHost (read by status and discover)
         var holders = SourceFiles()
             .Where(f => File.ReadAllText(f).Contains("ZYGGY_HEALTH_URL", StringComparison.Ordinal))
             .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
             .ToList();
 
         // Assert
-        holders.Should().Equal("src/Zyggy.Cli/Commands/StatusCommand.cs");
+        holders.Should().Equal("src/Zyggy.Cli/Commands/BusHost.cs");
     }
 
     private static Dictionary<string, string> CliSourceFiles() =>
