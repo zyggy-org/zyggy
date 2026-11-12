@@ -199,7 +199,8 @@ internal sealed class GitClient(IProcessRunner processes, GitClientOptions optio
     public async Task<IReadOnlyList<string>?> ChangedPathsAsync(string repository, string baseRevision, string tip, CancellationToken cancellationToken)
     {
         var result = await RunAsync(repository, ["diff", "--name-only", "-z", "--no-renames", baseRevision + "..." + tip], null, cancellationToken).ConfigureAwait(false);
-        return result.Succeeded ? result.Stdout.Split('\0', StringSplitOptions.RemoveEmptyEntries) : null;
+        // The process runner ends captured stdout with a line end after git's last NUL; it is not a path.
+        return result.Succeeded ? result.Stdout.TrimEnd('\r', '\n').Split('\0', StringSplitOptions.RemoveEmptyEntries) : null;
     }
 
     /// <summary>Pushes the local <paramref name="branch"/> to the same name on <c>origin</c>; never forced.</summary>

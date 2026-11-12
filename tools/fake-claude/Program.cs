@@ -1,6 +1,6 @@
 // fake-claude: stands in for the `claude` CLI in integration tests (tools/fake-claude/README.md).
 // 0. `auth status` (spec 07): answer from ZYGGY_FAKE_CLAUDE_AUTH and exit — no capture, no scenario.
-// 1. argument capture (optional) → 2. stdin capture (optional) → 3. delay (optional) → 4. resolve scenario
+// 1. argument capture (optional) → 2. stdin capture (optional) → 2b. file edits (optional) → 3. delay (optional) → 4. resolve scenario
 // → 5. stream its bytes unchanged → 5b. linger (optional, the "partial output then hang" case) → 6. exit (ZYGGY_FAKE_CLAUDE_EXIT, default 0).
 // Arguments are never parsed or validated, except the two words `auth status`; stdin is read only when ZYGGY_FAKE_CLAUDE_STDIN_CAPTURE is set.
 using System.Globalization;
@@ -66,6 +66,30 @@ if (!string.IsNullOrEmpty(stdinCapturePath))
     }
 }
 
+// 2b. edits (spec 16): the model changing files in its working directory, before the delay ("writes a file then hangs").
+var editsText = Environment.GetEnvironmentVariable("ZYGGY_FAKE_CLAUDE_EDITS");
+if (!string.IsNullOrEmpty(editsText))
+{
+    if (!TryParseEdits(editsText, Environment.CurrentDirectory, out var edits))
+    {
+        Console.Error.WriteLine($"fake-claude: invalid ZYGGY_FAKE_CLAUDE_EDITS '{editsText.ReplaceLineEndings(" | ")}'");
+        return 5;
+    }
+
+    foreach (var (path, content) in edits)
+    {
+        if (content is null)
+        {
+            File.Delete(path);
+        }
+        else
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, content + "\n", new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        }
+    }
+}
+
 if (delayMs > 0)
 {
     Thread.Sleep(delayMs);
@@ -106,6 +130,38 @@ static void WriteRecord(Stream stream, Encoding encoding, string value)
 {
     stream.Write(encoding.GetBytes(value));
     stream.WriteByte(0);
+}
+
+// One entry per line: "+<relative path>\t<content>" writes, "-<relative path>" deletes. Every path must stay inside the
+// working directory; one bad entry refuses all of them, so nothing is half applied.
+static bool TryParseEdits(string text, string root, out List<(string Path, string? Content)> edits)
+{
+    edits = [];
+    var prefix = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)) + Path.DirectorySeparatorChar;
+    foreach (var line in text.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+    {
+        var tab = line.IndexOf('\t', StringComparison.Ordinal);
+        var (kind, relative, content) = line[0] switch
+        {
+            '+' when tab > 1 => ('+', line[1..tab], line[(tab + 1)..]),
+            '-' when line.Length > 1 => ('-', line[1..], (string?)null),
+            _ => ('?', string.Empty, null),
+        };
+        if (kind == '?' || Path.IsPathRooted(relative))
+        {
+            return false;
+        }
+
+        var full = Path.GetFullPath(Path.Combine(root, relative));
+        if (!full.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        edits.Add((full, content));
+    }
+
+    return true;
 }
 
 static bool TryReadInt(string name, int min, out int value)
