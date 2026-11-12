@@ -26,10 +26,10 @@ Before step 1, say in plain words what the next feature is and confirm with the 
 2. **Spec** — use the `write-spec` skill with the hand-off brief: interview the owner, read the reference feature and the founding-spec sections, write `_specs/<NN>-<short-name>.md`, and stop for approval. No code, no plan file.
 3. **Build** — once the spec is approved, the owner starts a fresh session (`/clear`) and the `build-feature` skill builds the next slice: test first, proven by the Verification Commands and the slice's acceptance criteria, one Status line, then it stops with the slice's review check and a proposed commit message.
 4. **Approve and repeat** — the owner tries the review check, reviews the diff and approves; Claude commits; then the next slice. Other stops are in `CLAUDE.md` § Human Review Gates: before a ⚠️ slice and when the spec proves wrong.
-5. **Review** — after the last slice, a fresh reviewer agent compares the full diff with the spec and reports each acceptance criterion as met or not met. The owner reads that report and approves the release.
+5. **Review** — after the last slice, a fresh reviewer agent (`general-purpose`, `model: sonnet`) compares the full diff with the spec and reports each acceptance criterion as met or not met. The owner reads that report and approves the release.
 6. **Release** — on that approval, the `ship` skill ships it without further questions: merge, tag, GitHub release, instance pin, Central and laptop upgraded, live checks, roadmap entry to Done. Only a red step or a step Claude cannot do comes back to the owner.
 
 ## See also
 
 - `.claude/templates/spec-template.md` — format of a spec
-- `CLAUDE.md` — Project settings, Spec Gate, Workflow rules, Human Review Gates, Vertical slices
+- `CLAUDE.md` — Project settings, Spec Gate, Workflow rules, Human Review Gates (Vertical slices: `write-spec` skill)

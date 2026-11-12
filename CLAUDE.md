@@ -156,31 +156,7 @@ In the chat: a short plain-words summary, a compact ASCII sketch of the main dia
 
 The owner's approval of the finished feature (or of a bugfix) is the standing go to build, release and deploy. Claude then runs the `ship` skill end to end without further questions, wherever it can: push the branch, PR to `main`, CI green, merge, tag `v<x.y.z>` (deliverable → MINOR, fix → PATCH), tag CI green on both runners, package and publish the GitHub release, update the instance pin, upgrade Central and this laptop, run the spec's owner-run checks it can run, record the evidence. It stops only at a red step (reported with output, fixed through the normal workflow, shipped as a new PATCH) or a step it cannot do (refused command, branch protection, another machine), which it hands to the owner as exact commands. Never force-push, push to `main` directly, or move a published tag.
 
-### Vertical slices (no UI: Fake, then Wire)
-
-Slice by behavior, not by layer. Each slice is named after what the owner or the system can do afterwards ("Reject an envelope with a bad signature", "Claim a job from a local bare bus repo"), never after a type or project ("Add GitClient"). Each slice has exactly **one review check** — for Zyggy a test filter, a `zyggy` command against a local bare repo, or a gate scenario to run. No review check → fold it into another slice; two → split it.
-
-Zyggy has no UI, so a behavior comes as a pair:
-
-1. **Fake**: the behavior through the seam interfaces (`IProcessRunner`, `IBusProvider`, `IModelRunner`, `ISecretStore`, `INotifier`, `IPolicySource`, `TimeProvider`) with substitutes, proven by unit tests in `tests/Zyggy.Core.Tests`. The owner validates the contract shape.
-2. **Wire**: the real edge (real `git` through `IProcessRunner`, `HttpClient` over a mocked handler, `tools/fake-claude`, a local bare git repo), proven by integration tests in `tests/Zyggy.Integration` — the happy path and one failure path ending in a `reason` code or a rejection move. Never the real `claude`, never GitHub, in any test.
-
-Finish Fake and Wire of one behavior before starting the next. A deliverable that closes a §12 phase ends with a gate slice: the scenario in `tests/Zyggy.Integration/Gates/P<n>_<Name>.cs`, a working round trip, not a code review.
-
-### Where things live in `.claude/`
-
-| Path | Purpose |
-|---|---|
-| `skills/ship` | After the owner's approval: merge, tag, GitHub release, instance pin, Central + laptop upgrade, live checks |
-| `skills/new-feature`, `skills/write-spec`, `skills/build-feature` | Orchestration; the spec interview; one slice of an approved spec, plus the reference catalog of Zyggy code shapes (seam + fake + real, `PollState`, reason enum, Node service, CLI verb, Hub tool, tests) |
-| `agents/project-manager.md` | Owns `_plans/ROADMAP.md`: order, status, definition of done, next feature |
-| `agents/bugfix.md`, `code-analysis.md`, `explore.md`, `git.md` | Regression-test-first fixes, analyzer sweeps, read-only exploration, branching/tagging |
-| `skills/bus-protocol` | §4/§5/§14 as a checklist for any code touching the bus |
-| `skills/integration-testing` | Bare-repo + fake-claude harness, gate scenarios |
-| `skills/add-public-api`, `skills/fix-violations` | New `Zyggy.Core` public types; analyzer cleanup |
-| `instructions/tests.md`, `public-api.md`, `publishing.md` | Path-scoped conventions (xUnit/FluentAssertions/NSubstitute; `Zyggy.Core` API; csproj + single-file publish) |
-| `templates/spec-template.md` | Format of `_specs/<NN>-<short-name>.md` |
-| `settings.json` | Permissions; denies force-push and direct pushes to `main` |
+Vertical slices (Fake, then Wire; one review check each) are defined in the `write-spec` skill; path-scoped conventions for tests, `Zyggy.Core` API and csproj files live in `.claude/rules/` and load with matching files.
 
 ## Owner constraints
 

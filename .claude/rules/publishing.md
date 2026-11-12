@@ -1,6 +1,7 @@
 ---
 description: "Project-file and publishing conventions for Zyggy: shared settings live in Directory.Build.props, hosts publish as single-file self-contained binaries (zyggy-node, zyggy, zyggy-hub) for win-x64 and linux-x64, versions come from git tags. Activates when editing .csproj files."
-applyTo: "**/*.csproj"
+paths:
+  - "**/*.csproj"
 ---
 # Project files and publishing
 

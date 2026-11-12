@@ -12,7 +12,7 @@ Nothing here runs `git`, `claude`, or touches the network. Real edges belong in 
 
 ## Stack and conventions
 
-xUnit, FluentAssertions, NSubstitute, `FakeTimeProvider`. Test names follow `<Method>_<Scenario>_<Expected>`, Arrange-Act-Assert, one act per test. Full conventions: `.claude/instructions/tests.md`.
+xUnit, FluentAssertions, NSubstitute, `FakeTimeProvider`. Test names follow `<Method>_<Scenario>_<Expected>`, Arrange-Act-Assert, one act per test. Full conventions: `.claude/rules/tests.md`.
 
 ```powershell
 dotnet test tests/Zyggy.Core.Tests

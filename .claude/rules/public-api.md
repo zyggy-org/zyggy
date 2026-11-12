@@ -1,6 +1,7 @@
 ---
 description: "Public API design conventions for Zyggy.Core, the class library consumed by Zyggy.Node, Zyggy.Cli and Zyggy.Hub: XML documentation, internal-and-sealed by default, guard clauses, CancellationToken, the five seam interfaces, closed enums, records for values. Activates when editing Zyggy.Core source files."
-applyTo: "src/Zyggy.Core/**"
+paths:
+  - "src/Zyggy.Core/**"
 ---
 # Public API Design Conventions — Zyggy.Core
 
