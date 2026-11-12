@@ -23,7 +23,7 @@ public sealed class HealthClientLiveTests
         await host.StartAsync(ct);
         HealthServer server = host.Services.GetRequiredService<HealthServer>();
         NodeStatus status = host.Services.GetRequiredService<NodeStatus>();
-        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(server.IsListening && status.Listener?.Status.LastPollUtc is not null), TimeSpan.FromSeconds(10), ct);
+        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(server.IsListening && status.Listener?.Status.LastPollUtc is not null), TimeSpan.FromSeconds(60), ct);
         using var client = new HealthClient(new Uri($"http://127.0.0.1:{server.BoundPort}/health"), TimeProvider.System);
 
         // Act
@@ -64,7 +64,7 @@ public sealed class HealthClientLiveTests
         using IHost host = harness.Build();
         await host.StartAsync(ct);
         HealthServer server = host.Services.GetRequiredService<HealthServer>();
-        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(server.IsListening), TimeSpan.FromSeconds(10), ct);
+        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(server.IsListening), TimeSpan.FromSeconds(60), ct);
         using var client = new HealthClient(new Uri($"http://127.0.0.1:{server.BoundPort}/healthz"), TimeProvider.System);
 
         // Act

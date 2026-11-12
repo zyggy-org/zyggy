@@ -75,9 +75,9 @@ internal sealed partial class HealthServer : IAsyncDisposable
             return Results.Json(Snapshot(), NodeHealthJsonContext.Default.NodeHealth);
         });
         await app.StartAsync(ct).ConfigureAwait(false);
-        _app = app;
         Addresses = [.. app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()?.Addresses ?? []];
         BoundPort = Addresses.Select(a => new Uri(a).Port).FirstOrDefault(port);
+        _app = app; // last: IsListening must imply BoundPort and Addresses are set
         LogListening(BoundPort);
     }
 

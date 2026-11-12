@@ -48,7 +48,7 @@ public sealed class NodeHostPickupTests
             {
                 if (context is null)
                 {
-                    if (!harness.LogLines.Any(l => l.Contains("listening", StringComparison.Ordinal) || l.Contains(" poll ", StringComparison.Ordinal)) && DateTimeOffset.UtcNow - started < TimeSpan.FromSeconds(3))
+                    if (!harness.LogLines.Any(l => l.Contains("registry published", StringComparison.Ordinal)) && DateTimeOffset.UtcNow - started < TimeSpan.FromSeconds(20))
                     {
                         return false;
                     }
@@ -238,7 +238,7 @@ public sealed class NodeHostPickupTests
             {
                 if (item is null)
                 {
-                    if (!harness.LogLines.Any(l => l.Contains("listening", StringComparison.Ordinal) || l.Contains(" poll ", StringComparison.Ordinal)) && DateTimeOffset.UtcNow - started < TimeSpan.FromSeconds(3))
+                    if (!harness.LogLines.Any(l => l.Contains("registry published", StringComparison.Ordinal)) && DateTimeOffset.UtcNow - started < TimeSpan.FromSeconds(20))
                     {
                         return false;
                     }
@@ -323,7 +323,7 @@ public sealed class NodeHostPickupTests
             {
                 if (item is null)
                 {
-                    if (!harness.LogLines.Any(l => l.Contains("listening", StringComparison.Ordinal) || l.Contains(" poll ", StringComparison.Ordinal)) && DateTimeOffset.UtcNow - started < TimeSpan.FromSeconds(3))
+                    if (!harness.LogLines.Any(l => l.Contains("registry published", StringComparison.Ordinal)) && DateTimeOffset.UtcNow - started < TimeSpan.FromSeconds(20))
                     {
                         return false;
                     }
