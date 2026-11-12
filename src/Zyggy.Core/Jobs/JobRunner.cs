@@ -183,6 +183,11 @@ public sealed partial class JobRunner
             ? Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(reply.Body.Span) + lines + "\n")
             : reply.Body.ToArray();
         var updated = reply with { Body = body, FilesChanged = outcome.FilesChanged, DiffRef = outcome.DiffRef, Finished = _clock.GetUtcNow() };
+        if (outcome.RemoveFailed)
+        {
+            LogWorktreeNotRemoved(id);
+        }
+
         if (outcome.FailedStep is { } step)
         {
             LogWorktreeFailed(id, step);
@@ -308,6 +313,9 @@ public sealed partial class JobRunner
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: fetch from origin failed; running from the refs already present")]
     private partial void LogFetchFailed(string id);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: worktree folder not removed; removed at the next run of this job or by hand")]
+    private partial void LogWorktreeNotRemoved(string id);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: worktree git step failed: {Step}")]
     private partial void LogWorktreeFailed(string id, string step);

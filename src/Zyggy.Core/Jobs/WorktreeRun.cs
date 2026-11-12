@@ -84,9 +84,13 @@ internal sealed class WorktreeRun(GitClient git)
 
         if (ahead == 0)
         {
-            await RemoveAsync(project, worktree, ct).ConfigureAwait(false);
-            await git.DeleteBranchAsync(project, branch, ct).ConfigureAwait(false);
-            return new WorktreeOutcome([], null, null, null);
+            var cleaned = await RemoveAsync(project, worktree, ct).ConfigureAwait(false);
+            if (cleaned)
+            {
+                await git.DeleteBranchAsync(project, branch, ct).ConfigureAwait(false);
+            }
+
+            return new WorktreeOutcome([], null, null, null) { RemoveFailed = !cleaned };
         }
 
         var changed = await git.ChangedPathsAsync(project, baseSha, tip, ct).ConfigureAwait(false) ?? [];
@@ -100,23 +104,26 @@ internal sealed class WorktreeRun(GitClient git)
 
         var hasOrigin = await git.ConfigGetAsync(project, "remote.origin.url", ct).ConfigureAwait(false) is not null;
         var pushed = hasOrigin && (await git.PushBranchAsync(project, branch, ct).ConfigureAwait(false)).Succeeded;
-        await RemoveAsync(project, worktree, ct).ConfigureAwait(false);
+        var removed = await RemoveAsync(project, worktree, ct).ConfigureAwait(false);
         if (!pushed)
         {
             lines.Add("branch " + branch + " kept locally, not pushed: push");
-            return new WorktreeOutcome(files, null, string.Join('\n', lines), "push");
+            return new WorktreeOutcome(files, null, string.Join('\n', lines), "push") { RemoveFailed = !removed };
         }
 
-        await git.DeleteBranchAsync(project, branch, ct).ConfigureAwait(false);
+        // git refuses to delete a branch a worktree still has checked out; the next run of this job id cleans both.
+        if (removed)
+        {
+            await git.DeleteBranchAsync(project, branch, ct).ConfigureAwait(false);
+        }
+
         lines.Add("branch " + branch + " pushed at " + tip);
-        return new WorktreeOutcome(files, tip, string.Join('\n', lines), null);
+        return new WorktreeOutcome(files, tip, string.Join('\n', lines), null) { RemoveFailed = !removed };
     }
 
-    private async Task RemoveAsync(string project, string worktree, CancellationToken ct)
-    {
-        // A folder held open is removed at the next run of this job id, else by hand (spec 16 Failure modes); the report is unaffected.
-        await git.WorktreeRemoveAsync(project, worktree, ct).ConfigureAwait(false);
-    }
+    // A folder held open is removed at the next run of this job id, else by hand (spec 16 Failure modes); the report is unaffected.
+    private async Task<bool> RemoveAsync(string project, string worktree, CancellationToken ct) =>
+        (await git.WorktreeRemoveAsync(project, worktree, ct).ConfigureAwait(false)).Succeeded;
 }
 
 /// <summary>The outcome of <see cref="WorktreeRun.PrepareAsync"/>.</summary>
@@ -136,5 +143,8 @@ internal abstract record PrepareResult(bool FetchFailed)
 /// <param name="FailedStep">The git step that failed (<c>git_error</c>), or <see langword="null"/>.</param>
 internal sealed record WorktreeOutcome(IReadOnlyList<string> FilesChanged, string? DiffRef, string? ResultLines, string? FailedStep)
 {
+    /// <summary>Gets a value indicating whether <c>git worktree remove</c> failed (logged once; the report is unaffected).</summary>
+    public bool RemoveFailed { get; init; }
+
     public static WorktreeOutcome Kept(string worktree, string step) => new([], null, "worktree kept at " + worktree + ": " + step, step);
 }

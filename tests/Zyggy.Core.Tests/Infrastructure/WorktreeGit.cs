@@ -36,11 +36,45 @@ internal sealed class WorktreeGit
     /// <summary>Gets or sets the changed paths <c>git diff --name-only -z</c> prints, in git's order.</summary>
     public IReadOnlyList<string> ChangedPaths { get; set; } = ["src/new.txt"];
 
+    /// <summary>Gets or sets a value indicating whether no default branch can be found (no origin/HEAD, no main, no master, detached HEAD).</summary>
+    public bool NoDefaultBranch { get; set; }
+
+    /// <summary>Gets the worktree steps that fail: <c>fetch</c>, <c>worktree add</c>, <c>commit</c>, <c>push</c>, <c>worktree remove</c>.</summary>
+    public HashSet<string> Failing { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Gets the steps whose git process times out (the runner's kill after <see cref="ProcessSpec.Timeout"/>).</summary>
+    public HashSet<string> TimingOut { get; } = new(StringComparer.Ordinal);
+
+    public static ProcessResult TimedOut() => new(null, "", "", true, false, false, TimeSpan.FromMinutes(2));
+
     private static bool Has(ProcessSpec spec, string argument) => spec.Arguments.Contains(argument);
+
+    private static string Step(ProcessSpec spec) => RecordingProcessRunner.SubCommand(spec) switch
+    {
+        "worktree" when Has(spec, "add") => "worktree add",
+        "worktree" when Has(spec, "remove") => "worktree remove",
+        var sub => sub,
+    };
 
     private ProcessResult? Answer(ProcessSpec spec)
     {
+        var step = Step(spec);
+        if (TimingOut.Contains(step))
+        {
+            return TimedOut();
+        }
+
+        if (Failing.Contains(step))
+        {
+            return RecordingProcessRunner.Fail(128, "fatal: " + step + " failed");
+        }
+
         var args = spec.Arguments;
+        if (NoDefaultBranch && (RecordingProcessRunner.SubCommand(spec) == "symbolic-ref" || (Has(spec, "--verify") && !args[^1].StartsWith("refs/heads/zyggy/", StringComparison.Ordinal))))
+        {
+            return RecordingProcessRunner.Fail(1, "");
+        }
+
         switch (RecordingProcessRunner.SubCommand(spec))
         {
             case "config" when Has(spec, "remote.origin.url"):
