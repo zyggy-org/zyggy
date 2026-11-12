@@ -39,9 +39,9 @@ public sealed partial class P1_WalkingSkeleton : IAsyncLifetime
     [Fact]
     public async Task Part1a_ProbeJobFromCentral_ClaimedAndAnsweredByTheRealHost()
     {
-        // Arrange: the ex-05 probe round trip — a probe-shaped job (registry name "probe"). With the job runner as the handler the
-        // pre-flight answers `rejected`/`unknown_project` by design until registry names resolve (deliverable 14 turns this into `done`);
-        // the ex-05 "answered" criterion is the signed report, not its status (plan 07 A14).
+        // Arrange: the ex-05 probe round trip — a probe-shaped job (registry name "probe"). A registry name the node's scan does not
+        // know stays `rejected`/`unknown_project: unknown name` (deliverable 14); the ex-05 "answered" criterion is the signed report,
+        // not its status (plan 07 A14).
         var ct = TestContext.Current.CancellationToken;
         SeededJob job = await _harness.Bus.SeedSignedJobAsync(NodeHostHarness.Central, NodeHostHarness.HomeLaptop, TestKeys.Acme1, _harness.Store, "probe\n", ct: ct);
 

@@ -505,7 +505,7 @@ integration tests in tests/Zyggy.Integration/{Registry,Node,Jobs,Gates}. Never t
 
 ## Step 11 — The P2 gate's first part passes through the real components, the hygiene facts guard the registry, and the documents carry the new keys and runbook rows: `Gates/P2_RegistryWorktreeSweep.cs` part 1 (registry published → `zyggy submit --project <name>` → done report; unknown name → `unknown_project: unknown name`), source-hygiene facts, READMEs, and the founding-spec amendments confirmed in place
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `tests/Zyggy.Integration/Gates/P2_RegistryWorktreeSweep.cs` *(create)*: header comment in the P1 file's style — "The P2 gate (founding spec §12). Parts and owners: Part 1 (deliverable 14, this region): registry published, a job routed by name. Part 2 (16, worktrees) and Part 3 (17, sweep) append their own regions; part 1 is never restructured. Nothing in the envelope wire format changed for this gate; `PROTOCOL.md` stays the placeholder (15 copies §4)." `public sealed partial class P2_RegistryWorktreeSweep : IAsyncLifetime` over `NodeHostHarness`; `#region Part 1 — 14`.

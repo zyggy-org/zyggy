@@ -17,7 +17,7 @@ One loop (founding spec §5 and §6), the body of which is `Zyggy.Core.Bus.BusLi
 8. **Health**: `GET http://localhost:4711/health` on loopback only (below).
 9. **Login probe**: `claude auth status` at start, hourly and after a run that failed with an authentication error, into the `claudeAuthOk` health field.
 
-Not here yet: discovery and the registry (14), `policy.yaml` (18), the DLP filter (19).
+Not here yet: `policy.yaml` (18), the DLP filter (19). Discovery and the registry (14) are below.
 
 ## Running it
 
@@ -45,6 +45,8 @@ The single configuration file (§10). Path: `--config`, else `ZYGGY_NODE_JSON`, 
 | `nodeDir` | transcripts under `runs/<tenant>/`, the log under `logs/` | the per-OS data directory |
 | `log.level` | `Debug`, `Information`, `Warning`, `Error` | `Information` |
 | `secrets.root` | the file secret store's root | the per-OS default |
+| `devRoots` | the folders whose direct children are scanned for projects; a job path must lie under one | `[]` (nothing found, every path refused) |
+| `discovery.intervalMinutes`, `discovery.lastSeenHours`, `discovery.detail` | rescan period, the liveness stamp's maximum age, `full` or `names` | 60, 6, `full` |
 
 Secrets are never in it; any key named like a credential is refused.
 
@@ -81,7 +83,25 @@ One rolling file per machine, `<nodeDir>/logs/zyggy-<yyyyMMdd>.log`, a new file 
 <UTC timestamp>Z [LEVEL] <tenant> <machine> <phase> <jobId> <category>: <message>
 ```
 
-`phase` is one of `poll pull claim run report reject pickup` and `jobId` is set inside a run; both are blank on host lines. One line per state change, nothing on a quiet tick; never the job body, the prompt, a key or a credential. `log.level: Debug` adds the host's diagnostics.
+`phase` is one of `poll pull claim run report reject pickup discover` and `jobId` is set inside a run; both are blank on host lines. One line per state change, nothing on a quiet tick; never the job body, the prompt, a key or a credential. `log.level: Debug` adds the host's diagnostics.
+
+## Discovery
+
+Deliverable 14. The node tells the bus what it can run and routes jobs by project name:
+
+- **First scan before any job.** At start the node scans the direct children of every `devRoots` entry for Claude Code projects (a `.claude/` folder) **before** its listener admits a single job, so a job by name that was already waiting resolves against a real scan.
+- **First publish after the first poll.** The registry file `tenants/<tenant>/registry/<machine>.yaml` is committed once the listener is up and has polled (at most 60 s), so its `health` is not the "never polled" `red`. A refused start-up (exit 6) publishes nothing.
+- **Then every `discovery.intervalMinutes`** (60): a rescan replaces the in-memory snapshot; a commit happens only when the content changed or `last_seen` is older than `discovery.lastSeenHours` (6). Scans never overlap; a failing scan keeps the previous snapshot.
+- **Routing.** A job's `project` that is a name resolves only through this node's own snapshot — never through the registry file on the bus, which anyone with push access could rewrite. A path must lie under a `devRoots` entry. Anything else is `rejected` with `unknown_project: unknown name` or `outside devRoots`.
+- **Central** publishes its own file too, with `projects: []` unless it has `devRoots`. Registry files of other machines or tenants are never read.
+
+Descriptions of agents and skills and the `CLAUDE.md` summary are published only when the secret patterns are registered: set `ZYGGY_SECRET_PATTERNS` in **the service's** environment — the laptop's scheduled task, or the systemd drop-in on Central (`pickup.conf` already carries it). `zyggy setup` writes it into Claude Code's settings, not into the node's environment.
+
+| Situation | What you see | What to do |
+|-----------|--------------|------------|
+| Secret patterns not registered on the node | `discovery: secret patterns not registered; publishing names only` once; the registry lists names and default branches without descriptions | Set `ZYGGY_SECRET_PATTERNS` on the node's scheduled task (laptop) or in the systemd drop-in (Central) and restart the node. |
+
+The other discovery and registry failure modes are in the Core README, "Troubleshooting — Discovery and registry".
 
 ## Central
 
