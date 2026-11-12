@@ -122,16 +122,34 @@ public sealed partial class JobRunner
         var nodeDir = _options.NodeDir ?? TranscriptPaths.DefaultNodeDir();
         SweepTranscripts(TranscriptPaths.TenantDirectory(nodeDir, job.Header.Tenant));
 
+        // Spec 16: a worktree job runs in <nodeDir>/worktrees/<tenant>/<id> on zyggy/<id>; the lock stays on the project.
+        var runDirectory = project;
+        string? baseSha = null;
+        var worktrees = new WorktreeRun(_git);
         if (fields.Worktree)
         {
-            LogWorktree(id);
+            runDirectory = TranscriptPaths.WorktreeFor(nodeDir, job.Header.Tenant, job.Header.Id);
+            var prepared = await worktrees.PrepareAsync(project, runDirectory, id, ct).ConfigureAwait(false);
+            if (prepared.FetchFailed)
+            {
+                LogFetchFailed(id);
+            }
+
+            if (prepared is PrepareResult.Failed failed)
+            {
+                var gitError = RunFailureReasonWire.ToWire(RunFailureReason.GitError);
+                LogWorktreeFailed(id, failed.Step);
+                return Reply(ReportStatus.Failed, gitError, $"{gitError}: {failed.Step}\n", started);
+            }
+
+            baseSha = ((PrepareResult.Prepared)prepared).BaseSha;
         }
 
         var allowedTools = fields.AllowedTools is { Count: > 0 } tools ? tools : policy.DefaultAllowedTools;
         var minutes = fields.TimeoutMinutes ?? policy.DefaultTimeoutMinutes;
         // Spec 06 "ModelRunRequest for a job": no tool set, extra directory, schema, model or system prompt; the project's own
         // hooks, skills, MCP servers and memory apply (Isolation.None, ex-Q7).
-        var request = new ModelRunRequest(_prompt.Render(job, project, allowedTools), project, _options.TimeoutOverride ?? TimeSpan.FromMinutes(minutes))
+        var request = new ModelRunRequest(_prompt.Render(job, runDirectory, allowedTools), runDirectory, _options.TimeoutOverride ?? TimeSpan.FromMinutes(minutes))
         {
             MaxTurns = policy.MaxTurns,
             AllowedTools = allowedTools,
@@ -142,11 +160,39 @@ public sealed partial class JobRunner
             TranscriptPath = TranscriptPaths.For(nodeDir, job.Header.Tenant, job.Header.Id),
         };
 
-        LogStarted(id, project, fields.Agent ?? "none", minutes);
+        LogStarted(id, runDirectory, fields.Agent ?? "none", minutes);
         var result = await _model.RunAsync(request, ct).ConfigureAwait(false);
         var reply = Map(id, result, minutes, started);
+        if (baseSha is not null)
+        {
+            var machine = job.Header.To.Value;
+            var outcome = await worktrees.FinishAsync(project, runDirectory, id, baseSha, new GitIdentity("zyggy (" + machine + ")", machine + "@zyggy.org"), ct)
+                .ConfigureAwait(false);
+            reply = WithWorktree(id, reply, outcome);
+        }
+
         LogFinished(id, reply, result);
         return reply;
+    }
+
+    // Spec 16 Behavior: files and diff_ref from the branch; a git failure turns a done run into failed/git_error, a failed or
+    // timed-out run keeps its own status and reason.
+    private JobReply WithWorktree(string id, JobReply reply, WorktreeOutcome outcome)
+    {
+        var body = outcome.ResultLines is { } lines
+            ? Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(reply.Body.Span) + lines + "\n")
+            : reply.Body.ToArray();
+        var updated = reply with { Body = body, FilesChanged = outcome.FilesChanged, DiffRef = outcome.DiffRef, Finished = _clock.GetUtcNow() };
+        if (outcome.FailedStep is { } step)
+        {
+            LogWorktreeFailed(id, step);
+            if (reply.Status == ReportStatus.Done)
+            {
+                updated = updated with { Status = ReportStatus.Failed, Reason = RunFailureReasonWire.ToWire(RunFailureReason.GitError) };
+            }
+        }
+
+        return updated;
     }
 
     // The spec's Report mapping table: done with the summary; timeout with the partial text; claude_error for every other failure.
@@ -220,7 +266,7 @@ public sealed partial class JobRunner
 
     private static int? Clamp(long? tokens) => tokens is { } value ? (int)Math.Clamp(value, 0, int.MaxValue) : null;
 
-    // Every runner reply: files_changed [] and no diff_ref until worktrees (16).
+    // Every runner reply starts with files_changed [] and no diff_ref; only a worktree run fills them (WithWorktree).
     private JobReply Reply(ReportStatus status, string? reason, string body, DateTimeOffset started) =>
         new(status, reason, Encoding.UTF8.GetBytes(body), started, _clock.GetUtcNow()) { FilesChanged = [], DiffRef = null };
 
@@ -260,6 +306,9 @@ public sealed partial class JobRunner
     [LoggerMessage(Level = LogLevel.Error, Message = "job {Id}: runner exception {ExceptionType}")]
     private partial void LogRunnerException(string id, string exceptionType);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: worktree requested; running in place")]
-    private partial void LogWorktree(string id);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: fetch from origin failed; running from the refs already present")]
+    private partial void LogFetchFailed(string id);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: worktree git step failed: {Step}")]
+    private partial void LogWorktreeFailed(string id, string step);
 }
