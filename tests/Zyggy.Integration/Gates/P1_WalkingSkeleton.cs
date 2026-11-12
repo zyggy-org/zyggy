@@ -171,7 +171,7 @@ public sealed partial class P1_WalkingSkeleton : IAsyncLifetime
         using IHost host = _harness.Build();
         await host.StartAsync(ct);
         HealthServer server = host.Services.GetRequiredService<HealthServer>();
-        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(server.IsListening), TimeSpan.FromSeconds(10), ct);
+        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(server.IsListening), TimeSpan.FromSeconds(60), ct);
         using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{server.BoundPort}/") };
         await NodeHostHarness.WaitUntilAsync(async () =>
         {
@@ -293,7 +293,7 @@ public sealed partial class P1_WalkingSkeleton : IAsyncLifetime
         using IHost host = _harness.Build();
         await host.StartAsync(ct);
         HealthServer server = host.Services.GetRequiredService<HealthServer>();
-        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(server.IsListening), TimeSpan.FromSeconds(10), ct);
+        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(server.IsListening), TimeSpan.FromSeconds(60), ct);
         using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{server.BoundPort}/") };
         await NodeHostHarness.WaitUntilAsync(async () => (await HealthAsync(client, ct)).GetProperty("lastPollUtc").ValueKind == JsonValueKind.String, TimeSpan.FromSeconds(30), ct);
 

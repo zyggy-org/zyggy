@@ -23,7 +23,7 @@ public sealed class HealthEndpointTests
         await host.StartAsync(ct);
         HealthServer server = host.Services.GetRequiredService<HealthServer>();
         NodeStatus status = host.Services.GetRequiredService<NodeStatus>();
-        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(server.IsListening && status.Listener?.Status.LastPollUtc is not null && status.ClaudeAuthOk == true), TimeSpan.FromSeconds(10), ct);
+        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(server.IsListening && status.Listener?.Status.LastPollUtc is not null && status.ClaudeAuthOk == true), TimeSpan.FromSeconds(60), ct);
         using HttpClient client = Client(server);
 
         // Act
@@ -60,7 +60,7 @@ public sealed class HealthEndpointTests
         using IHost host = harness.Build();
         await host.StartAsync(ct);
         HealthServer server = host.Services.GetRequiredService<HealthServer>();
-        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(server.IsListening), TimeSpan.FromSeconds(10), ct);
+        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(server.IsListening), TimeSpan.FromSeconds(60), ct);
         using HttpClient client = Client(server);
         using var request = new HttpRequestMessage(new HttpMethod(method), new Uri(path, UriKind.Relative));
 

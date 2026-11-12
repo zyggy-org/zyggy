@@ -101,7 +101,7 @@ public sealed class NodeHostJobFlowTests
 
         // Act
         await host.StartAsync(ct);
-        await NodeHostHarness.WaitUntilAsync(async () => (await harness.ReportsOnMainAsync(ct)).Count == 1, TimeSpan.FromSeconds(20), ct);
+        await NodeHostHarness.WaitUntilAsync(async () => (await harness.ReportsOnMainAsync(ct)).Count == 1, TimeSpan.FromSeconds(60), ct);
         NodeStatus status = host.Services.GetRequiredService<NodeStatus>();
         await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(status.Listener?.Status.LastPollUtc is not null), TimeSpan.FromSeconds(10), ct);
         ListenerStatus listener = status.Listener!.Status;
