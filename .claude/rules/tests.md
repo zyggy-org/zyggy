@@ -1,6 +1,7 @@
 ---
 description: "Use when writing, reviewing, or generating unit or integration tests for Zyggy. Covers xUnit + FluentAssertions + NSubstitute conventions, AAA structure, folder layout, golden-file tests, the fake-clock rule, and the bare-repo + fake-claude integration harness."
-applyTo: "tests/**"
+paths:
+  - "tests/**"
 ---
 # Test Conventions — Zyggy
 

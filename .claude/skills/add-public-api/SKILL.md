@@ -12,7 +12,7 @@ Add a new public type, interface, or method to `Zyggy.Core` with full test cover
 
 - Know **what** to add: the public type name, its purpose, its expected API surface, and whether it is one of the five §9 seams (`IBusProvider`, `IModelRunner`, `ISecretStore`, `INotifier`, `IPolicySource`) or a supporting type.
 - Identify a **reference pattern** — an existing seam in the repo whose shape you will follow. If none exists yet, follow the templates in `.claude/skills/build-feature/SKILL.md` and say so.
-- If ≥ 3 files are involved or a shared contract changes, a `_plans/<NN>-<Deliverable>.md` should exist and be approved. For smaller additions (single type + test), proceed directly.
+- A new public seam or a shared-contract change is a risk area: an approved `_specs/<NN>-<short-name>.md` must cover it (`CLAUDE.md` § Spec Gate). For smaller additions (single type + test), proceed directly.
 
 ## Mandatory Workflow Per Step
 
@@ -33,7 +33,7 @@ Add a new public type, interface, or method to `Zyggy.Core` with full test cover
    - dotnet test Zyggy.slnx → all pass
    - dotnet format Zyggy.slnx --verify-no-changes → exit 0
 9. 🛑 STOP — present results, wait for user approval
-10. MARK DONE — update _plans/ checkboxes if applicable
+10. RECORD — one Status line in the spec if the addition belongs to a slice; commit only on the owner's approval
 ```
 
 **Never batch steps. Never skip RED. Never skip CODE ANALYSIS. Never proceed past 🛑 without user confirmation.**

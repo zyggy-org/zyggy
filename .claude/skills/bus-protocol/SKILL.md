@@ -7,7 +7,7 @@ metadata:
 
 # Bus Protocol — checklist for code that touches `zyggy-bus`
 
-The bus is a private git repository. One file per message, state encoded in the path, every file HMAC-signed. **§4 of the founding spec is normative and `PROTOCOL.md` in `zyggy-core` must match it verbatim** — so any change to what is below is an Open Question for the technical-analyst and a ⚠️ Risk Area in a plan, never a quiet code edit.
+The bus is a private git repository. One file per message, state encoded in the path, every file HMAC-signed. **§4 of the founding spec is normative and `PROTOCOL.md` in `zyggy-core` must match it verbatim** — so any change to what is below is an Open question in the spec (`write-spec`) and a ⚠️ slice, never a quiet code edit.
 
 > Source of truth: `_specs/00 - Personal Agent Platform — Technical Specification.md` §4 (protocol), §5 (transport), §9 (design rules), §14 (tenancy, schema). This skill restates them as checks; when in doubt the spec wins.
 

@@ -1,6 +1,7 @@
 ---
 description: "Public API design conventions for Zyggy.Core, the class library consumed by Zyggy.Node, Zyggy.Cli and Zyggy.Hub: XML documentation, internal-and-sealed by default, guard clauses, CancellationToken, the five seam interfaces, closed enums, records for values. Activates when editing Zyggy.Core source files."
-applyTo: "src/Zyggy.Core/**"
+paths:
+  - "src/Zyggy.Core/**"
 ---
 # Public API Design Conventions — Zyggy.Core
 
@@ -85,4 +86,4 @@ All async public methods accept `CancellationToken` as the last parameter and pr
 - Pre-1.0 the surface may change freely, but a member used by another host is renamed in the same deliverable, not left dangling.
 - From 1.0: `[Obsolete("Use X instead. Will be removed in vN.")]` for one minor version before removal.
 
-## All public API changes are a Risk Area — flag them ⚠️ in the plan and review them at the covering gate.
+## All public API changes are a Risk Area — flag them ⚠️ in the spec and on the slice that adds them; the owner sees the approach before code.
