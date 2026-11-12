@@ -213,6 +213,7 @@ public sealed class DiscoveryLoopTests : IDisposable
         // Act
         Task run = loop.RunAsync(stop.Token);
         await UntilAsync(() => _scans == 1 && Commits == 1, ct);
+        await SettleAsync(ct); // the first cycle is still pushing after its commit; a tick before it ends is skipped by design
         _clock.Advance(TimeSpan.FromHours(1));
         await UntilAsync(() => _scans == 2, ct);
         _clock.Advance(TimeSpan.FromHours(1));
