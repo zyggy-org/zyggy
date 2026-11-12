@@ -30,16 +30,16 @@ You know the branching and versioning strategy and guide the developer step by s
 ### Short-lived branches
 | Pattern | Branches from | Merges back to |
 |---------|--------------|----------------|
-| `feature/<NN>-<deliverable>` | `dev` | `dev` (via PR) — one branch per roadmap deliverable / plan file |
+| `feature/<NN>-<deliverable>` | `dev` | `dev` (via PR) — one branch per roadmap deliverable / spec |
 | `hotfix/*`  | `main` | `main` (via PR), then `main` → `dev` |
 | `release/*` *(optional)* | `dev` | `main` AND back to `dev` |
 
 ### Golden rules
 1. `feature/*` branches **never** branch off `main`.
-2. Keep feature branches short-lived and focused — one plan file, one branch.
+2. Keep feature branches short-lived and focused — one spec, one branch; the approved spec is its first commit, then one owner commit per slice.
 3. Before opening a PR to `dev`, integrate the latest `dev` into your feature branch locally.
 4. Tags are created on `main` **only**.
-5. A PR to `dev` is opened only when the plan's final 🛑 HUMAN GATE is checked and `dotnet build`, `dotnet test`, `dotnet format --verify-no-changes` are green.
+5. A PR is opened only when every slice of the spec is committed, the after-last-slice reviewer reported every acceptance criterion met, the owner approved the release (the `ship` skill then runs PR, merge, tag and release without asking again), and `dotnet build`, `dotnet test`, `dotnet format --verify-no-changes` are green.
 
 ---
 
@@ -66,7 +66,7 @@ You know the branching and versioning strategy and guide the developer step by s
 git switch dev
 git pull --ff-only
 git switch -c feature/<NN>-<deliverable>
-# ... implement the plan ...
+# ... build the spec slice by slice ...
 git add .
 git commit -m "<type>: <message>"
 ```
@@ -89,7 +89,7 @@ git push --force-with-lease
 
 Then open a PR from `feature/<NN>-<deliverable>` → `dev`:
 ```powershell
-gh pr create --base dev --title "<NN> <deliverable>" --body "<summary; link _plans/<NN>-<deliverable>.md>"
+gh pr create --base dev --title "<NN> <deliverable>" --body "<summary; link _specs/<NN>-<short-name>.md>"
 ```
 
 ---

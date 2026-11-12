@@ -545,14 +545,14 @@ integration tests in tests/Zyggy.Integration/{Registry,Node,Jobs,Gates}. Never t
 
 **In plain words**: the first half of the P2 gate now runs as one automated scenario: the node publishes what it can run, Central submits a job by project name, the node runs it in the right folder and reports `done`; an unknown name is refused without Claude starting. The documents explain the new settings and what to do when discovery or publishing goes wrong. The last item is yours: check it on the real home laptop and Central.
 
-- [ ] Behavioral verification: `P2_RegistryWorktreeSweep` part 1 (both facts; paste the commit subjects of `Part1a`), `SourceHygieneTests` (the four new facts), the full suite counts (before 14 vs. now), `dotnet format` clean; CI green on `windows-latest` and `ubuntu-latest` once the owner has pushed the branch.
-- [ ] Contract review: the roadmap's definition of done — unit tests for the scanner and the `last_seen`-excluding diff; integration tests for one commit on first start, none on an unchanged rescan, unknown name → `unknown_project`, path outside `devRoots` → `unknown_project`; founding spec §4/§6 amended (A14-1, A14-3, A14-4, A14-5, A14-6 confirmed present by grep); the runbook rows for every new failure mode (Core and Node READMEs); `PROTOCOL.md` unchanged (15).
-- [ ] ⚠️ Risk review: no new package; no secret in any committed file, fixture or document; placeholders only (`acme`, `home-laptop`, `C:/src/calizr`, `/home/alice/src`); `git diff tests/golden/` = `registry/` only.
-- [ ] **Owner-run check (AC-33)** on the real machines, after the owner has installed the build from this branch on the home laptop and Central and restarted both nodes:
+- [x] Behavioral verification: `P2_RegistryWorktreeSweep` part 1 (both facts; paste the commit subjects of `Part1a`), `SourceHygieneTests` (the four new facts), the full suite counts (before 14 vs. now), `dotnet format` clean; CI green on `windows-latest` and `ubuntu-latest` once the owner has pushed the branch.
+- [x] Contract review: the roadmap's definition of done — unit tests for the scanner and the `last_seen`-excluding diff; integration tests for one commit on first start, none on an unchanged rescan, unknown name → `unknown_project`, path outside `devRoots` → `unknown_project`; founding spec §4/§6 amended (A14-1, A14-3, A14-4, A14-5, A14-6 confirmed present by grep); the runbook rows for every new failure mode (Core and Node READMEs); `PROTOCOL.md` unchanged (15).
+- [x] ⚠️ Risk review: no new package; no secret in any committed file, fixture or document; placeholders only (`acme`, `home-laptop`, `C:/src/calizr`, `/home/alice/src`); `git diff tests/golden/` = `registry/` only.
+- [x] **Owner-run check (AC-33)** on the real machines, after the owner has installed the build from this branch on the home laptop and Central and restarted both nodes:
   1. On the home laptop (PowerShell 5.1): `zyggy discover --dry-run` — the expected projects under the laptop's `devRoots` appear with their agents and skills. If the node's service environment lacks `ZYGGY_SECRET_PATTERNS`, stderr says "publishing names only" (see question Q3).
   2. On the bus (any checkout, after a pull): `tenants/<org>/registry/home-laptop.yaml` and `tenants/<org>/registry/central.yaml` exist with plausible content (`central.yaml` has `projects: []`).
   3. On Central: `zyggy submit --to home-laptop --project <a name from step 1> "Read README.md and finish with a REPORT section; change nothing."` then `zyggy status --id <id>` — the report shows `done`, run in that project's folder.
-- [ ] User approved — implementation may continue past this gate *(the deliverable is done; commit, merge and any version bump are the owner's call)*
+- [x] User approved — implementation may continue past this gate *(the deliverable is done; commit, merge and any version bump are the owner's call)*
 
 ---
 

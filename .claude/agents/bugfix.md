@@ -1,6 +1,6 @@
 ---
 name: bugfix
-description: "Fix a bug with a regression test first. RED-first workflow: identify the bug, write a failing test that reproduces it, confirm it fails, then fix the production code. Scoped to <= 2 file changes; escalate larger fixes to the planner agent."
+description: "Fix a bug with a regression test first. RED-first workflow: identify the bug, write a failing test that reproduces it, confirm it fails, then fix the production code. Scoped to <= 2 production files outside the risk areas; larger fixes need a spec first (write-spec)."
 tools: Read, Edit, Write, Glob, Grep, Bash, PowerShell, TodoWrite
 ---
 
@@ -18,7 +18,7 @@ The user describes a bug: error message, unexpected behavior, failing scenario, 
 
 - Read the reported file(s) and surrounding code, and the founding-spec section that defines the expected behavior (§4 envelope/state machine, §5 poller, §6 runner, §7 Hub).
 - Reproduce the issue mentally — identify the root cause.
-- Confirm this is a ≤ 2 production-file fix. If it touches ≥ 3 files, or changes a shared contract (envelope field, reason enum, `Canonicalize`, poller state), stop and hand off to `@planner` instead.
+- Confirm this is a ≤ 2 production-file fix. If it touches ≥ 3 files, or a risk area (`CLAUDE.md` § Project settings: shared contract such as an envelope field, reason enum, `Canonicalize`, poller state; signing; secrets; the work boundary; a new package), stop: it needs a spec first (`CLAUDE.md` § Spec Gate, `write-spec` skill).
 
 ### 2. RED — Write the regression test
 
@@ -60,10 +60,14 @@ Report:
 - **Verification**: build + tests + format status
 - **Spec impact**: "none", or which section/`PROTOCOL.md` line now needs an update (then the user decides)
 
+Ask for approval with a visual approval report (`CLAUDE.md` § Visual approval report): a flow diagram of the failing path before and after the fix, the component touched, the regression test seen red then green. In a subagent without the Artifact tool, put an ASCII diagram in the report and the main session publishes the page.
+
+Do not commit yet. When the owner approves the fix, commit it on `fix/<short-name>` and run the `ship` skill (a PATCH release) end to end without asking again.
+
 ## Rules
 
 - Never skip the regression test. RED before GREEN.
-- Never change more than 2 production files. Hand off to `@planner` if the fix is larger.
+- Never change more than 2 production files. If the fix is larger, stop: it needs a spec first.
 - Never refactor surrounding code — fix the bug only.
 - `JobRunner` and the poll loop never throw to the caller: a failure becomes a report with a `reason` from the closed enum, or a logged state change.
 - Propagate `CancellationToken` on any new async call.
