@@ -245,9 +245,17 @@ internal sealed class NodeHostHarness : IAsyncDisposable
         return await Bus.ExistsOnMainAsync(path, ct) ? RegistryDocument.Parse(await Bus.ShowBytesAsync(path, ct)).Document : null;
     }
 
-    /// <summary>Seeds a signed job from <c>central</c> to <c>home-laptop</c> naming <paramref name="project"/>, on <c>main</c>.</summary>
-    public Task<SeededJob> SeedJobAsync(ScratchProject project, CancellationToken ct, EnvelopePriority priority = EnvelopePriority.Normal, string? body = null) =>
-        Bus.SeedSignedJobAsync(Central, HomeLaptop, TestKeys.Acme1, Store, body ?? Body, fields: new JobFields(project.Path, TimeoutMinutes: 2, AllowedTools: ["Read"]), priority: priority, ct: ct);
+    /// <summary>
+    /// Seeds a signed job from <c>central</c> to <c>home-laptop</c> naming <paramref name="project"/>, on <c>main</c>;
+    /// <paramref name="projectField"/> replaces the job's <c>project</c> value (a registry name, or a path outside <c>devRoots</c>).
+    /// </summary>
+    public Task<SeededJob> SeedJobAsync(
+        ScratchProject project,
+        CancellationToken ct,
+        EnvelopePriority priority = EnvelopePriority.Normal,
+        string? body = null,
+        string? projectField = null) =>
+        Bus.SeedSignedJobAsync(Central, HomeLaptop, TestKeys.Acme1, Store, body ?? Body, fields: new JobFields(projectField ?? project.Path, TimeoutMinutes: 2, AllowedTools: ["Read"]), priority: priority, ct: ct);
 
     /// <summary>The report files on <c>main</c> for <c>home-laptop</c>, ordinal order.</summary>
     public async Task<IReadOnlyList<string>> ReportsOnMainAsync(CancellationToken ct)

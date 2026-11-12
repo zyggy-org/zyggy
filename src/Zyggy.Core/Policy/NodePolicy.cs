@@ -5,7 +5,7 @@ namespace Zyggy.Core.Policy;
 /// <param name="DefaultTimeoutMinutes">The time limit when a job names none (<c>claude.defaultTimeoutMinutes</c>).</param>
 /// <param name="MaxTurns">The agentic turn limit of every run (<c>claude.maxTurns</c>).</param>
 /// <param name="MaxBudgetUsd">The per-run spending cap (<c>claude.maxBudgetUsd</c>); <see langword="null"/> sets none.</param>
-/// <param name="DevRoots">The project roots (<c>devRoots</c>); read, not enforced until the registry (O18).</param>
+/// <param name="DevRoots">The project roots (<c>devRoots</c>): the scan's roots, and the only folders a job path may name (§6 step 1, A14-3).</param>
 /// <param name="MaxConcurrentJobs">How many jobs may run at once on this machine (<c>maxConcurrentJobs</c>, 2).</param>
 /// <param name="WorkHours">The working window (<c>workHours</c>); <see langword="null"/> means always inside.</param>
 public sealed record NodePolicy(

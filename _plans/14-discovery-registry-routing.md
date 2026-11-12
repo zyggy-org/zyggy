@@ -413,16 +413,16 @@ integration tests in tests/Zyggy.Integration/{Registry,Node,Jobs,Gates}. Never t
 
 **In plain words**: the node service now looks at its project folders before it touches any job, publishes its registry file once it is up and has polled, rescans every hour (seconds in the tests), and commits only when something changed. Central publishes a file too, with no projects. Another machine's or tenant's registry file arriving on the bus makes the node do nothing at all.
 
-- [ ] Behavioral verification: `DiscoveryLoopTests`, `RegistrySnapshotTests`, `NodeHostRegistryTests` (paste the registry file and the `git log --format=%s main` of `Rescan_UnchangedThenAddedProject_ExactlyTwoRegistryCommits`); the regression counts of the Node/P1 suites before and after.
-- [ ] Contract review: **A1** (first scan awaited before `BusListener.StartAsync`, deviating from the Contract's wording for the reason given — owner question Q1), **A2** (first publish waits for readiness + first poll, bounded 60 s — owner question Q2), **A3** (cycle in Core), **A10** (`ProjectsRoot` in the harness), **A11** (patterns registered when present); the log lines against the spec's Behaviors list.
-- [ ] ⚠️ Risk review (**shared contract with 07 — host start-up**): a refused start-up still exits 6 without a registry commit and without hanging (`StartupRefused_NoRegistryCommit`); no Information line per tick (§11); `SecretSweep` clean over the host log.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `DiscoveryLoopTests`, `RegistrySnapshotTests`, `NodeHostRegistryTests` (paste the registry file and the `git log --format=%s main` of `Rescan_UnchangedThenAddedProject_ExactlyTwoRegistryCommits`); the regression counts of the Node/P1 suites before and after.
+- [x] Contract review: **A1** (first scan awaited before `BusListener.StartAsync`, deviating from the Contract's wording for the reason given — owner question Q1), **A2** (first publish waits for readiness + first poll, bounded 60 s — owner question Q2), **A3** (cycle in Core), **A10** (`ProjectsRoot` in the harness), **A11** (patterns registered when present); the log lines against the spec's Behaviors list.
+- [x] ⚠️ Risk review (**shared contract with 07 — host start-up**): a refused start-up still exits 6 without a registry commit and without hanging (`StartupRefused_NoRegistryCommit`); no Information line per tick (§11); `SecretSweep` clean over the host log.
+- [x] User approved — implementation may continue past this gate
 
 ---
 
 ## Step 9 — Pre-flight resolves a name from the node's own scan and confines paths to `devRoots`, through substitutes: a label resolves through `RegistrySnapshot.TryResolve`, a non-label or unknown name is `unknown name`, a rooted path must equal or lie under a `devRoots` entry on a separator boundary (case-insensitive on Windows), `..` segments are refused, the 06 checks then run on the resolved path; the dispatcher's busy rule treats a name and its path as one project
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `src/Zyggy.Core/Registry/RegistrySnapshot.cs` *(modify)*: `public bool TryResolve(string name, [NotNullWhen(true)] out string? path)` — `ProjectName.IsLabel(name)` required; ordinal lookup in `Current.Projects`; an entry without `Path` (a `names` scan) never resolves; the returned path converted back from `/` to the OS form via `Path.GetFullPath`.
@@ -457,7 +457,7 @@ integration tests in tests/Zyggy.Integration/{Registry,Node,Jobs,Gates}. Never t
 
 ## Step 10 — A job named by registry name runs in the folder the node discovered, against the bare bus repository and the fake `claude`: the host claims, runs and reports `done` for a name; an unknown name and a path outside `devRoots` end in `rejected`/`unknown_project` with the model never started; a tampered bus copy of the registry never steers the run and is restored; every 06/07 round trip stays green with its scratch root in `devRoots`
 
-- [ ] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
+- [x] Done *(checked by the executor when VERIFY passes — user approval happens at the next 🛑 HUMAN GATE)*
 
 **Scope**:
 - `tests/Zyggy.Integration/Infrastructure/ScratchProject.cs` *(modify, additive — A10: `public static string ParentRoot` if not added in Step 4)*; `tests/Zyggy.Integration/Infrastructure/TestHost.cs` *(modify — A10: `NodeConfigurationFor(...)` sets `DevRoots = [ScratchProject.ParentRoot]`; `BuildRunnerListener` unchanged otherwise)*.
@@ -496,10 +496,10 @@ integration tests in tests/Zyggy.Integration/{Registry,Node,Jobs,Gates}. Never t
 
 **In plain words**: a job can now say `project: calizr` and the node runs it in the `calizr` folder it found itself. A name the node does not know, or a folder outside the node's `devRoots`, is refused with `unknown_project` and Claude never starts. Even if someone rewrites the registry file on the bus to point somewhere else, the node ignores it and later puts its own version back. All earlier job tests still pass; they now list their test folder in `devRoots`.
 
-- [ ] Behavioral verification: `PreFlightTests`, `JobRunnerTests`, `JobDispatcherTests`, `RegistrySnapshotTests`, `RoutingByNameTests`, `JobRunnerRoundTripTests`; the regression counts; the report bodies `unknown_project: unknown name` and `unknown_project: outside devRoots` pasted.
-- [ ] Contract review: pre-flight step 1 against the founding spec §6 as amended by A14-3; the check-word list (**A8**); the expectation edits in `PreFlightTests`/`JobRunnerTests` (`not absolute` → `unknown name`) quoted from `git diff`; **A13** (`JobDispatcher` constructors), **A14** (policy read first).
-- [ ] ⚠️ Risk review (**§6 shared contract**, **§8 boundary**): `TamperedRegistryOnBus_NeverSteersRun_FileRestored` green; no code path reads `BusPaths.Registry` for resolution (grep `ReadOwnRegistryAsync` callers: the publisher only); the sibling-prefix and `..` cases refused; `SecretSweep` clean.
-- [ ] User approved — implementation may continue past this gate
+- [x] Behavioral verification: `PreFlightTests`, `JobRunnerTests`, `JobDispatcherTests`, `RegistrySnapshotTests`, `RoutingByNameTests`, `JobRunnerRoundTripTests`; the regression counts; the report bodies `unknown_project: unknown name` and `unknown_project: outside devRoots` pasted.
+- [x] Contract review: pre-flight step 1 against the founding spec §6 as amended by A14-3; the check-word list (**A8**); the expectation edits in `PreFlightTests`/`JobRunnerTests` (`not absolute` → `unknown name`) quoted from `git diff`; **A13** (`JobDispatcher` constructors), **A14** (policy read first).
+- [x] ⚠️ Risk review (**§6 shared contract**, **§8 boundary**): `TamperedRegistryOnBus_NeverSteersRun_FileRestored` green; no code path reads `BusPaths.Registry` for resolution (grep `ReadOwnRegistryAsync` callers: the publisher only); the sibling-prefix and `..` cases refused; `SecretSweep` clean.
+- [x] User approved — implementation may continue past this gate
 
 ---
 

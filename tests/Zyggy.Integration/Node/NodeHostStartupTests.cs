@@ -233,7 +233,11 @@ public sealed partial class NodeHostStartupTests : IDisposable
             || m == "polling"
             || m.StartsWith("health endpoint listening", StringComparison.Ordinal)
             || m == "claude auth ok"
-            || m.StartsWith("file secret store selected on Windows", StringComparison.Ordinal)));
+            || m.StartsWith("file secret store selected on Windows", StringComparison.Ordinal)
+            || m.StartsWith("registry published:", StringComparison.Ordinal)));
+
+        // Plan 14 Step 8: the first registry publish follows the first poll — once at start, never per tick.
+        harness.LogLines.Count(l => MessageOf(l).StartsWith("registry published:", StringComparison.Ordinal)).Should().BeLessThanOrEqualTo(1);
         harness.LogLines.Should().NotContain(l => l.Contains("[DBG]", StringComparison.Ordinal));
     }
 

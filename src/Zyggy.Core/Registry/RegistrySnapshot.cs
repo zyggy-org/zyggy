@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Zyggy.Core.Registry;
 
 /// <summary>
@@ -18,5 +20,32 @@ public sealed class RegistrySnapshot
     {
         ArgumentNullException.ThrowIfNull(document);
         _current = document;
+    }
+
+    /// <summary>
+    /// Resolves a registry name to the folder this node discovered for it. Only a routable label (<c>[a-z0-9-]</c>) can resolve; the
+    /// lookup is ordinal; an entry without a path (a <c>detail: names</c> scan) never resolves; nothing resolves before the first scan.
+    /// </summary>
+    /// <param name="name">The job's <c>project</c> value.</param>
+    /// <param name="path">The project folder in the operating system's form, when found.</param>
+    /// <returns><see langword="true"/> when <paramref name="name"/> names a project of the latest scan that carries a path.</returns>
+    public bool TryResolve(string name, [NotNullWhen(true)] out string? path)
+    {
+        path = null;
+        if (string.IsNullOrEmpty(name) || !ProjectName.IsLabel(name) || _current is not { } current)
+        {
+            return false;
+        }
+
+        foreach (RegistryProject project in current.Projects)
+        {
+            if (string.Equals(project.Name, name, StringComparison.Ordinal) && project.Path is { } found)
+            {
+                path = Path.GetFullPath(found);
+                return true;
+            }
+        }
+
+        return false;
     }
 }

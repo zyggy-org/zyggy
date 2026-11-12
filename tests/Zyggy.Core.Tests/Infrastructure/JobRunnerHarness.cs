@@ -7,6 +7,7 @@ using Zyggy.Core.Git;
 using Zyggy.Core.Jobs;
 using Zyggy.Core.Models;
 using Zyggy.Core.Policy;
+using Zyggy.Core.Registry;
 using Zyggy.Core.Runs;
 using Zyggy.Core.Tenancy;
 
@@ -46,7 +47,11 @@ internal sealed class JobRunnerHarness
 
     public IPolicySource Policy { get; } = Substitute.For<IPolicySource>();
 
-    public NodePolicy NodePolicy { get; set; } = NodePolicy.Default;
+    /// <summary>Gets or sets the policy; its <c>devRoots</c> list <see cref="ScratchProject.ParentRoot"/> (plan 14 A10).</summary>
+    public NodePolicy NodePolicy { get; set; } = NodePolicy.Default with { DevRoots = [ScratchProject.ParentRoot] };
+
+    /// <summary>Gets the node's own scan the runner resolves a project name from; empty unless a test replaces it.</summary>
+    public RegistrySnapshot Registry { get; } = new();
 
     public RecordingProcessRunner Processes { get; }
 
@@ -61,7 +66,7 @@ internal sealed class JobRunnerHarness
     public TimeProvider? ClockOverride { get; set; }
 
     public JobRunner Build() =>
-        new(Model, Policy, new GitClient(Processes, new GitClientOptions(), Clock), Microsoft.Extensions.Options.Options.Create(Options), ClockOverride ?? Clock, Log);
+        new(Model, Policy, new GitClient(Processes, new GitClientOptions(), Clock), Registry, Microsoft.Extensions.Options.Options.Create(Options), ClockOverride ?? Clock, Log);
 
     /// <summary>A signed job from central to the home laptop with <paramref name="fields"/>.</summary>
     public static async Task<Model> JobAsync(JobFields fields, string body = "Investigate 502.\n", EnvelopeId? id = null)

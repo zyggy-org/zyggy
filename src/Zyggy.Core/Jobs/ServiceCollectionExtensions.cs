@@ -10,6 +10,7 @@ using Zyggy.Core.Git;
 using Zyggy.Core.Models;
 using Zyggy.Core.Policy;
 using Zyggy.Core.Processes;
+using Zyggy.Core.Registry;
 
 namespace Zyggy.Core.Jobs;
 
@@ -45,6 +46,7 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<IModelRunner>(),
                 sp.GetRequiredService<IPolicySource>(),
                 new GitClient(sp.GetRequiredService<IProcessRunner>(), new GitClientOptions(), clock),
+                sp.GetService<RegistrySnapshot>() ?? new RegistrySnapshot(),
                 sp.GetRequiredService<IOptions<JobRunnerOptions>>(),
                 clock,
                 sp.GetService<ILoggerFactory>()?.CreateLogger<JobRunner>() ?? NullLogger<JobRunner>.Instance);
@@ -68,6 +70,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton(sp => new JobDispatcher(
             sp.GetRequiredService<IPolicySource>(),
+            sp.GetService<RegistrySnapshot>() ?? new RegistrySnapshot(),
             sp.GetRequiredService<TimeProvider>(),
             sp.GetService<ILoggerFactory>()?.CreateLogger<JobDispatcher>() ?? NullLogger<JobDispatcher>.Instance));
         services.AddSingleton<JobGate>(sp => sp.GetRequiredService<JobDispatcher>().AsGate());

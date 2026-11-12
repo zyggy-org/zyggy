@@ -55,4 +55,61 @@ public sealed class RegistrySnapshotTests
         // Assert
         seen.Should().OnlyContain(d => d == null || ReferenceEquals(d, a) || ReferenceEquals(d, b));
     }
+
+    [Fact]
+    public void TryResolve_LabelKnown_Path()
+    {
+        // Arrange
+        string folder = Path.Combine(Path.GetTempPath(), "zyggy-unit", "calizr");
+        RegistrySnapshot snapshot = With(new RegistryProject("calizr", folder.Replace('\\', '/'), "main", [], [], null));
+
+        // Act
+        bool found = snapshot.TryResolve("calizr", out string? path);
+
+        // Assert
+        found.Should().BeTrue();
+        path.Should().Be(Path.GetFullPath(folder));
+    }
+
+    [Theory]
+    [InlineData("Calizr")]
+    [InlineData("calizr/x")]
+    [InlineData("")]
+    [InlineData("unknown")]
+    public void TryResolve_NotALabelOrUnknown_False(string name)
+    {
+        // Arrange
+        RegistrySnapshot snapshot = With(new RegistryProject("calizr", Path.GetTempPath().Replace('\\', '/'), "main", [], [], null));
+
+        // Act
+        bool found = snapshot.TryResolve(name, out string? path);
+
+        // Assert
+        found.Should().BeFalse();
+        path.Should().BeNull();
+    }
+
+    [Fact]
+    public void TryResolve_NamesEntryWithoutPath_False()
+    {
+        // Arrange: a `detail: names` scan publishes no path, so it can never route
+        RegistrySnapshot snapshot = With(new RegistryProject("calizr", null, null, [], [], null));
+
+        // Act + Assert
+        snapshot.TryResolve("calizr", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void TryResolve_BeforeFirstScan_False()
+    {
+        // Act + Assert
+        new RegistrySnapshot().TryResolve("calizr", out _).Should().BeFalse();
+    }
+
+    internal static RegistrySnapshot With(params RegistryProject[] projects)
+    {
+        var snapshot = new RegistrySnapshot();
+        snapshot.Replace(RegistryDocumentTests.Central() with { Projects = projects });
+        return snapshot;
+    }
 }
