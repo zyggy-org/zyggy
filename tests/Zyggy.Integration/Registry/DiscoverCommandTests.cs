@@ -261,7 +261,7 @@ public sealed class DiscoverCommandTests : IAsyncLifetime
         // Arrange: the CLI runs on a fake clock the test advances while another process holds the write lock
         var ct = TestContext.Current.CancellationToken;
         await SeedTwoProjectsAsync(ct);
-        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
+        var clock = new TimerWatchingClock(DateTimeOffset.UtcNow);
         using IDisposable? other = await BusCheckoutLock.AcquireAsync(_harness.Bus.CloneDir, BusCheckoutLock.WriteLockName, TimeSpan.Zero, TimeProvider.System, ct);
         other.Should().NotBeNull();
 
@@ -269,10 +269,13 @@ public sealed class DiscoverCommandTests : IAsyncLifetime
         Task<(int Exit, VerbConsole Console)> run = _harness.RunAsync(
             ["discover"], NodeJsonFor([_root]), extraEnvironment: NoNode(),
             more: s => Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton<TimeProvider>(s, clock), ct: ct);
-        for (int i = 0; i < 600 && !run.IsCompleted; i++)
+        // Hold the clock still until the CLI has finished the scan and sits in the lock wait (its first timer on this clock), so a slow
+        // machine cannot push the scan past the slow-scan threshold and add a notice to stderr.
+        await clock.FirstTimer.WaitAsync(ct);
+        while (!run.IsCompleted)
         {
             clock.Advance(TimeSpan.FromSeconds(1));
-            await Task.Delay(20, ct);
+            await Task.WhenAny(run, Task.Delay(20, ct));
         }
 
         var (exit, console) = await run;
@@ -281,6 +284,20 @@ public sealed class DiscoverCommandTests : IAsyncLifetime
         exit.Should().Be(1);
         console.Stderr.Should().Be("zyggy: registry: checkout busy\n");
         (await RegistryCommitsAsync(ct)).Should().Be(0);
+    }
+
+    private sealed class TimerWatchingClock(DateTimeOffset start) : Microsoft.Extensions.Time.Testing.FakeTimeProvider(start)
+    {
+        private readonly TaskCompletionSource _firstTimer = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task FirstTimer => _firstTimer.Task;
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            ITimer timer = base.CreateTimer(callback, state, dueTime, period);
+            _firstTimer.TrySetResult();
+            return timer;
+        }
     }
 
     [Fact]
