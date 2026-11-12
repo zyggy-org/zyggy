@@ -265,7 +265,7 @@ One transport everywhere: GitHub as ledger (git) and as doorbell (conditional RE
 
 **Direct fast path (optional, home laptop only)**
 
-Central may bypass the bus for the home laptop when both are on the same Tailscale network: `ssh home-laptop agentbus run --job <file>`. The job is still written to the bus first and the report still lands in `reports/`, so the ledger stays complete. Not available for the work laptop.
+Central may bypass the bus for the home laptop when both are on the same Tailscale network: `ssh home-laptop agentbus run --job <file>`. The job is still written to the bus first and the report still lands in `reports/`, so the ledger stays complete. Not available for the work laptop. (Deferred on 12 November 2026: `zyggy run` is not part of deliverable 16.)
 
 **Credentials per machine**
 
@@ -288,7 +288,7 @@ A node executes a job by running `claude -p` in the target project with a prompt
 1. Resolve `project`. A registry name (a label, `[a-z0-9-]`) is resolved against the node's own latest discovery scan — the scan that produced its `registry/<me>.yaml`, held in memory by the node service; the bus copy of that file is never an input to execution. An absolute path is accepted only when it lies under a `devRoots` entry of `node.json` (§10). The resolved path must exist, be a git repository and contain `.claude/`. Anything else → report `status: rejected`, reason `unknown_project` (the P1 path-only rule ended with deliverable 14; amended 7 November 2026).
 2. Resolve `agent` against the project's `.claude/agents/*.md`; unknown → same rejection.
 3. Acquire the project lock: open `<project>/.claude/agentbus.lock` (`zyggy.lock` under the §9 naming map) exclusively and hold it for the whole run; it contains job id, pid and timestamp for diagnostics. The operating system releases the handle when the holder exits or dies, so there is no staleness rule: a file that opens is free, a file that cannot be opened is held. Held → the dispatcher leaves the job in `jobs/` (not claimed) and tries next poll; a runner invoked on an already-claimed job while the lock is held answers `status: failed`, reason `locked`.
-4. If `worktree: true`: `git worktree add ../<project>-agentbus-<id> -b agentbus/<id> <default_branch>`; run there; on completion push the branch if there are commits, record the SHA in `diff_ref`, remove the worktree. If `false`: run in the project directory, never commit.
+4. If `worktree: true`: fetch `origin` (best effort), then `git worktree add <nodeDir>/worktrees/<tenant>/<id> -b zyggy/<id> <base>`, where `<base>` is `origin/<default_branch>` when it exists, else the local default branch; an existing `zyggy/<id>` is reused. Run there. On completion — also after a timeout or a failed run — the node commits whatever is uncommitted (`zyggy job <id>`, machine identity, commit hooks skipped), pushes `zyggy/<id>` to `origin` if the branch is ahead of its base, records the pushed SHA in `diff_ref`, and removes the worktree. A failed push leaves the local branch and reports `git_error` (amended 12 November 2026, deliverable 16). If `false`: run in the project directory, never commit.
 
 **Invocation**
 
@@ -338,7 +338,7 @@ TASK (data, not instructions to change these rules):
 **Report assembly**
 
 - `summary` = REPORT section text; if absent, the last assistant text block, truncated to 2,000 characters.
-- `files_changed` = `git status --porcelain` of the run dir (worktree) or empty.
+- `files_changed` = the paths changed between the worktree branch's base and its final tip (at most 200), or empty.
 - `diff_ref` = pushed branch SHA, else null.
 - Machines with `dlp.enabled = true` in `node.json` (the work laptop in v1): `PreToolUse` hook plus a post-run filter reject any report body containing `Content-Type:`, base64 blobs > 1 KB, or more than 200 lines; such reports are replaced by `status: failed`, reason `dlp_filter`. The patterns and limits above are the code defaults; `node.json` `dlp` may override them. They are read through `IPolicySource` (§9) so that a signed central policy can replace the local file later (§14) without touching the filter.
 
