@@ -8,8 +8,10 @@ using NSubstitute.ExceptionExtensions;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Jobs;
 using Zyggy.Core.Models;
+using Zyggy.Core.Registry;
 using Zyggy.Core.Runs;
 using Zyggy.Core.Tests.Infrastructure;
+using Zyggy.Core.Tests.Registry;
 
 using Model = Zyggy.Core.Envelope.Envelope;
 
@@ -41,12 +43,63 @@ public sealed class JobRunnerTests : IDisposable
 
     public static TheoryData<string, string> BadProjects() => new()
     {
-        { "relative", "not absolute" },
+        { "relative", "unknown name" },
         { "missing", "missing" },
         { "no-git", "not a git repository" },
         { "no-claude", "no .claude" },
-        { "registry-name", "not absolute" },
+        { "registry-name", "unknown name" },
     };
+
+    [Fact]
+    public async Task RunAsync_KnownName_RunsInResolvedPath()
+    {
+        // Arrange
+        _h.Registry.Replace(RegistryDocumentTests.Central() with
+        {
+            Projects = [new RegistryProject("calizr", _project.Root.Replace('\\', '/'), "main", [], [], null)],
+        });
+        var job = await JobRunnerHarness.JobAsync(new JobFields("calizr"));
+
+        // Act
+        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        _h.Request().WorkingDirectory.Should().Be(_project.Root);
+        reply.Status.Should().Be(ReportStatus.Done);
+    }
+
+    [Fact]
+    public async Task RunAsync_PathOutsideDevRoots_RejectedUnknownProjectModelNeverStarted()
+    {
+        // Arrange
+        _h.NodePolicy = _h.NodePolicy with { DevRoots = [Path.Combine(Path.GetTempPath(), "zyggy-unit-elsewhere")] };
+        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root));
+
+        // Act
+        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        reply.Status.Should().Be(ReportStatus.Rejected);
+        reply.Reason.Should().Be("unknown_project");
+        Encoding.UTF8.GetString(reply.Body.Span).Should().Be("unknown_project: outside devRoots\n");
+        await _h.Model.DidNotReceiveWithAnyArgs().RunAsync(default!, TestContext.Current.CancellationToken);
+        _h.Processes.Calls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task RunAsync_UnknownName_RejectedBodyUnknownName()
+    {
+        // Arrange
+        var job = await JobRunnerHarness.JobAsync(new JobFields("no-such-project"));
+
+        // Act
+        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        reply.Status.Should().Be(ReportStatus.Rejected);
+        Encoding.UTF8.GetString(reply.Body.Span).Should().Be("unknown_project: unknown name\n");
+        await _h.Model.DidNotReceiveWithAnyArgs().RunAsync(default!, TestContext.Current.CancellationToken);
+    }
 
     [Theory]
     [MemberData(nameof(BadProjects))]

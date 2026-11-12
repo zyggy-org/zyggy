@@ -1,0 +1,24 @@
+health: green
+last_seen: 2026-09-27T14:00:00Z
+machine: home-laptop
+os: windows
+projects:
+  - agents:
+      - description: 'Diagnoses failing environments: config, secrets, connectivity, startup errors'
+        name: env-debugger
+      - description: Writes and verifies EF Core migrations against staging
+        name: db-migrator
+    default_branch: main
+    name: calizr
+    path: C:/src/calizr
+    skills:
+      - description: Builds, tags and deploys the current branch to staging
+        name: deploy-staging
+    summary: Multi-tenant booking SaaS, .NET/Blazor
+schema: 1
+tenant: acme
+work_hours:
+  days: [Mon, Tue, Wed, Thu, Fri]
+  from: 08:00
+  timezone: Europe/Brussels
+  to: 19:00

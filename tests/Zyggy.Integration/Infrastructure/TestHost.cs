@@ -172,6 +172,9 @@ internal static class TestHost
         {
             Claude = claude ?? new ClaudeSettings(),
             NodeDir = nodeDir,
+
+            // Plan 14 A10: these compositions never scan; they only confine job paths to the scratch parent.
+            DevRoots = [ScratchProject.ParentRoot],
         };
 
     /// <summary>A hooked runner over the production one, for the push-retry scenarios.</summary>

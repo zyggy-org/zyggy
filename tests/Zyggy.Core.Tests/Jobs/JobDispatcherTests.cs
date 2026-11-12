@@ -7,8 +7,10 @@ using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Jobs;
 using Zyggy.Core.Policy;
+using Zyggy.Core.Registry;
 using Zyggy.Core.Tenancy;
 using Zyggy.Core.Tests.Infrastructure;
+using Zyggy.Core.Tests.Registry;
 
 using Model = Zyggy.Core.Envelope.Envelope;
 
@@ -251,6 +253,38 @@ public sealed class JobDispatcherTests : IDisposable
         decisions.OfType<Admitted>().Should().HaveCount(2);
         decisions.OfType<Deferred>().Should().HaveCount(6).And.AllSatisfy(d => d.Reason.Should().Be(DeferralReason.NoSlot));
         dispatcher.JobsRunning.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task AdmitAsync_NameAndItsPath_SecondAndThirdProjectBusy()
+    {
+        // Arrange: the node's scan maps calizr to _project; the first job by name holds the project
+        RegistrySnapshot registry = RegistrySnapshotTests.With(new RegistryProject("calizr", _project.Root.Replace('\\', '/'), "main", [], [], null));
+        _nodePolicy = _nodePolicy with { MaxConcurrentJobs = 4 };
+        var dispatcher = new JobDispatcher(_policy, registry, _clock, _log);
+        (await dispatcher.AdmitAsync(await JobAsync("calizr"), TestContext.Current.CancellationToken)).Should().BeOfType<Admitted>();
+
+        // Act
+        AdmissionDecision byName = await dispatcher.AdmitAsync(await JobAsync("calizr"), TestContext.Current.CancellationToken);
+        AdmissionDecision byPath = await dispatcher.AdmitAsync(await JobAsync(_project.Root), TestContext.Current.CancellationToken);
+
+        // Assert
+        byName.Should().Be(new Deferred(DeferralReason.ProjectBusy));
+        byPath.Should().Be(new Deferred(DeferralReason.ProjectBusy));
+    }
+
+    [Fact]
+    public async Task AdmitAsync_UnknownName_Admitted()
+    {
+        // Arrange
+        RegistrySnapshot registry = RegistrySnapshotTests.With(new RegistryProject("calizr", _project.Root.Replace('\\', '/'), "main", [], [], null));
+        var dispatcher = new JobDispatcher(_policy, registry, _clock, _log);
+
+        // Act: an unknown name has no project key; the runner answers unknown_project
+        AdmissionDecision decision = await dispatcher.AdmitAsync(await JobAsync("no-such-project"), TestContext.Current.CancellationToken);
+
+        // Assert
+        decision.Should().BeOfType<Admitted>();
     }
 
     private JobDispatcher Dispatcher() => new(_policy, _clock, _log);

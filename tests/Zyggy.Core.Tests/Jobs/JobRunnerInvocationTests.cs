@@ -3,7 +3,6 @@ using Microsoft.Extensions.Options;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Jobs;
 using Zyggy.Core.Models;
-using Zyggy.Core.Policy;
 using Zyggy.Core.Processes;
 using Zyggy.Core.Tests.Infrastructure;
 
@@ -81,7 +80,7 @@ public sealed class JobRunnerInvocationTests : IDisposable
     public async Task RunAsync_BothEmpty_NoAllowedToolsFlag()
     {
         // Arrange
-        _h.NodePolicy = NodePolicy.Default with { DefaultAllowedTools = [] };
+        _h.NodePolicy = _h.NodePolicy with { DefaultAllowedTools = [] };
         var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root));
 
         // Act
@@ -96,7 +95,7 @@ public sealed class JobRunnerInvocationTests : IDisposable
     public async Task RunAsync_MaxBudgetUsd5_FlagAfterMaxTurns()
     {
         // Arrange
-        _h.NodePolicy = NodePolicy.Default with { MaxBudgetUsd = 5m };
+        _h.NodePolicy = _h.NodePolicy with { MaxBudgetUsd = 5m };
         var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root));
 
         // Act
@@ -110,7 +109,7 @@ public sealed class JobRunnerInvocationTests : IDisposable
     public async Task RunAsync_PolicyMaxTurns40_UsesIt()
     {
         // Arrange
-        _h.NodePolicy = NodePolicy.Default with { MaxTurns = 40 };
+        _h.NodePolicy = _h.NodePolicy with { MaxTurns = 40 };
         var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root));
 
         // Act

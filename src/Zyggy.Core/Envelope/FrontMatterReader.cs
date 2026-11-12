@@ -57,6 +57,33 @@ internal static class FrontMatterReader
         return rejection;
     }
 
+    /// <summary>
+    /// Reads a whole file as one YAML mapping with no <c>---</c> delimiters (the registry file, founding spec §4 "Registry file"):
+    /// strict UTF-8 without BOM, then the same strictness as the front matter (no anchors, aliases, tags, directives, merge keys,
+    /// duplicate keys or second document).
+    /// </summary>
+    internal static EnvelopeRejection? ReadDocument(ReadOnlyMemory<byte> file, out FrontMatterMapping document)
+    {
+        document = null!;
+        ReadOnlySpan<byte> span = file.Span;
+        if (span.StartsWith("﻿"u8))
+        {
+            return Malformed("a byte-order mark is not allowed");
+        }
+
+        string text;
+        try
+        {
+            text = StrictUtf8.GetString(span);
+        }
+        catch (DecoderFallbackException)
+        {
+            return Malformed("the file is not valid UTF-8");
+        }
+
+        return ReadYaml(text, out document);
+    }
+
     private static int OpeningDelimiterEnd(ReadOnlySpan<byte> span, int start)
     {
         ReadOnlySpan<byte> rest = span[start..];

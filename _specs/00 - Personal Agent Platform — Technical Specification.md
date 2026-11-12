@@ -105,7 +105,7 @@ Six deliverables. Three are .NET binaries (`AgentBus.Hub` is served by the CLI b
 
 ## 4. Bus protocol
 
-The bus is a private GitHub repository `agent-bus`. One file per message, state encoded in the path, every file HMAC-signed. This section is normative; `PROTOCOL.md` in `agent-core` must match it verbatim.
+The bus is a private GitHub repository `agent-bus`. One file per message, state encoded in the path, every envelope HMAC-signed; the registry file is unsigned, derived state (see Registry file). This section is normative; `PROTOCOL.md` in `agent-core` must match it verbatim.
 
 **Repository layout**
 
@@ -211,29 +211,36 @@ Every move stays inside one `tenants/<org>/` subtree; there is no cross-tenant t
 
 **Registry file**
 
-```markdown
-# tenants/geoffrey/registry/home-laptop.yaml
-tenant: geoffrey
+`tenants/acme/registry/home-laptop.yaml` (amended 7 November 2026, deliverable 14):
+
+```yaml
+health: green
+last_seen: 2026-09-27T14:00:00Z
 machine: home-laptop
 os: windows
-last_seen: 2026-09-27T14:00:00Z
-work_hours: "Mon-Fri 08:00-19:00 Europe/Brussels"
 projects:
-  - name: calizr
-    path: C:/src/calizr
+  - agents:
+      - description: 'Diagnoses failing environments: config, secrets, connectivity, startup errors'
+        name: env-debugger
+      - description: Writes and verifies EF Core migrations against staging
+        name: db-migrator
     default_branch: main
-    agents:
-      - name: env-debugger
-        description: "Diagnoses failing environments: config, secrets, connectivity, startup errors"
-      - name: db-migrator
-        description: "Writes and verifies EF Core migrations against staging"
+    name: calizr
+    path: C:/src/calizr
     skills:
-      - name: deploy-staging
-        description: "Builds, tags and deploys the current branch to staging"
-    summary: "Multi-tenant booking SaaS, .NET/Blazor"
+      - description: Builds, tags and deploys the current branch to staging
+        name: deploy-staging
+    summary: Multi-tenant booking SaaS, .NET/Blazor
+schema: 1
+tenant: acme
+work_hours:
+  days: [Mon, Tue, Wed, Thu, Fri]
+  from: '08:00'
+  timezone: Europe/Brussels
+  to: '19:00'
 ```
 
-`discover` regenerates this on every service start and hourly; it commits only when the content differs (excluding `last_seen`, which is updated at most every 6 hours). Central's `delegate` skill reads all `registry/*.yaml` of its own tenant to route jobs; registry files of other tenants are never read. Each agent and skill entry carries the `description` front matter of its `.claude/agents/<name>.md` or `.claude/skills/<name>/SKILL.md`, copied verbatim and truncated to 150 characters (empty when absent), so that `delegate` routes by speciality — "the agent that debugs deployment pipelines" — rather than by name (O24, decided 2026-09-28).
+`discover` — the node service at start and every hour (`discovery.intervalMinutes`), and `agentbus discover` on demand — scans the direct children of every `devRoots` entry for folders holding `.claude/` and regenerates this file. The file is a plain YAML document, not an envelope and not signed: it is derived, re-creatable state that no machine executes from — a node resolves job names against its own scan (§6), and Central's `delegate` reads the files of its own tenant only as routing hints; registry files of other tenants are never read. It carries `schema: 1`; keys are in ordinal order at every level and lines end with `\n` (the envelope's canonical discipline); optional keys are omitted when absent. `last_seen` and `health` (the §11 verdict, `green | amber | red`) form the liveness group: a commit happens when the rest of the content differs from the file on the bus, or when `last_seen` is older than 6 hours (`discovery.lastSeenHours`); every commit refreshes both. A project's `name` is its folder name lowercased with every run of other characters replaced by one hyphen; two folders of one machine that derive the same name are both left out and logged. Each agent and skill entry carries the `description` front matter of its `.claude/agents/<name>.md` or `.claude/skills/<name>/SKILL.md`, copied verbatim with control characters removed and truncated to 150 characters (`''` when absent), so that `delegate` routes by speciality rather than by name (O24, decided 2026-09-28); `summary` is the first non-empty line of the project's `CLAUDE.md` that is not a heading, list item, quote or fence, treated the same way. With `discovery.detail: names` (the work laptop, §8) a project entry carries only `name` and `default_branch`. No published string matches a secret pattern, and every one of them is data, never instructions, wherever it is rendered later.
 
 ## 5. Transport
 
@@ -278,7 +285,7 @@ A node executes a job by running `claude -p` in the target project with a prompt
 
 **Pre-flight (`AgentBus.Core.JobRunner`)**
 
-1. Resolve `project`. A registry name is resolved against `registry/<me>.yaml`. An absolute path is accepted only when it lies under a `devRoots` entry of `node.json` (§10) and exists, is a git repository and contains `.claude/`; before the registry exists (P1 walking skeleton) the three existence checks alone apply. Anything else → report `status: rejected`, reason `unknown_project`.
+1. Resolve `project`. A registry name (a label, `[a-z0-9-]`) is resolved against the node's own latest discovery scan — the scan that produced its `registry/<me>.yaml`, held in memory by the node service; the bus copy of that file is never an input to execution. An absolute path is accepted only when it lies under a `devRoots` entry of `node.json` (§10). The resolved path must exist, be a git repository and contain `.claude/`. Anything else → report `status: rejected`, reason `unknown_project` (the P1 path-only rule ended with deliverable 14; amended 7 November 2026).
 2. Resolve `agent` against the project's `.claude/agents/*.md`; unknown → same rejection.
 3. Acquire the project lock: open `<project>/.claude/agentbus.lock` (`zyggy.lock` under the §9 naming map) exclusively and hold it for the whole run; it contains job id, pid and timestamp for diagnostics. The operating system releases the handle when the holder exits or dies, so there is no staleness rule: a file that opens is free, a file that cannot be opened is held. Held → the dispatcher leaves the job in `jobs/` (not claimed) and tries next poll; a runner invoked on an already-claimed job while the lock is held answers `status: failed`, reason `locked`.
 4. If `worktree: true`: `git worktree add ../<project>-agentbus-<id> -b agentbus/<id> <default_branch>`; run there; on completion push the branch if there are commits, record the SHA in `diff_ref`, remove the worktree. If `false`: run in the project directory, never commit.
@@ -383,7 +390,7 @@ The `SessionStart` hook injects, as three separately capped sections (6,000 / 6,
 2. Read unconsumed lines of `inbox/` and `daily/` (ledger), in capped batches.
 3. For each fact: decide side and category; create a category when none fits; decide destination file by subject; merge into an existing line if it restates or supersedes one; otherwise append. Keep provenance tags. Never upgrade a single mention into a generalisation.
 4. Rewrite any file over 300 lines: merge duplicates, drop moving state that has expired (a finished job, a past deadline), keep decisions and constraints. Update `description` when it no longer matches.
-5. `agentbus dream agents`: refresh `agents.md` from the tenant's `registry/*.yaml`.
+5. Reserved: `agentbus dream agents` is not built (decision of 2026-11-07, deliverable 14); the Hub's `list_nodes` (deliverable 21) serves the registry summary and `agents.md` stays owner-stated.
 6. `agentbus dream rollup`: delete closed, fully consumed inbox files after 7 days; archive `daily/` older than 30 days into `daily/YYYY-MM.md`.
 7. `git commit -m "dream YYYY-MM-DD"` and push; if the diff touches `profile.md` or `preferences.md`, also send a Telegram message with the diff for review.
 
@@ -537,6 +544,7 @@ Each machine has one `node.json`; secrets are never in it.
   "poll": { "activeSeconds": 10, "idleSeconds": 60, "safetyFetchMinutes": 15 },   // Central: "activeSeconds": 1 (deliverable 13)
   "workHours": { "timezone": "Europe/Brussels", "days": ["Mon","Tue","Wed","Thu","Fri"], "from": "08:00", "to": "19:00" },   // absent = always inside work hours (Central): active polling and jobs at any hour
   "devRoots": ["C:/src", "C:/work"],
+  "discovery": { "intervalMinutes": 60, "lastSeenHours": 6, "detail": "full" },   // detail: full | names — names publishes project names and default branches only (the work laptop, §8)
   "nodeDir": "C:/agents/node",                  // transcripts under runs/<tenant>/, logs under logs/; default %LOCALAPPDATA%\zyggy on Windows, ~/.local/share/zyggy on Linux
   "maxConcurrentJobs": 2,
   "log": { "level": "Information" },        // Debug on demand (§11); 14-day retention is fixed
@@ -560,7 +568,7 @@ The node refuses to start when `tenant` is missing or when the bus checkout has 
 **Laptops (Windows 11)**
 
 - Install script `install.ps1 -Tenant <org> -Machine <name> -SignWith <org>/<n>` (shipped as `deploy/windows/install.ps1` with the release; PowerShell 5.1; **no elevation** — the user is not an administrator on every laptop, so nothing in the install needs it and the script refuses rather than asks): checks `SHA256SUMS`, copies the binaries to `%LOCALAPPDATA%\Programs\Zyggy`, adds that folder to the user's PATH, creates `C:\agents\bus`'s parent, writes `node.json` only when absent, runs a pre-flight (git, the checkout's `tenants/<org>/`, the signing key via `agentbus secret list`, `claude.path`), and registers `AgentBus.Node` as a **per-user scheduled task `zyggy-node`** that starts at the user's logon (30 s delay) under the interactive logon type — the same session that holds the Claude Code login, the browser and the Credential Manager — with a hidden window, one instance, no time limit, restart on failure three times a minute apart and `GCM_INTERACTIVE=never` scoped to the node process; `-Uninstall` removes the task only. There is no Windows service: a service needs administrator rights, the account's password and a session-0 logon in which the user's Credential Manager is not guaranteed; the node therefore runs only while the user is logged on, and a stop is a kill that the node's claim resume (§5) covers. Node state lives under `%LOCALAPPDATA%\zyggy` (`nodeDir`). The same script upgrades a laptop from any earlier install in one run (deliverable 42). It takes an older `zyggy` folder off the **user** PATH when that folder holds nothing else (files kept). It completes an existing `node.json` with a timestamped backup: only `claude.path` and `signWith`, and it replaces a `claude.path` only when the file it names does not exist and a `claude.exe` was found. Then it calls `agentbus setup`. That verb clones or fast-forwards `agent-core` at `C:\agents\zyggy-core`. It merges `ZYGGY_SECRET_PATTERNS` and the deny rules into the user-scope `~/.claude/settings.json` (backup first, additive, refused when the file is not valid JSON). It installs the `remember` and `archive` node skills, and names every missing secret with the command that sets it, never a value. The node `Stop` and `SessionEnd` hooks stay a manual step (`agent-core/node/README.md`). A second run changes nothing.
-- Work laptop: `dlp.enabled = true`, `devRoots` limited to work project folders, Graph/Chrome mail setup done manually after security approval.
+- Work laptop: `dlp.enabled = true`, `devRoots` limited to work project folders, Graph/Chrome mail setup done manually after security approval, `discovery.detail: names`.
 
 **Claude Code side**
 
@@ -612,7 +620,7 @@ Alerts are evaluated per tenant and every message names the tenant. Per-tenant n
 - `bus-conflict.md`: dirty working copy or diverged branch on a node → stash, reset to `origin/main`, re-run discover.
 - `rotate-hmac.md`: for one tenant, generate `<tenant>/2` on one machine (`agentbus secret set hmac/2 --generate --show`), enter it on every other machine of the tenant and compare fingerprints (`agentbus secret list`), set `signWith: <tenant>/2` everywhere; `<tenant>/1` stays verify-only and is removed (`agentbus secret remove hmac/1`) only after a compromise, accepting `unknown_key` drift on the files it signed. Other tenants are unaffected.
 - `restore-central.md`: new VM from volume snapshot; verify `claude login`; restore the two deploy keys, clone `agent-core` into `/srv/agent/central` and the memory repository into `memory/`, rewrite `.claude/settings.local.json`, run the deliverable-27 verification; run `agentbus verify` for every tenant present, start units; the clone cache is not restored (empty it with `clone.sh --clean` if the snapshot holds one); re-merge `permissions.additionalDirectories` into `.claude/settings.local.json` (O32).
-- `revoke-machine.md`: delete its PAT and deploy key, rotate the tenant's HMAC key per `rotate-hmac.md` (compromise variant — the key is per tenant, not per machine), move its `tenants/<org>/nodes/<machine>/` to `tenants/<org>/archive/`.
+- `revoke-machine.md`: delete its PAT and deploy key, rotate the tenant's HMAC key per `rotate-hmac.md` (compromise variant — the key is per tenant, not per machine), move its `tenants/<org>/nodes/<machine>/` to `tenants/<org>/archive/` and `git rm` its `tenants/<org>/registry/<machine>.yaml`.
 - `add-tenant.md`: create the tenant's bus repository with force-push and deletion blocked on `main`, add `PROTOCOL.md` and `tenants/<org>/` with a signed `policy.yaml`, mint `<org>/1`, issue per-machine PATs and deploy keys scoped to that repository, create `memory/<org>/<user>/`, configure the notifier; no code change and no restart of other tenants' machines.
 
 ## 12. Delivery phases

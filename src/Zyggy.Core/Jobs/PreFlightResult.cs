@@ -16,6 +16,9 @@ internal abstract record PreFlightResult
 
     /// <summary>A check failed; <paramref name="Check"/> is one of the fixed check words, never the path's contents.</summary>
     /// <param name="Reason"><see cref="RunFailureReason.UnknownProject"/> or <see cref="RunFailureReason.UnknownAgent"/>.</param>
-    /// <param name="Check"><c>not absolute</c>, <c>missing</c>, <c>not a git repository</c>, <c>no .claude</c>, <c>unknown agent</c> or <c>unsafe agent name</c>.</param>
+    /// <param name="Check">
+    /// <c>unknown name</c>, <c>outside devRoots</c>, <c>missing</c>, <c>not a git repository</c>, <c>no .claude</c>, <c>unknown agent</c> or
+    /// <c>unsafe agent name</c>. (<c>not absolute</c> was retired with deliverable 14; older reports may still carry it.)
+    /// </param>
     public sealed record Rejected(RunFailureReason Reason, string Check) : PreFlightResult;
 }

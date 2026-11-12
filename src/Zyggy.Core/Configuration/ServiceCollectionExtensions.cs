@@ -8,6 +8,7 @@ using Zyggy.Core.Memory;
 using Zyggy.Core.Models;
 using Zyggy.Core.Policy;
 using Zyggy.Core.Processes;
+using Zyggy.Core.Registry;
 using Zyggy.Core.Secrets;
 
 namespace Zyggy.Core.Configuration;
@@ -52,6 +53,7 @@ public static class ServiceCollectionExtensions
             }
         });
         services.AddNodeJsonPolicy();
+        services.AddDiscovery();
         services.AddJobRunner();
         services.AddGitHubBus(o =>
         {

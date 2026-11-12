@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using TimeZoneConverter;
 
 using Zyggy.Core.Envelope;
+using Zyggy.Core.Registry;
 using Zyggy.Core.Secrets;
 using Zyggy.Core.Tenancy;
 
@@ -232,7 +233,8 @@ public static partial class NodeConfigurationReader
             return Invalid("nodeDir", "must be an absolute path");
         }
 
-        if (!TryArchive(root, out ArchiveSettings archive, out failure))
+        if (!TryArchive(root, out ArchiveSettings archive, out failure)
+            || !TryDiscovery(root, out DiscoverySettings discovery, out failure))
         {
             return failure;
         }
@@ -252,7 +254,72 @@ public static partial class NodeConfigurationReader
             MaxConcurrentJobs = maxConcurrentJobs,
             Log = log,
             Archive = archive,
+            Discovery = discovery,
         });
+    }
+
+    /// <summary>
+    /// The <c>discovery</c> section (spec 14, A14-5): absent or <c>null</c> means the defaults; <c>intervalMinutes</c> an integer 1–1440,
+    /// <c>lastSeenHours</c> an integer 1–168, <c>detail</c> <c>full</c> or <c>names</c>. Unknown keys inside the section are ignored.
+    /// </summary>
+    private static bool TryDiscovery(JsonElement root, out DiscoverySettings discovery, out NodeConfigurationResult failure)
+    {
+        discovery = new DiscoverySettings();
+        failure = null!;
+        if (!root.TryGetProperty("discovery", out JsonElement section) || section.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (section.ValueKind != JsonValueKind.Object)
+        {
+            failure = Invalid("discovery", "must be an object");
+            return false;
+        }
+
+        if (!TryRangedInt(section, "intervalMinutes", 1, 1440, discovery.IntervalMinutes, out int interval, out failure)
+            || !TryRangedInt(section, "lastSeenHours", 1, 168, discovery.LastSeenHours, out int lastSeen, out failure))
+        {
+            return false;
+        }
+
+        DiscoveryDetail detail = discovery.Detail;
+        if (section.TryGetProperty("detail", out JsonElement detailElement) && detailElement.ValueKind != JsonValueKind.Null)
+        {
+            (bool ok, detail) = detailElement.ValueKind == JsonValueKind.String ? detailElement.GetString() switch
+            {
+                "full" => (true, DiscoveryDetail.Full),
+                "names" => (true, DiscoveryDetail.Names),
+                _ => (false, detail),
+            }
+            : (false, detail);
+            if (!ok)
+            {
+                failure = Invalid("discovery.detail", "must be full or names");
+                return false;
+            }
+        }
+
+        discovery = new DiscoverySettings(interval, lastSeen, detail);
+        return true;
+    }
+
+    private static bool TryRangedInt(JsonElement section, string key, int min, int max, int fallback, out int value, out NodeConfigurationResult failure)
+    {
+        value = fallback;
+        failure = null!;
+        if (!section.TryGetProperty(key, out JsonElement element) || element.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (element.ValueKind != JsonValueKind.Number || !element.TryGetInt32(out value) || value < min || value > max)
+        {
+            failure = Invalid("discovery." + key, string.Create(CultureInfo.InvariantCulture, $"must be an integer from {min} to {max}"));
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>

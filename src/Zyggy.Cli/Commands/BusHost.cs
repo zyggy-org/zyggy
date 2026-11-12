@@ -20,6 +20,9 @@ internal static class BusHost
     /// <summary>The test hook that points the API request at a loopback stand-in (spec 04 Assumption A3); never a credential.</summary>
     private const string ApiBaseVariable = "ZYGGY_BUS_API_BASE";
 
+    /// <summary>The loopback-only test hook for the health URL (spec 08 Configuration; shared by <c>status</c> and <c>discover</c>, plan 14 A12): never a production override.</summary>
+    internal const string HealthUrlVariable = "ZYGGY_HEALTH_URL";
+
     public static Option<string?> ConfigOption { get; } = new("--config") { Description = "Path of node.json (default: ZYGGY_NODE_JSON, then the per-user default)." };
 
     public static Option<bool> VerboseOption { get; } = new("--verbose") { Description = "Debug logging on stderr." };

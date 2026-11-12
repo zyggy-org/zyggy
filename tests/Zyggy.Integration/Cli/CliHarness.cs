@@ -98,7 +98,15 @@ internal sealed class CliHarness : IAsyncDisposable
     public string WorkLaptopDir => Path.Combine(Bus.RootDir, "work");
 
     /// <summary>Writes a <c>node.json</c> for <paramref name="machine"/> over <paramref name="busLocalPath"/>; signs with <c>acme/1</c> unless <paramref name="omitSignWith"/>.</summary>
-    public string WriteNodeJson(MachineName machine, string busLocalPath, string name, bool omitSignWith = false, string? secretsRoot = null, string? nodeDir = null) =>
+    public string WriteNodeJson(
+        MachineName machine,
+        string busLocalPath,
+        string name,
+        bool omitSignWith = false,
+        string? secretsRoot = null,
+        string? nodeDir = null,
+        IReadOnlyList<string>? devRoots = null,
+        string? discoveryJson = null) =>
         NodeJson.Write(
             Scratch.File("config-" + name),
             Acme,
@@ -108,7 +116,9 @@ internal sealed class CliHarness : IAsyncDisposable
             remote: TestHost.Remote.HttpsUrl!.ToString(),
             secretsRoot: secretsRoot ?? SecretsRoot,
             claudePath: FakeClaude.ExecutablePath,
-            nodeDir: nodeDir ?? Scratch.File("node-" + name));
+            nodeDir: nodeDir ?? Scratch.File("node-" + name),
+            devRoots: devRoots,
+            discoveryJson: discoveryJson);
 
     /// <summary>The test-side registrations on top of the production ones: the doorbell, the fixture's git configuration, no jitter, recorded processes.</summary>
     public void Configure(IServiceCollection services)

@@ -10,7 +10,7 @@ public sealed class ScratchProject : IDisposable
 
     private ScratchProject(bool git, bool claude)
     {
-        Root = Path.Combine(Path.GetTempPath(), "zyggy-it", Guid.NewGuid().ToString("N"));
+        Root = Path.Combine(ParentRoot, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Root);
         File.WriteAllText(Path.Combine(Root, MarkerFileName), "contents\n");
         if (git)
@@ -23,6 +23,9 @@ public sealed class ScratchProject : IDisposable
             Directory.CreateDirectory(Path.Combine(Root, ".claude"));
         }
     }
+
+    /// <summary>Gets the folder every scratch project lives under — the <c>devRoots</c> entry of the unit-test policies (plan 14 A10).</summary>
+    public static string ParentRoot { get; } = Path.Combine(Path.GetTempPath(), "zyggy-it");
 
     public string Root { get; }
 

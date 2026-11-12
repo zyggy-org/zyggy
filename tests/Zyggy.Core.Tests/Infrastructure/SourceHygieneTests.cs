@@ -392,6 +392,72 @@ public sealed partial class SourceHygieneTests
     }
 
     [Fact]
+    public void Src_RegistryPathLiteral_OnlyInBusPaths()
+    {
+        // Arrange: plan 14 Step 11 — the registry file's bus path (folder word or `.yaml` suffix glued onto a path) is built in BusPaths only
+        const string Allowed = "src/Zyggy.Core/Bus/BusPaths.cs";
+        var pattern = new Regex("\"registry\"|\"/registry/\"|\\+ *\"\\.yaml\"|\"\\.yaml\" *\\+", RegexOptions.None, TimeSpan.FromSeconds(5));
+
+        // Act
+        var holders = SourceFiles()
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .Where(f => pattern.IsMatch(CommentLine().Replace(File.ReadAllText(Path.Combine(RepoRoot(), f)), string.Empty)))
+            .ToList();
+
+        // Assert
+        holders.Should().BeSubsetOf([Allowed]);
+    }
+
+    [Fact]
+    public void Src_Registry_NeverEnumeratesTenantsFolder()
+    {
+        // Act: spec 14 — a node never reads another machine's or tenant's registry file; the Registry folder has no bus-folder access at all
+        var offenders = RegistrySourceFiles()
+            .Where(f => f.Value.Contains("BusPaths.", StringComparison.Ordinal) || f.Value.Contains("RegistryFolder", StringComparison.Ordinal))
+            .Select(f => f.Key)
+            .ToList();
+
+        // Assert
+        RegistrySourceFiles().Should().NotBeEmpty();
+        offenders.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Src_Registry_NoDirectFileSystemOutsideScanner()
+    {
+        // Act: only the scanner (DiscoveryScanner.cs and its Content partial) touches the file system under Registry/
+        var offenders = RegistrySourceFiles()
+            .Where(f => !Path.GetFileName(f.Key).StartsWith("DiscoveryScanner.", StringComparison.Ordinal))
+            .Where(f => FileSystemCall().IsMatch(f.Value))
+            .Select(f => f.Key)
+            .ToList();
+
+        // Assert
+        offenders.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("src/Zyggy.Core/Jobs/PreFlight.cs")]
+    [InlineData("src/Zyggy.Core/Jobs/JobDispatcher.cs")]
+    public void Src_PreFlight_NeverReadsTheBusRegistry(string file)
+    {
+        // Arrange: AC-26 — resolution reads the node's own scan, never the bus copy
+        string text = CommentLine().Replace(File.ReadAllText(Path.Combine(RepoRoot(), file)), string.Empty);
+
+        // Act + Assert
+        text.Should().NotContain("BusRepository").And.NotContain("BusPaths").And.NotContain("ReadOwnRegistryAsync");
+    }
+
+    private static Dictionary<string, string> RegistrySourceFiles() =>
+        SourceFiles()
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .Where(f => f.StartsWith("src/Zyggy.Core/Registry/", StringComparison.Ordinal))
+            .ToDictionary(f => f, f => CommentLine().Replace(File.ReadAllText(Path.Combine(RepoRoot(), f)), string.Empty), StringComparer.Ordinal);
+
+    [GeneratedRegex(@"\b(Directory|File|DirectoryInfo|FileInfo)\.[A-Z]")]
+    private static partial Regex FileSystemCall();
+
+    [Fact]
     public void Src_JobsAndPolicy_NoClockOrStaticState()
     {
         // Act: spec 06 AC-16 — the clock is injected; only the DI extension may name TimeProvider.System (its TryAdd default)
@@ -734,14 +800,14 @@ public sealed partial class SourceHygieneTests
     [Fact]
     public void Src_HealthUrlOverride_TestHookOnly()
     {
-        // Act: spec 08 Configuration — ZYGGY_HEALTH_URL is a loopback-only test hook read by the status verb, never a node.json key
+        // Act: spec 08 Configuration — ZYGGY_HEALTH_URL is a loopback-only test hook, never a node.json key; plan 14 A12 moved the one constant into BusHost (read by status and discover)
         var holders = SourceFiles()
             .Where(f => File.ReadAllText(f).Contains("ZYGGY_HEALTH_URL", StringComparison.Ordinal))
             .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
             .ToList();
 
         // Assert
-        holders.Should().Equal("src/Zyggy.Cli/Commands/StatusCommand.cs");
+        holders.Should().Equal("src/Zyggy.Cli/Commands/BusHost.cs");
     }
 
     private static Dictionary<string, string> CliSourceFiles() =>

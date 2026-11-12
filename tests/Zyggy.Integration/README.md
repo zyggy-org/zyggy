@@ -17,7 +17,10 @@ Never the real `claude`, never GitHub. A test that needs a network is wrong.
 |--------|----------|
 | `Infrastructure/` | `BusRepoFixture`, fake-claude helpers, test host builders that use the production DI extension methods with only the claude path, bus remote and secret store swapped. |
 | `Bus/`, `Jobs/`, `Cli/`, `Hub/` | Round trips per edge: claim and report moves, push-rejection retry, signature rejection, timeouts, CLI verbs in-process, Hub tools over stdio. |
-| `Gates/` | `P<n>_<Name>.cs`: one file per delivery phase of founding spec §12, one fact per gate criterion. A gate is a working round trip from an empty bus to a report on `origin/main`, not a code review. A phase-closing deliverable is not done until its gate scenario passes. |
+| `Gates/` | `P<n>_<Name>.cs`: one file per delivery phase of founding spec §12, one fact per gate criterion. A gate is a working round trip from an empty bus to a report on `origin/main`, not a code review. A phase-closing deliverable is not done until its gate scenario passes. `P2_RegistryWorktreeSweep.cs` holds part 1 (deliverable 14): the registry published, `zyggy submit --project <name>` routed by name to a `done` report, and an unknown name answered `unknown_project: unknown name`; 16 and 17 append parts 2 and 3. |
+| `Registry/`, `Node/` | Discovery and the registry (deliverable 14): `zyggy discover` against the bare repository, the host publishing at start and on change, routing by name. |
+
+**`devRoots` in tests (deliverable 14).** A job path must lie under a `devRoots` entry. The compositions that only run jobs (`TestHost.NodeConfigurationFor`) list `ScratchProject.ParentRoot` (`<temp>/zyggy-it`). `NodeHostHarness`, whose host also scans, has its own `ProjectsRoot` as its only root: create projects there with `ProjectAsync` so the host's scan sees them and nothing else. A test that needs a path outside `devRoots` uses `ScratchProject.CreateAsync`, which writes under `ParentRoot`.
 
 ## Running
 

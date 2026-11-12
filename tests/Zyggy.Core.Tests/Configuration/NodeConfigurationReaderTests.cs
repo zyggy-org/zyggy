@@ -1,5 +1,6 @@
 using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
+using Zyggy.Core.Registry;
 using Zyggy.Core.Secrets;
 using Zyggy.Core.Tenancy;
 
@@ -622,6 +623,58 @@ public sealed class NodeConfigurationReaderTests : IDisposable
 
         // Assert
         result.ToString().Should().Be("archive: must be an object");
+    }
+
+    // Spec 14 A14-5 / plan 14 A6: the `discovery` object.
+    [Fact]
+    public void Read_DiscoveryAbsent_Defaults()
+    {
+        // Act
+        NodeConfigurationResult result = Read(Minimal);
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        result.Configuration!.Discovery.Should().Be(new DiscoverySettings(60, 6, DiscoveryDetail.Full));
+    }
+
+    [Fact]
+    public void Read_DiscoverySection10Example_Typed()
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"discovery\": { \"intervalMinutes\": 60, \"lastSeenHours\": 6, \"detail\": \"full\" },"));
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        result.Configuration!.Discovery.Should().Be(new DiscoverySettings(60, 6, DiscoveryDetail.Full));
+    }
+
+    [Fact]
+    public void Read_DiscoveryNames_Typed()
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"discovery\": { \"intervalMinutes\": 15, \"lastSeenHours\": 24, \"detail\": \"names\" },"));
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        result.Configuration!.Discovery.Should().Be(new DiscoverySettings(15, 24, DiscoveryDetail.Names));
+    }
+
+    [Theory]
+    [InlineData("5", "discovery", "discovery: must be an object")]
+    [InlineData("{ \"intervalMinutes\": 0 }", "discovery.intervalMinutes", "discovery.intervalMinutes: must be an integer from 1 to 1440")]
+    [InlineData("{ \"intervalMinutes\": 1441 }", "discovery.intervalMinutes", "discovery.intervalMinutes: must be an integer from 1 to 1440")]
+    [InlineData("{ \"lastSeenHours\": 0 }", "discovery.lastSeenHours", "discovery.lastSeenHours: must be an integer from 1 to 168")]
+    [InlineData("{ \"lastSeenHours\": 169 }", "discovery.lastSeenHours", "discovery.lastSeenHours: must be an integer from 1 to 168")]
+    [InlineData("{ \"detail\": \"all\" }", "discovery.detail", "discovery.detail: must be full or names")]
+    public void Read_DiscoveryInvalid_FieldNamed(string section, string field, string message)
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"discovery\": " + section + ","));
+
+        // Assert
+        result.Error.Should().Be(NodeConfigurationError.InvalidField);
+        result.Field.Should().Be(field);
+        result.ToString().Should().Be(message);
     }
 
     private const string Section10Keys = "\"workHours\": { \"timezone\": \"Europe/Brussels\", \"days\": [\"Mon\",\"Tue\",\"Wed\",\"Thu\",\"Fri\"], \"from\": \"08:00\", \"to\": \"19:00\" }, \"maxConcurrentJobs\": 2, \"log\": { \"level\": \"Information\" },";

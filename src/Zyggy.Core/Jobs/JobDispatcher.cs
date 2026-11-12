@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Zyggy.Core.Bus;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Policy;
+using Zyggy.Core.Registry;
 
 namespace Zyggy.Core.Jobs;
 
@@ -15,6 +16,8 @@ namespace Zyggy.Core.Jobs;
 public sealed partial class JobDispatcher
 {
     private readonly IPolicySource _policy;
+
+    private readonly RegistrySnapshot _registry;
 
     private readonly TimeProvider _clock;
 
@@ -30,16 +33,28 @@ public sealed partial class JobDispatcher
 
     private bool _warnedConcurrency;
 
-    /// <summary>Initializes a new instance of the <see cref="JobDispatcher"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="JobDispatcher"/> class that knows no registry names (every name is admitted unlocked).</summary>
     /// <param name="policy">The node's policy (<c>maxConcurrentJobs</c>, <c>workHours</c>).</param>
     /// <param name="clock">The clock the work-hours rule reads.</param>
     /// <param name="log">The logger.</param>
     public JobDispatcher(IPolicySource policy, TimeProvider clock, ILogger<JobDispatcher> log)
+        : this(policy, new RegistrySnapshot(), clock, log)
+    {
+    }
+
+    /// <summary>Initializes a new instance of the <see cref="JobDispatcher"/> class.</summary>
+    /// <param name="policy">The node's policy (<c>maxConcurrentJobs</c>, <c>workHours</c>).</param>
+    /// <param name="registry">The node's own scan; a job naming a project by name is busy exactly when its folder is.</param>
+    /// <param name="clock">The clock the work-hours rule reads.</param>
+    /// <param name="log">The logger.</param>
+    public JobDispatcher(IPolicySource policy, RegistrySnapshot registry, TimeProvider clock, ILogger<JobDispatcher> log)
     {
         ArgumentNullException.ThrowIfNull(policy);
+        ArgumentNullException.ThrowIfNull(registry);
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(log);
         _policy = policy;
+        _registry = registry;
         _clock = clock;
         _log = log;
     }
@@ -91,8 +106,7 @@ public sealed partial class JobDispatcher
                 return Defer(id, DeferralReason.NoSlot);
             }
 
-            string project = job.Job.Project;
-            string? projectKey = Path.IsPathFullyQualified(project) ? Path.TrimEndingDirectorySeparator(Path.GetFullPath(project)) : null;
+            string? projectKey = ProjectKey(job.Job.Project);
             if (projectKey is not null && (_inFlight.Contains(projectKey) || ProjectLock.IsHeld(projectKey)))
             {
                 return Defer(id, DeferralReason.ProjectBusy);
@@ -117,6 +131,17 @@ public sealed partial class JobDispatcher
     /// <summary>This dispatcher's rules as the <see cref="JobGate"/> the listener consumes.</summary>
     /// <returns>The gate.</returns>
     public JobGate AsGate() => AdmitAsync;
+
+    /// <summary>The folder a job's <c>project</c> names — a fully-qualified path, or a known name of the node's scan — or <see langword="null"/> (the runner answers).</summary>
+    private string? ProjectKey(string project)
+    {
+        if (Path.IsPathFullyQualified(project))
+        {
+            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(project));
+        }
+
+        return _registry.TryResolve(project, out string? path) ? Path.TrimEndingDirectorySeparator(path) : null;
+    }
 
     private Deferred Defer(string id, DeferralReason reason)
     {

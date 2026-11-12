@@ -158,6 +158,26 @@ public sealed partial class JobRunnerRoundTripTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task RoundTrip_EmptyDevRoots_PathRejectedOutsideDevRoots()
+    {
+        // Arrange: plan 14 Step 10 — with no devRoots, every path is outside them
+        var ct = TestContext.Current.CancellationToken;
+        NodeConfiguration configuration = Configuration() with { DevRoots = [] };
+        await using ServiceProvider services = TestHost.BuildRunnerListener(_bus, HomeLaptop, _store, FakeClaude.ExecutablePath, configuration, Runner("done"));
+        await SeedAndPullAsync(services, Fields(_project.Path), ct);
+
+        // Act
+        (await services.GetRequiredService<BusListener>().ProcessOnceAsync(ct)).Should().Be(1);
+
+        // Assert
+        Model report = await SingleReportAsync(ct);
+        report.Report!.Status.Should().Be(ReportStatus.Rejected);
+        report.Report.Reason.Should().Be("unknown_project");
+        Encoding.UTF8.GetString(report.Body.Span).Should().Be("unknown_project: outside devRoots\n");
+        File.Exists(CapturePath).Should().BeFalse("the fake never started");
+    }
+
+    [Fact]
     public async Task ProcessOnceAsync_LockHeldByTheTest_FailedLockedFakeNeverStarted()
     {
         // Arrange

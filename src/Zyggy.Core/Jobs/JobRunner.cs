@@ -9,6 +9,7 @@ using Zyggy.Core.Envelope;
 using Zyggy.Core.Git;
 using Zyggy.Core.Models;
 using Zyggy.Core.Policy;
+using Zyggy.Core.Registry;
 using Zyggy.Core.Runs;
 
 namespace Zyggy.Core.Jobs;
@@ -23,17 +24,26 @@ public sealed partial class JobRunner
     private readonly IModelRunner _model;
     private readonly IPolicySource _policy;
     private readonly GitClient _git;
+    private readonly RegistrySnapshot _registry;
     private readonly JobRunnerOptions _options;
     private readonly TimeProvider _clock;
     private readonly ILogger<JobRunner> _log;
     private readonly JobPrompt _prompt = new();
 
-    internal JobRunner(IModelRunner model, IPolicySource policy, GitClient git, IOptions<JobRunnerOptions> options, TimeProvider clock, ILogger<JobRunner> log)
+    internal JobRunner(
+        IModelRunner model,
+        IPolicySource policy,
+        GitClient git,
+        RegistrySnapshot registry,
+        IOptions<JobRunnerOptions> options,
+        TimeProvider clock,
+        ILogger<JobRunner> log)
     {
         ArgumentNullException.ThrowIfNull(options);
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _policy = policy ?? throw new ArgumentNullException(nameof(policy));
         _git = git ?? throw new ArgumentNullException(nameof(git));
+        _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _options = options.Value;
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _log = log ?? throw new ArgumentNullException(nameof(log));
@@ -90,7 +100,9 @@ public sealed partial class JobRunner
     private async Task<JobReply> PipelineAsync(Envelope.Envelope job, JobFields fields, DateTimeOffset started, CancellationToken ct)
     {
         var id = job.Header.Id.Value;
-        var preFlight = await PreFlight.CheckAsync(fields, _git, ct).ConfigureAwait(false);
+        // Read first: pre-flight confines a path to the policy's devRoots (plan 14 A14).
+        var policy = await _policy.GetAsync(ct).ConfigureAwait(false);
+        var preFlight = await PreFlight.CheckAsync(fields, _git, _registry, policy.DevRoots, ct).ConfigureAwait(false);
         if (preFlight is PreFlightResult.Rejected rejected)
         {
             var reason = RunFailureReasonWire.ToWire(rejected.Reason);
@@ -115,7 +127,6 @@ public sealed partial class JobRunner
             LogWorktree(id);
         }
 
-        var policy = await _policy.GetAsync(ct).ConfigureAwait(false);
         var allowedTools = fields.AllowedTools is { Count: > 0 } tools ? tools : policy.DefaultAllowedTools;
         var minutes = fields.TimeoutMinutes ?? policy.DefaultTimeoutMinutes;
         // Spec 06 "ModelRunRequest for a job": no tool set, extra directory, schema, model or system prompt; the project's own
