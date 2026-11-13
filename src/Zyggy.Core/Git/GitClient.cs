@@ -141,6 +141,76 @@ internal sealed class GitClient(IProcessRunner processes, GitClientOptions optio
         return await CurrentBranchAsync(repository, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>The SHA a fully qualified ref points at (<c>rev-parse --verify -q</c>), or <see langword="null"/> when it does not exist.</summary>
+    public async Task<string?> ResolveRefAsync(string repository, string reference, CancellationToken cancellationToken)
+    {
+        var result = await RunAsync(repository, ["rev-parse", "--verify", "-q", reference], null, cancellationToken).ConfigureAwait(false);
+        return result.Succeeded && result.Stdout.Trim() is { Length: > 0 } sha ? sha : null;
+    }
+
+    /// <summary>Drops the records of worktrees whose folders are gone (spec 16).</summary>
+    public Task<GitResult> WorktreePruneAsync(string repository, CancellationToken cancellationToken) =>
+        RunAsync(repository, ["worktree", "prune"], null, cancellationToken);
+
+    /// <summary>
+    /// Adds a worktree at <paramref name="path"/> (spec 16): on a new <paramref name="branch"/> created from <paramref name="startPoint"/>,
+    /// or, when <paramref name="startPoint"/> is <see langword="null"/>, on the existing branch as it stands.
+    /// </summary>
+    public Task<GitResult> WorktreeAddAsync(string repository, string path, string branch, string? startPoint, CancellationToken cancellationToken) =>
+        startPoint is null
+            ? RunAsync(repository, ["worktree", "add", path, branch], null, cancellationToken)
+            : RunAsync(repository, ["worktree", "add", "-b", branch, path, startPoint], null, cancellationToken);
+
+    /// <summary>
+    /// Removes a clean worktree and its folder, ignored files included (<c>worktree remove</c>, never forced: a worktree git still sees as
+    /// dirty stays, spec 16 "stale worktree folder").
+    /// </summary>
+    public Task<GitResult> WorktreeRemoveAsync(string repository, string path, CancellationToken cancellationToken) =>
+        RunAsync(repository, ["worktree", "remove", path], null, cancellationToken);
+
+    /// <summary>Stages every change, untracked files included, <c>.gitignore</c> respected (<c>add -A</c>).</summary>
+    public Task<GitResult> AddAllAsync(string repository, CancellationToken cancellationToken) =>
+        RunAsync(repository, ["add", "-A"], null, cancellationToken);
+
+    /// <summary>
+    /// Commits what is staged with <paramref name="identity"/> passed on the command, commit signing off and the repository's commit hooks
+    /// skipped (spec 16 D6: an unattended commit can answer no prompt); the repository's config is never written.
+    /// </summary>
+    public Task<GitResult> CommitStagedAsync(string repository, string message, GitIdentity identity, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(identity);
+        return RunAsync(
+            repository,
+            ["-c", "user.name=" + identity.Name, "-c", "user.email=" + identity.Email, "-c", "commit.gpgsign=false", "commit", "--no-verify", "-F", "-"],
+            message,
+            cancellationToken);
+    }
+
+    /// <summary>How many commits <paramref name="tip"/> has that <paramref name="baseRevision"/> lacks, or <see langword="null"/> when git fails.</summary>
+    public async Task<int?> CountAheadAsync(string repository, string baseRevision, string tip, CancellationToken cancellationToken)
+    {
+        var result = await RunAsync(repository, ["rev-list", "--count", baseRevision + ".." + tip], null, cancellationToken).ConfigureAwait(false);
+        return result.Succeeded && int.TryParse(result.Stdout.Trim(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var count)
+            ? count
+            : null;
+    }
+
+    /// <summary>The repository-relative paths changed between the merge base of the two revisions and <paramref name="tip"/>, a rename as a delete plus an add; <see langword="null"/> when git fails.</summary>
+    public async Task<IReadOnlyList<string>?> ChangedPathsAsync(string repository, string baseRevision, string tip, CancellationToken cancellationToken)
+    {
+        var result = await RunAsync(repository, ["diff", "--name-only", "-z", "--no-renames", baseRevision + "..." + tip], null, cancellationToken).ConfigureAwait(false);
+        // The process runner ends captured stdout with a line end after git's last NUL; it is not a path.
+        return result.Succeeded ? result.Stdout.TrimEnd('\r', '\n').Split('\0', StringSplitOptions.RemoveEmptyEntries) : null;
+    }
+
+    /// <summary>Pushes the local <paramref name="branch"/> to the same name on <c>origin</c>; never forced.</summary>
+    public Task<GitResult> PushBranchAsync(string repository, string branch, CancellationToken cancellationToken) =>
+        RunAsync(repository, ["push", "origin", "refs/heads/" + branch + ":refs/heads/" + branch], null, cancellationToken);
+
+    /// <summary>Deletes a local branch whether or not it is merged (<c>branch -D</c>).</summary>
+    public Task<GitResult> DeleteBranchAsync(string repository, string branch, CancellationToken cancellationToken) =>
+        RunAsync(repository, ["branch", "-D", branch], null, cancellationToken);
+
     public Task<GitResult> FetchAsync(string repository, CancellationToken cancellationToken) =>
         RunAsync(repository, ["fetch", "origin"], null, cancellationToken);
 

@@ -185,21 +185,6 @@ public sealed class JobRunnerTests : IDisposable
         await act.Should().ThrowAsync<ArgumentException>();
     }
 
-    [Fact]
-    public async Task RunAsync_WorktreeTrue_RunsInPlaceWithOneWarning()
-    {
-        // Arrange
-        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root, Worktree: true));
-
-        // Act
-        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
-
-        // Assert
-        reply.Status.Should().Be(ReportStatus.Done);
-        _h.Request().WorkingDirectory.Should().Be(_project.Root);
-        _h.Log.AtLevel(LogLevel.Warning).Should().ContainSingle().Which.Message.Should().Contain("worktree requested");
-    }
-
     [Theory]
     [InlineData(10, null, 600)]
     [InlineData(null, null, 1800)]

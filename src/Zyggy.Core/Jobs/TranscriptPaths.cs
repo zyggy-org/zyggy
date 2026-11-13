@@ -25,4 +25,13 @@ internal static class TranscriptPaths
         ArgumentNullException.ThrowIfNull(id);
         return Path.Join(TenantDirectory(nodeDir, tenant), id.Value + ".jsonl");
     }
+
+    /// <summary>The folder a worktree job runs in (spec 16 D5): <c>&lt;nodeDir&gt;/worktrees/&lt;tenant&gt;/&lt;job id&gt;</c>, never beside the project.</summary>
+    public static string WorktreeFor(string nodeDir, TenantId tenant, EnvelopeId id)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(nodeDir);
+        ArgumentNullException.ThrowIfNull(tenant);
+        ArgumentNullException.ThrowIfNull(id);
+        return Path.Join(nodeDir, "worktrees", tenant.Value, id.Value);
+    }
 }

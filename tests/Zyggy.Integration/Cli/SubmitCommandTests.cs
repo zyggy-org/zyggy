@@ -70,6 +70,38 @@ public sealed partial class SubmitCommandTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Submit_WorktreeFlag_SignedJobOnMainCarriesWorktreeTrue()
+    {
+        // Arrange: spec 16 AC-15
+        var ct = TestContext.Current.CancellationToken;
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["submit", "--to", "home-laptop", "--project", _project.Path, "--worktree", Body], _harness.CentralNodeJson, ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        var id = EnvelopeId.Parse(SubmittedLine().Match(console.Stdout).Groups["id"].Value);
+        Model job = await _harness.ParseOnMainAsync(BusPaths.EnvelopeFile(BusPaths.Jobs(CliHarness.Acme, CliHarness.HomeLaptop), id), ct);
+        job.Job!.Worktree.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Submit_WithoutWorktreeFlag_JobCarriesWorktreeFalse()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["submit", "--to", "home-laptop", "--project", _project.Path, Body], _harness.CentralNodeJson, ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        var id = EnvelopeId.Parse(SubmittedLine().Match(console.Stdout).Groups["id"].Value);
+        Model job = await _harness.ParseOnMainAsync(BusPaths.EnvelopeFile(BusPaths.Jobs(CliHarness.Acme, CliHarness.HomeLaptop), id), ct);
+        job.Job!.Worktree.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Submit_BodyOnStdin_IdenticalToPositional()
     {
         // Act

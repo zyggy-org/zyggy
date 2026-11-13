@@ -1133,6 +1133,28 @@ public sealed partial class SourceHygieneTests
         offenders.Should().BeEmpty();
     }
 
+    // Spec 16 AC-18: every Failure-modes row that names a runbook entry has it in the Core README's jobs runbook; the Cli README names
+    // --worktree; the Integration README names gate part 2.
+    [Fact]
+    public void Readmes_WorktreeExecutionDocumented()
+    {
+        // Arrange
+        static string Read(string relative) => File.ReadAllText(Path.Combine(RepoRoot(), relative));
+        var core = Read("src/Zyggy.Core/README.md");
+        var cli = Read("src/Zyggy.Cli/README.md");
+        var integration = Read("tests/Zyggy.Integration/README.md");
+        string[] runbook = ["| Jobs: git_error before the run |", "| Jobs: worktree kept |", "| Jobs: branch not pushed |", "| Jobs: stale worktree folder |", "WorktreeRun"];
+
+        // Act
+        var missing = runbook.Where(h => !core.Contains(h, StringComparison.Ordinal))
+            .Concat(cli.Contains("--worktree", StringComparison.Ordinal) ? [] : ["cli: --worktree"])
+            .Concat(integration.Contains("part 2 (deliverable 16)", StringComparison.Ordinal) ? [] : ["integration: part 2 (deliverable 16)"])
+            .ToList();
+
+        // Assert
+        missing.Should().BeEmpty();
+    }
+
     // Spec 41 AC-48/AC-49, plan 41 Step 14: every failure mode has its runbook row in the README the spec names, the Central drop-in
     // documents its two additions, and the files the deliverable added use placeholder identities only.
     [Fact]

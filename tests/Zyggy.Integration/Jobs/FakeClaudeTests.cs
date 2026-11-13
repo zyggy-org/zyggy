@@ -110,6 +110,43 @@ public sealed partial class FakeClaudeTests
     }
 
     [Fact]
+    public async Task Run_EditsSet_WritesAndDeletesInWorkingDirectory()
+    {
+        // Arrange: spec 16 slice 3 — the model changes files in its working directory.
+        var ct = TestContext.Current.CancellationToken;
+        using var scratch = new ScratchDirectory();
+        await File.WriteAllTextAsync(scratch.File("old.txt"), "old\n", ct);
+        var edits = "+src/new.txt\tline one\n-old.txt";
+
+        // Act
+        var result = await RunAsync("done", null, [], scratch.Path, ct, new Dictionary<string, string> { ["ZYGGY_FAKE_CLAUDE_EDITS"] = edits });
+
+        // Assert
+        new { result.ExitCode, New = await File.ReadAllTextAsync(Path.Combine(scratch.Path, "src", "new.txt"), ct), OldExists = File.Exists(scratch.File("old.txt")) }
+            .Should().BeEquivalentTo(new { ExitCode = 0, New = "line one\n", OldExists = false });
+    }
+
+    [Theory]
+    [InlineData("+../escape.txt\tx")]
+    [InlineData("+/abs.txt\tx")]
+    [InlineData("?bad")]
+    public async Task Run_EditOutsideWorkingDirectoryOrMalformed_ExitsFiveWritesNothing(string edits)
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        using var scratch = new ScratchDirectory();
+        var work = Path.Combine(scratch.Path, "work");
+        Directory.CreateDirectory(work);
+
+        // Act
+        var result = await RunAsync("done", null, [], work, ct, new Dictionary<string, string> { ["ZYGGY_FAKE_CLAUDE_EDITS"] = edits });
+
+        // Assert
+        new { result.ExitCode, Escaped = File.Exists(Path.Combine(scratch.Path, "escape.txt")), Stderr = result.Stderr.StartsWith("fake-claude: invalid ZYGGY_FAKE_CLAUDE_EDITS", StringComparison.Ordinal) }
+            .Should().BeEquivalentTo(new { ExitCode = 5, Escaped = false, Stderr = true });
+    }
+
+    [Fact]
     public async Task Run_ScenarioDirSetNameMissing_ExitsThree()
     {
         // Arrange: "done" exists next to the executable, but not in the given directory.

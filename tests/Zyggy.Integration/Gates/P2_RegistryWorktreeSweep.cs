@@ -1,7 +1,10 @@
 // The P2 gate (founding spec §12), automated half. Parts and owners:
 //   Part 1 (deliverable 14, this region): registry published, a job routed by name — `zyggy submit --project <name>` from central →
 //           the real zyggy-node host resolves the name from its own scan → fake claude in the discovered folder → signed report on main.
-//   Part 2 (deliverable 16, worktrees) and Part 3 (deliverable 17, sweep) append their own regions.
+//   Part 2 (deliverable 16, worktrees): `zyggy submit --project <name> --worktree` → the host runs the fake claude in
+//           <nodeDir>/worktrees/acme/<id> on zyggy/<id>, pushes the branch to the project's own origin → `done` report whose
+//           diff_ref is that branch's SHA on the origin.
+//   Part 3 (deliverable 17, sweep) appends its own region.
 // Rule: later parts append their own region and reuse the private helpers at the bottom; part 1 is never restructured.
 // Nothing in the envelope wire format changed for this gate; PROTOCOL.md stays the placeholder (15 copies §4).
 using System.Text;
@@ -24,7 +27,10 @@ using Model = Zyggy.Core.Envelope.Envelope;
 
 namespace Zyggy.Integration.Gates;
 
-/// <summary>Phase P2 gate, part 1 (spec 14 AC-19, AC-24, AC-25): the registry on the bus and a job routed by registry name, through the production host and the CLI.</summary>
+/// <summary>
+/// Phase P2 gate, part 1 (spec 14 AC-19, AC-24, AC-25): the registry on the bus and a job routed by registry name; part 2 (spec 16 AC-16):
+/// a worktree job whose branch is pushed — both through the production host and the CLI.
+/// </summary>
 public sealed partial class P2_RegistryWorktreeSweep : IAsyncLifetime
 {
     private const string Body = "Read README.md and finish with a REPORT section; change nothing.\n";
@@ -104,6 +110,61 @@ public sealed partial class P2_RegistryWorktreeSweep : IAsyncLifetime
         Directory.EnumerateFiles(_harness.ProjectsRoot, "capture.bin", SearchOption.AllDirectories).Should().BeEmpty("the model never started");
         File.Exists(TranscriptPaths.For(_harness.NodeDir, NodeHostHarness.Acme, report.Header.InReplyTo)).Should().BeFalse();
         SweepSecrets(submit);
+    }
+
+    #endregion
+
+    #region Part 2 — 16
+
+    [Fact]
+    public async Task Part2_SubmitWorktreeByName_BranchPushedAndDiffRefOnProjectOrigin()
+    {
+        // Arrange: a discovered project with one commit pushed to its own bare origin; the fake model adds a file
+        var ct = TestContext.Current.CancellationToken;
+        ScratchProject shop = await _harness.ProjectAsync(ct, "shop");
+        string origin = await WithOriginAsync(shop, ct);
+        _harness.FakeEnvironment["ZYGGY_FAKE_CLAUDE_EDITS"] = "+src/feature.txt\tfeature";
+        using IHost host = await StartHostWithRegistryAsync(ct);
+
+        // Act (a): `zyggy submit --worktree` from central, by registry name
+        var (submitExit, submit) = await CliAsync(
+            ["submit", "--to", "home-laptop", "--project", "shop", "--worktree", "--timeout", "2", "--allowed-tools", "Read,Edit", "Add the feature file.\n"], ct);
+        submitExit.Should().Be(0, submit.Stderr);
+        string id = SubmittedLine().Match(submit.Stdout).Groups["id"].Value;
+
+        // Act (b): the host runs it in a worktree, pushes zyggy/<id> to the project's origin and answers on main
+        await NodeHostHarness.WaitUntilAsync(async () => (await _harness.ReportsOnMainAsync(ct)).Count == 1, TimeSpan.FromSeconds(60), ct);
+        await host.StopAsync(ct);
+
+        // Assert
+        Model report = await SingleReportAsync(ct);
+        report.Header.InReplyTo!.Value.Should().Be(id);
+        report.Report!.Status.Should().Be(ReportStatus.Done, Encoding.UTF8.GetString(report.Body.Span));
+        report.Report.FilesChanged.Should().Equal("src/feature.txt");
+        report.Report.DiffRef.Should().Be(await _harness.Bus.RunGitAsync(origin, ["rev-parse", "refs/heads/zyggy/" + id], ct));
+        (await _harness.Bus.RunGitAsync(shop.Path, ["symbolic-ref", "--short", "HEAD"], ct)).Should().Be("main", "the checkout is untouched");
+        var (verifyExit, verify) = await CliAsync(["verify"], ct, _harness.NodeJsonPath);
+        verifyExit.Should().Be(0, verify.Stdout + verify.Stderr);
+        SweepSecrets(submit, verify);
+    }
+
+    /// <summary>Gives <paramref name="project"/> one commit (with <c>capture.bin</c>, the harness's fake capture, ignored) pushed to a new bare origin; returns the origin.</summary>
+    private async Task<string> WithOriginAsync(ScratchProject project, CancellationToken ct)
+    {
+        string origin = _harness.Scratch.File(Path.GetFileName(project.Path) + "-origin.git");
+        await _harness.Bus.RunGitAsync(_harness.Scratch.Path, ["init", "-q", "--bare", "--initial-branch=main", origin], ct);
+        await File.WriteAllTextAsync(Path.Combine(project.Path, ".gitignore"), "capture.bin\n", ct);
+        foreach (string[] args in (string[][])
+                 [
+                     ["config", "user.name", "alice (fixture)"], ["config", "user.email", "alice@example.invalid"], ["config", "commit.gpgsign", "false"],
+                     ["add", "-A"], ["commit", "-q", "-m", "initial"], ["remote", "add", "origin", origin], ["push", "-q", "origin", "main"],
+                     ["remote", "set-head", "origin", "main"],
+                 ])
+        {
+            await _harness.Bus.RunGitAsync(project.Path, args, ct);
+        }
+
+        return origin;
     }
 
     #endregion

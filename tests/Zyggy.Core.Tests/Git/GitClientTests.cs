@@ -30,6 +30,19 @@ public sealed class GitClientTests
     }
 
     [Fact]
+    public async Task ChangedPaths_NulSeparatedWithTrailingLineEnd_ReturnsOnlyThePaths()
+    {
+        // Arrange: spec 16 slice 3 — the process runner ends captured stdout with a line end after git's last NUL.
+        _processes.On("diff", RecordingProcessRunner.Ok("README.md\0src/a.txt\0\n"));
+
+        // Act
+        var paths = await Client().ChangedPathsAsync(Repo, "base", "tip", TestContext.Current.CancellationToken);
+
+        // Assert
+        paths.Should().Equal("README.md", "src/a.txt");
+    }
+
+    [Fact]
     public async Task Add_NewPathsOnly()
     {
         // Act

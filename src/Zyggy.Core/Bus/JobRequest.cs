@@ -31,6 +31,12 @@ public sealed partial record JobRequest(
     EnvelopePriority Priority,
     ReadOnlyMemory<byte> Body)
 {
+    /// <summary>
+    /// Gets a value indicating whether the job runs in its own git worktree on branch <c>zyggy/&lt;id&gt;</c> and pushes the result
+    /// (<c>zyggy submit --worktree</c>, spec 16); <see langword="false"/> runs in the project's checkout as before.
+    /// </summary>
+    public bool Worktree { get; init; }
+
     /// <summary>The body cap in UTF-8 bytes (a sanity check against a pasted document, not a protocol rule).</summary>
     public const int MaxBodyBytes = 65_536;
 

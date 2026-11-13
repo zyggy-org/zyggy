@@ -23,10 +23,11 @@ internal static class SubmitCommand
         var timeout = new Option<int?>("--timeout") { Description = "The time limit in minutes (1–1440; the node's default when absent)." };
         var allowedTools = new Option<string[]>("--allowed-tools") { Description = "Tool approval rules, comma-separated; may be repeated.", AllowMultipleArgumentsPerToken = false, Arity = ArgumentArity.ZeroOrMore };
         var priority = new Option<string?>("--priority") { Description = "low, normal or high (normal when absent)." };
+        var worktree = new Option<bool>("--worktree") { Description = "Run in a git worktree on branch zyggy/<id> and push the result to the project's origin (the project needs a default branch)." };
         var body = new Argument<string?>("body") { Description = "The job's instructions; read from standard input when absent.", Arity = ArgumentArity.ZeroOrOne };
         var command = new Command("submit", "Build, sign and publish a job envelope to a machine's inbox on the bus.")
         {
-            to, project, agent, timeout, allowedTools, priority, body, BusHost.ConfigOption, BusHost.VerboseOption,
+            to, project, agent, timeout, allowedTools, priority, worktree, body, BusHost.ConfigOption, BusHost.VerboseOption,
         };
         command.SetAction((parseResult, ct) => RunAsync(
             environment,
@@ -39,6 +40,7 @@ internal static class SubmitCommand
             parseResult.GetValue(timeout),
             parseResult.GetValue(allowedTools),
             parseResult.GetValue(priority),
+            parseResult.GetValue(worktree),
             parseResult.GetValue(body),
             ct));
         return command;
@@ -55,6 +57,7 @@ internal static class SubmitCommand
         int? timeout,
         string[]? allowedTools,
         string? priority,
+        bool worktree,
         string? positionalBody,
         CancellationToken ct)
     {
@@ -95,7 +98,7 @@ internal static class SubmitCommand
             return ExitCodes.Usage;
         }
 
-        SubmitResult result = await services.GetRequiredService<JobSubmitter>().SubmitAsync(request!, ct);
+        SubmitResult result = await services.GetRequiredService<JobSubmitter>().SubmitAsync(request! with { Worktree = worktree }, ct);
         switch (result)
         {
             case Submitted submitted:
