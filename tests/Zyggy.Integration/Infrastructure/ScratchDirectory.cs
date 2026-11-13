@@ -21,9 +21,15 @@ public sealed class ScratchDirectory : IDisposable
     {
         try
         {
+            // Git object files (a bare repository a test created here) are read-only on Windows; Directory.Delete would throw on them.
+            foreach (var file in Directory.EnumerateFiles(Path, "*", SearchOption.AllDirectories))
+            {
+                System.IO.File.SetAttributes(file, FileAttributes.Normal);
+            }
+
             Directory.Delete(Path, recursive: true);
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Leaked temp directories are documented in the README.
         }

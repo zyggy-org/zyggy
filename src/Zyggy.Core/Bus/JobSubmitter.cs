@@ -60,7 +60,7 @@ public sealed partial class JobSubmitter
         BusIdentity me = _bus.Me;
         DateTimeOffset now = _clock.GetUtcNow();
         var header = new EnvelopeHeader(me.Tenant, EnvelopeId.New(now), me.Machine, request.To, now, request.Priority);
-        var fields = new JobFields(request.Project.Value, request.Agent, Worktree: false, request.AllowedTools, ReportBack: null, request.TimeoutMinutes, Deadline: null, Attempt: 1);
+        var fields = new JobFields(request.Project.Value, request.Agent, request.Worktree, request.AllowedTools, ReportBack: null, request.TimeoutMinutes, Deadline: null, Attempt: 1);
         Model job;
         try
         {
@@ -196,7 +196,7 @@ public sealed partial class JobSubmitter
             return "agent";
         }
 
-        if (j.Worktree)
+        if (j.Worktree != request.Worktree)
         {
             return "worktree";
         }

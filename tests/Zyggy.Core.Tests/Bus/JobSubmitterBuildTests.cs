@@ -91,6 +91,22 @@ public sealed class JobSubmitterBuildTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task BuildAsync_WorktreeRequest_SignedJobCarriesWorktreeTrue()
+    {
+        // Arrange: spec 16 AC-15 — `zyggy submit --worktree`
+        var ct = TestContext.Current.CancellationToken;
+        JobRequest request = Request("calizr") with { Worktree = true };
+
+        // Act
+        BuildResult result = await Submitter().BuildAsync(request, ct);
+
+        // Assert
+        var built = result.Should().BeOfType<Built>().Subject;
+        EnvelopeResult check = await new EnvelopeSigner(_store).ParseAndVerifyAsync(built.Bytes, Acme, ct);
+        new { check.IsAccepted, Worktree = check.Envelope?.Job?.Worktree }.Should().BeEquivalentTo(new { IsAccepted = true, Worktree = (bool?)true });
+    }
+
+    [Fact]
     public async Task BuildAsync_BodyStartingWithFrontMatterDelimiter_EntirelyBody()
     {
         // Act
