@@ -20,7 +20,7 @@ namespace Zyggy.Core.Health;
 /// <param name="RateLimitRemaining">The bus host's remaining request budget as last seen.</param>
 /// <param name="BackoffUntilUtc">Until when the poller backs off, if it does.</param>
 /// <param name="ClaudeAuthOk">The login probe's last verdict; <see langword="null"/> until the first probe (A7-4).</param>
-/// <param name="AgentCoreSha">The pinned <c>zyggy-core</c> SHA; <see langword="null"/> until deliverable 15.</param>
+/// <param name="AgentCoreSha">The commit the <c>zyggy-core</c> checkout at <c>agentCore.path</c> is on (deliverable 15: reported, not pinned); <see langword="null"/> when that folder is not a git checkout.</param>
 public sealed record NodeHealth(
     string Version,
     string Tenant,

@@ -126,6 +126,7 @@ internal static partial class StatusCommand
         if (health is not null)
         {
             sb.Append(Dot).Append("zyggy-node ").Append(health.Version);
+            sb.Append(Dot).Append("zyggy-core ").Append(Short(health.AgentCoreSha));
         }
 
         sb.Append(Dot).Append("health: ").Append(verdict.Level.ToString().ToLowerInvariant());

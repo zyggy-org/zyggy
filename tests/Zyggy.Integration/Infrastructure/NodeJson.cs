@@ -32,10 +32,14 @@ internal static class NodeJson
         string? oneDriveFolder = null,
         bool dlpEnabled = false,
         IReadOnlyList<string>? devRoots = null,
-        string? discoveryJson = null)
+        string? discoveryJson = null,
+        string? agentCorePath = null)
     {
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "node.json");
+
+        // Spec 15: never the machine's own zyggy-core checkout (the default path); a folder that does not exist unless the test names one.
+        string agentCoreLine = "  \"agentCore\": { \"path\": \"" + Slashes(agentCorePath ?? Path.Combine(Path.GetFullPath(directory), "no-zyggy-core")) + "\" },\n";
         string tenantLine = omitTenant ? string.Empty : string.Create(CultureInfo.InvariantCulture, $"  \"tenant\": \"{tenantOverride ?? tenant.Value}\",\n");
         string signLine = signWith is null ? string.Empty : string.Create(CultureInfo.InvariantCulture, $"  \"signWith\": \"{signWith}\",\n");
         string claudeLine = claudePath is null ? string.Empty : string.Create(CultureInfo.InvariantCulture, $"  \"claude\": {{ \"path\": \"{Slashes(claudePath)}\" }},\n");
@@ -57,7 +61,7 @@ internal static class NodeJson
         string json = string.Create(CultureInfo.InvariantCulture, $$"""
             {
             {{tenantLine}}  "machine": "{{machine.Value}}",
-            {{signLine}}{{claudeLine}}{{nodeDirLine}}{{workHoursLine}}{{concurrencyLine}}{{logLine}}{{extraLine}}{{archiveLine}}{{dlpLine}}{{devRootsLine}}{{discoveryLine}}  "bus": {
+            {{signLine}}{{claudeLine}}{{nodeDirLine}}{{workHoursLine}}{{concurrencyLine}}{{logLine}}{{extraLine}}{{archiveLine}}{{dlpLine}}{{devRootsLine}}{{discoveryLine}}{{agentCoreLine}}  "bus": {
                 "owner": "acme-org",
                 "repo": "acme-bus",
                 "branch": "{{branch}}",

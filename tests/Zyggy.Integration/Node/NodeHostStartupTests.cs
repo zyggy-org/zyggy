@@ -168,8 +168,9 @@ public sealed partial class NodeHostStartupTests : IDisposable
 
         // Assert
         exitCode.Should().Be(0);
-        // spec 09 AC-3: the harness selects `secrets.store: file`, which on Windows announces itself once; that line is not the stash warning
-        harness.LogLines.Where(l => l.Contains("[WRN]", StringComparison.Ordinal) && !l.Contains("Zyggy.Core.Secrets:", StringComparison.Ordinal)).Should().ContainSingle().Which.Should().Contain("zyggy-home-laptop-");
+        // spec 09 AC-3: the harness selects `secrets.store: file`, which on Windows announces itself once; that line is not the stash warning.
+        // Spec 15: neither is the one `agent-core:` line of the harness's absent zyggy-core checkout.
+        harness.LogLines.Where(l => l.Contains("[WRN]", StringComparison.Ordinal) && !l.Contains("Zyggy.Core.Secrets:", StringComparison.Ordinal) && !l.Contains("agent-core: ", StringComparison.Ordinal)).Should().ContainSingle().Which.Should().Contain("zyggy-home-laptop-");
         Model report = await harness.ReportAsync((await harness.ReportsOnMainAsync(ct)).Single(), ct);
         report.Header.InReplyTo.Should().Be(job.Id);
         report.Report!.Status.Should().Be(ReportStatus.Done);
@@ -233,6 +234,7 @@ public sealed partial class NodeHostStartupTests : IDisposable
             || m == "polling"
             || m.StartsWith("health endpoint listening", StringComparison.Ordinal)
             || m == "claude auth ok"
+            || m.StartsWith("agent-core: ", StringComparison.Ordinal)
             || m.StartsWith("file secret store selected on Windows", StringComparison.Ordinal)
             || m.StartsWith("registry published:", StringComparison.Ordinal)));
 

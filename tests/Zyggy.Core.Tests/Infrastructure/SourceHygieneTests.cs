@@ -1101,6 +1101,27 @@ public sealed partial class SourceHygieneTests
         }.Should().BeEquivalentTo(new { Report = true, Registry = true, Hook = true });
     }
 
+    // Spec 15 AC-16 (slice 4): the Node README's health row, node.json row and what-to-do row for the zyggy-core commit.
+    [Fact]
+    public void Readmes_AgentCoreHealthRowDocumented()
+    {
+        // Arrange
+        var node = File.ReadAllText(Path.Combine(RepoRoot(), "src/Zyggy.Node/README.md")).Split('\n');
+
+        // Act
+        var health = node.SingleOrDefault(l => l.StartsWith("| `agentCoreSha` |", StringComparison.Ordinal));
+        var key = node.SingleOrDefault(l => l.StartsWith("| `agentCore.path` |", StringComparison.Ordinal));
+        var runbook = node.SingleOrDefault(l => l.StartsWith("| zyggy-core commit unknown |", StringComparison.Ordinal));
+
+        // Assert
+        new
+        {
+            Health = health is not null && health.Contains("`agentCore.path`", StringComparison.Ordinal) && health.Contains("`null`", StringComparison.Ordinal) && !health.Contains("until deliverable 15", StringComparison.Ordinal),
+            Key = key is not null && key.Contains("C:/agents/zyggy-core", StringComparison.Ordinal) && key.Contains("~/agents/zyggy-core", StringComparison.Ordinal),
+            Runbook = runbook is not null && runbook.Contains("agent-core: <path> is not a git checkout", StringComparison.Ordinal) && runbook.Contains("zyggy-core unknown", StringComparison.Ordinal),
+        }.Should().BeEquivalentTo(new { Health = true, Key = true, Runbook = true });
+    }
+
     // Spec 13 AC-34/AC-35: the pickup is documented, its files use placeholder identities only, its classes hold no clock or state.
     [Fact]
     public void Readmes_PickupDocumented()

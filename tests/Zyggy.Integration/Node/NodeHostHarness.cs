@@ -144,7 +144,8 @@ internal sealed class NodeHostHarness : IAsyncDisposable
         bool omitSignWith = false,
         MachineName? machine = null,
         IReadOnlyList<string>? devRoots = null,
-        string? discoveryJson = null)
+        string? discoveryJson = null,
+        string? agentCorePath = null)
     {
         NodeJsonPath = NodeJson.Write(
             Scratch.File("config"),
@@ -163,7 +164,8 @@ internal sealed class NodeHostHarness : IAsyncDisposable
             safetyFetchMinutes: safetyFetchMinutes,
             logLevel: logLevel,
             devRoots: devRoots ?? [ProjectsRoot],
-            discoveryJson: discoveryJson);
+            discoveryJson: discoveryJson,
+            agentCorePath: agentCorePath);
         if (idleSeconds != activeSeconds)
         {
             string json = File.ReadAllText(NodeJsonPath).Replace(

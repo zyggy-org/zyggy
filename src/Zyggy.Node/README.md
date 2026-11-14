@@ -47,6 +47,7 @@ The single configuration file (§10). Path: `--config`, else `ZYGGY_NODE_JSON`, 
 | `secrets.root` | the file secret store's root | the per-OS default |
 | `devRoots` | the folders whose direct children are scanned for projects; a job path must lie under one | `[]` (nothing found, every path refused) |
 | `discovery.intervalMinutes`, `discovery.lastSeenHours`, `discovery.detail` | rescan period, the liveness stamp's maximum age, `full` or `names` | 60, 6, `full` |
+| `agentCore.path` | absolute path of this machine's `zyggy-core` checkout, whose commit `/health` reports as `agentCoreSha` | the checkout `zyggy setup` makes: `C:/agents/zyggy-core` on Windows, `~/agents/zyggy-core` elsewhere (Central: set it to its working directory) |
 
 Secrets are never in it; any key named like a credential is refused.
 
@@ -71,9 +72,13 @@ The Core README's "Troubleshooting — Node" table says what to do for each.
 | `tenant`, `machine` | `node.json` |
 | `lastPollUtc`, `lastEtag`, `lastPullUtc`, `busHeadSha`, `jobsRunning`, `jobsClaimedByMe`, `lastReportUtc`, `rateLimitRemaining`, `backoffUntilUtc` | the listener's status snapshot: the last head check and the ETag it will send next, the last successful pull and the checkout's `HEAD`, admitted runs in flight, files in this machine's `jobs/claimed/` after the last pull, the last report commit, the bus host's remaining request budget, the back-off instant if polling backs off |
 | `claudeAuthOk` | the login probe: `true`, `false`, or `null` until the first probe answers |
-| `agentCoreSha` | `null` until deliverable 15 |
+| `agentCoreSha` | the `HEAD` commit of the `zyggy-core` checkout at `agentCore.path`, read at start and at every `discovery.intervalMinutes`; `null` when that folder is not a git checkout. Reported, never pinned; the health colour does not depend on it |
 
 There is **no verdict field**: `zyggy status` (deliverable 08) decides what "green" means from these fields.
+
+| Situation | What you see | What to do |
+|-----------|--------------|------------|
+| zyggy-core commit unknown | `/health` `agentCoreSha: null`; `zyggy status` says `zyggy-core unknown`; one `[WRN] agent-core: <path> is not a git checkout` at start and again only after the folder was a checkout in between; jobs and the health colour are unaffected | Set `agentCore.path` in `node.json` to the `zyggy-core` checkout (on Central its working directory) and restart the node, or run `zyggy setup` on a laptop to clone it at the default path. A folder inside another repository does not count: it must hold its own `.git`. |
 
 ## Log
 
