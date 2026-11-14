@@ -46,6 +46,7 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<IModelRunner>(),
                 sp.GetRequiredService<IPolicySource>(),
                 new GitClient(sp.GetRequiredService<IProcessRunner>(), new GitClientOptions(), clock),
+                sp.GetRequiredService<IProcessRunner>(),
                 sp.GetService<RegistrySnapshot>() ?? new RegistrySnapshot(),
                 sp.GetRequiredService<IOptions<JobRunnerOptions>>(),
                 clock,

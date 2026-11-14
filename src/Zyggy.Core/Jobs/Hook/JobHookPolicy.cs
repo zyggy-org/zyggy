@@ -4,9 +4,10 @@ using System.Text.RegularExpressions;
 namespace Zyggy.Core.Jobs.Hook;
 
 /// <summary>
-/// The job hook's three checks, in order (spec 15 Behavior "The job hook"): the call matches an <c>allowed_tools</c> rule; a
-/// file-tool write stays inside the run directory and out of <c>.git/</c>, <c>.claude/settings*.json</c> and <c>.claude/hooks/</c>;
-/// a shell command runs no network program unless a rule of that tool names it.
+/// The job hook's three checks, in order (spec 15 Behavior "The job hook"): the call matches an <c>allowed_tools</c> rule (a shell
+/// pattern rule only when the command is simple, <see cref="ShellCommand.WhyNotSimple"/>); a file-tool write stays inside the run
+/// directory and out of every <c>.git/</c>, <c>.claude/settings*.json</c> and <c>.claude/hooks/</c> in it, at any depth, under any
+/// spelling; a shell command names no network program, however it is quoted, unless the part naming it matches a rule for that program.
 /// </summary>
 internal sealed class JobHookPolicy
 {
@@ -28,7 +29,7 @@ internal sealed class JobHookPolicy
         _ignoreCase = ignoreCase;
         _pathComparison = ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
         _protected = new Regex(
-            @"^(\.git(/.*)?|\.claude/settings[^/]*\.json|\.claude/hooks(/.*)?)$",
+            @"(^|/)(\.git(/.*)?|\.claude/settings[^/]*\.json|\.claude/hooks(/.*)?)$",
             RegexOptions.CultureInvariant | (ignoreCase ? RegexOptions.IgnoreCase : RegexOptions.None),
             TimeSpan.FromSeconds(1));
     }
@@ -43,9 +44,14 @@ internal sealed class JobHookPolicy
         var command = shell ? Text(input, "command") ?? string.Empty : string.Empty;
         var path = PathOf(tool, input);
 
-        if (!Allowed(tool, input, command, path, cwd))
+        // A pattern rule vouches only for a simple command; one that is not simple is matched, and scanned, as a whole.
+        var notSimple = shell ? ShellCommand.WhyNotSimple(command, ShellCommand.DialectOf(tool)) : null;
+        IReadOnlyList<string> parts = !shell ? [] : notSimple is null ? ShellCommand.Parts(command) : [command];
+
+        if (!Allowed(tool, input, parts, notSimple is not null, path, cwd))
         {
-            return HookDecision.Deny(HookDecision.NotAllowedRule, shell ? command : path ?? tool);
+            var detail = !shell ? path ?? tool : notSimple is null ? command : $"not a simple command ({notSimple}): {command}";
+            return HookDecision.Deny(HookDecision.NotAllowedRule, detail);
         }
 
         if (tool is "Write" or "Edit" or "MultiEdit" or "NotebookEdit" && !WritableInside(path, cwd))
@@ -53,7 +59,7 @@ internal sealed class JobHookPolicy
             return HookDecision.Deny(HookDecision.WriteOutsideRule, path ?? "no path");
         }
 
-        if (shell && NetworkProgramIn(tool, command))
+        if (shell && NetworkProgramIn(tool, parts))
         {
             return HookDecision.Deny(HookDecision.NetworkRule, command);
         }
@@ -73,7 +79,7 @@ internal sealed class JobHookPolicy
         _ => Text(input, "file_path"),
     };
 
-    private bool Allowed(string tool, JsonElement input, string command, string? path, string? cwd)
+    private bool Allowed(string tool, JsonElement input, IReadOnlyList<string> parts, bool notSimple, string? path, string? cwd)
     {
         var named = _rules.Where(r => r.Names(tool)).ToList();
         if (named.Count == 0)
@@ -89,8 +95,9 @@ internal sealed class JobHookPolicy
         switch (tool)
         {
             case "Bash" or "PowerShell":
-                var parts = ShellCommand.Parts(command);
-                return parts.Count > 0 && parts.All(part => named.Exists(r => r.MatchesCommand(part)));
+                return notSimple
+                    ? named.Exists(r => r.Specifier == "*")
+                    : parts.Count > 0 && parts.All(part => named.Exists(r => r.MatchesCommand(part)));
             case "Read" or "Edit" or "Write" or "Glob" or "Grep":
                 return Relative(path, cwd) is { } relative && named.Exists(r => r.MatchesPath(relative, _ignoreCase));
             case "WebFetch":
@@ -136,28 +143,21 @@ internal sealed class JobHookPolicy
             return false;
         }
 
+        // A colon names an alternate stream on Windows ("settings.json::$DATA", ".git::$INDEX_ALLOCATION"), and a segment ending in a
+        // dot or a space is trimmed there to another name (".git /config"): both would reach a protected file under another spelling.
+        // Refused on every system, for one rule.
+        if (relative.Contains(':', StringComparison.Ordinal)
+            || path.Split('/', '\\').Any(segment => segment is not ("." or "..") && (segment.EndsWith('.') || segment.EndsWith(' '))))
+        {
+            return false;
+        }
+
         return !_protected.IsMatch(relative);
     }
 
-    private bool NetworkProgramIn(string tool, string command)
-    {
-        foreach (var word in ShellCommand.Words(command))
-        {
-            var name = word.TrimStart('&');
-            var slash = name.LastIndexOfAny(['/', '\\']);
-            name = slash >= 0 ? name[(slash + 1)..] : name;
-            if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-            {
-                name = name[..^4];
-            }
-
-            var program = Array.Find(NetworkPrograms, p => string.Equals(p, name, StringComparison.OrdinalIgnoreCase));
-            if (program is not null && !_rules.Any(r => r.Names(tool) && r.Specifier is { } s && s.StartsWith(program, StringComparison.OrdinalIgnoreCase)))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    // A part names a network program unless that part itself matches a rule of this tool whose pattern starts with the program.
+    private bool NetworkProgramIn(string tool, IReadOnlyList<string> parts) =>
+        parts.Any(part => NetworkPrograms.Any(program =>
+            ShellCommand.NamesProgram(part, program)
+            && !_rules.Any(r => r.Names(tool) && r.Specifier is { } s && ShellCommand.StartsWithWord(s, program) && r.MatchesCommand(part))));
 }

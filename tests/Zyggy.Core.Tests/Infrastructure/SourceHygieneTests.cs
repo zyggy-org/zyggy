@@ -1080,6 +1080,29 @@ public sealed partial class SourceHygieneTests
         }.Should().BeEquivalentTo(new { Blocked = true, Unavailable = true });
     }
 
+    // Spec 15, reviews of 2026-11-14: the two rows name the widened protection, the simple-command rule and what it costs, the
+    // hook's stated limit and the self-test.
+    [Fact]
+    public void Readmes_JobHookLimitsAndSelfTestDocumented()
+    {
+        // Arrange
+        var core = File.ReadAllText(Path.Combine(RepoRoot(), "src/Zyggy.Core/README.md")).Split('\n');
+
+        // Act
+        var blocked = core.Single(l => l.StartsWith("| Jobs: blocked tool calls |", StringComparison.Ordinal));
+        var unavailable = core.Single(l => l.StartsWith("| Jobs: hook unavailable |", StringComparison.Ordinal));
+
+        // Assert
+        new
+        {
+            AnyDepth = blocked.Contains("at any depth", StringComparison.Ordinal),
+            Simple = blocked.Contains("matches only a simple command", StringComparison.Ordinal) && blocked.Contains("not a simple command (<what>)", StringComparison.Ordinal),
+            Cost = blocked.Contains("redirections (`2>&1`", StringComparison.Ordinal) && blocked.Contains("may do anything in the shell", StringComparison.Ordinal),
+            Limit = blocked.Contains("built at run time", StringComparison.Ordinal) && blocked.Contains("tripwire", StringComparison.Ordinal),
+            SelfTest = unavailable.Contains("self-test", StringComparison.Ordinal) && unavailable.Contains("must exit 2", StringComparison.Ordinal),
+        }.Should().BeEquivalentTo(new { AnyDepth = true, Simple = true, Cost = true, Limit = true, SelfTest = true });
+    }
+
     // Spec 15 AC-16 (slice 3): the CLI table rows of report, registry and hook, each naming its exit codes or its caller.
     [Fact]
     public void Readmes_ReportRegistryHookVerbRowsDocumented()

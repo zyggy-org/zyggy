@@ -71,7 +71,7 @@ internal sealed class JobRunnerHarness
     public TimeProvider? ClockOverride { get; set; }
 
     public JobRunner Build() =>
-        new(Model, Policy, new GitClient(Processes, new GitClientOptions(), Clock), Registry, Microsoft.Extensions.Options.Options.Create(Options), ClockOverride ?? Clock, Log);
+        new(Model, Policy, new GitClient(Processes, new GitClientOptions(), Clock), Processes, Registry, Microsoft.Extensions.Options.Options.Create(Options), ClockOverride ?? Clock, Log);
 
     /// <summary>A signed job from central to the home laptop with <paramref name="fields"/>.</summary>
     public static async Task<Model> JobAsync(JobFields fields, string body = "Investigate 502.\n", EnvelopeId? id = null)

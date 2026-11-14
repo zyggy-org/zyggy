@@ -7,6 +7,7 @@ using NSubstitute;
 using Zyggy.Core.Bus;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Models;
+using Zyggy.Core.Processes;
 using Zyggy.Core.Runs;
 using Zyggy.Core.Tests.Infrastructure;
 
@@ -85,6 +86,84 @@ public sealed class JobRunnerHookTests : IDisposable
         // Assert: pre-flight's rev-parse only; no worktree, no lock file
         new { Worktree = _h.Processes.CallsOf("worktree").Count(), Lock = File.Exists(_project.LockPath) }
             .Should().BeEquivalentTo(new { Worktree = 0, Lock = false });
+    }
+
+    // Review of 2026-11-14 (finding 4): a binary that exists but does not refuse an empty call would let every tool call through.
+    public static TheoryData<string, ProcessResult> SelfTestFailures() => new()
+    {
+        { "allows", RecordingProcessRunner.Ok() },
+        { "exit 1", RecordingProcessRunner.Fail(1, "boom") },
+        { "timed out", new ProcessResult(null, string.Empty, string.Empty, TimedOut: true, StartFailed: false, StdoutTruncated: false, TimeSpan.FromSeconds(10)) },
+        { "did not start", new ProcessResult(null, string.Empty, string.Empty, TimedOut: false, StartFailed: true, StdoutTruncated: false, TimeSpan.Zero) },
+    };
+
+    [Theory]
+    [MemberData(nameof(SelfTestFailures))]
+    public async Task RunAsync_HookSelfTestNotRefused_FailedHookUnavailableModelNeverStartedNoLock(string why, ProcessResult selfTest)
+    {
+        // Arrange
+        _h.Processes.On("hook", selfTest);
+        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root, Worktree: true));
+
+        // Act
+        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        new
+        {
+            reply.Status,
+            reply.Reason,
+            Body = BodyOf(reply),
+            ModelCalls = _h.Model.ReceivedCalls().Count(),
+            Worktree = _h.Processes.CallsOf("worktree").Count(),
+            Lock = File.Exists(_project.LockPath),
+        }.Should().BeEquivalentTo(
+            new { Status = ReportStatus.Failed, Reason = "claude_error", Body = $"claude_error: hook unavailable: {_h.Options.HookExecutable}\n", ModelCalls = 0, Worktree = 0, Lock = false },
+            why);
+    }
+
+    [Fact]
+    public async Task RunAsync_HookSelfTestThrows_FailedHookUnavailableNotARunnerException()
+    {
+        // Arrange
+        _h.Processes.Hook = spec => RecordingProcessRunner.SubCommand(spec) == "hook" ? throw new InvalidOperationException("cannot start") : (ProcessResult?)null;
+        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root));
+
+        // Act
+        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        BodyOf(reply).Should().Be($"claude_error: hook unavailable: {_h.Options.HookExecutable}\n");
+    }
+
+    [Fact]
+    public async Task RunAsync_HookSelfTest_RunsTheBinaryOnceWithNoRulesAndNoInput()
+    {
+        // Arrange
+        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root));
+
+        // Act
+        await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert: refused (the substitute's default), so the model ran
+        var call = _h.Processes.CallsOf("hook").Should().ContainSingle().Subject;
+        new { call.FileName, Arguments = string.Join(' ', call.Arguments), call.StandardInput, Bounded = call.Timeout > TimeSpan.Zero && call.Timeout <= TimeSpan.FromSeconds(30), ModelCalls = _h.Model.ReceivedCalls().Count() }
+            .Should().BeEquivalentTo(new { FileName = _h.Options.HookExecutable, Arguments = "hook pre-tool-use", StandardInput = (string?)null, Bounded = true, ModelCalls = 1 });
+    }
+
+    [Fact]
+    public async Task RunAsync_HookSelfTestNotRefused_OneWarningNamingThePath()
+    {
+        // Arrange
+        _h.Processes.On("hook", RecordingProcessRunner.Ok());
+        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root));
+
+        // Act
+        await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        _h.Log.AtLevel(LogLevel.Warning).Should().ContainSingle()
+            .Which.Message.Should().Be($"job {job.Header.Id.Value}: hook unavailable: {_h.Options.HookExecutable}");
     }
 
     [Fact]

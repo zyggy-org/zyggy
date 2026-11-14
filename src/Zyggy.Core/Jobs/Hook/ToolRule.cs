@@ -32,18 +32,14 @@ internal sealed partial record ToolRule(string Tool, string? Specifier)
 
     /// <summary>
     /// Whether a shell <paramref name="part"/> matches this rule's command pattern: <c>*</c> is any text, a trailing <c>:*</c>
-    /// means "starts with". A part with substitution matches only the pattern <c>*</c>.
+    /// means "starts with". The caller hands over the parts of a simple command only (<see cref="ShellCommand.WhyNotSimple"/>);
+    /// a command that is not simple is matched as a whole, and only by a bare rule or the pattern <c>*</c>.
     /// </summary>
     public bool MatchesCommand(string part)
     {
         if (Specifier is null || Specifier == "*")
         {
             return true;
-        }
-
-        if (ShellCommand.HasSubstitution(part))
-        {
-            return false;
         }
 
         if (Specifier.EndsWith(":*", StringComparison.Ordinal))

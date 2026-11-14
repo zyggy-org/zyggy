@@ -314,8 +314,8 @@ public sealed class WorktreeRunTests : IDisposable
         // Act
         await _h.Build().RunAsync(job, CancellationToken.None);
 
-        // Assert
-        _h.Processes.Calls.Select(RecordingProcessRunner.SubCommand).Should().Equal("rev-parse");
+        // Assert: pre-flight's rev-parse is the only git call (the hook self-test of spec 15 is not git)
+        _h.Processes.Calls.Where(c => c.FileName == "git").Select(RecordingProcessRunner.SubCommand).Should().Equal("rev-parse");
     }
 
     [Fact]
