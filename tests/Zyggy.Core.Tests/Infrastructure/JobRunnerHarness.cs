@@ -58,7 +58,12 @@ internal sealed class JobRunnerHarness
     public FakeTimeProvider Clock { get; } = new(T);
 
     /// <summary>Gets the options; <see cref="JobRunnerOptions.NodeDir"/> is a fresh temp directory (created only when a test writes into it), never the real per-OS default.</summary>
-    public JobRunnerOptions Options { get; } = new() { NodeDir = Path.Combine(Path.GetTempPath(), "zyggy-unit", Guid.NewGuid().ToString("N"), "node") };
+    /// <remarks><see cref="JobRunnerOptions.HookExecutable"/> is this test assembly: a file that exists, so the hook pre-flight passes (spec 15 AC-6).</remarks>
+    public JobRunnerOptions Options { get; } = new()
+    {
+        NodeDir = Path.Combine(Path.GetTempPath(), "zyggy-unit", Guid.NewGuid().ToString("N"), "node"),
+        HookExecutable = typeof(JobRunnerHarness).Assembly.Location,
+    };
 
     public RecordingLogger<JobRunner> Log { get; } = new();
 

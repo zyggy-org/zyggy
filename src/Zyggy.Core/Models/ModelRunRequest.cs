@@ -47,6 +47,12 @@ public sealed record ModelRunRequest(string Prompt, string WorkingDirectory, Tim
     /// </summary>
     public string? McpConfig { get; init; }
 
+    /// <summary>
+    /// A <c>PreToolUse</c> hook for every tool call, added through <c>--settings</c> (spec 15: every job run); <see langword="null"/> leaves
+    /// the argument list as before. It contradicts <see cref="ModelSessionIsolation.NoHooks"/>, which would switch it off.
+    /// </summary>
+    public ModelHookCommand? PreToolUseHook { get; init; }
+
     /// <summary>Environment additions for the model process, for example <c>ZYGGY_HOOKS=off</c>.</summary>
     public IReadOnlyDictionary<string, string> Environment { get; init; } = ReadOnlyDictionary<string, string>.Empty;
 

@@ -26,6 +26,17 @@ internal static class TranscriptPaths
         return Path.Join(TenantDirectory(nodeDir, tenant), id.Value + ".jsonl");
     }
 
+    /// <summary>The run's blocked-calls file (spec 15): <c>&lt;nodeDir&gt;/runs/&lt;tenant&gt;/&lt;job id&gt;.blocked</c>, one line per call the hook refused.</summary>
+    public static string BlockedFor(string nodeDir, TenantId tenant, EnvelopeId id)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        return Path.Join(TenantDirectory(nodeDir, tenant), id.Value + ".blocked");
+    }
+
+    /// <summary>The <c>zyggy</c> binary beside the running process (spec 15: both binaries ship in one release folder).</summary>
+    public static string DefaultHookExecutable() =>
+        Path.Join(Path.GetDirectoryName(Environment.ProcessPath), OperatingSystem.IsWindows() ? "zyggy.exe" : "zyggy");
+
     /// <summary>The folder a worktree job runs in (spec 16 D5): <c>&lt;nodeDir&gt;/worktrees/&lt;tenant&gt;/&lt;job id&gt;</c>, never beside the project.</summary>
     public static string WorktreeFor(string nodeDir, TenantId tenant, EnvelopeId id)
     {

@@ -14,6 +14,12 @@ public sealed class JobRunnerOptions
     /// <summary>Gets or sets environment additions for the model process. Tests only (the fake's variables); production leaves it empty.</summary>
     public IReadOnlyDictionary<string, string> ModelEnvironment { get; set; } = ReadOnlyDictionary<string, string>.Empty;
 
+    /// <summary>
+    /// Gets or sets the <c>zyggy</c> binary every job run calls as its <c>PreToolUse</c> hook (spec 15). Null in production: <c>zyggy</c>
+    /// (<c>zyggy.exe</c> on Windows) in the folder of the running process, where the release puts it beside <c>zyggy-node</c>.
+    /// </summary>
+    public string? HookExecutable { get; set; }
+
     /// <summary>Gets or sets a time limit that replaces <c>timeout_minutes</c>. Tests only (an integration test cannot wait a minute); null in production.</summary>
     public TimeSpan? TimeoutOverride { get; set; }
 }

@@ -134,6 +134,9 @@ internal static class TestHost
             services.Configure(runner);
         }
 
+        // Spec 15: the job hook is the built zyggy (in cli/, not beside the test host) unless the test names another binary.
+        services.PostConfigure<JobRunnerOptions>(o => o.HookExecutable ??= ZyggyCli.ExecutablePath);
+
         if (hooks is not null)
         {
             services.AddSingleton<IProcessRunner>(hooks);

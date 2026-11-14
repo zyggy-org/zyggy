@@ -1060,6 +1060,25 @@ public sealed partial class SourceHygieneTests
         }
     }
 
+    // Spec 15 AC-16 (slice 2): the two job-hook runbook rows in the Core README, with the outcome each one names.
+    [Fact]
+    public void Readmes_JobHookRunbookRowsDocumented()
+    {
+        // Arrange
+        var core = File.ReadAllText(Path.Combine(RepoRoot(), "src/Zyggy.Core/README.md")).Split('\n');
+
+        // Act
+        var blocked = core.SingleOrDefault(l => l.StartsWith("| Jobs: blocked tool calls |", StringComparison.Ordinal));
+        var unavailable = core.SingleOrDefault(l => l.StartsWith("| Jobs: hook unavailable |", StringComparison.Ordinal));
+
+        // Assert
+        new
+        {
+            Blocked = blocked is not null && blocked.Contains("blocked: <n> tool call(s)", StringComparison.Ordinal) && blocked.Contains("--allowed-tools", StringComparison.Ordinal),
+            Unavailable = unavailable is not null && unavailable.Contains("claude_error: hook unavailable: <path>", StringComparison.Ordinal),
+        }.Should().BeEquivalentTo(new { Blocked = true, Unavailable = true });
+    }
+
     // Spec 13 AC-34/AC-35: the pickup is documented, its files use placeholder identities only, its classes hold no clock or state.
     [Fact]
     public void Readmes_PickupDocumented()
