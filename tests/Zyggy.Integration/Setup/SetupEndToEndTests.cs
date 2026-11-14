@@ -31,7 +31,7 @@ public sealed class SetupEndToEndTests
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task Setup_FirstRun_SpikeNodeJson_AllEightLinesInOrder_ExitZero_FilesWired()
+    public async Task Setup_FirstRun_SpikeNodeJson_AllTenLinesInOrder_ExitZero_FilesWired()
     {
         // Arrange
         await using SetupHarness harness = await ReadyAsync();
@@ -57,6 +57,67 @@ public sealed class SetupEndToEndTests
             .Should().Equal(File.ReadAllBytes(Path.Combine(harness.Core.SeedDir, "node", "skills", "archive", "SKILL.md")));
     }
 
+    [Theory]
+    [InlineData("bus")]
+    [InlineData("discover")]
+    public async Task Setup_FirstRun_BusAndDiscoverSkillsCopiedByteForByte(string name)
+    {
+        // Arrange: spec 15 AC-15
+        await using SetupHarness harness = await ReadyAsync();
+
+        // Act
+        (int exit, VerbConsole console) = await harness.RunAsync(harness.Args(signWith: "acme/1"), Ct);
+
+        // Assert
+        exit.Should().Be(SetupExit.Ok, console.Stdout + console.Stderr);
+        File.ReadAllBytes(Path.Combine(SetupPaths.SkillTarget(harness.ClaudeDir, name), "SKILL.md"))
+            .Should().Equal(File.ReadAllBytes(Path.Combine(harness.Core.SeedDir, "node", "skills", name, "SKILL.md")));
+    }
+
+    [Fact]
+    public async Task Setup_BusSkillDiffersFromTemplate_MovedToBackup_Replaced_SecondRunAlreadyDone()
+    {
+        // Arrange: spec 15 AC-15 — backup of a differing folder first, then idempotent
+        await using SetupHarness harness = await ReadyAsync();
+        const string Own = "---\nname: bus\n---\nThe owner's own skill of that name.\n";
+        string target = harness.SeedSkill("bus", Own);
+        (_, VerbConsole first) = await harness.RunAsync(harness.Args(signWith: "acme/1"), Ct);
+        string stampDir = Directory.GetDirectories(Path.Combine(harness.LocalAppData, "zyggy", "backup")).Should().ContainSingle().Subject;
+        string backup = Path.Combine(stampDir, "skills", "bus");
+
+        // Act
+        (int exit, VerbConsole second) = await harness.RunAsync(harness.Args(signWith: "acme/1"), Ct);
+
+        // Assert
+        exit.Should().Be(SetupExit.Ok, second.Stdout);
+        Lines(first).Should().Contain($"setup: skill bus: done - copied from {SetupPaths.SkillSource(harness.CorePath, "bus")} (backup {backup})");
+        File.ReadAllText(Path.Combine(backup, "SKILL.md")).Should().Be(Own);
+        File.ReadAllBytes(Path.Combine(target, "SKILL.md"))
+            .Should().Equal(File.ReadAllBytes(Path.Combine(harness.Core.SeedDir, "node", "skills", "bus", "SKILL.md")));
+        Lines(second).Should().Contain("setup: skill bus: already done").And.Contain("setup: skill discover: already done");
+        Directory.GetDirectories(Path.Combine(harness.LocalAppData, "zyggy", "backup")).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Setup_TemplateWithoutBusAndDiscover_ThoseTwoLeftAsIs_ExitZero()
+    {
+        // Arrange: spec 15 slice 6 — the zyggy release ships before zyggy-core holds the two skills
+        await using SetupHarness harness = await SetupHarness.CreateAsync(Ct, busSkills: false);
+        harness.WriteNodeJson(harness.OldSpikeJson());
+
+        // Act
+        (int exit, VerbConsole console) = await harness.RunAsync(harness.Args(signWith: "acme/1"), Ct);
+
+        // Assert
+        exit.Should().Be(SetupExit.Ok, console.Stdout + console.Stderr);
+        Lines(console).Where(l => l.StartsWith("setup: skill ", StringComparison.Ordinal)).Select(l => l.Split(" - ")[0]).Should().Equal(
+            "setup: skill remember: done",
+            "setup: skill archive: done",
+            "setup: skill bus: left as is",
+            "setup: skill discover: left as is");
+        Directory.GetDirectories(Path.Combine(harness.ClaudeDir, "skills")).Select(Path.GetFileName).Should().BeEquivalentTo("remember", "archive");
+    }
+
     [Fact]
     public async Task Setup_SecondRun_OnlyAlreadyDoneLines_ExitZero_NoBackup_SnapshotUnchanged()
     {
@@ -70,7 +131,7 @@ public sealed class SetupEndToEndTests
 
         // Assert
         exit.Should().Be(SetupExit.Ok, console.Stdout);
-        Lines(console).Should().HaveCount(8).And.OnlyContain(l => l.Contains(": already done", StringComparison.Ordinal));
+        Lines(console).Should().HaveCount(10).And.OnlyContain(l => l.Contains(": already done", StringComparison.Ordinal));
         harness.Snapshot().Should().Equal(before);
         Directory.Exists(Path.Combine(harness.LocalAppData, "zyggy", "backup")).Should().BeFalse();
         Directory.GetFiles(harness.ClaudeDir, "*.bak-*").Should().BeEmpty();
@@ -116,7 +177,7 @@ public sealed class SetupEndToEndTests
         // Assert
         exit.Should().Be(SetupExit.Incomplete);
         Lines(console).Last().Should().Be("setup: github-pat: missing - run: zyggy secret set github-pat");
-        Lines(console).Take(6).Should().OnlyContain(l => l.Contains(": done", StringComparison.Ordinal) || l.Contains(": already done", StringComparison.Ordinal));
+        Lines(console).Take(8).Should().OnlyContain(l => l.Contains(": done", StringComparison.Ordinal) || l.Contains(": already done", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -142,6 +203,8 @@ public sealed class SetupEndToEndTests
             "setup: settings: failed",
             "setup: skill remember: done",
             "setup: skill archive: done",
+            "setup: skill bus: done",
+            "setup: skill discover: done",
             "setup: signing key acme/1: already done",
             "setup: github-pat: already done");
         Lines(console)[2].Should().Be("setup: settings: failed - not valid JSON; left untouched");
@@ -211,7 +274,7 @@ public sealed class SetupEndToEndTests
         File.ReadAllBytes(Path.Combine(target, "SKILL.md"))
             .Should().Equal(File.ReadAllBytes(Path.Combine(harness.Core.SeedDir, "node", "skills", "remember", "SKILL.md")));
         Lines(console).Should().Contain($"setup: skill remember: done - copied from {SetupPaths.SkillSource(harness.CorePath, "remember")} (backup {backup})");
-        Directory.GetDirectories(Path.Combine(harness.ClaudeDir, "skills")).Select(Path.GetFileName).Should().BeEquivalentTo("remember", "archive");
+        Directory.GetDirectories(Path.Combine(harness.ClaudeDir, "skills")).Select(Path.GetFileName).Should().BeEquivalentTo("remember", "archive", "bus", "discover");
     }
 
     [Fact]
@@ -231,7 +294,7 @@ public sealed class SetupEndToEndTests
 
         // Assert
         exit.Should().Be(SetupExit.Ok, console.Stdout);
-        Lines(console).Should().HaveCount(9);
+        Lines(console).Should().HaveCount(11);
         Lines(console).Last().Should().Be($"setup: spike file store: left as is - a spike file store exists at {spike}; its keys are retired (rotate-hmac.md step 0) and not imported");
         File.ReadAllText(spikeFile).Should().Be(TestKeys.TestPat);
         File.GetLastWriteTimeUtc(spikeFile).Should().Be(written);

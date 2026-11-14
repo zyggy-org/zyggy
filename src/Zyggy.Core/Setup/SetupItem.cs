@@ -21,6 +21,12 @@ public enum SetupItem
     /// <summary>The <c>archive</c> node skill.</summary>
     SkillArchive,
 
+    /// <summary>The <c>bus</c> node skill (deliverable 15); left as is when the checkout does not hold it yet.</summary>
+    SkillBus,
+
+    /// <summary>The <c>discover</c> node skill (deliverable 15); left as is when the checkout does not hold it yet.</summary>
+    SkillDiscover,
+
     /// <summary>The <c>signWith</c> key in the secret store (name and fingerprint only).</summary>
     SecretSigningKey,
 

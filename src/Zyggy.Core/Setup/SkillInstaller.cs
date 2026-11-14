@@ -10,15 +10,22 @@ namespace Zyggy.Core.Setup;
 internal static class SkillInstaller
 {
     /// <summary>Installs one skill.</summary>
-    /// <param name="item">The <see cref="SetupItem.SkillRemember"/> or <see cref="SetupItem.SkillArchive"/> item.</param>
+    /// <param name="item">The skill's item (<see cref="SetupItem.SkillRemember"/>, <see cref="SetupItem.SkillArchive"/>, <see cref="SetupItem.SkillBus"/>, <see cref="SetupItem.SkillDiscover"/>).</param>
     /// <param name="source">The skill in the checkout (<see cref="SetupPaths.SkillSource"/>).</param>
     /// <param name="target">The user-scope skill (<see cref="SetupPaths.SkillTarget"/>).</param>
     /// <param name="backup">Where a differing target is moved (<see cref="SetupPaths.SkillBackup"/>).</param>
-    public static SetupLine Apply(SetupItem item, string source, string target, string backup)
+    /// <param name="checkoutIfSkillMayBeAbsent">
+    /// The checkout's folder, for a skill a <c>zyggy-core</c> checkout may not hold yet (spec 15: <c>bus</c>, <c>discover</c>): when that folder
+    /// exists and the skill is not in it, the line is <see cref="SetupOutcome.LeftAsIs"/> and nothing is touched. <see langword="null"/> for a
+    /// skill every checkout holds: its absence is a failure.
+    /// </param>
+    public static SetupLine Apply(SetupItem item, string source, string target, string backup, string? checkoutIfSkillMayBeAbsent = null)
     {
         if (!Directory.Exists(source))
         {
-            return new SetupLine(item, SetupOutcome.Failed, "zyggy-core not available");
+            return checkoutIfSkillMayBeAbsent is not null && Directory.Exists(checkoutIfSkillMayBeAbsent)
+                ? new SetupLine(item, SetupOutcome.LeftAsIs, "not in this zyggy-core checkout")
+                : new SetupLine(item, SetupOutcome.Failed, "zyggy-core not available");
         }
 
         try

@@ -69,7 +69,7 @@ internal sealed class SetupHarness : IAsyncDisposable
     public string Patterns => SetupPaths.SecretPatterns(CorePath);
 
     /// <summary>
-    /// The eight lines of a first run over the spike <c>node.json</c> (file store, so no spike line), given the <c>node.json</c> line's detail
+    /// The ten lines of a first run over the spike <c>node.json</c> (file store, so no spike line), given the <c>node.json</c> line's detail
     /// and the template's <c>main</c>: everything done, both secrets present.
     /// </summary>
     public string[] FirstRunLines(string nodeJsonDetail, string head) =>
@@ -80,15 +80,17 @@ internal sealed class SetupHarness : IAsyncDisposable
         $"setup: settings: done - permissions.deny gained Bash(zyggy secret*), Bash(zyggy context --stop-hook*), Bash(zyggy context --flush*) (created {SettingsFile})",
         $"setup: skill remember: done - copied from {SetupPaths.SkillSource(CorePath, "remember")}",
         $"setup: skill archive: done - copied from {SetupPaths.SkillSource(CorePath, "archive")}",
+        $"setup: skill bus: done - copied from {SetupPaths.SkillSource(CorePath, "bus")}",
+        $"setup: skill discover: done - copied from {SetupPaths.SkillSource(CorePath, "discover")}",
         $"setup: signing key acme/1: already done - present (fingerprint {SecretFingerprint.Of(TestKeys.Secret1)})",
         $"setup: github-pat: already done - present (fingerprint {SecretFingerprint.Of(Encoding.UTF8.GetBytes(TestKeys.TestPat))})",
     ];
 
     /// <summary>A profile whose file store holds <c>acme/1</c> and the PAT (or only what <paramref name="signingKey"/>/<paramref name="pat"/> allow).</summary>
-    public static async Task<SetupHarness> CreateAsync(CancellationToken ct, bool signingKey = true, bool pat = true)
+    public static async Task<SetupHarness> CreateAsync(CancellationToken ct, bool signingKey = true, bool pat = true, bool busSkills = true)
     {
         var harness = new SetupHarness();
-        await harness.Core.SeedAsync(ct);
+        await harness.Core.SeedAsync(ct, busSkills);
         await using ServiceProvider services = new ServiceCollection().AddFileSecretStore(o => o.RootDirectory = harness.SecretsRoot).BuildServiceProvider();
         ISecretStore store = services.GetRequiredService<ISecretStore>();
         if (signingKey)

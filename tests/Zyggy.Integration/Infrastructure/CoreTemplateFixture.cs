@@ -48,8 +48,13 @@ public sealed class CoreTemplateFixture
         ["GIT_CONFIG_NOSYSTEM"] = "1",
     };
 
+    /// <summary>The two skills deliverable 15 adds to the template, repository-relative with forward slashes.</summary>
+    public static readonly IReadOnlyList<string> BusSkillFiles = ["node/skills/bus/SKILL.md", "node/skills/discover/SKILL.md"];
+
     /// <summary>Creates the bare repository and pushes the seeded template on <c>main</c>.</summary>
-    public async Task SeedAsync(CancellationToken ct)
+    /// <param name="ct">Cancellation token.</param>
+    /// <param name="busSkills">Whether the template already holds the <c>bus</c> and <c>discover</c> skills; an older one does not.</param>
+    public async Task SeedAsync(CancellationToken ct, bool busSkills = true)
     {
         Directory.CreateDirectory(RootDir);
         File.Create(GlobalConfigPath).Dispose();
@@ -62,6 +67,12 @@ public sealed class CoreTemplateFixture
         await GitAsync(SeedDir, ["config", "core.autocrlf", "false"], ct);
         Write("node/skills/remember/SKILL.md", "---\nname: remember\n---\nKeep a fact the owner stated.\nPlaceholder skill body for tests.\n");
         Write("node/skills/archive/SKILL.md", "---\nname: archive\n---\nKeep a file the owner handed over.\nPlaceholder skill body for tests.\n");
+        if (busSkills)
+        {
+            Write("node/skills/bus/SKILL.md", "---\nname: bus\n---\nSubmit a job and read its report.\nPlaceholder skill body for tests.\n");
+            Write("node/skills/discover/SKILL.md", "---\nname: discover\n---\nShow or publish this machine's registry.\nPlaceholder skill body for tests.\n");
+        }
+
         Write(".claude/hooks/secret-patterns.txt", "synthetic-pattern-one-[0-9]{8}\nsynthetic-pattern-two-[a-f]{16}\nsynthetic-pattern-three-[A-Z]{12}\n");
         Write("node/README.md", "Node wiring for tests.\n");
         await GitAsync(SeedDir, ["add", "--all"], ct);

@@ -1317,6 +1317,26 @@ public sealed partial class SourceHygieneTests
         deploy.Should().Contain("-CorePath").And.Contain("zyggy setup").And.Contain("the laptop runbook is one command: `zyggy-core/runbooks/install-node.md` \"Laptop\"");
     }
 
+    // Spec 15 slice 6: the setup row names the two new skill lines and what a checkout without them gives.
+    [Fact]
+    public void Readmes_SetupBusAndDiscoverSkillsDocumented()
+    {
+        // Arrange
+        var setupRow = File.ReadAllText(Path.Combine(RepoRoot(), "src/Zyggy.Cli/README.md")).Split('\n').Single(l => l.StartsWith("| `setup --config", StringComparison.Ordinal));
+        var core = File.ReadAllText(Path.Combine(RepoRoot(), "src/Zyggy.Core/README.md"));
+
+        // Act
+        var documented = new
+        {
+            Lines = setupRow.Contains("`setup: skill bus: …`", StringComparison.Ordinal) && setupRow.Contains("`setup: skill discover: …`", StringComparison.Ordinal),
+            Absent = setupRow.Contains("left as is - not in this zyggy-core checkout", StringComparison.Ordinal),
+            Core = core.Contains("`SkillBus`", StringComparison.Ordinal) && core.Contains("`SkillDiscover`", StringComparison.Ordinal),
+        };
+
+        // Assert
+        documented.Should().BeEquivalentTo(new { Lines = true, Absent = true, Core = true });
+    }
+
     [Fact]
     public void SetupFiles_NonDefaultIdentityOnly()
     {
