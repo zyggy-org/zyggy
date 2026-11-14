@@ -294,6 +294,7 @@ public class BusRepoFixture : IAsyncLifetime
         decimal? costUsd = null,
         Func<byte[], byte[]>? mutate = null,
         DateTimeOffset? created = null,
+        ReportFields? fields = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(from);
@@ -303,7 +304,7 @@ public class BusRepoFixture : IAsyncLifetime
         DateTimeOffset at = created ?? FixedInstant;
         var id = EnvelopeId.New(at);
         var header = new EnvelopeHeader(signWith.Tenant, id, from, to, at, EnvelopePriority.Normal, inReplyTo);
-        Model report = Model.CreateReport(header, new ReportFields(status, reason, CostUsd: costUsd), Encoding.UTF8.GetBytes(body));
+        Model report = Model.CreateReport(header, fields ?? new ReportFields(status, reason, CostUsd: costUsd), Encoding.UTF8.GetBytes(body));
         EnvelopeResult signed = await new EnvelopeSigner(store).SignAsync(report, signWith, ct);
         if (!signed.IsAccepted)
         {

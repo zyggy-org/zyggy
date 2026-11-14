@@ -394,9 +394,10 @@ public sealed partial class SourceHygieneTests
     [Fact]
     public void Src_RegistryPathLiteral_OnlyInBusPaths()
     {
-        // Arrange: plan 14 Step 11 — the registry file's bus path (folder word or `.yaml` suffix glued onto a path) is built in BusPaths only
+        // Arrange: plan 14 Step 11 — the registry file's bus path (folder word or `.yaml` suffix glued onto a path) is built in BusPaths only;
+        // spec 15: the `zyggy registry` verb name (`new Command("registry"`) is a CLI word, not a path
         const string Allowed = "src/Zyggy.Core/Bus/BusPaths.cs";
-        var pattern = new Regex("\"registry\"|\"/registry/\"|\\+ *\"\\.yaml\"|\"\\.yaml\" *\\+", RegexOptions.None, TimeSpan.FromSeconds(5));
+        var pattern = new Regex("(?<!new Command\\()\"registry\"|\"/registry/\"|\\+ *\"\\.yaml\"|\"\\.yaml\" *\\+", RegexOptions.None, TimeSpan.FromSeconds(5));
 
         // Act
         var holders = SourceFiles()
@@ -1077,6 +1078,27 @@ public sealed partial class SourceHygieneTests
             Blocked = blocked is not null && blocked.Contains("blocked: <n> tool call(s)", StringComparison.Ordinal) && blocked.Contains("--allowed-tools", StringComparison.Ordinal),
             Unavailable = unavailable is not null && unavailable.Contains("claude_error: hook unavailable: <path>", StringComparison.Ordinal),
         }.Should().BeEquivalentTo(new { Blocked = true, Unavailable = true });
+    }
+
+    // Spec 15 AC-16 (slice 3): the CLI table rows of report, registry and hook, each naming its exit codes or its caller.
+    [Fact]
+    public void Readmes_ReportRegistryHookVerbRowsDocumented()
+    {
+        // Arrange
+        var cli = File.ReadAllText(Path.Combine(RepoRoot(), "src/Zyggy.Cli/README.md")).Split('\n');
+
+        // Act
+        var report = cli.SingleOrDefault(l => l.StartsWith("| `report <id>", StringComparison.Ordinal));
+        var registry = cli.SingleOrDefault(l => l.StartsWith("| `registry [--machine <name>]", StringComparison.Ordinal));
+        var hook = cli.SingleOrDefault(l => l.StartsWith("| `hook pre-tool-use", StringComparison.Ordinal));
+
+        // Assert
+        new
+        {
+            Report = report is not null && report.Contains("Exit 0 found · 1 no report (yet) · 2 not a ULID · 3 configuration", StringComparison.Ordinal),
+            Registry = registry is not null && registry.Contains("(stale)", StringComparison.Ordinal) && registry.Contains("Exit 0", StringComparison.Ordinal),
+            Hook = hook is not null && hook.Contains("--settings", StringComparison.Ordinal) && hook.Contains("exit 2", StringComparison.Ordinal),
+        }.Should().BeEquivalentTo(new { Report = true, Registry = true, Hook = true });
     }
 
     // Spec 13 AC-34/AC-35: the pickup is documented, its files use placeholder identities only, its classes hold no clock or state.
