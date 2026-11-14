@@ -1,5 +1,6 @@
 using Zyggy.Core.Brief;
 using Zyggy.Core.Hub;
+using Zyggy.Core.Jobs;
 using Zyggy.Core.LinkedIn;
 using Zyggy.Core.M365;
 using Zyggy.Core.Memory;
@@ -42,6 +43,12 @@ internal static class RawVerbs
         if (args is ["hub", .. var hub])
         {
             run = new HubVerb(environment.Variables, TimeProvider.System).RunAsync(hub, VerbIo.FromConsole(), CancellationToken.None);
+            return true;
+        }
+
+        if (args is ["hook", .. var hook])
+        {
+            run = JobHookVerb.ForThisSystem().RunAsync(hook, VerbIo.FromConsole(), CancellationToken.None);
             return true;
         }
 

@@ -20,7 +20,7 @@ public sealed partial class SetupCommandTests
     private static string PatFingerprint => SecretFingerprint.Of(Encoding.UTF8.GetBytes(TestKeys.TestPat));
 
     [Fact]
-    public async Task Setup_OldSpikeNodeJsonWithoutClaudeOrSignWith_SignWithGiven_CompletedWithBackup_AllEightLines_ExitZero()
+    public async Task Setup_OldSpikeNodeJsonWithoutClaudeOrSignWith_SignWithGiven_CompletedWithBackup_AllTenLines_ExitZero()
     {
         // Arrange
         await using SetupHarness harness = await SetupHarness.CreateAsync(Ct);
@@ -108,7 +108,7 @@ public sealed partial class SetupCommandTests
 
         // Assert
         exit.Should().Be(SetupExit.SigningKeyMissing);
-        console.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Skip(6).Should().Equal(
+        console.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Skip(8).Should().Equal(
             "setup: signing key acme/1: missing - run: zyggy secret set hmac/1 --hex",
             $"setup: github-pat: already done - present (fingerprint {PatFingerprint})");
     }

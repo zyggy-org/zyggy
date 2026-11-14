@@ -89,6 +89,31 @@ public sealed class SkillInstallerTests : IDisposable
     }
 
     [Fact]
+    public void Apply_SourceMissingFromAnExistingCheckout_SkillThatMayBeAbsent_LeftAsIs()
+    {
+        // Arrange: spec 15 slice 6 — the checkout is there but does not hold this skill yet
+        string checkout = Path.Combine(_files.Root, "core");
+        Directory.CreateDirectory(checkout);
+
+        // Act
+        SetupLine line = SkillInstaller.Apply(SetupItem.SkillBus, Source, Target, Backup, checkout);
+
+        // Assert
+        line.Should().Be(new SetupLine(SetupItem.SkillBus, SetupOutcome.LeftAsIs, "not in this zyggy-core checkout"));
+        Directory.Exists(Target).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Apply_CheckoutItselfMissing_SkillThatMayBeAbsent_StillFailed()
+    {
+        // Act
+        SetupLine line = SkillInstaller.Apply(SetupItem.SkillBus, Source, Target, Backup, Path.Combine(_files.Root, "core"));
+
+        // Assert
+        line.Should().Be(new SetupLine(SetupItem.SkillBus, SetupOutcome.Failed, "zyggy-core not available"));
+    }
+
+    [Fact]
     public void SameBytes_ExtraFileInTarget_Different()
     {
         // Arrange

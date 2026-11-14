@@ -107,6 +107,8 @@ public sealed class SetupVerbTests : IDisposable
             + "setup: settings: done - permissions.deny gained " + string.Join(", ", ClaudeSettingsMerge.DenyRules) + " (created " + SettingsFile + ")\n"
             + "setup: skill remember: done - copied from " + SetupPaths.SkillSource(_files.CorePath, "remember") + "\n"
             + "setup: skill archive: done - copied from " + SetupPaths.SkillSource(_files.CorePath, "archive") + "\n"
+            + "setup: skill bus: done - copied from " + SetupPaths.SkillSource(_files.CorePath, "bus") + "\n"
+            + "setup: skill discover: done - copied from " + SetupPaths.SkillSource(_files.CorePath, "discover") + "\n"
             + "setup: signing key acme/1: missing - run: zyggy secret set hmac/1 --hex\n"
             + "setup: github-pat: already done - present (fingerprint " + PatFingerprint + ")\n");
     }
@@ -139,7 +141,7 @@ public sealed class SetupVerbTests : IDisposable
 
         // Assert
         exit.Should().Be(SetupExit.Ok, console.Stdout);
-        console.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Should().HaveCount(8);
+        console.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Should().HaveCount(10);
         _processes.Calls.Select(RecordingProcessRunner.SubCommand).Should().Equal("clone", "rev-parse");
         _processes.Calls.All(c => c.FileName == "git").Should().BeTrue();
         _storeRequests.Should().ContainSingle().Which.Claude.Path.Should().NotBeNull();
@@ -182,6 +184,8 @@ public sealed class SetupVerbTests : IDisposable
             "setup: settings: done - permissions.deny gained " + string.Join(", ", ClaudeSettingsMerge.DenyRules) + " (created " + SettingsFile + ")",
             "setup: skill remember: failed - zyggy-core not available",
             "setup: skill archive: failed - zyggy-core not available",
+            "setup: skill bus: failed - zyggy-core not available",
+            "setup: skill discover: failed - zyggy-core not available",
             "setup: signing key acme/1: already done - present (fingerprint " + SecretFingerprint.Of(TestKeys.Secret1) + ")",
             "setup: github-pat: already done - present (fingerprint " + PatFingerprint + ")");
         Directory.Exists(Path.Combine(ClaudeDir, "skills")).Should().BeFalse();
@@ -199,7 +203,64 @@ public sealed class SetupVerbTests : IDisposable
 
         // Assert
         console.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => l.Split(':')[1].Trim()).Should().Equal(
-            "node.json", "zyggy-core", "settings", "settings", "skill remember", "skill archive", "signing key acme/1", "github-pat");
+            "node.json", "zyggy-core", "settings", "settings", "skill remember", "skill archive", "skill bus", "skill discover", "signing key acme/1", "github-pat");
+    }
+
+    [Fact]
+    public async Task RunAsync_CheckoutWithoutBusAndDiscover_ThoseTwoLeftAsIs_ExitZero()
+    {
+        // Arrange: spec 15 slice 6 — a zyggy-core that does not hold the two new skills yet (the release window before its own PR merges)
+        InMemorySecretStore store = await AllPresentAsync();
+        _processes.Hook = spec =>
+        {
+            if (RecordingProcessRunner.SubCommand(spec) == "clone")
+            {
+                _files.SeedCoreTemplate(busSkills: false);
+            }
+
+            return null;
+        };
+        var console = new VerbConsole();
+
+        // Act
+        int exit = await Verb(store).RunAsync(_files.Request(), console.Io, Ct);
+
+        // Assert
+        exit.Should().Be(SetupExit.Ok, console.Stdout);
+        console.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Where(l => l.StartsWith("setup: skill ", StringComparison.Ordinal)).Should().Equal(
+            "setup: skill remember: done - copied from " + SetupPaths.SkillSource(_files.CorePath, "remember"),
+            "setup: skill archive: done - copied from " + SetupPaths.SkillSource(_files.CorePath, "archive"),
+            "setup: skill bus: left as is - not in this zyggy-core checkout",
+            "setup: skill discover: left as is - not in this zyggy-core checkout");
+        Directory.GetDirectories(Path.Combine(ClaudeDir, "skills")).Select(Path.GetFileName).Should().BeEquivalentTo("remember", "archive");
+    }
+
+    [Fact]
+    public async Task RunAsync_BusSkillDiffers_BackedUpThenReplaced_SecondRunAlreadyDone()
+    {
+        // Arrange: spec 15 AC-15 — the owner's own `bus` skill of that name is moved aside first; a second run changes nothing
+        InMemorySecretStore store = await AllPresentAsync();
+        string target = SetupPaths.SkillTarget(ClaudeDir, "bus");
+        Directory.CreateDirectory(target);
+        File.WriteAllText(Path.Combine(target, "SKILL.md"), "---\nname: bus\n---\nThe owner's own skill.\n");
+        string backup = SetupPaths.SkillBackup(_files.LocalAppData, SetupTestFiles.Stamp, "bus");
+        var first = new VerbConsole();
+        await Verb(store).RunAsync(_files.Request(), first.Io, Ct);
+        _processes.Hook = null;
+        _processes.On("rev-parse", RecordingProcessRunner.Ok(SetupTestFiles.Slashes(_files.CorePath) + "\n\n"));
+        _processes.On("config", RecordingProcessRunner.Ok(SetupRequest.DefaultCoreRemote + "\n"));
+        var second = new VerbConsole();
+
+        // Act
+        int exit = await Verb(store).RunAsync(_files.Request(), second.Io, Ct);
+
+        // Assert
+        exit.Should().Be(SetupExit.Ok, second.Stdout);
+        first.Stdout.Should().Contain("setup: skill bus: done - copied from " + SetupPaths.SkillSource(_files.CorePath, "bus") + " (backup " + backup + ")\n")
+            .And.Contain("setup: skill discover: done - copied from " + SetupPaths.SkillSource(_files.CorePath, "discover") + "\n");
+        File.ReadAllText(Path.Combine(backup, "SKILL.md")).Should().Contain("The owner's own skill.");
+        File.ReadAllText(Path.Combine(target, "SKILL.md")).Should().Contain("Submit a job and read its report.");
+        second.Stdout.Should().Contain("setup: skill bus: already done\n").And.Contain("setup: skill discover: already done\n");
     }
 
     [Fact]

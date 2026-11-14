@@ -15,7 +15,7 @@
 #   4. writes node.json from the template below when absent (else leaves it untouched);
 #   5. pre-flight: git, the checkout and its tenants\<tenant> folder;
 #   6. zyggy setup (deliverable 42): completes node.json (claude.path, signWith; backup first), clones or fast-forwards
-#      zyggy-core at -CorePath, wires the user-scope Claude Code settings and the remember/archive skills, names every missing
+#      zyggy-core at -CorePath, wires the user-scope Claude Code settings and the remember/archive/bus/discover skills, names every missing
 #      secret with the command that sets it and a spike file store (rotate-hmac.md step 0); exit 3 or 4 stops here;
 #   7. pre-flight: claude.path;
 #   8. registers or updates the per-user logon task zyggy-node (interactive logon type, limited run level, hidden, restart on failure);

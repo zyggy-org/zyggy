@@ -108,10 +108,17 @@ internal sealed class SetupTestFiles : IDisposable
     /// What a clone of the template leaves at <see cref="CorePath"/> for the settings and skill items (Step 5): both node skills and the
     /// secret-pattern file (the recorded git runner never writes files itself).
     /// </summary>
-    public void SeedCoreTemplate()
+    /// <param name="busSkills">Whether the template already holds the <c>bus</c> and <c>discover</c> skills (spec 15); an older one does not.</param>
+    public void SeedCoreTemplate(bool busSkills = true)
     {
         WriteFile(Path.Combine(CorePath, "node", "skills", "remember", "SKILL.md"), "---\nname: remember\n---\nKeep a fact the owner stated.\n");
         WriteFile(Path.Combine(CorePath, "node", "skills", "archive", "SKILL.md"), "---\nname: archive\n---\nKeep a file the owner handed over.\n");
+        if (busSkills)
+        {
+            WriteFile(Path.Combine(CorePath, "node", "skills", "bus", "SKILL.md"), "---\nname: bus\n---\nSubmit a job and read its report.\n");
+            WriteFile(Path.Combine(CorePath, "node", "skills", "discover", "SKILL.md"), "---\nname: discover\n---\nShow or publish this machine's registry.\n");
+        }
+
         WriteFile(Path.Combine(CorePath, ".claude", "hooks", "secret-patterns.txt"), "synthetic-pattern-[0-9]{8}\n");
     }
 

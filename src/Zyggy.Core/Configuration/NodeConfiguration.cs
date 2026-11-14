@@ -47,6 +47,9 @@ public sealed record NodeConfiguration(
     /// <summary>Gets the <c>discovery</c> section (spec 14, A14-5); every 60 minutes, refreshed after 6 hours, full detail when absent.</summary>
     public DiscoverySettings Discovery { get; init; } = new();
 
+    /// <summary>Gets the <c>agentCore</c> section (spec 15); the default checkout of <c>zyggy setup</c> when absent.</summary>
+    public AgentCoreSettings AgentCore { get; init; } = new();
+
     /// <summary>Gets <see cref="NodeDir"/> or, when it is <see langword="null"/>, the per-OS default (<c>%LOCALAPPDATA%\zyggy</c>, <c>~/.local/share/zyggy</c>) — the one place that rule lives (spec 07).</summary>
     public string EffectiveNodeDir => NodeDir ?? Jobs.TranscriptPaths.DefaultNodeDir();
 }

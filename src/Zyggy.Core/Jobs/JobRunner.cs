@@ -9,6 +9,7 @@ using Zyggy.Core.Envelope;
 using Zyggy.Core.Git;
 using Zyggy.Core.Models;
 using Zyggy.Core.Policy;
+using Zyggy.Core.Processes;
 using Zyggy.Core.Registry;
 using Zyggy.Core.Runs;
 
@@ -21,9 +22,18 @@ namespace Zyggy.Core.Jobs;
 /// </summary>
 public sealed partial class JobRunner
 {
+    // Spec 15: the hook's rules when neither the job nor the node names any (the code default of claude.defaultAllowedTools).
+    private static readonly string[] CodeDefaultAllowedTools = ["Read", "Grep", "Glob"];
+
+    // The rule names of a blocked-calls line (JobHookVerb), in the order the report looks for them.
+    private static readonly string[] BlockedRules = ["not in allowed_tools", "write outside the project", "network program", "hook error"];
+
+    private static readonly TimeSpan HookSelfTestTimeout = TimeSpan.FromSeconds(15);
+
     private readonly IModelRunner _model;
     private readonly IPolicySource _policy;
     private readonly GitClient _git;
+    private readonly IProcessRunner _processes;
     private readonly RegistrySnapshot _registry;
     private readonly JobRunnerOptions _options;
     private readonly TimeProvider _clock;
@@ -34,6 +44,7 @@ public sealed partial class JobRunner
         IModelRunner model,
         IPolicySource policy,
         GitClient git,
+        IProcessRunner processes,
         RegistrySnapshot registry,
         IOptions<JobRunnerOptions> options,
         TimeProvider clock,
@@ -43,6 +54,7 @@ public sealed partial class JobRunner
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _policy = policy ?? throw new ArgumentNullException(nameof(policy));
         _git = git ?? throw new ArgumentNullException(nameof(git));
+        _processes = processes ?? throw new ArgumentNullException(nameof(processes));
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _options = options.Value;
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
@@ -110,6 +122,16 @@ public sealed partial class JobRunner
             return Reply(ReportStatus.Rejected, reason, $"{reason}: {rejected.Check}\n", started);
         }
 
+        // Spec 15: a hook that cannot start lets every tool call through (Claude Code treats it as a non-blocking error), so a job
+        // whose hook binary is missing, or does not refuse an empty call, never starts — checked before the lock and the worktree, so
+        // nothing is left behind.
+        var hookExecutable = _options.HookExecutable ?? TranscriptPaths.DefaultHookExecutable();
+        if (!File.Exists(hookExecutable) || !await HookRefusesAnEmptyCallAsync(hookExecutable, ct).ConfigureAwait(false))
+        {
+            LogHookUnavailable(id, hookExecutable);
+            return Reply(ReportStatus.Failed, RunFailureReasonWire.ToWire(RunFailureReason.ClaudeError), $"claude_error: hook unavailable: {hookExecutable}\n", started);
+        }
+
         var project = ((PreFlightResult.Ok)preFlight).ProjectPath;
         using var projectLock = ProjectLock.TryAcquire(project, job.Header.Id, ProjectLock.CurrentProcessId, _clock.GetUtcNow());
         if (projectLock is null)
@@ -147,6 +169,17 @@ public sealed partial class JobRunner
 
         var allowedTools = fields.AllowedTools is { Count: > 0 } tools ? tools : policy.DefaultAllowedTools;
         var minutes = fields.TimeoutMinutes ?? policy.DefaultTimeoutMinutes;
+
+        // Spec 15: the rules travel as hook arguments, never through a file the model can reach; the blocked-calls file starts empty.
+        var blockedFile = TranscriptPaths.BlockedFor(nodeDir, job.Header.Tenant, job.Header.Id);
+        Directory.CreateDirectory(Path.GetDirectoryName(blockedFile)!);
+        File.Delete(blockedFile);
+        List<string> hookArgs = ["hook", "pre-tool-use", "--root", runDirectory, "--blocked-file", blockedFile];
+        foreach (var rule in allowedTools.Count > 0 ? allowedTools : CodeDefaultAllowedTools)
+        {
+            hookArgs.AddRange(["--allow", rule]);
+        }
+
         // Spec 06 "ModelRunRequest for a job": no tool set, extra directory, schema, model or system prompt; the project's own
         // hooks, skills, MCP servers and memory apply (Isolation.None, ex-Q7).
         var request = new ModelRunRequest(_prompt.Render(job, runDirectory, allowedTools), runDirectory, _options.TimeoutOverride ?? TimeSpan.FromMinutes(minutes))
@@ -155,6 +188,7 @@ public sealed partial class JobRunner
             AllowedTools = allowedTools,
             MaxBudgetUsd = policy.MaxBudgetUsd,
             Isolation = ModelSessionIsolation.None,
+            PreToolUseHook = new ModelHookCommand(hookExecutable, hookArgs),
             // Founding spec §6 Invocation (amended by deliverable 12, D5): a job run is unattended — the memory and context writers do nothing.
             Environment = WithHooksOff(_options.ModelEnvironment),
             TranscriptPath = TranscriptPaths.For(nodeDir, job.Header.Tenant, job.Header.Id),
@@ -163,14 +197,17 @@ public sealed partial class JobRunner
         LogStarted(id, runDirectory, fields.Agent ?? "none", minutes);
         var result = await _model.RunAsync(request, ct).ConfigureAwait(false);
         var reply = Map(id, result, minutes, started);
+        var hasResultLines = false;
         if (baseSha is not null)
         {
             var machine = job.Header.To.Value;
             var outcome = await worktrees.FinishAsync(project, runDirectory, id, baseSha, new GitIdentity("zyggy (" + machine + ")", machine + "@zyggy.org"), ct)
                 .ConfigureAwait(false);
             reply = WithWorktree(id, reply, outcome);
+            hasResultLines = outcome.ResultLines is not null;
         }
 
+        reply = WithBlocked(id, reply, blockedFile, hasResultLines);
         LogFinished(id, reply, result);
         return reply;
     }
@@ -198,6 +235,71 @@ public sealed partial class JobRunner
         }
 
         return updated;
+    }
+
+    // Spec 15 (review of 2026-11-14): the hook's self-test. `zyggy hook pre-tool-use` with no rules and no input must answer exit 2
+    // and writes no file; a binary that exists but allows, crashes, hangs or cannot start would let every tool call through.
+    private async Task<bool> HookRefusesAnEmptyCallAsync(string hookExecutable, CancellationToken ct)
+    {
+        try
+        {
+            var spec = new ProcessSpec(hookExecutable, ["hook", "pre-tool-use"], Path.GetDirectoryName(hookExecutable) ?? Environment.CurrentDirectory)
+            {
+                Timeout = HookSelfTestTimeout,
+            };
+            var result = await _processes.RunAsync(spec, ct).ConfigureAwait(false);
+            return result.ExitCode == 2;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+#pragma warning disable CA1031 // Fail closed: whatever keeps the self-test from answering, the job does not run.
+        catch (Exception)
+#pragma warning restore CA1031
+        {
+            return false;
+        }
+    }
+
+    // Spec 15 Behavior: one result line when the hook refused calls, after the worktree lines; the status stays the run's own.
+    private JobReply WithBlocked(string id, JobReply reply, string blockedFile, bool hasResultLines)
+    {
+        string[] lines;
+        try
+        {
+            lines = File.Exists(blockedFile) ? File.ReadAllLines(blockedFile).Where(l => l.Length > 0).ToArray() : [];
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            LogBlockedUnreadable(id);
+            return reply;
+        }
+
+        if (lines.Length == 0)
+        {
+            return reply;
+        }
+
+        var line = $"blocked: {lines.Length} tool call(s) outside this job's rules (first: {FirstRefusal(lines[0])})\n";
+        var body = Encoding.UTF8.GetString(reply.Body.Span) + (hasResultLines ? string.Empty : "\n") + line;
+        return reply with { Body = Encoding.UTF8.GetBytes(body) };
+    }
+
+    // A blocked-calls line is "<tool>: <rule> (<detail>)"; the report names the tool and the rule, never the detail (it may quote a path or command).
+    private static string FirstRefusal(string line)
+    {
+        foreach (var rule in BlockedRules)
+        {
+            var marker = ": " + rule + " (";
+            var at = line.IndexOf(marker, StringComparison.Ordinal);
+            if (at >= 0)
+            {
+                return line[..at] + ": " + rule;
+            }
+        }
+
+        return "unknown";
     }
 
     // The spec's Report mapping table: done with the summary; timeout with the partial text; claude_error for every other failure.
@@ -243,7 +345,8 @@ public sealed partial class JobRunner
         }
 
         var removed = 0;
-        foreach (var file in Directory.EnumerateFiles(tenantDirectory, "*.jsonl"))
+        // Spec 15: a run's blocked-calls file goes with its transcript.
+        foreach (var file in Directory.EnumerateFiles(tenantDirectory, "*.jsonl").Concat(Directory.EnumerateFiles(tenantDirectory, "*.blocked")))
         {
             try
             {
@@ -316,6 +419,12 @@ public sealed partial class JobRunner
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: worktree folder not removed; removed at the next run of this job or by hand")]
     private partial void LogWorktreeNotRemoved(string id);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: hook unavailable: {Path}")]
+    private partial void LogHookUnavailable(string id, string path);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: blocked-calls file unreadable; the transcript shows the refusals")]
+    private partial void LogBlockedUnreadable(string id);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: worktree git step failed: {Step}")]
     private partial void LogWorktreeFailed(string id, string step);

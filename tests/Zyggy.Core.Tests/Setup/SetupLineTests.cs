@@ -14,6 +14,8 @@ public sealed class SetupLineTests
     [InlineData(SetupItem.SettingsDeny, SetupOutcome.Done, "permissions.deny", "setup: settings: done - permissions.deny")]
     [InlineData(SetupItem.SkillRemember, SetupOutcome.Done, null, "setup: skill remember: done")]
     [InlineData(SetupItem.SkillArchive, SetupOutcome.Failed, "zyggy-core not available", "setup: skill archive: failed - zyggy-core not available")]
+    [InlineData(SetupItem.SkillBus, SetupOutcome.Done, null, "setup: skill bus: done")]
+    [InlineData(SetupItem.SkillDiscover, SetupOutcome.LeftAsIs, "not in this zyggy-core checkout", "setup: skill discover: left as is - not in this zyggy-core checkout")]
     [InlineData(SetupItem.SecretSigningKey, SetupOutcome.Missing, "run: zyggy secret set hmac/1 --hex", "setup: signing key acme/1: missing - run: zyggy secret set hmac/1 --hex")]
     [InlineData(SetupItem.SecretGitHubPat, SetupOutcome.Missing, "run: zyggy secret set github-pat", "setup: github-pat: missing - run: zyggy secret set github-pat")]
     [InlineData(SetupItem.SpikeFileStore, SetupOutcome.LeftAsIs, "x", "setup: spike file store: left as is - x")]

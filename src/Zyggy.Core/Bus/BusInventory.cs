@@ -123,6 +123,7 @@ public sealed partial class BusInventory
 
         var reports = new List<EnvelopeSummary>();
         string? body = null;
+        Envelope.Envelope? newestReport = null;
         foreach ((string path, EnvelopeId reportId) in ReportsAnswering(id))
         {
             (EnvelopeSummary summary, Envelope.Envelope? verified) = await SummariseAsync(path, reportId, ct).ConfigureAwait(false);
@@ -130,6 +131,7 @@ public sealed partial class BusInventory
             if (verified is not null)
             {
                 body = verified.BodyText;
+                newestReport = verified;
             }
         }
 
@@ -149,6 +151,7 @@ public sealed partial class BusInventory
         return new EnvelopeTrace(id, state.Value, where, job, reports, body)
         {
             AnsweredAsItem = job is null && newest is not null && PickupItemReport.IsItemReport(newest, body),
+            NewestReport = newestReport,
         };
     }
 

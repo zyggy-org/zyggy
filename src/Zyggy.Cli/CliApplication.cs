@@ -37,7 +37,7 @@ internal static class CliApplication
         {
             memory, DreamCommand.Create(environment), m365, brief, linkedin, hub, ProbeCommand.Create(environment, configure), SecretCommand.Create(environment, io, configure),
             SubmitCommand.Create(environment, io, configure), ContextCommand.Create(environment, io, configure), ArchiveCommand.Create(environment, io, configure), StatusCommand.Create(environment, io, configure),
-            VerifyCommand.Create(environment, io, configure), SetupCommand.Create(environment, io, configure), DiscoverCommand.Create(environment, io, configure),
+            ReportCommand.Create(environment, io, configure), RegistryCommand.Create(environment, io, configure), VerifyCommand.Create(environment, io, configure), SetupCommand.Create(environment, io, configure), DiscoverCommand.Create(environment, io, configure),
         };
         var parseResult = root.Parse(args);
         if (parseResult.Errors.Count > 0)

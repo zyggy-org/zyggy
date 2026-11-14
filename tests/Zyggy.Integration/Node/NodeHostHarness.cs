@@ -144,7 +144,8 @@ internal sealed class NodeHostHarness : IAsyncDisposable
         bool omitSignWith = false,
         MachineName? machine = null,
         IReadOnlyList<string>? devRoots = null,
-        string? discoveryJson = null)
+        string? discoveryJson = null,
+        string? agentCorePath = null)
     {
         NodeJsonPath = NodeJson.Write(
             Scratch.File("config"),
@@ -163,7 +164,8 @@ internal sealed class NodeHostHarness : IAsyncDisposable
             safetyFetchMinutes: safetyFetchMinutes,
             logLevel: logLevel,
             devRoots: devRoots ?? [ProjectsRoot],
-            discoveryJson: discoveryJson);
+            discoveryJson: discoveryJson,
+            agentCorePath: agentCorePath);
         if (idleSeconds != activeSeconds)
         {
             string json = File.ReadAllText(NodeJsonPath).Replace(
@@ -195,6 +197,10 @@ internal sealed class NodeHostHarness : IAsyncDisposable
             };
             o.ModelEnvironment = environment;
             o.TimeoutOverride = TimeSpan.FromSeconds(90);
+
+            // Spec 15: the job hook is the built zyggy in cli/, not the one beside the test host, which cannot start on Linux
+            // (its framework DLLs are missing there) and so fails the runner's self-test.
+            o.HookExecutable ??= ZyggyCli.ExecutablePath;
         });
         services.AddSingleton<IProcessRunner>(Hooks);
         services.AddSingleton(sp => sp.GetRequiredService<NodeConfiguration>().Poll.ToPollOptions() with { Jitter = TimeSpan.FromMilliseconds(200) });

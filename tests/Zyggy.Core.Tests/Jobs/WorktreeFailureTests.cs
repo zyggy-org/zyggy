@@ -284,7 +284,7 @@ public sealed class WorktreeFailureTests : IDisposable
         await _h.Build().RunAsync(job, CancellationToken.None);
 
         // Assert
-        _h.Processes.Calls.Should().HaveCountGreaterThan(10).And.OnlyContain(c =>
+        _h.Processes.Calls.Where(c => c.FileName == "git").Should().HaveCountGreaterThan(10).And.OnlyContain(c =>
             c.Timeout == TimeSpan.FromMinutes(2) && c.Environment.ContainsKey("GIT_TERMINAL_PROMPT") && c.Environment["GIT_TERMINAL_PROMPT"] == "0");
     }
 

@@ -79,7 +79,7 @@ internal static class ClaudeArguments
             args.AddRange(request.DisallowedTools.Count > 0 ? ["--strict-mcp-config"] : ["--strict-mcp-config", "--disallowedTools", "mcp__*"]);
         }
 
-        if (Settings(request.Isolation) is { } settings)
+        if (Settings(request.Isolation, request.PreToolUseHook) is { } settings)
         {
             args.Add("--settings");
             args.Add(settings);
@@ -103,11 +103,16 @@ internal static class ClaudeArguments
         return args;
     }
 
-    private static string? Settings(ModelSessionIsolation isolation)
+    private static string? Settings(ModelSessionIsolation isolation, ModelHookCommand? preToolUse)
     {
         var noHooks = isolation.HasFlag(ModelSessionIsolation.NoHooks);
         var noAutoMemory = isolation.HasFlag(ModelSessionIsolation.NoAutoMemory);
-        if (!noHooks && !noAutoMemory)
+        if (noHooks && preToolUse is not null)
+        {
+            throw new ArgumentException("A PreToolUse hook contradicts NoHooks.", nameof(preToolUse));
+        }
+
+        if (!noHooks && !noAutoMemory && preToolUse is null)
         {
             return null;
         }
@@ -124,6 +129,30 @@ internal static class ClaudeArguments
             if (noAutoMemory)
             {
                 writer.WriteBoolean("autoMemoryEnabled", false);
+            }
+
+            if (preToolUse is not null)
+            {
+                // Spec 15: one command hook, no matcher, so every tool call (MCP and subagent calls included) passes through it.
+                writer.WriteStartObject("hooks");
+                writer.WriteStartArray("PreToolUse");
+                writer.WriteStartObject();
+                writer.WriteStartArray("hooks");
+                writer.WriteStartObject();
+                writer.WriteString("type", "command");
+                writer.WriteString("command", preToolUse.Command);
+                writer.WriteStartArray("args");
+                foreach (var arg in preToolUse.Args)
+                {
+                    writer.WriteStringValue(arg);
+                }
+
+                writer.WriteEndArray();
+                writer.WriteEndObject();
+                writer.WriteEndArray();
+                writer.WriteEndObject();
+                writer.WriteEndArray();
+                writer.WriteEndObject();
             }
 
             writer.WriteEndObject();

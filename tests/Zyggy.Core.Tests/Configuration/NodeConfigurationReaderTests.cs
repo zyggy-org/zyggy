@@ -55,8 +55,8 @@ public sealed class NodeConfigurationReaderTests : IDisposable
     [Fact]
     public void Read_UnknownKeys_Ignored()
     {
-        // Arrange: the keys later deliverables read (role/user -> 11, agentCore -> 15, dlp -> 19); workHours is typed since 07
-        string json = Minimal.Replace("\"tenant\": \"acme\",", "\"tenant\": \"acme\", \"role\": \"node\", \"user\": \"someone\", \"agentCore\": { \"path\": \"/srv/core\" }, \"dlp\": { \"enabled\": false }, \"claude\": { \"path\": \"claude\" },", StringComparison.Ordinal);
+        // Arrange: the keys later deliverables read (role/user -> 11, dlp -> 19); workHours is typed since 07, agentCore since 15
+        string json = Minimal.Replace("\"tenant\": \"acme\",", "\"tenant\": \"acme\", \"role\": \"node\", \"user\": \"someone\", \"agentCore\": { \"pinnedSha\": \"0123\" }, \"dlp\": { \"enabled\": false }, \"claude\": { \"path\": \"claude\" },", StringComparison.Ordinal);
 
         // Act
         NodeConfigurationResult result = Read(json);
@@ -670,6 +670,49 @@ public sealed class NodeConfigurationReaderTests : IDisposable
     {
         // Act
         NodeConfigurationResult result = Read(WithTopLevel("\"discovery\": " + section + ","));
+
+        // Assert
+        result.Error.Should().Be(NodeConfigurationError.InvalidField);
+        result.Field.Should().Be(field);
+        result.ToString().Should().Be(message);
+    }
+
+    // Spec 15 AC-12: `agentCore.path`, the zyggy-core checkout whose commit /health reports.
+    [Theory]
+    [InlineData("")]
+    [InlineData("\"agentCore\": null,")]
+    [InlineData("\"agentCore\": { },")]
+    [InlineData("\"agentCore\": { \"path\": null },")]
+    public void Read_AgentCorePathAbsent_Null(string insert)
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel(insert));
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        result.Configuration!.AgentCore.Should().Be(new AgentCoreSettings(null));
+    }
+
+    [Fact]
+    public void Read_AgentCorePath_Typed()
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"agentCore\": { \"path\": \"{root}/zyggy-core\" },"));
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        result.Configuration!.AgentCore.Path.Should().Be(_dir.Replace('\\', '/') + "/zyggy-core");
+    }
+
+    [Theory]
+    [InlineData("5", "agentCore", "agentCore: must be an object")]
+    [InlineData("{ \"path\": 5 }", "agentCore.path", "agentCore.path: must be a string")]
+    [InlineData("{ \"path\": \"\" }", "agentCore.path", "agentCore.path: must be an absolute path")]
+    [InlineData("{ \"path\": \"agents/zyggy-core\" }", "agentCore.path", "agentCore.path: must be an absolute path")]
+    public void Read_AgentCoreInvalid_FieldNamed(string section, string field, string message)
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"agentCore\": " + section + ","));
 
         // Assert
         result.Error.Should().Be(NodeConfigurationError.InvalidField);

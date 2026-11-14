@@ -12,6 +12,8 @@ internal static class SetupWire
         SetupItem.SettingsEnv or SetupItem.SettingsDeny => "settings",
         SetupItem.SkillRemember => "skill remember",
         SetupItem.SkillArchive => "skill archive",
+        SetupItem.SkillBus => "skill bus",
+        SetupItem.SkillDiscover => "skill discover",
         SetupItem.SecretSigningKey => signWith is null ? "signing key" : "signing key " + signWith,
         SetupItem.SecretGitHubPat => "github-pat",
         SetupItem.SpikeFileStore => "spike file store",

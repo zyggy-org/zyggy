@@ -5,7 +5,7 @@ namespace Zyggy.Core.Tests.Infrastructure;
 /// <summary>
 /// A hand-written <see cref="IProcessRunner"/> for git: records every <see cref="ProcessSpec"/> in order and answers from a script
 /// keyed by the git sub-command (the first argument after any <c>-c key=value</c> pairs). Unscripted calls succeed with empty output,
-/// except <c>rev-parse</c> (a fixed SHA) and <c>symbolic-ref</c> (<c>main</c>).
+/// except <c>rev-parse</c> (a fixed SHA), <c>symbolic-ref</c> (<c>main</c>) and the job runner's <c>hook</c> self-test (exit 2).
 /// </summary>
 internal sealed class RecordingProcessRunner : IProcessRunner
 {
@@ -68,6 +68,9 @@ internal sealed class RecordingProcessRunner : IProcessRunner
         {
             "rev-parse" => Ok("0123456789abcdef0123456789abcdef01234567\n"),
             "symbolic-ref" => Ok("main\n"),
+
+            // Spec 15: the job runner's self-test of the hook binary (`zyggy hook pre-tool-use` with no input) must be refused.
+            "hook" => Fail(2, "zyggy: blocked unknown: hook error (hook input is not a PreToolUse call)\n"),
             _ => Ok(),
         });
     }

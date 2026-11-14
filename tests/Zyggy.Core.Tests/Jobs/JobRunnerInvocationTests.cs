@@ -53,9 +53,10 @@ public sealed class JobRunnerInvocationTests : IDisposable
         reply.Status.Should().Be(ReportStatus.Done);
         var spec = ClaudeSpec();
         spec.FileName.Should().Be(ClaudePath);
-        spec.Arguments.Should().Equal(
-            "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "auto", "--permission-prompts", "none",
-            "--no-session-persistence", "--max-turns", "60", "--allowedTools", "Read,Bash(dotnet *)");
+        // Spec 15: the job hook's --settings closes the list (its JSON is ClaudeArgumentsHookTests' subject).
+        spec.Arguments.Should().HaveCount(15).And.StartWith(
+            ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "auto", "--permission-prompts", "none",
+            "--no-session-persistence", "--max-turns", "60", "--allowedTools", "Read,Bash(dotnet *)", "--settings"]);
         spec.WorkingDirectory.Should().Be(_project.Root);
         spec.StandardInput.Should().Be(new JobPrompt().Render(job, _project.Root, ["Read", "Bash(dotnet *)"]));
         spec.Timeout.Should().Be(TimeSpan.FromMinutes(10));
@@ -72,7 +73,7 @@ public sealed class JobRunnerInvocationTests : IDisposable
         await _h.Build().RunAsync(job, CancellationToken.None);
 
         // Assert
-        ClaudeSpec().Arguments.Should().EndWith(["--allowedTools", "Read,Grep,Glob"]);
+        ClaudeSpec().Arguments.Should().ContainInConsecutiveOrder("--allowedTools", "Read,Grep,Glob");
         ClaudeSpec().StandardInput.Should().Contain("Allowed tools: Read, Grep, Glob.\n");
     }
 
@@ -186,9 +187,10 @@ public sealed class JobRunnerInvocationTests : IDisposable
         await _h.Build().RunAsync(job, CancellationToken.None);
 
         // Assert
+        // --settings is allowed since spec 15 (the job hook); its content is pinned by ClaudeArgumentsHookTests and JobRunnerHookTests.
         ClaudeSpec().Arguments.Should().NotContain(
         [
-            "--dangerously-skip-permissions", "--bare", "--resume", "--continue", "--cwd", "--settings", "--strict-mcp-config",
+            "--dangerously-skip-permissions", "--bare", "--resume", "--continue", "--cwd", "--strict-mcp-config",
             "--disable-slash-commands", "--tools", "--add-dir", "--json-schema", "--model", "--append-system-prompt",
         ]);
     }

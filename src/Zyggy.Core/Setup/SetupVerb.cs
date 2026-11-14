@@ -18,7 +18,14 @@ public sealed class SetupVerb
 {
     private const string Central = "central";
 
-    private static readonly (SetupItem Item, string Name)[] Skills = [(SetupItem.SkillRemember, "remember"), (SetupItem.SkillArchive, "archive")];
+    /// <summary>The node skills in output order; the two of deliverable 15 may be absent from a checkout that predates them.</summary>
+    private static readonly (SetupItem Item, string Name, bool MayBeAbsent)[] Skills =
+    [
+        (SetupItem.SkillRemember, "remember", false),
+        (SetupItem.SkillArchive, "archive", false),
+        (SetupItem.SkillBus, "bus", true),
+        (SetupItem.SkillDiscover, "discover", true),
+    ];
 
     private readonly IReadOnlyDictionary<string, string?> _environment;
     private readonly Func<NodeConfiguration, ISecretStore> _stores;
@@ -98,13 +105,14 @@ public sealed class SetupVerb
         string claudeDir = Path.GetFullPath(request.ClaudeDir);
         IReadOnlyList<SetupLine> settings = ClaudeSettingsMerge.Apply(SetupPaths.SettingsFile(claudeDir), SetupPaths.SecretPatterns(corePath), request.BackupStamp);
         await PrintAsync(io, lines, settings, signWith).ConfigureAwait(false);
-        foreach ((SetupItem item, string name) in Skills)
+        foreach ((SetupItem item, string name, bool mayBeAbsent) in Skills)
         {
             SetupLine skill = SkillInstaller.Apply(
                 item,
                 SetupPaths.SkillSource(corePath, name),
                 SetupPaths.SkillTarget(claudeDir, name),
-                SetupPaths.SkillBackup(request.LocalAppData, request.BackupStamp, name));
+                SetupPaths.SkillBackup(request.LocalAppData, request.BackupStamp, name),
+                mayBeAbsent ? corePath : null);
             await PrintAsync(io, lines, [skill], signWith).ConfigureAwait(false);
         }
 

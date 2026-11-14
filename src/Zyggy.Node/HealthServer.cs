@@ -19,15 +19,17 @@ internal sealed partial class HealthServer : IAsyncDisposable
 {
     private readonly NodeStatus _status;
     private readonly NodeConfiguration _configuration;
+    private readonly AgentCoreCommit _agentCore;
     private readonly IOptions<NodeHostOptions> _options;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<HealthServer> _log;
     private WebApplication? _app;
 
-    public HealthServer(NodeStatus status, NodeConfiguration configuration, IOptions<NodeHostOptions> options, ILoggerFactory loggerFactory)
+    public HealthServer(NodeStatus status, NodeConfiguration configuration, AgentCoreCommit agentCore, IOptions<NodeHostOptions> options, ILoggerFactory loggerFactory)
     {
         _status = status;
         _configuration = configuration;
+        _agentCore = agentCore;
         _options = options;
         _loggerFactory = loggerFactory;
         _log = loggerFactory.CreateLogger<HealthServer>();
@@ -81,7 +83,7 @@ internal sealed partial class HealthServer : IAsyncDisposable
         LogListening(BoundPort);
     }
 
-    /// <summary>The §11 body from the loop's listener and the login probe.</summary>
+    /// <summary>The §11 body from the loop's listener, the login probe and the <c>zyggy-core</c> checkout (spec 15).</summary>
     internal NodeHealth Snapshot()
     {
         Core.Bus.ListenerStatus? s = _status.Listener?.Status;
@@ -99,7 +101,7 @@ internal sealed partial class HealthServer : IAsyncDisposable
             s?.Poll.RateLimitRemaining,
             s?.Poll.BackoffUntilUtc,
             _status.ClaudeAuthOk,
-            null);
+            _agentCore.Sha);
     }
 
     /// <summary>The body as the endpoint writes it (for tests and <c>zyggy status</c>'s expectations).</summary>

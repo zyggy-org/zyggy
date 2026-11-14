@@ -78,6 +78,19 @@ public sealed class NodeHealthJsonTests
     }
 
     [Fact]
+    public void Serialize_AgentCoreSha_WrittenAsTheLastField()
+    {
+        // Arrange: spec 15 AC-12
+        NodeHealth health = Known with { AgentCoreSha = "89abcdef0123456789abcdef0123456789abcdef" };
+
+        // Act
+        string json = NodeHealthJson.Serialize(health);
+
+        // Assert
+        json.Should().EndWith(",\"agentCoreSha\":\"89abcdef0123456789abcdef0123456789abcdef\"}");
+    }
+
+    [Fact]
     public void Deserialize_RoundTrip_EqualsTheRecord()
     {
         // Act: the reader `zyggy status` uses

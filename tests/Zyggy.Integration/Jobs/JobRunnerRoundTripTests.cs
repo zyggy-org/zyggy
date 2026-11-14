@@ -197,6 +197,14 @@ public sealed partial class JobRunnerRoundTripTests : IAsyncLifetime
         File.Exists(CapturePath).Should().BeFalse("the fake never started");
     }
 
+    private static readonly string[] ContractArguments =
+    [
+        "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "auto", "--permission-prompts", "none",
+        "--no-session-persistence", "--max-turns", "60", "--allowedTools", "Read,Bash(dotnet *)", "--settings",
+    ];
+
+    private static readonly string[] HookRules = ["--allow", "Read", "--allow", "Bash(dotnet *)"];
+
     [Fact]
     public async Task ProcessOnceAsync_DoneScenario_CapturedArgvStdinAndCwdMatchTheContract()
     {
@@ -212,9 +220,20 @@ public sealed partial class JobRunnerRoundTripTests : IAsyncLifetime
 
         // Assert
         FakeClaudeCapture capture = FakeClaude.ReadCapture(CapturePath);
-        capture.Arguments.Should().Equal(
-            "-p", "--output-format", "stream-json", "--verbose", "--permission-mode", "auto", "--permission-prompts", "none",
-            "--no-session-persistence", "--max-turns", "60", "--allowedTools", "Read,Bash(dotnet *)");
+        // Spec 15: the job hook closes the list — the built zyggy, its rules as arguments.
+        using var settings = System.Text.Json.JsonDocument.Parse(capture.Arguments[^1]);
+        var hook = settings.RootElement.GetProperty("hooks").GetProperty("PreToolUse")[0].GetProperty("hooks")[0];
+        new
+        {
+            Arguments = capture.Arguments.Take(capture.Arguments.Count - 1),
+            Command = hook.GetProperty("command").GetString(),
+            Rules = hook.GetProperty("args").EnumerateArray().Select(a => a.GetString()).Skip(6),
+        }.Should().BeEquivalentTo(new
+        {
+            Arguments = ContractArguments,
+            Command = ZyggyCli.ExecutablePath,
+            Rules = HookRules,
+        }, o => o.WithStrictOrdering());
         Path.GetFullPath(capture.WorkingDirectory).TrimEnd(Path.DirectorySeparatorChar)
             .Should().Be(Path.GetFullPath(_project.Path).TrimEnd(Path.DirectorySeparatorChar));
         (await File.ReadAllBytesAsync(StdinPath, ct)).Should().Equal(Encoding.UTF8.GetBytes(new JobPrompt().Render(job, _project.Path, AllowedTools)));

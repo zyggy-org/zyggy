@@ -394,9 +394,10 @@ public sealed partial class SourceHygieneTests
     [Fact]
     public void Src_RegistryPathLiteral_OnlyInBusPaths()
     {
-        // Arrange: plan 14 Step 11 — the registry file's bus path (folder word or `.yaml` suffix glued onto a path) is built in BusPaths only
+        // Arrange: plan 14 Step 11 — the registry file's bus path (folder word or `.yaml` suffix glued onto a path) is built in BusPaths only;
+        // spec 15: the `zyggy registry` verb name (`new Command("registry"`) is a CLI word, not a path
         const string Allowed = "src/Zyggy.Core/Bus/BusPaths.cs";
-        var pattern = new Regex("\"registry\"|\"/registry/\"|\\+ *\"\\.yaml\"|\"\\.yaml\" *\\+", RegexOptions.None, TimeSpan.FromSeconds(5));
+        var pattern = new Regex("(?<!new Command\\()\"registry\"|\"/registry/\"|\\+ *\"\\.yaml\"|\"\\.yaml\" *\\+", RegexOptions.None, TimeSpan.FromSeconds(5));
 
         // Act
         var holders = SourceFiles()
@@ -1060,6 +1061,90 @@ public sealed partial class SourceHygieneTests
         }
     }
 
+    // Spec 15 AC-16 (slice 2): the two job-hook runbook rows in the Core README, with the outcome each one names.
+    [Fact]
+    public void Readmes_JobHookRunbookRowsDocumented()
+    {
+        // Arrange
+        var core = File.ReadAllText(Path.Combine(RepoRoot(), "src/Zyggy.Core/README.md")).Split('\n');
+
+        // Act
+        var blocked = core.SingleOrDefault(l => l.StartsWith("| Jobs: blocked tool calls |", StringComparison.Ordinal));
+        var unavailable = core.SingleOrDefault(l => l.StartsWith("| Jobs: hook unavailable |", StringComparison.Ordinal));
+
+        // Assert
+        new
+        {
+            Blocked = blocked is not null && blocked.Contains("blocked: <n> tool call(s)", StringComparison.Ordinal) && blocked.Contains("--allowed-tools", StringComparison.Ordinal),
+            Unavailable = unavailable is not null && unavailable.Contains("claude_error: hook unavailable: <path>", StringComparison.Ordinal),
+        }.Should().BeEquivalentTo(new { Blocked = true, Unavailable = true });
+    }
+
+    // Spec 15, reviews of 2026-11-14: the two rows name the widened protection, the simple-command rule and what it costs, the
+    // hook's stated limit and the self-test.
+    [Fact]
+    public void Readmes_JobHookLimitsAndSelfTestDocumented()
+    {
+        // Arrange
+        var core = File.ReadAllText(Path.Combine(RepoRoot(), "src/Zyggy.Core/README.md")).Split('\n');
+
+        // Act
+        var blocked = core.Single(l => l.StartsWith("| Jobs: blocked tool calls |", StringComparison.Ordinal));
+        var unavailable = core.Single(l => l.StartsWith("| Jobs: hook unavailable |", StringComparison.Ordinal));
+
+        // Assert
+        new
+        {
+            AnyDepth = blocked.Contains("at any depth", StringComparison.Ordinal),
+            Simple = blocked.Contains("matches only a simple command", StringComparison.Ordinal) && blocked.Contains("not a simple command (<what>)", StringComparison.Ordinal),
+            Cost = blocked.Contains("redirections (`2>&1`", StringComparison.Ordinal) && blocked.Contains("may do anything in the shell", StringComparison.Ordinal),
+            Limit = blocked.Contains("built at run time", StringComparison.Ordinal) && blocked.Contains("tripwire", StringComparison.Ordinal),
+            SelfTest = unavailable.Contains("self-test", StringComparison.Ordinal) && unavailable.Contains("must exit 2", StringComparison.Ordinal),
+        }.Should().BeEquivalentTo(new { AnyDepth = true, Simple = true, Cost = true, Limit = true, SelfTest = true });
+    }
+
+    // Spec 15 AC-16 (slice 3): the CLI table rows of report, registry and hook, each naming its exit codes or its caller.
+    [Fact]
+    public void Readmes_ReportRegistryHookVerbRowsDocumented()
+    {
+        // Arrange
+        var cli = File.ReadAllText(Path.Combine(RepoRoot(), "src/Zyggy.Cli/README.md")).Split('\n');
+
+        // Act
+        var report = cli.SingleOrDefault(l => l.StartsWith("| `report <id>", StringComparison.Ordinal));
+        var registry = cli.SingleOrDefault(l => l.StartsWith("| `registry [--machine <name>]", StringComparison.Ordinal));
+        var hook = cli.SingleOrDefault(l => l.StartsWith("| `hook pre-tool-use", StringComparison.Ordinal));
+
+        // Assert
+        new
+        {
+            Report = report is not null && report.Contains("Exit 0 found · 1 no report (yet) · 2 not a ULID · 3 configuration", StringComparison.Ordinal),
+            Registry = registry is not null && registry.Contains("(stale)", StringComparison.Ordinal) && registry.Contains("Exit 0", StringComparison.Ordinal),
+            Hook = hook is not null && hook.Contains("--settings", StringComparison.Ordinal) && hook.Contains("exit 2", StringComparison.Ordinal),
+        }.Should().BeEquivalentTo(new { Report = true, Registry = true, Hook = true });
+    }
+
+    // Spec 15 AC-16 (slice 4): the Node README's health row, node.json row and what-to-do row for the zyggy-core commit.
+    [Fact]
+    public void Readmes_AgentCoreHealthRowDocumented()
+    {
+        // Arrange
+        var node = File.ReadAllText(Path.Combine(RepoRoot(), "src/Zyggy.Node/README.md")).Split('\n');
+
+        // Act
+        var health = node.SingleOrDefault(l => l.StartsWith("| `agentCoreSha` |", StringComparison.Ordinal));
+        var key = node.SingleOrDefault(l => l.StartsWith("| `agentCore.path` |", StringComparison.Ordinal));
+        var runbook = node.SingleOrDefault(l => l.StartsWith("| zyggy-core commit unknown |", StringComparison.Ordinal));
+
+        // Assert
+        new
+        {
+            Health = health is not null && health.Contains("`agentCore.path`", StringComparison.Ordinal) && health.Contains("`null`", StringComparison.Ordinal) && !health.Contains("until deliverable 15", StringComparison.Ordinal),
+            Key = key is not null && key.Contains("C:/agents/zyggy-core", StringComparison.Ordinal) && key.Contains("~/agents/zyggy-core", StringComparison.Ordinal),
+            Runbook = runbook is not null && runbook.Contains("agent-core: <path> is not a git checkout", StringComparison.Ordinal) && runbook.Contains("zyggy-core unknown", StringComparison.Ordinal),
+        }.Should().BeEquivalentTo(new { Health = true, Key = true, Runbook = true });
+    }
+
     // Spec 13 AC-34/AC-35: the pickup is documented, its files use placeholder identities only, its classes hold no clock or state.
     [Fact]
     public void Readmes_PickupDocumented()
@@ -1253,6 +1338,26 @@ public sealed partial class SourceHygieneTests
         }
 
         deploy.Should().Contain("-CorePath").And.Contain("zyggy setup").And.Contain("the laptop runbook is one command: `zyggy-core/runbooks/install-node.md` \"Laptop\"");
+    }
+
+    // Spec 15 slice 6: the setup row names the two new skill lines and what a checkout without them gives.
+    [Fact]
+    public void Readmes_SetupBusAndDiscoverSkillsDocumented()
+    {
+        // Arrange
+        var setupRow = File.ReadAllText(Path.Combine(RepoRoot(), "src/Zyggy.Cli/README.md")).Split('\n').Single(l => l.StartsWith("| `setup --config", StringComparison.Ordinal));
+        var core = File.ReadAllText(Path.Combine(RepoRoot(), "src/Zyggy.Core/README.md"));
+
+        // Act
+        var documented = new
+        {
+            Lines = setupRow.Contains("`setup: skill bus: …`", StringComparison.Ordinal) && setupRow.Contains("`setup: skill discover: …`", StringComparison.Ordinal),
+            Absent = setupRow.Contains("left as is - not in this zyggy-core checkout", StringComparison.Ordinal),
+            Core = core.Contains("`SkillBus`", StringComparison.Ordinal) && core.Contains("`SkillDiscover`", StringComparison.Ordinal),
+        };
+
+        // Assert
+        documented.Should().BeEquivalentTo(new { Lines = true, Absent = true, Core = true });
     }
 
     [Fact]

@@ -234,7 +234,8 @@ public static partial class NodeConfigurationReader
         }
 
         if (!TryArchive(root, out ArchiveSettings archive, out failure)
-            || !TryDiscovery(root, out DiscoverySettings discovery, out failure))
+            || !TryDiscovery(root, out DiscoverySettings discovery, out failure)
+            || !TryAgentCore(root, out AgentCoreSettings agentCore, out failure))
         {
             return failure;
         }
@@ -255,7 +256,43 @@ public static partial class NodeConfigurationReader
             Log = log,
             Archive = archive,
             Discovery = discovery,
+            AgentCore = agentCore,
         });
+    }
+
+    /// <summary>
+    /// The <c>agentCore</c> section (spec 15): absent or <c>null</c> means the default checkout; <c>path</c> an absolute path, <c>null</c>
+    /// equal to absent. Unknown keys inside the section are ignored.
+    /// </summary>
+    private static bool TryAgentCore(JsonElement root, out AgentCoreSettings agentCore, out NodeConfigurationResult failure)
+    {
+        agentCore = new AgentCoreSettings();
+        failure = null!;
+        if (!root.TryGetProperty("agentCore", out JsonElement section) || section.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (section.ValueKind != JsonValueKind.Object)
+        {
+            failure = Invalid("agentCore", "must be an object");
+            return false;
+        }
+
+        if (TryOptionalString(section, "path", out string? path, out NodeConfigurationResult? pathFailure, "agentCore.") is false)
+        {
+            failure = pathFailure!;
+            return false;
+        }
+
+        if (path is not null && !Path.IsPathFullyQualified(path))
+        {
+            failure = Invalid("agentCore.path", "must be an absolute path");
+            return false;
+        }
+
+        agentCore = new AgentCoreSettings(path);
+        return true;
     }
 
     /// <summary>

@@ -78,6 +78,12 @@ public sealed record EnvelopeTrace(EnvelopeId Id, TraceState State, MachineName?
     /// 2026-11-02), so the trace still names the id an item.
     /// </summary>
     public bool AnsweredAsItem { get; init; }
+
+    /// <summary>
+    /// Gets the newest verified report answering the job, the envelope <see cref="ReportBody"/> was taken from (spec 15: <c>zyggy report</c>
+    /// prints its fields); <see langword="null"/> when no answer verified.
+    /// </summary>
+    public Envelope.Envelope? NewestReport { get; init; }
 }
 
 /// <summary>The tenant's bus at a glance.</summary>

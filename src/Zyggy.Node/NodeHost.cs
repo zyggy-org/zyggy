@@ -1,15 +1,21 @@
 using System.Collections;
 using System.Reflection;
 
+using Microsoft.Extensions.Options;
+
 using Serilog;
 using Serilog.Events;
 
 using Zyggy.Core.Bus;
 using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
+using Zyggy.Core.Git;
+using Zyggy.Core.Health;
 using Zyggy.Core.Jobs;
 using Zyggy.Core.Memory;
+using Zyggy.Core.Processes;
 using Zyggy.Core.Registry;
+using Zyggy.Core.Setup;
 using Zyggy.Core.Tenancy;
 
 namespace Zyggy.Node;
@@ -149,6 +155,14 @@ public static class NodeHost
         builder.Services.AddJobDispatcher();
         builder.Services.AddSingleton<NodeExitState>();
         builder.Services.AddSingleton<NodeStatus>();
+        // Spec 15: the zyggy-core checkout whose commit /health reports — `agentCore.path`, else the checkout `zyggy setup` makes.
+        string agentCorePath = configuration.AgentCore.Path ?? SetupPaths.DefaultCorePath(environment);
+        builder.Services.AddSingleton(sp => new AgentCoreCommit(
+            new GitClient(sp.GetRequiredService<IProcessRunner>(), new GitClientOptions(), sp.GetRequiredService<TimeProvider>()),
+            agentCorePath,
+            sp.GetRequiredService<IOptions<DiscoveryOptions>>().Value.Interval,
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILogger<AgentCoreCommit>>()));
         builder.Services.AddSingleton<HealthServer>();
         builder.Services.AddSingleton<ClaudeAuthProbe>();
         // The runner's handler, decorated: a run that failed with an authentication error asks the login probe to look again (spec 07 ex-Q3).
@@ -182,6 +196,7 @@ public static class NodeHost
         // Spec 14: registered after the loop, which awaits its first scan before admitting any job (plan A1).
         builder.Services.AddSingleton<IHostedService>(sp => new DiscoveryTimer(
             sp.GetRequiredService<DiscoveryLoop>(),
+            sp.GetRequiredService<AgentCoreCommit>(),
             sp.GetRequiredService<NodeStatus>(),
             sp.GetRequiredService<HealthServer>(),
             sp.GetRequiredService<PollOptions>(),
