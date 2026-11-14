@@ -197,6 +197,10 @@ internal sealed class NodeHostHarness : IAsyncDisposable
             };
             o.ModelEnvironment = environment;
             o.TimeoutOverride = TimeSpan.FromSeconds(90);
+
+            // Spec 15: the job hook is the built zyggy in cli/, not the one beside the test host, which cannot start on Linux
+            // (its framework DLLs are missing there) and so fails the runner's self-test.
+            o.HookExecutable ??= ZyggyCli.ExecutablePath;
         });
         services.AddSingleton<IProcessRunner>(Hooks);
         services.AddSingleton(sp => sp.GetRequiredService<NodeConfiguration>().Poll.ToPollOptions() with { Jitter = TimeSpan.FromMilliseconds(200) });
