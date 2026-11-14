@@ -37,7 +37,7 @@ Stop after every slice and report as a **visual approval report** (`CLAUDE.md` Â
 
 ## After the last slice
 
-Start a fresh reviewer agent (`general-purpose`, `model: sonnet`) with no context from this session. Give it the spec path and the diff range (`main` to `HEAD`), and ask it to report each acceptance criterion as met or not met, with the file, the test or command, and the evidence, and to say whether each check would fail if the behavior were broken. Relay its report to the owner as a visual approval report for the whole feature (component diagram of everything touched, the end-to-end sequence, every acceptance criterion with its verdict and evidence, the release chain to come with the proposed version) and ask for the release approval. On approval, run the `ship` skill end to end without asking again.
+Start the `spec-reviewer` agent with no context from this session. Give it the spec path and the diff range (`main` to `HEAD`), and ask it to report each acceptance criterion as met or not met, with the file, the test or command, and the evidence, and to say whether each check would fail if the behavior were broken. Relay its report to the owner as a visual approval report for the whole feature (component diagram of everything touched, the end-to-end sequence, every acceptance criterion with its verdict and evidence, the release chain to come with the proposed version) and ask for the release approval. On approval, run the `ship` skill end to end without asking again.
 
 ---
 

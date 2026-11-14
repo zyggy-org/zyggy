@@ -12,7 +12,7 @@ The solution, its project references, shared props and central packages, `tools/
 
 ## Build and test
 
-`Zyggy.slnx` lists the six product/test projects plus `tools/fake-claude/FakeClaude.csproj` (the compiled stand-in for the `claude` CLI). Shared settings live in `Directory.Build.props` (root) and `tests/Directory.Build.props` (test-only), package versions in `Directory.Packages.props` (central package management, exact versions), the SDK in `global.json`. The first four are the **Verification Commands** of the delivery workflow below:
+`Zyggy.slnx` lists the six product/test projects plus `tools/fake-claude/FakeClaude.csproj` (the compiled stand-in for the `claude` CLI). Shared settings live in `Directory.Build.props` (root) and `tests/Directory.Build.props` (test-only), package versions in `Directory.Packages.props` (central package management, exact versions), the SDK in `global.json`. The first four are the **Verification Commands** of the delivery workflow below (run together by `node .claude/hooks/verify.mjs`):
 
 ```powershell
 dotnet build Zyggy.slnx
@@ -79,7 +79,21 @@ _plans/ROADMAP.md         _specs/<NN>-<Name>.md           code + tests + one Sta
 - **Protected branches** (never build on them): `main`.
 - **Feature branch**: `feature/<NN>-<short-name>` from `main`.
 - **Commit format**: one imperative summary line naming the feature, body as needed, ending with the `Co-Authored-By` line (see Owner constraints). Claude commits when the owner approves the slice, with the message it proposed.
-- **Verification Commands**: the first four commands under *Build and test* (build, all tests, format check), plus the filtered test command for one class or test. After an analyzer, package or `Directory.*.props` change, prove with a clean build (`dotnet build Zyggy.slnx --no-incremental`). A step that changes no source file (docs, specs) runs its own check instead.
+- **Verification Commands**: `node .claude/hooks/verify.mjs` runs them in order (build, unit tests, integration tests, format check) and stops at the first failure; the list is in `.claude/spec-driven.json` under `verify.commands`, and matches the commands under *Build and test*. Single class or test: the filtered `dotnet test` commands there. After an analyzer, package or `Directory.*.props` change, prove with a clean build (`dotnet build Zyggy.slnx --no-incremental`). A step that changes no source file (docs, specs) runs its own check instead.
+- **Integration test**: a test in `tests/Zyggy.Integration` (trait `Category=Integration`) through the real entry point (the production DI extensions, the `zyggy` verb, the Node host) against a local bare git repo and `tools/fake-claude`; never the real `claude`, never GitHub.
+- **Unit test**: a test in `tests/Zyggy.Core.Tests`, with substitutes only at the seam interfaces and `FakeTimeProvider` for time.
+- **UI test**: no user interface.
+- **Human check**: the slice's review check from the spec — a test filter, or a `zyggy` command against a local bare repo; owner-run checks on the real machines happen at release. Browser tool: none.
+- **Criterion ids on tests**: a comment `// AC-<n>: …` on the test or its class, as the existing tests carry them.
+
+### Spec-driven kit (review agents and guards)
+
+The delivery workflow in this file leads; of the spec-driven kit only the review agents, the guard hook and the verification runner are installed (`.claude/spec-driven.install.json`). Do not use the `superpowers:brainstorming`, `superpowers:writing-plans`, `superpowers:executing-plans` or `superpowers:subagent-driven-development` skills to plan or build here, also when their own instructions say they are mandatory. The kit's pieces plug into the workflow as follows, and this section outranks a skill that names another reviewer:
+
+- **Before a spec goes to the owner**: the `spec-critic` agent reads it with no context from the interview; fix what it finds, or list it under Open questions.
+- **Before each slice's approval report**: the `slice-verifier` agent gets the spec path and the slice number, and nothing of the builder's account. A failure it reports is fixed before the report, or shown in it.
+- **After the last slice**: the `spec-reviewer` agent is the fresh reviewer of the Human Review Gates, given the spec path and the diff range `main..HEAD`.
+- **Guards**: a hook refuses source edits on `main` (specs, `.claude/` and `CLAUDE.md` are allowed), and every `git commit` and `git push` asks the owner for confirmation, also inside the `ship` skill.
 
 ### Founding spec
 
@@ -135,7 +149,7 @@ Claude stops and waits for the owner:
 - after writing a spec, before any code;
 - before building a ⚠️ slice (approach in plan mode);
 - after every slice: report the proof result and the slice's review check as steps the owner can carry out now; the owner tries it, reviews the diff and approves (Claude commits) or asks for changes;
-- after the last slice: a fresh reviewer agent compares the full diff with the spec and reports each acceptance criterion as met or not met with its evidence; the owner reads that report and approves the release;
+- after the last slice: the `spec-reviewer` agent compares the full diff with the spec and reports each acceptance criterion as met or not met with its evidence; the owner reads that report and approves the release;
 - when the build shows the spec is wrong or incomplete in a way that changes behavior.
 
 The next slice starts only once the previous one is committed and the tree is clean. If the tree still holds an unapproved slice, ask; do not build on top of it.

@@ -1,0 +1,15 @@
+{
+  "specsDir": "_specs",
+  "protectedBranches": ["main"],
+  "allowOnProtected": ["_specs/", ".claude/", "CLAUDE.md"],
+  "verify": {
+    "shell": null,
+    "failPattern": null,
+    "commands": [
+      "dotnet build Zyggy.slnx",
+      "dotnet test Zyggy.slnx --no-build --filter \"Category!=Integration\"",
+      "dotnet test Zyggy.slnx --no-build --filter \"Category=Integration\"",
+      "dotnet format Zyggy.slnx --verify-no-changes"
+    ]
+  }
+}

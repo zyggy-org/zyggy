@@ -1,0 +1,10 @@
+{
+  "specsDir": "_specs",
+  "protectedBranches": ["main"],
+  "allowOnProtected": ["_specs/", ".claude/", "CLAUDE.md"],
+  "verify": {
+    "shell": null,
+    "failPattern": null,
+    "commands": []
+  }
+}

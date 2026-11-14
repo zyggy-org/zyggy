@@ -483,3 +483,6 @@ $RECYCLE.BIN/
 
 # owner-only draft with real machine ids (public repo)
 _specs/spec-work-boundary.md
+
+# spec-driven kit: the tree state the verification runner last saw green
+.claude/spec-driven.state.json

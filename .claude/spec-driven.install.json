@@ -1,0 +1,24 @@
+{
+  "kitVersion": "2.0.0",
+  "level": 2,
+  "manualSkills": false,
+  "files": {
+    ".claude/agents/slice-verifier.md": "3f6396f15a33fcf9b0e827e876c23aa1d0ce2d037a7b22cecb21492300df5e13",
+    ".claude/agents/spec-critic.md": "c8198c763aecc23344d06a973966be58324081cd7989a4a8e58a7516911b5d27",
+    ".claude/agents/spec-reviewer.md": "635f26bcd67ba20b8fd786c3706e530ae70d7e70778010ea2dc11eff1290f0d0",
+    ".claude/hooks/guard.mjs": "78bd177e216197c501abd82793a543da1670509a1688b5d74caeaf9c4bbe92eb",
+    ".claude/hooks/verify.mjs": "5dad000d0fd667c5bdc528ce776dad226e63d9d5cb867df217f5d3f2721d6448",
+    ".claude/templates/settings-fragment.json": "fd63df4ab965415fea6a94e70e15560a2651fea90471a9c7371f79f5fc72adce",
+    ".claude/templates/spec-driven.json": "a92fe0b45798c8f230473197bb97d9fc6ca2b1d8c15232a4e7c29ebdde11ab49"
+  },
+  "addedAsk": [
+    "Bash(git commit)",
+    "Bash(git commit *)",
+    "Bash(git push)",
+    "Bash(git push *)",
+    "PowerShell(git commit)",
+    "PowerShell(git commit *)",
+    "PowerShell(git push)",
+    "PowerShell(git push *)"
+  ]
+}
