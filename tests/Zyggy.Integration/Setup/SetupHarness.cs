@@ -77,7 +77,7 @@ internal sealed class SetupHarness : IAsyncDisposable
         "setup: node.json: done - " + nodeJsonDetail,
         $"setup: zyggy-core: done - cloned {CoreRemote} at {head[..12]}",
         $"setup: settings: done - env.ZYGGY_SECRET_PATTERNS set to {Patterns} (created {SettingsFile})",
-        $"setup: settings: done - permissions.deny gained Bash(zyggy secret*), Bash(zyggy context --stop-hook*), Bash(zyggy context --flush*) (created {SettingsFile})",
+        $"setup: settings: done - permissions.deny gained Bash(zyggy secret*), Bash(zyggy context --stop-hook*), Bash(zyggy context --flush*), Bash(zyggy work --session-start*), Bash(zyggy work --turn-end*), Bash(zyggy work --session-end*) (created {SettingsFile})",
         $"setup: skill remember: done - copied from {SetupPaths.SkillSource(CorePath, "remember")}",
         $"setup: skill archive: done - copied from {SetupPaths.SkillSource(CorePath, "archive")}",
         $"setup: skill bus: done - copied from {SetupPaths.SkillSource(CorePath, "bus")}",

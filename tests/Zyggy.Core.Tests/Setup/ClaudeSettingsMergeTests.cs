@@ -47,7 +47,8 @@ public sealed class ClaudeSettingsMergeTests : IDisposable
 
         // Assert
         string expected = "{\n  \"env\": {\n    \"ZYGGY_SECRET_PATTERNS\": \"" + Patterns + "\"\n  },\n  \"permissions\": {\n    \"deny\": [\n"
-            + "      \"Bash(zyggy secret*)\",\n      \"Bash(zyggy context --stop-hook*)\",\n      \"Bash(zyggy context --flush*)\"\n    ]\n  }\n}\n";
+            + "      \"Bash(zyggy secret*)\",\n      \"Bash(zyggy context --stop-hook*)\",\n      \"Bash(zyggy context --flush*)\",\n"
+            + "      \"Bash(zyggy work --session-start*)\",\n      \"Bash(zyggy work --turn-end*)\",\n      \"Bash(zyggy work --session-end*)\"\n    ]\n  }\n}\n";
         File.ReadAllText(SettingsFile).Should().Be(expected);
         File.ReadAllBytes(SettingsFile).AsSpan().StartsWith(Encoding.UTF8.Preamble).Should().BeFalse();
         lines.Should().Equal(
@@ -76,11 +77,11 @@ public sealed class ClaudeSettingsMergeTests : IDisposable
         after["env"]!["ZYGGY_SECRET_PATTERNS"]!.GetValue<string>().Should().Be(Patterns);
         JsonNode.DeepEquals(after["permissions"]!["allow"], before["permissions"]!["allow"]).Should().BeTrue();
         after["permissions"]!["deny"]!.AsArray().Select(n => n!.GetValue<string>()).Should().Equal(
-            "Bash(zyggy secret*)", "Bash(rm -rf*)", "Bash(zyggy context --stop-hook*)", "Bash(zyggy context --flush*)");
+            "Bash(zyggy secret*)", "Bash(rm -rf*)", "Bash(zyggy context --stop-hook*)", "Bash(zyggy context --flush*)", "Bash(zyggy work --session-start*)", "Bash(zyggy work --turn-end*)", "Bash(zyggy work --session-end*)");
         after["hooks"]!.ToJsonString().Should().Be(before["hooks"]!.ToJsonString());
         lines.Should().Equal(
             new SetupLine(SetupItem.SettingsEnv, SetupOutcome.Done, "env.ZYGGY_SECRET_PATTERNS set to " + Patterns + " (backup " + BackupFile + ")"),
-            new SetupLine(SetupItem.SettingsDeny, SetupOutcome.Done, "permissions.deny gained Bash(zyggy context --stop-hook*), Bash(zyggy context --flush*) (backup " + BackupFile + ")"));
+            new SetupLine(SetupItem.SettingsDeny, SetupOutcome.Done, "permissions.deny gained Bash(zyggy context --stop-hook*), Bash(zyggy context --flush*), Bash(zyggy work --session-start*), Bash(zyggy work --turn-end*), Bash(zyggy work --session-end*) (backup " + BackupFile + ")"));
     }
 
     [Theory]
@@ -271,7 +272,7 @@ public sealed class ClaudeSettingsMergeTests : IDisposable
 
         // Assert
         JsonNode.Parse(File.ReadAllText(SettingsFile))!["permissions"]!["deny"]!.AsArray().Select(n => n!.GetValue<string>()).Should().Equal(
-            "Bash(Zyggy secret*)", "Bash(zyggy  context --flush*)", "Bash(zyggy secret*)", "Bash(zyggy context --stop-hook*)", "Bash(zyggy context --flush*)");
+            "Bash(Zyggy secret*)", "Bash(zyggy  context --flush*)", "Bash(zyggy secret*)", "Bash(zyggy context --stop-hook*)", "Bash(zyggy context --flush*)", "Bash(zyggy work --session-start*)", "Bash(zyggy work --turn-end*)", "Bash(zyggy work --session-end*)");
     }
 
     [Fact]

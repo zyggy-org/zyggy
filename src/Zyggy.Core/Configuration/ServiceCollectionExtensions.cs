@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 using Zyggy.Core.Bus;
 using Zyggy.Core.Envelope;
@@ -40,6 +42,15 @@ public static class ServiceCollectionExtensions
         // Deliverable 12: the laptop hooks' spool and the Stop hook; the hook resolves only with the secret patterns registered (fail closed).
         services.TryAddSingleton(sp => new ContextSpool(configuration.EffectiveNodeDir, configuration.Tenant, sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ContextEnvelopeOptions>()));
         services.TryAddSingleton(sp => new ContextStopHook(sp.GetRequiredService<ContextSpool>(), sp.GetRequiredService<SecretPatterns>(), sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ContextEnvelopeOptions>()));
+        // Deliverable 18: the session hooks' status writer; its publisher and the secret patterns are resolved only when a status is due.
+        services.TryAddSingleton(sp => new WorkStatusHook(
+            () => sp.GetRequiredService<WorkStatusPublisher>(),
+            () => sp.GetRequiredService<SecretPatterns>(),
+            sp.GetRequiredService<Git.GitClient>(),
+            new WorkSessionStore(configuration.EffectiveNodeDir, configuration.Tenant),
+            configuration.Supervision,
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetService<ILoggerFactory>()?.CreateLogger<WorkStatusHook>() ?? NullLogger<WorkStatusHook>.Instance));
         if (configuration.SignWith is { } signWith)
         {
             services.AddSingleton<KeyId>(signWith);

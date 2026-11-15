@@ -102,6 +102,33 @@ public sealed class WorkStatusConfigurationTests : IDisposable
     }
 
     [Fact]
+    public void Read_SupervisionWorkMachines_Typed_AbsentIsEmpty()
+    {
+        // Act
+        NodeConfigurationResult listed = Read("\"supervision\": { \"workMachines\": [\"work-laptop\", \"other-laptop\"] },");
+        NodeConfigurationResult absent = Read(string.Empty);
+
+        // Assert
+        listed.IsOk.Should().BeTrue(listed.ToString());
+        listed.Configuration!.Supervision.WorkMachines.Select(m => m.Value).Should().Equal("work-laptop", "other-laptop");
+        absent.Configuration!.Supervision.WorkMachines.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("\"work-laptop\"")]
+    [InlineData("[\"Work Laptop\"]")]
+    [InlineData("[5]")]
+    public void Read_SupervisionWorkMachinesInvalid_FieldNamed(string value)
+    {
+        // Act
+        NodeConfigurationResult result = Read("\"supervision\": { \"workMachines\": " + value + " },");
+
+        // Assert
+        result.Error.Should().Be(NodeConfigurationError.InvalidField);
+        result.ToString().Should().Be("supervision.workMachines: must be a list of machine names");
+    }
+
+    [Fact]
     public void Read_DiscoveryIntervalOutOfRange_StillNamesTheDiscoveryKey()
     {
         // Act: the ranged-integer reader now takes its section name; discovery keeps its own

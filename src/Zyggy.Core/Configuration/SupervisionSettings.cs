@@ -1,3 +1,5 @@
+using Zyggy.Core.Tenancy;
+
 namespace Zyggy.Core.Configuration;
 
 /// <summary>How much a session's status carries (<c>supervision.detail</c>, deliverable 18).</summary>
@@ -20,4 +22,11 @@ public enum SupervisionDetail
 /// How much a status carries. When <c>detail</c> is absent it is <see cref="SupervisionDetail.Fixed"/> on a machine whose
 /// <c>discovery.detail</c> is <c>names</c> and <see cref="SupervisionDetail.Full"/> otherwise.
 /// </param>
-public sealed record SupervisionSettings(bool Enabled = true, int StatusMinutes = 10, SupervisionDetail Detail = SupervisionDetail.Full);
+public sealed record SupervisionSettings(bool Enabled = true, int StatusMinutes = 10, SupervisionDetail Detail = SupervisionDetail.Full)
+{
+    /// <summary>
+    /// Gets <c>supervision.workMachines</c>: the machines whose statuses are listed with the four fixed fields only, whatever their
+    /// files carry (founding spec §8). Empty when absent.
+    /// </summary>
+    public IReadOnlyList<MachineName> WorkMachines { get; init; } = Array.Empty<MachineName>();
+}

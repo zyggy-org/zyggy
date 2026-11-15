@@ -400,7 +400,33 @@ public static partial class NodeConfigurationReader
             }
         }
 
+        var workMachines = new List<MachineName>();
+        if (section.TryGetProperty("workMachines", out JsonElement machinesElement) && machinesElement.ValueKind != JsonValueKind.Null)
+        {
+            if (machinesElement.ValueKind != JsonValueKind.Array)
+            {
+                failure = Invalid("supervision.workMachines", "must be a list of machine names");
+                return false;
+            }
+
+            foreach (JsonElement item in machinesElement.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.String || !MachineName.TryParse(item.GetString(), out MachineName? workMachine))
+                {
+                    failure = Invalid("supervision.workMachines", "must be a list of machine names");
+                    return false;
+                }
+
+                workMachines.Add(workMachine);
+            }
+        }
+
         supervision = new SupervisionSettings(enabled, statusMinutes, detail);
+        if (workMachines.Count > 0)
+        {
+            supervision = supervision with { WorkMachines = workMachines };
+        }
+
         return true;
     }
 

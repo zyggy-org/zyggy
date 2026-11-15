@@ -24,8 +24,15 @@ internal static class ClaudeSettingsMerge
     private const string DenyKey = "deny";
     private const string NotValid = "not valid JSON; left untouched";
 
-    /// <summary>The three deny rules every node's user-scope settings carry (spec 42 AC-13), in the order they are appended.</summary>
-    public static readonly string[] DenyRules = ["Bash(zyggy secret*)", "Bash(zyggy context --stop-hook*)", "Bash(zyggy context --flush*)"];
+    /// <summary>
+    /// The deny rules every node's user-scope settings carry, in the order they are appended: the three of spec 42 AC-13, then the three
+    /// hook modes of <c>zyggy work</c> (deliverable 18), so a session's model cannot publish or remove a status itself.
+    /// </summary>
+    public static readonly string[] DenyRules =
+    [
+        "Bash(zyggy secret*)", "Bash(zyggy context --stop-hook*)", "Bash(zyggy context --flush*)",
+        "Bash(zyggy work --session-start*)", "Bash(zyggy work --turn-end*)", "Bash(zyggy work --session-end*)",
+    ];
 
     private static readonly JsonDocumentOptions DocumentOptions = new() { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true };
 

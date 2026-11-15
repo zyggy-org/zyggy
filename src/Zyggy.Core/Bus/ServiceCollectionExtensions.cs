@@ -208,6 +208,20 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<TimeProvider>(),
                 log);
         });
+        // Deliverable 18: the status sender of the session hooks. Resolving without a KeyId or the secret patterns throws (the hook reports it and writes nothing).
+        services.TryAddSingleton(sp =>
+        {
+            ILogger<WorkStatusPublisher> log = sp.GetService<ILoggerFactory>()?.CreateLogger<WorkStatusPublisher>() ?? NullLogger<WorkStatusPublisher>.Instance;
+            SupervisionSettings supervision = sp.GetRequiredService<NodeConfiguration>().Supervision;
+            return new WorkStatusPublisher(
+                sp.GetRequiredService<BusRepository>(),
+                sp.GetRequiredService<EnvelopeSigner>(),
+                sp.GetRequiredService<KeyId>(),
+                sp.GetRequiredService<SecretPatterns>(),
+                new WorkStatusOptions(supervision.Detail, supervision.Enabled),
+                sp.GetRequiredService<TimeProvider>(),
+                log);
+        });
         // Deliverable 41: the item sender. Resolving without a KeyId, the secret patterns or ItemSubmitterOptions throws (the verb registers them first — fail closed).
         services.TryAddSingleton(sp =>
         {
