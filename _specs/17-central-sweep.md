@@ -27,6 +27,14 @@
   - zyggy-core moves both published copies (`PROTOCOL.md` and `templates/job-prompt.md`; the prompt is unchanged) and `bus.bats` to `v0.19.0` and replaces the `v0.18.0` fixture with a `v0.19.0` one in the same shape (§4 with the stand-in label `initech`).
   - The zyggy-core branch is pushed and its PR opened at release, after tag `v0.19.0` exists, because CI's check reads §4 from GitHub at that tag.
   - The sweep's runbook rows live in the Node README ("Troubleshooting — Sweep"), next to the pickup's.
+- 2026-11-15: **released as v0.19.0**.
+  - **Merge and release:** PR #38 merged (`e735154`, after merging `main`'s roadmap and supervision spec, Verification Commands green again). Tag CI run 43756980003 is green on windows-latest and ubuntu-latest, and the GitHub release has the four assets.
+  - **zyggy-core and instance:** zyggy-core PR #15 merged (`4536671`) after its CI ran the live protocol check against the `v0.19.0` tag (**AC-19 met**). The instance PR #11 merged (`abdabe0`): the template merge plus pin 0.19.0. That repository runs no Actions; a local bats container gave 226 ok, 0 failed.
+  - **Central:** `/health` version 0.19.0, `claudeAuthOk` true. The log shows `sweep every 60 min`, and the first live pass `archived 41 file(s) older than 14 days … ; pushed`. A later `zyggy sweep --dry-run` found nothing to do. `zyggy verify` reports 164 ok and 1 FAIL, the seed file `archive/.gitkeep` (`unexpected_path`, Q1).
+  - **This laptop:** `install.ps1` upgraded it to 0.19.0, health green, `zyggy-core` fast-forwarded to `4536671`.
+  - **AC-22 met on the real machines:** a job home-laptop → home-laptop with `--timeout 1` was claimed, and the node was stopped 2 s later. At 20:56:00Z (16½ min after the claim commit), `zyggy sweep` on Central printed `requeued <id> home-laptop attempt 2`, with Warning `stuck since 20:39:23Z`. The restarted node claimed it again and reported `done` (the real `claude`, report created 20:57:06Z, cost about 0.52 USD).
+  - **Not done:** the final spec-reviewer pass was skipped at the owner's explicit "Commit and release".
+  - **Left for the owner:** Q1(a), removing `tenants/<org>/archive/.gitkeep` from the real bus (the session's push of that removal was refused by its permission classifier), and the work laptop's upgrade (one `install.ps1` run).
 
 ## Goal
 
