@@ -7,7 +7,7 @@ public static class EnvelopeWire
 {
     /// <summary>Returns the wire string of an envelope type.</summary>
     /// <param name="value">The member.</param>
-    /// <returns><c>job</c>, <c>report</c>, <c>context</c>, <c>item</c> or <c>status</c>.</returns>
+    /// <returns><c>job</c>, <c>report</c>, <c>context</c>, <c>item</c>, <c>status</c>, <c>question</c> or <c>decision</c>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown for an undefined member.</exception>
     public static string ToWire(EnvelopeType value) => value switch
     {
@@ -16,8 +16,50 @@ public static class EnvelopeWire
         EnvelopeType.Context => "context",
         EnvelopeType.Item => "item",
         EnvelopeType.Status => "status",
+        EnvelopeType.Question => "question",
+        EnvelopeType.Decision => "decision",
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
+
+    /// <summary>Returns the wire string of a decision kind (deliverable 18).</summary>
+    /// <param name="value">The member.</param>
+    /// <returns><c>answer</c>, <c>accept</c>, <c>correct</c>, <c>next</c>, <c>stop</c>, <c>escalate</c>, <c>refuse</c> or <c>resume</c>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown for an undefined member.</exception>
+    public static string ToWire(DecisionKind value) => value switch
+    {
+        DecisionKind.Answer => "answer",
+        DecisionKind.Accept => "accept",
+        DecisionKind.Correct => "correct",
+        DecisionKind.Next => "next",
+        DecisionKind.Stop => "stop",
+        DecisionKind.Escalate => "escalate",
+        DecisionKind.Refuse => "refuse",
+        DecisionKind.Resume => "resume",
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    /// <summary>Returns the wire string of a decision basis (deliverable 18).</summary>
+    /// <param name="value">The member.</param>
+    /// <returns><c>verified</c> or <c>reported</c>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown for an undefined member.</exception>
+    public static string ToWire(DecisionBasis value) => value switch
+    {
+        DecisionBasis.Verified => "verified",
+        DecisionBasis.Reported => "reported",
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    /// <summary>Maps a wire string to a decision kind.</summary>
+    /// <param name="wire">The wire string.</param>
+    /// <param name="value">The member when recognised.</param>
+    /// <returns><see langword="true"/> when <paramref name="wire"/> is an exact wire string.</returns>
+    public static bool TryFromWire(string? wire, out DecisionKind value) => TryMatch(wire, Enum.GetValues<DecisionKind>(), ToWire, out value);
+
+    /// <summary>Maps a wire string to a decision basis.</summary>
+    /// <param name="wire">The wire string.</param>
+    /// <param name="value">The member when recognised.</param>
+    /// <returns><see langword="true"/> when <paramref name="wire"/> is an exact wire string.</returns>
+    public static bool TryFromWire(string? wire, out DecisionBasis value) => TryMatch(wire, Enum.GetValues<DecisionBasis>(), ToWire, out value);
 
     /// <summary>Returns the wire string of a priority.</summary>
     /// <param name="value">The member.</param>

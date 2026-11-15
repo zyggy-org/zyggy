@@ -9,8 +9,8 @@ namespace Zyggy.Core.Envelope;
 /// </summary>
 /// <remarks>
 /// Immutable; equality is by reference. <see cref="FrontMatter"/> holds every field, known or unknown, and is what the
-/// signature covers; <see cref="Header"/>, <see cref="Job"/>, <see cref="Report"/>, <see cref="Context"/>, <see cref="Item"/> and <see cref="Status"/> are
-/// typed views built from it. Exactly one of the five per-type views is non-null, matching <see cref="Type"/>.
+/// signature covers; <see cref="Header"/>, <see cref="Job"/>, <see cref="Report"/>, <see cref="Context"/>, <see cref="Item"/>, <see cref="Status"/>, <see cref="Question"/> and <see cref="Decision"/> are
+/// typed views built from it. Exactly one of the seven per-type views is non-null, matching <see cref="Type"/>.
 /// </remarks>
 public sealed class Envelope
 {
@@ -27,6 +27,8 @@ public sealed class Envelope
         ContextFields? context,
         ItemFields? item,
         StatusFields? status,
+        QuestionFields? question,
+        DecisionFields? decision,
         KeyId? keyId,
         string? signature,
         FrontMatterMapping frontMatter,
@@ -40,6 +42,8 @@ public sealed class Envelope
         Context = context;
         Item = item;
         Status = status;
+        Question = question;
+        Decision = decision;
         KeyId = keyId;
         Signature = signature;
         FrontMatter = frontMatter;
@@ -70,6 +74,12 @@ public sealed class Envelope
 
     /// <summary>Gets the status fields when <see cref="Type"/> is <see cref="EnvelopeType.Status"/>.</summary>
     public StatusFields? Status { get; }
+
+    /// <summary>Gets the question fields when <see cref="Type"/> is <see cref="EnvelopeType.Question"/>.</summary>
+    public QuestionFields? Question { get; }
+
+    /// <summary>Gets the decision fields when <see cref="Type"/> is <see cref="EnvelopeType.Decision"/>.</summary>
+    public DecisionFields? Decision { get; }
 
     /// <summary>Gets the <c>key_id</c> the envelope is signed with; <see langword="null"/> until signed.</summary>
     public KeyId? KeyId { get; }
@@ -228,6 +238,61 @@ public sealed class Envelope
         return Create(entries, header, ReadOnlyMemory<byte>.Empty);
     }
 
+    /// <summary>Creates an unsigned question envelope in canonical scalar text (deliverable 18, "Questions and decisions").</summary>
+    /// <remarks>Same text rules as <see cref="CreateJob"/>. <see cref="EnvelopeHeader.To"/> must be Central; the body is the question, 1–600 characters.</remarks>
+    /// <param name="header">The common fields, addressed to Central.</param>
+    /// <param name="question">The question fields.</param>
+    /// <param name="body">The question text; must be valid UTF-8.</param>
+    /// <returns>The unsigned envelope.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="header"/> or <paramref name="question"/> is null.</exception>
+    /// <exception cref="ArgumentException">Thrown when a field or the body breaks its rule.</exception>
+    public static Envelope CreateQuestion(EnvelopeHeader header, QuestionFields question, ReadOnlyMemory<byte> body)
+    {
+        ArgumentNullException.ThrowIfNull(header);
+        ArgumentNullException.ThrowIfNull(question);
+        Dictionary<string, FrontMatterNode> entries = Common(header, EnvelopeType.Question);
+        Add(entries, "project", question.Project);
+        Add(entries, "default", question.Default);
+        if (question.Options is { Count: > 0 })
+        {
+            AddList(entries, "options", question.Options);
+        }
+
+        AddOptional(entries, "session", question.Session);
+        AddOptional(entries, "job", question.Job?.Value);
+        return Create(entries, header, body);
+    }
+
+    /// <summary>Creates an unsigned decision envelope in canonical scalar text (deliverable 18, "Questions and decisions").</summary>
+    /// <remarks>
+    /// Same text rules as <see cref="CreateJob"/>. <see cref="EnvelopeHeader.From"/> must be Central and
+    /// <see cref="EnvelopeHeader.InReplyTo"/> is mandatory; the body says what was decided and why, 1–1200 characters.
+    /// </remarks>
+    /// <param name="header">The common fields, from Central, with <c>InReplyTo</c> set.</param>
+    /// <param name="decision">The decision fields.</param>
+    /// <param name="body">What was decided and why; must be valid UTF-8.</param>
+    /// <returns>The unsigned envelope.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="header"/> or <paramref name="decision"/> is null.</exception>
+    /// <exception cref="ArgumentException">Thrown when a field or the body breaks its rule.</exception>
+    public static Envelope CreateDecision(EnvelopeHeader header, DecisionFields decision, ReadOnlyMemory<byte> body)
+    {
+        ArgumentNullException.ThrowIfNull(header);
+        ArgumentNullException.ThrowIfNull(decision);
+        Dictionary<string, FrontMatterNode> entries = Common(header, EnvelopeType.Decision);
+        Add(entries, "kind", EnvelopeWire.ToWire(decision.Kind));
+        Add(entries, "basis", EnvelopeWire.ToWire(decision.Basis));
+        Add(entries, "undo", decision.Undo);
+        AddOptional(entries, "mandate", decision.Mandate?.Value);
+        AddOptional(entries, "project", decision.Project);
+        AddOptional(entries, "step", decision.Step);
+        if (decision.Evidence is { Count: > 0 })
+        {
+            AddList(entries, "evidence", decision.Evidence);
+        }
+
+        return Create(entries, header, body);
+    }
+
     /// <summary>Returns a copy with <c>key_id</c> set to <paramref name="keyId"/> and <c>sig</c> set, or removed when null.</summary>
     internal Envelope WithSignature(KeyId keyId, string? signature)
     {
@@ -244,7 +309,7 @@ public sealed class Envelope
             entries["sig"] = new FrontMatterScalar(signature);
         }
 
-        return new Envelope(Schema, Type, Header, Job, Report, Context, Item, Status, keyId, signature, new FrontMatterMapping(entries), Body);
+        return new Envelope(Schema, Type, Header, Job, Report, Context, Item, Status, Question, Decision, keyId, signature, new FrontMatterMapping(entries), Body);
     }
 
     /// <summary>

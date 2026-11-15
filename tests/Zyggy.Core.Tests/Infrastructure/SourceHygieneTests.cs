@@ -265,6 +265,8 @@ public sealed partial class SourceHygieneTests
     [InlineData("archive/")]
     [InlineData("registry/")]
     [InlineData("status/")]
+    [InlineData("questions/")]
+    [InlineData("decisions/")]
     [InlineData("PROTOCOL.md")]
     public void Src_BusPathLiterals_OnlyInBusPaths(string literal)
     {

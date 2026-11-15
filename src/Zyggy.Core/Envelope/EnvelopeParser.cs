@@ -155,7 +155,7 @@ public static class EnvelopeParser
 
             if (!EnvelopeWire.TryFromWire(typeText, out EnvelopeType type))
             {
-                return Fail<Envelope>(FieldReader.Invalid("type", "must be job, report, context, item or status"));
+                return Fail<Envelope>(FieldReader.Invalid("type", "must be job, report, context, item, status, question or decision"));
             }
 
             // 5. key_id
@@ -190,12 +190,16 @@ public static class EnvelopeParser
             ContextFields? context = null;
             ItemFields? item = null;
             StatusFields? status = null;
+            QuestionFields? question = null;
+            DecisionFields? decision = null;
             bool ok = type switch
             {
                 EnvelopeType.Job => ReadJob(out job),
                 EnvelopeType.Report => ReadReport(out report),
                 EnvelopeType.Item => ReadItem(out item, body),
                 EnvelopeType.Status => ReadStatus(out status, header, body),
+                EnvelopeType.Question => ReadQuestion(out question, header, body),
+                EnvelopeType.Decision => ReadDecision(out decision, header, body),
                 _ => ReadContext(out context),
             };
             if (!ok)
@@ -207,7 +211,7 @@ public static class EnvelopeParser
             string? signature = signed ? ReadSignature() : null;
             return signed && signature is null
                 ? null
-                : new Envelope(schema, type, header, job, report, context, item, status, keyId, signature, map, body);
+                : new Envelope(schema, type, header, job, report, context, item, status, question, decision, keyId, signature, map, body);
         }
 
         private EnvelopeHeader? ReadHeader(TenantId tenant, EnvelopeType type)
@@ -229,7 +233,7 @@ public static class EnvelopeParser
                 return null;
             }
 
-            if (!Text("in_reply_to", type == EnvelopeType.Report, out string? inReplyToText))
+            if (!Text("in_reply_to", type is EnvelopeType.Report or EnvelopeType.Decision, out string? inReplyToText))
             {
                 return null;
             }
@@ -414,6 +418,169 @@ public static class EnvelopeParser
 
             status = new StatusFields(project, session, since!.Value, activity!.Value, branch, head, dirty, spec, step);
             return true;
+        }
+
+        // Deliverable 18: a question goes to Central; exactly one of session and job names the asker; the body is the question.
+        private bool ReadQuestion(out QuestionFields? question, EnvelopeHeader header, ReadOnlyMemory<byte> body)
+        {
+            question = null;
+            if (header.To != MachineName.Central)
+            {
+                return Reject(FieldReader.Invalid("to", "must be central"));
+            }
+
+            if (!Text("project", true, out string? project))
+            {
+                return false;
+            }
+
+            if (!IsRegistryName(project!))
+            {
+                return Reject(FieldReader.Invalid("project", "must be a registry name of at most 100 characters"));
+            }
+
+            if (!LineField("default", SupervisionLimits.LineMax, out string? fallback) || !List("options", out IReadOnlyList<string>? options))
+            {
+                return false;
+            }
+
+            if (options is not null && (options.Count > SupervisionLimits.OptionsMax || options.Any(o => !IsLine(o, SupervisionLimits.LineMax))))
+            {
+                return Reject(FieldReader.Invalid("options", "must be at most 5 lines of at most 200 characters"));
+            }
+
+            if (!Text("session", false, out string? session) || !Text("job", false, out string? jobText))
+            {
+                return false;
+            }
+
+            if (session is null && jobText is null)
+            {
+                return Reject(new EnvelopeRejection(EnvelopeRejectionReason.MissingField, "session", "session or job is missing"));
+            }
+
+            if (session is not null && jobText is not null)
+            {
+                return Reject(FieldReader.Invalid("job", "must be absent when session is present"));
+            }
+
+            if (session is not null && !IsSession(session))
+            {
+                return Reject(FieldReader.Invalid("session", "must be 8 lowercase letters or digits"));
+            }
+
+            EnvelopeId? job = null;
+            if (jobText is not null && !EnvelopeId.TryParse(jobText, out job))
+            {
+                return Reject(FieldReader.Invalid("job", "must be a ULID"));
+            }
+
+            if (!IsBody(body, SupervisionLimits.QuestionMax))
+            {
+                return Reject(FieldReader.Invalid("body", "must be 1 to 600 characters"));
+            }
+
+            question = new QuestionFields(project!, fallback!, options ?? [], session, job);
+            return true;
+        }
+
+        // Deliverable 18: a decision comes from Central and always answers something; the body says what and why.
+        private bool ReadDecision(out DecisionFields? decision, EnvelopeHeader header, ReadOnlyMemory<byte> body)
+        {
+            decision = null;
+            if (header.From != MachineName.Central)
+            {
+                return Reject(FieldReader.Invalid("from", "must be central"));
+            }
+
+            if (!Text("kind", true, out string? kindText))
+            {
+                return false;
+            }
+
+            if (!EnvelopeWire.TryFromWire(kindText, out DecisionKind kind))
+            {
+                return Reject(FieldReader.Invalid("kind", "must be answer, accept, correct, next, stop, escalate, refuse or resume"));
+            }
+
+            if (!Text("basis", true, out string? basisText))
+            {
+                return false;
+            }
+
+            if (!EnvelopeWire.TryFromWire(basisText, out DecisionBasis basis))
+            {
+                return Reject(FieldReader.Invalid("basis", "must be verified or reported"));
+            }
+
+            if (!LineField("undo", SupervisionLimits.LineMax, out string? undo) || !Text("mandate", false, out string? mandateText))
+            {
+                return false;
+            }
+
+            EnvelopeId? mandate = null;
+            if (mandateText is not null && !EnvelopeId.TryParse(mandateText, out mandate))
+            {
+                return Reject(FieldReader.Invalid("mandate", "must be a ULID"));
+            }
+
+            if (!Text("project", false, out string? project))
+            {
+                return false;
+            }
+
+            if (project is not null && !IsRegistryName(project))
+            {
+                return Reject(FieldReader.Invalid("project", "must be a registry name of at most 100 characters"));
+            }
+
+            if (!Text("step", false, out string? step))
+            {
+                return false;
+            }
+
+            if (step is not null && !IsStep(step))
+            {
+                return Reject(FieldReader.Invalid("step", "must be 1 to 60 lowercase letters, digits, spaces or hyphens"));
+            }
+
+            if (!List("evidence", out IReadOnlyList<string>? evidence))
+            {
+                return false;
+            }
+
+            if (evidence is not null && (evidence.Count > SupervisionLimits.EvidenceMax || evidence.Any(e => !EnvelopeId.TryParse(e, out _) && !IsCommit(e))))
+            {
+                return Reject(FieldReader.Invalid("evidence", "must be at most 10 envelope ids or commit shas"));
+            }
+
+            if (!IsBody(body, SupervisionLimits.DecisionMax))
+            {
+                return Reject(FieldReader.Invalid("body", "must be 1 to 1200 characters"));
+            }
+
+            decision = new DecisionFields(kind, basis, undo!, mandate, project, step, evidence);
+            return true;
+        }
+
+        private static bool IsRegistryName(string text) =>
+            text.Length is > 0 and <= 100 && text.All(c => c is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-');
+
+        private static bool IsSession(string text) => text.Length == 8 && text.All(c => c is (>= 'a' and <= 'z') or (>= '0' and <= '9'));
+
+        private static bool IsStep(string text) =>
+            text.Length is > 0 and <= 60 && text.All(c => c is (>= 'a' and <= 'z') or (>= '0' and <= '9') or ' ' or '-');
+
+        private static bool IsCommit(string text) => text.Length is >= 7 and <= 40 && text.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f'));
+
+        private static bool IsLine(string text, int max) =>
+            text.Length > 0 && TextCollapse.CharCount(text) <= max && text.AsSpan().IndexOfAny('\r', '\n') < 0;
+
+        /// <summary>A body of 1 to <paramref name="max"/> characters, line breaks at its end not counted.</summary>
+        private static bool IsBody(ReadOnlyMemory<byte> body, int max)
+        {
+            string text = System.Text.Encoding.UTF8.GetString(body.Span).TrimEnd('\r', '\n');
+            return text.Length > 0 && TextCollapse.CharCount(text) <= max;
         }
 
         private static bool IsRelativePath(string path) =>
