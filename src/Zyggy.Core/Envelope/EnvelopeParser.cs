@@ -155,7 +155,7 @@ public static class EnvelopeParser
 
             if (!EnvelopeWire.TryFromWire(typeText, out EnvelopeType type))
             {
-                return Fail<Envelope>(FieldReader.Invalid("type", "must be job, report, context or item"));
+                return Fail<Envelope>(FieldReader.Invalid("type", "must be job, report, context, item or status"));
             }
 
             // 5. key_id
@@ -189,11 +189,13 @@ public static class EnvelopeParser
             ReportFields? report = null;
             ContextFields? context = null;
             ItemFields? item = null;
+            StatusFields? status = null;
             bool ok = type switch
             {
                 EnvelopeType.Job => ReadJob(out job),
                 EnvelopeType.Report => ReadReport(out report),
                 EnvelopeType.Item => ReadItem(out item, body),
+                EnvelopeType.Status => ReadStatus(out status, header, body),
                 _ => ReadContext(out context),
             };
             if (!ok)
@@ -205,7 +207,7 @@ public static class EnvelopeParser
             string? signature = signed ? ReadSignature() : null;
             return signed && signature is null
                 ? null
-                : new Envelope(schema, type, header, job, report, context, item, keyId, signature, map, body);
+                : new Envelope(schema, type, header, job, report, context, item, status, keyId, signature, map, body);
         }
 
         private EnvelopeHeader? ReadHeader(TenantId tenant, EnvelopeType type)
@@ -333,6 +335,94 @@ public static class EnvelopeParser
             context = new ContextFields(scope);
             return true;
         }
+
+        // Deliverable 18: a status goes to Central, has an empty body, four mandatory fields and five optional ones (detail: full).
+        private bool ReadStatus(out StatusFields? status, EnvelopeHeader header, ReadOnlyMemory<byte> body)
+        {
+            status = null;
+            if (header.To != MachineName.Central)
+            {
+                return Reject(FieldReader.Invalid("to", "must be central"));
+            }
+
+            if (!Text("project", true, out string? project))
+            {
+                return false;
+            }
+
+            if (project!.Length > 100 || !project.All(c => c is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-'))
+            {
+                return Reject(FieldReader.Invalid("project", "must be a registry name of at most 100 characters"));
+            }
+
+            if (!Text("session", true, out string? session))
+            {
+                return false;
+            }
+
+            if (session!.Length != 8 || !session.All(c => c is (>= 'a' and <= 'z') or (>= '0' and <= '9')))
+            {
+                return Reject(FieldReader.Invalid("session", "must be 8 lowercase letters or digits"));
+            }
+
+            if (!Timestamp("since", true, out DateTimeOffset? since)
+                || !Timestamp("activity", true, out DateTimeOffset? activity)
+                || !Text("branch", false, out string? branch))
+            {
+                return false;
+            }
+
+            if (branch is not null && (branch.Length is 0 or > 200 || branch.Any(char.IsControl)))
+            {
+                return Reject(FieldReader.Invalid("branch", "must be 1 to 200 characters without control characters"));
+            }
+
+            if (!Text("head", false, out string? head))
+            {
+                return false;
+            }
+
+            if (head is not null && (head.Length is < 7 or > 40 || !head.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f'))))
+            {
+                return Reject(FieldReader.Invalid("head", "must be 7 to 40 lowercase hexadecimal characters"));
+            }
+
+            if (!Int("dirty", 0, out int? dirty) || !Text("spec", false, out string? spec))
+            {
+                return false;
+            }
+
+            if (spec is not null && !IsRelativePath(spec))
+            {
+                return Reject(FieldReader.Invalid("spec", "must be a repository-relative path with / separators"));
+            }
+
+            if (!Text("step", false, out string? step))
+            {
+                return false;
+            }
+
+            if (step is not null && (step.Length is 0 or > 60 || !step.All(c => c is (>= 'a' and <= 'z') or (>= '0' and <= '9') or ' ' or '-')))
+            {
+                return Reject(FieldReader.Invalid("step", "must be 1 to 60 lowercase letters, digits, spaces or hyphens"));
+            }
+
+            if (!body.IsEmpty)
+            {
+                return Reject(FieldReader.Invalid("body", "must be empty"));
+            }
+
+            status = new StatusFields(project, session, since!.Value, activity!.Value, branch, head, dirty, spec, step);
+            return true;
+        }
+
+        private static bool IsRelativePath(string path) =>
+            path.Length is > 0 and <= 200
+            && path[0] != '/'
+            && !path.Contains('\\')
+            && !path.Contains(':')
+            && !path.Any(char.IsControl)
+            && path.Split('/').All(segment => segment.Length > 0 && segment != ".." && segment != ".");
 
         // Field order (plan 41 Step 1): via, project, slug, drive_name, name, description, source_name, size, sha256, then the body.
         private bool ReadItem(out ItemFields? item, ReadOnlyMemory<byte> body)

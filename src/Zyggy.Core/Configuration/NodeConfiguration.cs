@@ -50,6 +50,9 @@ public sealed record NodeConfiguration(
     /// <summary>Gets the <c>sweep</c> section (spec 17); every 60 minutes when absent, and always the default on a machine that is not Central.</summary>
     public SweepSettings Sweep { get; init; } = new();
 
+    /// <summary>Gets the <c>supervision</c> section (deliverable 18); enabled, a status at most every 10 minutes, full detail when absent.</summary>
+    public SupervisionSettings Supervision { get; init; } = new();
+
     /// <summary>Gets the <c>agentCore</c> section (spec 15); the default checkout of <c>zyggy setup</c> when absent.</summary>
     public AgentCoreSettings AgentCore { get; init; } = new();
 

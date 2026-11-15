@@ -29,4 +29,7 @@ public enum BusFolder
 
     /// <summary><c>…/items</c>: archive items written by the machine, addressed to Central (deliverable 41).</summary>
     Items,
+
+    /// <summary><c>…/status</c>: the state of the machine's live sessions, written by the machine, addressed to Central (deliverable 18).</summary>
+    Status,
 }

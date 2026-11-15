@@ -9,8 +9,8 @@ namespace Zyggy.Core.Envelope;
 /// </summary>
 /// <remarks>
 /// Immutable; equality is by reference. <see cref="FrontMatter"/> holds every field, known or unknown, and is what the
-/// signature covers; <see cref="Header"/>, <see cref="Job"/>, <see cref="Report"/>, <see cref="Context"/> and <see cref="Item"/> are
-/// typed views built from it. Exactly one of the four per-type views is non-null, matching <see cref="Type"/>.
+/// signature covers; <see cref="Header"/>, <see cref="Job"/>, <see cref="Report"/>, <see cref="Context"/>, <see cref="Item"/> and <see cref="Status"/> are
+/// typed views built from it. Exactly one of the five per-type views is non-null, matching <see cref="Type"/>.
 /// </remarks>
 public sealed class Envelope
 {
@@ -26,6 +26,7 @@ public sealed class Envelope
         ReportFields? report,
         ContextFields? context,
         ItemFields? item,
+        StatusFields? status,
         KeyId? keyId,
         string? signature,
         FrontMatterMapping frontMatter,
@@ -38,6 +39,7 @@ public sealed class Envelope
         Report = report;
         Context = context;
         Item = item;
+        Status = status;
         KeyId = keyId;
         Signature = signature;
         FrontMatter = frontMatter;
@@ -65,6 +67,9 @@ public sealed class Envelope
 
     /// <summary>Gets the item fields when <see cref="Type"/> is <see cref="EnvelopeType.Item"/>.</summary>
     public ItemFields? Item { get; }
+
+    /// <summary>Gets the status fields when <see cref="Type"/> is <see cref="EnvelopeType.Status"/>.</summary>
+    public StatusFields? Status { get; }
 
     /// <summary>Gets the <c>key_id</c> the envelope is signed with; <see langword="null"/> until signed.</summary>
     public KeyId? KeyId { get; }
@@ -196,6 +201,33 @@ public sealed class Envelope
         return Create(entries, header, body);
     }
 
+    /// <summary>Creates an unsigned status envelope in canonical scalar text (deliverable 18, "Live work is visible").</summary>
+    /// <remarks>
+    /// Same text rules as <see cref="CreateJob"/>. The body is empty and <see cref="EnvelopeHeader.To"/> must be Central; the optional
+    /// fields that are <see langword="null"/> are not written.
+    /// </remarks>
+    /// <param name="header">The common fields, addressed to Central.</param>
+    /// <param name="status">The status fields.</param>
+    /// <returns>The unsigned envelope.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="header"/> or <paramref name="status"/> is null.</exception>
+    /// <exception cref="ArgumentException">Thrown when a field breaks its rule or the envelope is not addressed to Central.</exception>
+    public static Envelope CreateStatus(EnvelopeHeader header, StatusFields status)
+    {
+        ArgumentNullException.ThrowIfNull(header);
+        ArgumentNullException.ThrowIfNull(status);
+        Dictionary<string, FrontMatterNode> entries = Common(header, EnvelopeType.Status);
+        Add(entries, "project", status.Project);
+        Add(entries, "session", status.Session);
+        Add(entries, "since", Timestamp(status.Since));
+        Add(entries, "activity", Timestamp(status.Activity));
+        AddOptional(entries, "branch", status.Branch);
+        AddOptional(entries, "head", status.Head);
+        AddOptional(entries, "dirty", Invariant(status.Dirty));
+        AddOptional(entries, "spec", status.Spec);
+        AddOptional(entries, "step", status.Step);
+        return Create(entries, header, ReadOnlyMemory<byte>.Empty);
+    }
+
     /// <summary>Returns a copy with <c>key_id</c> set to <paramref name="keyId"/> and <c>sig</c> set, or removed when null.</summary>
     internal Envelope WithSignature(KeyId keyId, string? signature)
     {
@@ -212,7 +244,7 @@ public sealed class Envelope
             entries["sig"] = new FrontMatterScalar(signature);
         }
 
-        return new Envelope(Schema, Type, Header, Job, Report, Context, Item, keyId, signature, new FrontMatterMapping(entries), Body);
+        return new Envelope(Schema, Type, Header, Job, Report, Context, Item, Status, keyId, signature, new FrontMatterMapping(entries), Body);
     }
 
     /// <summary>

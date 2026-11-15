@@ -31,6 +31,7 @@ All `schema: 1`, `tenant: acme`, LF line endings unless stated.
 | `item-bus` | canonical style | `acme/1` | deliverable 41: `type: item`, `via: bus`, `home-laptop` → `central`, project `calizr`, slug `staging-restore-notes`; the body is the 68-byte text item of the `archive/` section below as 76-column base64 (two lines) (spec 41 AC-5) |
 | `item-bus-png` | canonical style | `acme/1` | deliverable 41: `via: bus`, the 65-byte 1×1 PNG (`ImageBytes.Png(1, 1)`), slug `roof-photo`, source `roof.png` (AC-5) |
 | `item-onedrive` | canonical style | `acme/1` | deliverable 41: `via: onedrive`, `drive_name: staging-restore-notes.txt` (a Markdown/text item is stored as `.txt`, plan 41 A1), empty body, the text item's size and SHA-256 (AC-5, AC-6) |
+| `status` | canonical style | `acme/1` | deliverable 18: `type: status`, `home-laptop` → `central`, every field of `detail: full` (`branch`, `head`, `dirty`, `spec`, `step`), empty body (spec 18 AC-1); produced like the `item-*` cases, the file ending with the closing `---\n` |
 
 ## How the oracle files are produced — never by the code under test
 

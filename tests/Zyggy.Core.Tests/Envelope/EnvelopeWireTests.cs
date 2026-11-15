@@ -10,6 +10,7 @@ public sealed class EnvelopeWireTests
         { EnvelopeType.Report, "report" },
         { EnvelopeType.Context, "context" },
         { EnvelopeType.Item, "item" },
+        { EnvelopeType.Status, "status" },
     };
 
     public static TheoryData<EnvelopePriority, string> Priorities => new()

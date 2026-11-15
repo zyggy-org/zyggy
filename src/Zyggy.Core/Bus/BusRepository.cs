@@ -33,6 +33,9 @@ public sealed partial class BusRepository
     /// <summary>How long a write or pull waits for another process's checkout lock (one full write sequence incl. its push retries fits).</summary>
     private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(60);
 
+    /// <summary>Deliverable 18: a machine's own status file older than this is removed with its next status write.</summary>
+    private static readonly TimeSpan StatusMaxAge = TimeSpan.FromHours(24);
+
     private readonly GitClient _git;
     private readonly IBusProvider _provider;
     private readonly BusIdentity _me;
@@ -483,6 +486,112 @@ public sealed partial class BusRepository
                 return Failure("add", await _git.AddAsync(_checkoutRoot, [path], token).ConfigureAwait(false));
             },
             ct);
+    }
+
+    /// <summary>
+    /// Deliverable 18 ("Live work is visible"): adds a signed status envelope of this node, addressed to Central, to this node's own
+    /// <c>nodes/&lt;me&gt;/status/</c> folder and, in the same commit <c>&lt;tenant&gt; status &lt;id&gt; &lt;me&gt;→central</c>, removes the
+    /// session's previous status file and this node's own status files older than 24 hours (sessions that ended without saying so).
+    /// </summary>
+    /// <param name="signedStatus">The signed status envelope.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The write outcome.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="signedStatus"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the envelope is not a status, belongs to another tenant, was not sent by this machine or is unsigned (a caller bug).</exception>
+    public async Task<WriteOutcome> PublishStatusAsync(Model signedStatus, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(signedStatus);
+        if (signedStatus.Type != EnvelopeType.Status || signedStatus.Status is null)
+        {
+            throw new InvalidOperationException("write rule: the status envelope is not a status");
+        }
+
+        if (signedStatus.Header.Tenant != _me.Tenant)
+        {
+            throw new InvalidOperationException("write rule: the status envelope belongs to another tenant");
+        }
+
+        if (signedStatus.Header.From != _me.Machine)
+        {
+            throw new InvalidOperationException("write rule: the status envelope was sent by another machine");
+        }
+
+        if (signedStatus.Signature is null)
+        {
+            throw new InvalidOperationException("write rule: the status envelope is unsigned");
+        }
+
+        byte[] bytes = EnvelopeWriter.Serialize(signedStatus);
+        string path = BusPaths.EnvelopeFile(BusPaths.Status(_me.Tenant, _me.Machine), signedStatus.Header.Id);
+        AssertMayWrite(path, BusFolder.Status);
+        IReadOnlyList<string> replaced = [.. (await OwnStatusFilesAsync(signedStatus.Status.Session, signedStatus.Header.Id, ct).ConfigureAwait(false)).Select(f => f.RelativePath)];
+        return await WriteAsync(
+            Subject("status", signedStatus.Header.Id, signedStatus.Header.From.Value, signedStatus.Header.To.Value),
+            [path, .. replaced],
+            async token =>
+            {
+                await WriteFileAsync(path, bytes, token).ConfigureAwait(false);
+                WriteFailed? added = Failure("add", await _git.AddAsync(_checkoutRoot, [path], token).ConfigureAwait(false));
+                return added is not null || replaced.Count == 0
+                    ? added
+                    : Failure("rm", await _git.RemoveAsync(_checkoutRoot, replaced, token).ConfigureAwait(false));
+            },
+            ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Deliverable 18: removes the status file of a session that ended from this node's own <c>status/</c> folder (and this node's own
+    /// status files older than 24 hours), in one commit <c>&lt;tenant&gt; status &lt;id&gt; &lt;me&gt;→central</c>.
+    /// </summary>
+    /// <param name="session">The session's 8-character id.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The write outcome; <c>Pushed(0)</c> when there was nothing to remove and nothing was written.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="session"/> is null or empty.</exception>
+    public async Task<WriteOutcome> RemoveStatusAsync(string session, CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(session);
+        IReadOnlyList<BusFile> files = await OwnStatusFilesAsync(session, null, ct).ConfigureAwait(false);
+        if (files.Count == 0)
+        {
+            return new Pushed(0);
+        }
+
+        IReadOnlyList<string> removed = [.. files.Select(f => f.RelativePath)];
+        return await WriteAsync(
+            Subject("status", files[0].Id, _me.Machine.Value, MachineName.Central.Value),
+            removed,
+            async token => Failure("rm", await _git.RemoveAsync(_checkoutRoot, removed, token).ConfigureAwait(false)),
+            ct).ConfigureAwait(false);
+    }
+
+    /// <summary>This node's own status files that a write replaces: the session's earlier files and any file whose id is older than 24 hours.</summary>
+    private async Task<IReadOnlyList<BusFile>> OwnStatusFilesAsync(string session, EnvelopeId? except, CancellationToken ct)
+    {
+        DateTimeOffset oldest = _clock.GetUtcNow() - StatusMaxAge;
+        var own = new List<BusFile>();
+        foreach (BusFile file in await ListFolderAsync(BusPaths.Status(_me.Tenant, _me.Machine), ct).ConfigureAwait(false))
+        {
+            if (file.Id == except || !BusPaths.TryParse(file.RelativePath, out _))
+            {
+                continue;
+            }
+
+            bool replaced = file.Id.Timestamp < oldest;
+            if (!replaced)
+            {
+                byte[] bytes = await File.ReadAllBytesAsync(BusPaths.Resolve(_checkoutRoot, file.RelativePath), ct).ConfigureAwait(false);
+                EnvelopeResult parsed = EnvelopeParser.Parse(bytes, _me.Tenant);
+                replaced = parsed.IsAccepted && parsed.Envelope!.Status?.Session == session;
+            }
+
+            if (replaced)
+            {
+                AssertMayWrite(file.RelativePath, BusFolder.Status);
+                own.Add(file);
+            }
+        }
+
+        return own;
     }
 
     /// <summary>

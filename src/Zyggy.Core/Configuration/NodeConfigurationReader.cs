@@ -236,6 +236,7 @@ public static partial class NodeConfigurationReader
         if (!TryArchive(root, out ArchiveSettings archive, out failure)
             || !TryDiscovery(root, out DiscoverySettings discovery, out failure)
             || !TrySweep(root, machine, out SweepSettings sweep, out failure)
+            || !TrySupervision(root, discovery, out SupervisionSettings supervision, out failure)
             || !TryAgentCore(root, out AgentCoreSettings agentCore, out failure))
         {
             return failure;
@@ -258,6 +259,7 @@ public static partial class NodeConfigurationReader
             Archive = archive,
             Discovery = discovery,
             Sweep = sweep,
+            Supervision = supervision,
             AgentCore = agentCore,
         });
     }
@@ -340,6 +342,65 @@ public static partial class NodeConfigurationReader
         }
 
         discovery = new DiscoverySettings(interval, lastSeen, detail);
+        return true;
+    }
+
+    /// <summary>
+    /// The <c>supervision</c> section (deliverable 18): absent or <c>null</c> means the defaults; <c>enabled</c> a boolean,
+    /// <c>statusMinutes</c> an integer 1–120, <c>detail</c> <c>full</c> or <c>fixed</c>. An absent <c>detail</c> is <c>fixed</c> on a machine
+    /// whose <c>discovery.detail</c> is <c>names</c> (the work laptop, §8), so such a machine never publishes more by omission.
+    /// Unknown keys inside the section are ignored.
+    /// </summary>
+    private static bool TrySupervision(JsonElement root, DiscoverySettings discovery, out SupervisionSettings supervision, out NodeConfigurationResult failure)
+    {
+        SupervisionDetail detail = discovery.Detail == DiscoveryDetail.Names ? SupervisionDetail.Fixed : SupervisionDetail.Full;
+        supervision = new SupervisionSettings(Detail: detail);
+        failure = null!;
+        if (!root.TryGetProperty("supervision", out JsonElement section) || section.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (section.ValueKind != JsonValueKind.Object)
+        {
+            failure = Invalid("supervision", "must be an object");
+            return false;
+        }
+
+        bool enabled = supervision.Enabled;
+        if (section.TryGetProperty("enabled", out JsonElement enabledElement) && enabledElement.ValueKind != JsonValueKind.Null)
+        {
+            if (enabledElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                failure = Invalid("supervision.enabled", "must be true or false");
+                return false;
+            }
+
+            enabled = enabledElement.GetBoolean();
+        }
+
+        if (!TryRangedInt(section, "supervision", "statusMinutes", 1, 120, supervision.StatusMinutes, out int statusMinutes, out failure))
+        {
+            return false;
+        }
+
+        if (section.TryGetProperty("detail", out JsonElement detailElement) && detailElement.ValueKind != JsonValueKind.Null)
+        {
+            (bool ok, detail) = detailElement.ValueKind == JsonValueKind.String ? detailElement.GetString() switch
+            {
+                "full" => (true, SupervisionDetail.Full),
+                "fixed" => (true, SupervisionDetail.Fixed),
+                _ => (false, detail),
+            }
+            : (false, detail);
+            if (!ok)
+            {
+                failure = Invalid("supervision.detail", "must be full or fixed");
+                return false;
+            }
+        }
+
+        supervision = new SupervisionSettings(enabled, statusMinutes, detail);
         return true;
     }
 
