@@ -667,6 +667,163 @@ public sealed partial class BusRepository
             string.Join('\n', lines));
     }
 
+    /// <summary>
+    /// The sweep's input (spec 17): under the checkout write lock, every top-level <c>*.md</c> in the <c>jobs/claimed/</c> folder of
+    /// every machine of this tenant, Central included, machines and files in ordinal order, each with its bytes and its claim time
+    /// (the committer time of the newest commit that touched the path). Never another tenant's subtree; nothing is verified here.
+    /// </summary>
+    /// <exception cref="BusBusyException">Another zyggy process held the checkout's write lock for the whole wait.</exception>
+    internal async Task<IReadOnlyList<SweepClaim>> ListClaimsForSweepAsync(CancellationToken ct)
+    {
+        using IDisposable handle = await BusCheckoutLock.AcquireAsync(_checkoutRoot, BusCheckoutLock.WriteLockName, LockTimeout, _clock, ct).ConfigureAwait(false)
+            ?? throw new BusBusyException();
+        string nodes = BusPaths.Resolve(_checkoutRoot, BusPaths.Nodes(_me.Tenant));
+        if (!Directory.Exists(nodes))
+        {
+            return [];
+        }
+
+        var claims = new List<SweepClaim>();
+        IEnumerable<MachineName> machines = Directory.EnumerateDirectories(nodes)
+            .Select(d => MachineName.TryParse(Path.GetFileName(d), out MachineName? machine) ? machine : null)
+            .OfType<MachineName>()
+            .OrderBy(m => m.Value, StringComparer.Ordinal);
+        foreach (MachineName machine in machines)
+        {
+            foreach (BusFile file in await ListFolderAsync(BusPaths.Claimed(_me.Tenant, machine), ct).ConfigureAwait(false))
+            {
+                byte[] bytes = await File.ReadAllBytesAsync(BusPaths.Resolve(_checkoutRoot, file.RelativePath), ct).ConfigureAwait(false);
+                DateTimeOffset? claimTime = await _git.LastCommitTimeAsync(_checkoutRoot, file.RelativePath, ct).ConfigureAwait(false);
+                claims.Add(new SweepClaim(file, machine, bytes, claimTime));
+            }
+        }
+
+        return claims;
+    }
+
+    /// <summary>
+    /// §4 state machine as amended by deliverable 17: Central's sweep writes a stale claim back into the same machine's <c>jobs/</c>
+    /// as <paramref name="signedJob"/> (the job with <c>attempt</c> raised, re-signed by Central) — one <c>git mv</c>, the new bytes,
+    /// one commit <c>&lt;tenant&gt; requeue &lt;id&gt; central→&lt;machine&gt;</c>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when this machine is not Central, a path breaks the §4 write rule or the job is not the claim's signed job (a caller bug).</exception>
+    internal Task<WriteOutcome> RequeueAsync(SweepClaim claim, Model signedJob, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(claim);
+        ArgumentNullException.ThrowIfNull(signedJob);
+        string from = claim.File.RelativePath;
+        AssertMaySweep(from, BusFolder.Claimed, claim.Folder);
+        string to = BusPaths.EnvelopeFile(BusPaths.Jobs(_me.Tenant, claim.Folder), claim.File.Id);
+        AssertMaySweep(to, BusFolder.Jobs, claim.Folder);
+        if (signedJob.Type != EnvelopeType.Job
+            || signedJob.Signature is null
+            || signedJob.Header.Tenant != _me.Tenant
+            || signedJob.Header.Id != claim.File.Id
+            || signedJob.Header.To != claim.Folder)
+        {
+            throw new InvalidOperationException("write rule: the re-queued job is not the signed job of " + from);
+        }
+
+        byte[] bytes = EnvelopeWriter.Serialize(signedJob);
+        return WriteAsync(
+            Subject("requeue", claim.File.Id, _me.Machine.Value, claim.Folder.Value),
+            [from, to],
+            async token =>
+            {
+                WriteFailed? moved = Failure("mv", await _git.MoveAsync(_checkoutRoot, from, to, token).ConfigureAwait(false));
+                if (moved is not null)
+                {
+                    return moved;
+                }
+
+                await WriteFileAsync(to, bytes, token).ConfigureAwait(false);
+                return Failure("add", await _git.AddAsync(_checkoutRoot, [to], token).ConfigureAwait(false));
+            },
+            ct);
+    }
+
+    /// <summary>
+    /// §4 state machine as amended by deliverable 17: Central's sweep removes a stale claim that used its attempts and adds
+    /// <paramref name="signedReport"/> (Central's <c>failed</c> / <c>attempts_exhausted</c> report) to Central's own <c>reports/</c>,
+    /// in one commit <c>&lt;tenant&gt; report &lt;ulid&gt; central→&lt;from&gt;</c>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when this machine is not Central, a path breaks the §4 write rule or the report is not a signed report of this machine (a caller bug).</exception>
+    internal Task<WriteOutcome> ExhaustAsync(SweepClaim claim, Model signedReport, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(claim);
+        ArgumentNullException.ThrowIfNull(signedReport);
+        string claimed = claim.File.RelativePath;
+        AssertMaySweep(claimed, BusFolder.Claimed, claim.Folder);
+        (string reportPath, byte[] bytes) = SweepReport(claim, signedReport);
+        return WriteAsync(
+            Subject("report", signedReport.Header.Id, _me.Machine.Value, signedReport.Header.To.Value),
+            [reportPath, claimed],
+            async token =>
+            {
+                await WriteFileAsync(reportPath, bytes, token).ConfigureAwait(false);
+                return Failure("add", await _git.AddAsync(_checkoutRoot, [reportPath], token).ConfigureAwait(false))
+                    ?? Failure("rm", await _git.RemoveAsync(_checkoutRoot, [claimed], token).ConfigureAwait(false));
+            },
+            ct);
+    }
+
+    /// <summary>
+    /// §4 state machine as amended by deliverable 17: Central's sweep moves a stale claim that does not verify, unchanged, to the same
+    /// machine's <c>jobs/rejected/</c> and, when its sender could be read, adds <paramref name="signedReport"/> (Central's
+    /// <c>rejected</c> report) in the same commit <c>&lt;tenant&gt; reject &lt;id&gt; central→&lt;from&gt;</c> (<c>unknown</c> without a report).
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when this machine is not Central, a path breaks the §4 write rule or the report is not a signed report of this machine (a caller bug).</exception>
+    internal Task<WriteOutcome> RejectStaleAsync(SweepClaim claim, Model? signedReport, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(claim);
+        string from = claim.File.RelativePath;
+        AssertMaySweep(from, BusFolder.Claimed, claim.Folder);
+        string to = BusPaths.EnvelopeFile(BusPaths.Rejected(_me.Tenant, claim.Folder), claim.File.Id);
+        AssertMaySweep(to, BusFolder.Rejected, claim.Folder);
+        if (signedReport is null)
+        {
+            return WriteAsync(
+                Subject("reject", claim.File.Id, _me.Machine.Value, "unknown"),
+                [from, to],
+                async token => Failure("mv", await _git.MoveAsync(_checkoutRoot, from, to, token).ConfigureAwait(false)),
+                ct);
+        }
+
+        (string reportPath, byte[] bytes) = SweepReport(claim, signedReport);
+        return WriteAsync(
+            Subject("reject", claim.File.Id, _me.Machine.Value, signedReport.Header.To.Value),
+            [from, to, reportPath],
+            async token =>
+            {
+                WriteFailed? moved = Failure("mv", await _git.MoveAsync(_checkoutRoot, from, to, token).ConfigureAwait(false));
+                if (moved is not null)
+                {
+                    return moved;
+                }
+
+                await WriteFileAsync(reportPath, bytes, token).ConfigureAwait(false);
+                return Failure("add", await _git.AddAsync(_checkoutRoot, [reportPath], token).ConfigureAwait(false));
+            },
+            ct);
+    }
+
+    // Central's report on a swept claim: signed by this machine, for this tenant, in reply to the claimed file; its path and bytes.
+    private (string Path, byte[] Bytes) SweepReport(SweepClaim claim, Model report)
+    {
+        if (report.Type != EnvelopeType.Report
+            || report.Signature is null
+            || report.Header.Tenant != _me.Tenant
+            || report.Header.From != _me.Machine
+            || report.Header.InReplyTo != claim.File.Id)
+        {
+            throw new InvalidOperationException("write rule: the report on " + claim.File.RelativePath + " is not a signed report of this machine");
+        }
+
+        string path = BusPaths.EnvelopeFile(BusPaths.Reports(_me.Tenant, _me.Machine), report.Header.Id);
+        AssertMayWrite(path, BusFolder.Reports);
+        return (path, EnvelopeWriter.Serialize(report));
+    }
+
     private async Task AddCandidatesAsync(List<PickupCandidate> candidates, string folder, MachineName machine, BusFolder kind, CancellationToken ct)
     {
         foreach (BusFile file in await ListFolderAsync(folder, ct).ConfigureAwait(false))
@@ -945,15 +1102,7 @@ public sealed partial class BusRepository
     /// </summary>
     private void AssertMayWrite(string relativePath, BusFolder expectedFolder, bool submission = false)
     {
-        if (!BusPaths.TryParse(relativePath, out BusLocation? location))
-        {
-            int slash = relativePath.LastIndexOf('/');
-            if (slash < 0 || !BusPaths.TryParse(relativePath[..slash], out location) || location.Id is not null)
-            {
-                throw new InvalidOperationException("write rule: '" + relativePath + "' is not a bus path");
-            }
-        }
-
+        BusLocation location = LocationOf(relativePath);
         if (location.Tenant != _me.Tenant)
         {
             throw new InvalidOperationException("write rule: '" + relativePath + "' belongs to another tenant");
@@ -968,6 +1117,52 @@ public sealed partial class BusRepository
         {
             throw new InvalidOperationException("write rule: '" + relativePath + "' belongs to another machine");
         }
+    }
+
+    /// <summary>
+    /// The sweep branch of the §4 write rule (deliverable 17): only Central, only its own tenant, and only a path in the
+    /// <paramref name="expectedFolder"/> (<c>jobs/claimed/</c> as the source, <c>jobs/</c> or <c>jobs/rejected/</c> as the target) of
+    /// <paramref name="machine"/> — the machine whose claim is swept, so a claim never crosses to another machine.
+    /// </summary>
+    private void AssertMaySweep(string relativePath, BusFolder expectedFolder, MachineName machine)
+    {
+        if (_me.Machine != MachineName.Central)
+        {
+            throw new InvalidOperationException("write rule: only central sweeps");
+        }
+
+        BusLocation location = LocationOf(relativePath);
+        if (location.Tenant != _me.Tenant)
+        {
+            throw new InvalidOperationException("write rule: '" + relativePath + "' belongs to another tenant");
+        }
+
+        if (location.Folder != expectedFolder)
+        {
+            throw new InvalidOperationException("write rule: '" + relativePath + "' is not in the " + expectedFolder + " folder");
+        }
+
+        if (location.Machine != machine)
+        {
+            throw new InvalidOperationException("write rule: '" + relativePath + "' belongs to another machine");
+        }
+    }
+
+    /// <summary>The §4 location of a path; a file whose name is not a ULID is judged by the folder it sits in.</summary>
+    private static BusLocation LocationOf(string relativePath)
+    {
+        if (BusPaths.TryParse(relativePath, out BusLocation? location))
+        {
+            return location;
+        }
+
+        int slash = relativePath.LastIndexOf('/');
+        if (slash < 0 || !BusPaths.TryParse(relativePath[..slash], out location) || location.Id is not null)
+        {
+            throw new InvalidOperationException("write rule: '" + relativePath + "' is not a bus path");
+        }
+
+        return location;
     }
 
     /// <summary>
