@@ -13,8 +13,9 @@ namespace Zyggy.Core.Bus;
 /// <summary>
 /// Central's sweep (spec 17; founding spec §4 state machine): every claim in a machine's <c>jobs/claimed/</c> that is older than
 /// its <c>timeout_minutes</c> + 15 min is re-queued with <c>attempt</c> raised and re-signed, ended with Central's
-/// <c>attempts_exhausted</c> report once it used three attempts, or rejected when it does not verify — one commit per claim.
-/// Never calls a model, never throws to the caller except on cancellation. Built only by <see cref="ServiceCollectionExtensions.AddBusSweep"/>;
+/// <c>attempts_exhausted</c> report once it used three attempts, or rejected when it does not verify — one commit per claim. Then
+/// every <c>reports/</c> and <c>context/</c> file older than 14 days, except what the pickup still takes, moves to
+/// <c>archive/YYYY-MM/</c> in one commit. Never calls a model, never throws to the caller except on cancellation. Built only by <see cref="ServiceCollectionExtensions.AddBusSweep"/>;
 /// public so <c>zyggy sweep</c> can run a pass, like <see cref="BusPickup"/>.
 /// </summary>
 public sealed partial class BusSweep
@@ -27,6 +28,9 @@ public sealed partial class BusSweep
 
     /// <summary>What a claim may exceed its timeout by before it is stale (§4).</summary>
     private static readonly TimeSpan Grace = TimeSpan.FromMinutes(15);
+
+    /// <summary>The age past which a <c>reports/</c> or <c>context/</c> file is archived (§4).</summary>
+    private static readonly TimeSpan ArchiveAge = TimeSpan.FromDays(14);
 
     private readonly BusRepository _bus;
     private readonly EnvelopeSigner _signer;
@@ -148,12 +152,73 @@ public sealed partial class BusSweep
             }
         }
 
+        (WriteOutcome? archived, int count, DateTimeOffset? oldest) = await ArchiveAsync(ct).ConfigureAwait(false);
+        if (archived is WriteFailed archiveFailed)
+        {
+            failure ??= archiveFailed;
+            NoteFailed(archiveFailed);
+            count = 0;
+            oldest = null;
+        }
+        else if (archived is not null)
+        {
+            deferred |= archived is Deferred;
+            string oldestText = Utc(oldest!.Value);
+            LogArchived(count, oldestText, archived is Deferred ? "deferred" : "pushed");
+        }
+
         if (failure is null)
         {
             _failureLogged = false;
         }
 
-        return new SweepResult(actions, failure, deferred);
+        return new SweepResult(actions, failure, deferred) { Archived = count, OldestArchived = oldest };
+    }
+
+    // Step 2 of the pass: every reports/ and context/ file older than 14 days, except what the pickup still takes, in one commit.
+    private async Task<(WriteOutcome? Outcome, int Count, DateTimeOffset? Oldest)> ArchiveAsync(CancellationToken ct)
+    {
+        IReadOnlyList<SweepArchiveFile> files;
+        try
+        {
+            files = await _bus.ListArchiveForSweepAsync(ct).ConfigureAwait(false);
+        }
+        catch (BusBusyException ex)
+        {
+            return (new WriteFailed("lock", ex.Message), 0, null);
+        }
+
+        DateTimeOffset now = _bus.Clock.GetUtcNow();
+        var moves = new List<(BusFile File, DateTimeOffset Created)>();
+        foreach (SweepArchiveFile file in files)
+        {
+            if (file.Dated is not { } dated || now - dated <= ArchiveAge || await PickupTakesAsync(file, ct).ConfigureAwait(false))
+            {
+                continue;
+            }
+
+            moves.Add((file.File, dated));
+        }
+
+        if (moves.Count == 0)
+        {
+            return (null, 0, null);
+        }
+
+        WriteOutcome outcome = await _bus.SettleAsync(moves, [], ct).ConfigureAwait(false);
+        return (outcome, moves.Count, moves.Min(m => m.Created));
+    }
+
+    // A file the pickup still takes stays where it is, whatever its age (spec 17 "The pass", step 2).
+    private async Task<bool> PickupTakesAsync(SweepArchiveFile file, CancellationToken ct)
+    {
+        if (file.Folder == MachineName.Central)
+        {
+            return false;
+        }
+
+        EnvelopeResult verified = await _signer.ParseAndVerifyAsync(file.Bytes, _bus.Me.Tenant, ct).ConfigureAwait(false);
+        return verified.IsAccepted && BusPickup.Takes(new PickupCandidate(file.File, file.Folder, file.Kind, file.Bytes), verified.Envelope!);
     }
 
     // One stale claim: rejected when it does not verify, exhausted at three attempts or more, otherwise re-queued.
@@ -276,6 +341,9 @@ public sealed partial class BusSweep
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "claimed job {Id} on {Machine} does not verify ({Reason}): rejected")]
     private partial void LogRejected(string id, string machine, string reason);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "archived {Count} file(s) older than 14 days, oldest created {Oldest}; {State}")]
+    private partial void LogArchived(int count, string oldest, string state);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "sweep: claim time of {Path} unreadable; claim left")]
     private partial void LogClaimTimeUnreadable(string path);

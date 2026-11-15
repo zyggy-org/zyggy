@@ -67,7 +67,7 @@ internal static class SweepCommand
             await io.Out.WriteLineAsync(ActionLine(action));
         }
 
-        await io.Out.WriteLineAsync(string.Create(CultureInfo.InvariantCulture, $"sweep: {result.Requeued} re-queued, {result.Exhausted} exhausted, {result.Rejected} rejected, 0 archived"));
+        await io.Out.WriteLineAsync(string.Create(CultureInfo.InvariantCulture, $"sweep: {result.Requeued} re-queued, {result.Exhausted} exhausted, {result.Rejected} rejected, {result.Archived} archived"));
         if (result.Failure is { } failure)
         {
             await io.Error.WriteLineAsync($"zyggy: sweep: failed at {failure.Stage}: {failure.Detail}");

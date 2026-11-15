@@ -36,6 +36,8 @@ internal sealed class SweepClaimsHarness : IDisposable
 
     private readonly Dictionary<string, ProcessResult> _claimTimes = new(StringComparer.Ordinal);
 
+    private readonly Dictionary<string, ProcessResult> _addedTimes = new(StringComparer.Ordinal);
+
     private readonly HashSet<string> _failingMoves = new(StringComparer.Ordinal);
 
     private ISecretStore? _store;
@@ -89,6 +91,10 @@ internal sealed class SweepClaimsHarness : IDisposable
 
     public void ClaimTimeUnreadable(string path) => _claimTimes[path] = RecordingProcessRunner.Fail(128, "fatal: bad object HEAD\n");
 
+    /// <summary>Spec 17 slice 5: the committer time of the commit that added <paramref name="path"/>, as <c>git log --diff-filter=A</c> answers it.</summary>
+    public void AddedAt(string path, DateTimeOffset time) =>
+        _addedTimes[path] = RecordingProcessRunner.Ok(time.ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture) + "\n");
+
     public void FailMoveOf(string path) => _failingMoves.Add(path);
 
     public async Task<BusRepository> RepositoryAsync(CancellationToken ct, MachineName? me = null)
@@ -120,6 +126,8 @@ internal sealed class SweepClaimsHarness : IDisposable
     {
         switch (RecordingProcessRunner.SubCommand(spec))
         {
+            case "log" when spec.Arguments.Contains("--diff-filter=A"):
+                return _addedTimes.TryGetValue(spec.Arguments[^1], out ProcessResult? added) ? added : RecordingProcessRunner.Ok();
             case "log":
                 return _claimTimes.TryGetValue(spec.Arguments[^1], out ProcessResult? time) ? time : RecordingProcessRunner.Ok();
             case "mv" when _failingMoves.Contains(spec.Arguments[2]):

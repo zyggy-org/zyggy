@@ -705,6 +705,45 @@ public sealed partial class BusRepository
     }
 
     /// <summary>
+    /// The sweep's archive input (spec 17): under the checkout write lock, every top-level <c>*.md</c> in the <c>reports/</c> then
+    /// <c>context/</c> folder of every machine of this tenant, Central included, machines and files in ordinal order, each with its
+    /// bytes, its leniently read <c>created</c> and — only when that cannot be read — the time of the commit that added it. Never
+    /// <c>items/</c> or <c>jobs/</c>, never another tenant's subtree; nothing is verified here.
+    /// </summary>
+    /// <exception cref="BusBusyException">Another zyggy process held the checkout's write lock for the whole wait.</exception>
+    internal async Task<IReadOnlyList<SweepArchiveFile>> ListArchiveForSweepAsync(CancellationToken ct)
+    {
+        using IDisposable handle = await BusCheckoutLock.AcquireAsync(_checkoutRoot, BusCheckoutLock.WriteLockName, LockTimeout, _clock, ct).ConfigureAwait(false)
+            ?? throw new BusBusyException();
+        string nodes = BusPaths.Resolve(_checkoutRoot, BusPaths.Nodes(_me.Tenant));
+        if (!Directory.Exists(nodes))
+        {
+            return [];
+        }
+
+        var files = new List<SweepArchiveFile>();
+        IEnumerable<MachineName> machines = Directory.EnumerateDirectories(nodes)
+            .Select(d => MachineName.TryParse(Path.GetFileName(d), out MachineName? machine) ? machine : null)
+            .OfType<MachineName>()
+            .OrderBy(m => m.Value, StringComparer.Ordinal);
+        foreach (MachineName machine in machines)
+        {
+            foreach ((string folder, BusFolder kind) in new[] { (BusPaths.Reports(_me.Tenant, machine), BusFolder.Reports), (BusPaths.Context(_me.Tenant, machine), BusFolder.Context) })
+            {
+                foreach (BusFile file in await ListFolderAsync(folder, ct).ConfigureAwait(false))
+                {
+                    byte[] bytes = await File.ReadAllBytesAsync(BusPaths.Resolve(_checkoutRoot, file.RelativePath), ct).ConfigureAwait(false);
+                    DateTimeOffset? created = EnvelopeParser.PeekHeader(bytes)?.Created;
+                    DateTimeOffset? added = created is null ? await _git.AddedCommitTimeAsync(_checkoutRoot, file.RelativePath, ct).ConfigureAwait(false) : null;
+                    files.Add(new SweepArchiveFile(file, machine, kind, bytes, created, added));
+                }
+            }
+        }
+
+        return files;
+    }
+
+    /// <summary>
     /// §4 state machine as amended by deliverable 17: Central's sweep writes a stale claim back into the same machine's <c>jobs/</c>
     /// as <paramref name="signedJob"/> (the job with <c>attempt</c> raised, re-signed by Central) — one <c>git mv</c>, the new bytes,
     /// one commit <c>&lt;tenant&gt; requeue &lt;id&gt; central→&lt;machine&gt;</c>.

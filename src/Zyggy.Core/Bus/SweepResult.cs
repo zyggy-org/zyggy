@@ -38,4 +38,10 @@ public sealed record SweepResult(IReadOnlyList<SweepAction> Actions, WriteFailed
 
     /// <summary>Gets the number of claims rejected.</summary>
     public int Rejected => Actions.Count(a => a.Kind == SweepActionKind.Rejected);
+
+    /// <summary>Gets the number of <c>reports/</c> and <c>context/</c> files moved to <c>archive/</c> by the pass's archive commit.</summary>
+    public int Archived { get; init; }
+
+    /// <summary>Gets the oldest <c>created</c> (or, for a file whose <c>created</c> cannot be read, adding-commit time) among the archived files; <see langword="null"/> when none was archived.</summary>
+    public DateTimeOffset? OldestArchived { get; init; }
 }
