@@ -55,7 +55,17 @@ public sealed partial class BusSweep
     /// <param name="ct">Cancellation token.</param>
     /// <returns>What the pass did; a failure is logged once per streak and carried in the result.</returns>
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="ct"/> is cancelled.</exception>
-    public async Task<SweepResult> RunAsync(CancellationToken ct)
+    public Task<SweepResult> RunAsync(CancellationToken ct) => RunAsync(dryRun: false, ct);
+
+    /// <summary>
+    /// Runs one pass; with <paramref name="dryRun"/> it decides every claim and archive move as a pass would, but signs nothing, writes
+    /// nothing (no file, no commit, no push) and logs no action line — what <c>zyggy sweep --dry-run</c> prints (spec 17 CLI).
+    /// </summary>
+    /// <param name="dryRun">Whether to only report what a pass would do.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>What the pass did, or would do; a failure is logged once per streak and carried in the result.</returns>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="ct"/> is cancelled.</exception>
+    public async Task<SweepResult> RunAsync(bool dryRun, CancellationToken ct)
     {
         using IDisposable? scope = _log.BeginScope(new Dictionary<string, object>
         {
@@ -66,7 +76,7 @@ public sealed partial class BusSweep
         var actions = new List<SweepAction>();
         try
         {
-            return await RunCoreAsync(actions, ct).ConfigureAwait(false);
+            return await RunCoreAsync(actions, dryRun, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -84,7 +94,7 @@ public sealed partial class BusSweep
 
     private static string Utc(DateTimeOffset time) => time.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
 
-    private async Task<SweepResult> RunCoreAsync(List<SweepAction> actions, CancellationToken ct)
+    private async Task<SweepResult> RunCoreAsync(List<SweepAction> actions, bool dryRun, CancellationToken ct)
     {
         IReadOnlyList<SweepClaim> claims;
         try
@@ -128,7 +138,7 @@ public sealed partial class BusSweep
                 continue;
             }
 
-            (WriteOutcome outcome, SweepAction action) = await SettleAsync(claim, claimed, parsed, ct).ConfigureAwait(false);
+            (WriteOutcome? outcome, SweepAction action) = await SettleAsync(claim, claimed, parsed, dryRun, ct).ConfigureAwait(false);
             if (outcome is WriteFailed failed)
             {
                 failure ??= failed;
@@ -138,6 +148,11 @@ public sealed partial class BusSweep
 
             deferred |= outcome is Deferred;
             actions.Add(action);
+            if (dryRun)
+            {
+                continue;
+            }
+
             switch (action.Kind)
             {
                 case SweepActionKind.Requeued:
@@ -152,7 +167,7 @@ public sealed partial class BusSweep
             }
         }
 
-        (WriteOutcome? archived, int count, DateTimeOffset? oldest) = await ArchiveAsync(ct).ConfigureAwait(false);
+        (WriteOutcome? archived, int count, DateTimeOffset? oldest) = await ArchiveAsync(dryRun, ct).ConfigureAwait(false);
         if (archived is WriteFailed archiveFailed)
         {
             failure ??= archiveFailed;
@@ -176,7 +191,8 @@ public sealed partial class BusSweep
     }
 
     // Step 2 of the pass: every reports/ and context/ file older than 14 days, except what the pickup still takes, in one commit.
-    private async Task<(WriteOutcome? Outcome, int Count, DateTimeOffset? Oldest)> ArchiveAsync(CancellationToken ct)
+    // The outcome is null when nothing moved: nothing to archive, or a dry run (which still counts what it would move).
+    private async Task<(WriteOutcome? Outcome, int Count, DateTimeOffset? Oldest)> ArchiveAsync(bool dryRun, CancellationToken ct)
     {
         IReadOnlyList<SweepArchiveFile> files;
         try
@@ -205,8 +221,10 @@ public sealed partial class BusSweep
             return (null, 0, null);
         }
 
-        WriteOutcome outcome = await _bus.SettleAsync(moves, [], ct).ConfigureAwait(false);
-        return (outcome, moves.Count, moves.Min(m => m.Created));
+        DateTimeOffset oldest = moves.Min(m => m.Created);
+        return dryRun
+            ? (null, moves.Count, oldest)
+            : (await _bus.SettleAsync(moves, [], ct).ConfigureAwait(false), moves.Count, oldest);
     }
 
     // A file the pickup still takes stays where it is, whatever its age (spec 17 "The pass", step 2).
@@ -221,14 +239,20 @@ public sealed partial class BusSweep
         return verified.IsAccepted && BusPickup.Takes(new PickupCandidate(file.File, file.Folder, file.Kind, file.Bytes), verified.Envelope!);
     }
 
-    // One stale claim: rejected when it does not verify, exhausted at three attempts or more, otherwise re-queued.
-    private async Task<(WriteOutcome Outcome, SweepAction Action)> SettleAsync(SweepClaim claim, DateTimeOffset claimed, EnvelopeResult parsed, CancellationToken ct)
+    // One stale claim: rejected when it does not verify, exhausted at three attempts or more, otherwise re-queued. A dry run returns
+    // the decision with no outcome, before anything is signed or written.
+    private async Task<(WriteOutcome? Outcome, SweepAction Action)> SettleAsync(SweepClaim claim, DateTimeOffset claimed, EnvelopeResult parsed, bool dryRun, CancellationToken ct)
     {
         EnvelopeId id = claim.File.Id;
         if (await RefusalAsync(claim, parsed, ct).ConfigureAwait(false) is { } refusal)
         {
             string reason = EnvelopeWire.ToWire(refusal.Reason);
             var rejected = new SweepAction(SweepActionKind.Rejected, id, claim.Folder, parsed.IsAccepted ? parsed.Envelope.Job?.Attempt ?? 1 : 1, reason);
+            if (dryRun)
+            {
+                return (null, rejected);
+            }
+
             if (EnvelopeParser.PeekFrom(claim.Bytes) is not { } from)
             {
                 return (await _bus.RejectStaleAsync(claim, null, ct).ConfigureAwait(false), rejected);
@@ -243,6 +267,13 @@ public sealed partial class BusSweep
 
         Model job = parsed.Envelope!;
         int attempt = job.Job!.Attempt;
+        if (dryRun)
+        {
+            return attempt >= MaxAttempts
+                ? (null, new SweepAction(SweepActionKind.Exhausted, id, claim.Folder, attempt, null))
+                : (null, new SweepAction(SweepActionKind.Requeued, id, claim.Folder, attempt + 1, null));
+        }
+
         if (attempt >= MaxAttempts)
         {
             string body = string.Create(CultureInfo.InvariantCulture, $"machine: {claim.Folder.Value}\nattempts: {attempt}\nclaimed: {Utc(claimed)}\n");

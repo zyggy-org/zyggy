@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Zyggy.Core.Bus;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Processes;
+using Zyggy.Core.Tenancy;
 using Zyggy.Core.Tests.Infrastructure;
 using Zyggy.Integration.Infrastructure;
 
@@ -111,8 +112,8 @@ public sealed class SweepSettleTests : IAsyncLifetime
         (await _harness.Bus.LastCommitSubjectAsync(ct)).Trim().Should().Be($"acme reject {job.Header.Id.Value} central→unknown");
     }
 
-    // AC-10: after a re-queue, an exhausted report and a rejection, zyggy verify shows no new drift: the one FAIL is the
-    // non-verifying file, at its rejected path, with the outcome it already had in jobs/claimed/. (Archive half: slice 6.)
+    // AC-10: after a re-queue, an exhausted report, a rejection and an archive move, zyggy verify shows no new drift: the one FAIL is
+    // the non-verifying file, at its rejected path, with the outcome it already had in jobs/claimed/; the archived report is OK.
     [Fact]
     public async Task Sweep_RequeueExhaustedRejected_VerifyReportsNoNewDrift()
     {
@@ -124,6 +125,10 @@ public sealed class SweepSettleTests : IAsyncLifetime
         await SeedClaimAsync(requeue.Header.Id, EnvelopeWriter.Serialize(requeue), ct);
         await SeedClaimAsync(exhaust.Header.Id, EnvelopeWriter.Serialize(exhaust), ct);
         await SeedClaimAsync(reject.Header.Id, Tampered(reject), ct);
+        DateTimeOffset old = new(DateTime.UtcNow.Date.AddDays(-20).AddHours(12), TimeSpan.Zero);
+        SeededJob archive = await _harness.Bus.SeedSignedReportAsync(
+            CliHarness.HomeLaptop, MachineName.Parse("work-laptop"), EnvelopeId.New(old), TestKeys.Acme1, _harness.Store, "done\n", created: old, ct: ct);
+        string archived = BusPaths.EnvelopeFile(BusPaths.Archive(CliHarness.Acme, old.Year, old.Month), archive.Id);
         var (_, before) = await _harness.RunAsync(["verify"], _harness.CentralNodeJson, ct: ct);
         var (sweepExit, sweep) = await SweepAsync(ct);
         sweepExit.Should().Be(0, sweep.Stderr);
@@ -136,6 +141,8 @@ public sealed class SweepSettleTests : IAsyncLifetime
         failedBefore.Should().Equal($"FAIL {ClaimedPath(reject.Header.Id)} invalid_signature (sig)");
         FailLines(after.Stdout).Should().Equal($"FAIL {RejectedPath(reject.Header.Id)} invalid_signature (sig)");
         after.Stdout.Should().NotContain(ClaimedPath(exhaust.Header.Id), "the exhausted claim is removed, not left beside its report");
+        after.Stdout.Split('\n').Should().Contain("OK " + archived, "the archive move is checked like any bus file and causes no drift");
+        after.Stdout.Should().NotContain(archive.RelativePath + "\n");
         IReadOnlyList<string> reports = await CentralReportsAsync(ct);
         reports.Should().HaveCount(2, "the exhausted report and the rejection report");
         after.Stdout.Split('\n').Should().Contain(
