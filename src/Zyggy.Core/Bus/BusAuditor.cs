@@ -177,6 +177,8 @@ public sealed partial class BusAuditor
             BusFolder.Context => EnvelopeType.Context,
             BusFolder.Items => EnvelopeType.Item,
             BusFolder.Status => EnvelopeType.Status,
+            BusFolder.Questions => EnvelopeType.Question,
+            BusFolder.Decisions => EnvelopeType.Decision,
             _ => null,
         };
         if (expected is { } type && envelope.Type != type)
@@ -188,8 +190,12 @@ public sealed partial class BusAuditor
         {
             switch (location.Folder)
             {
-                case BusFolder.Reports or BusFolder.Context or BusFolder.Items or BusFolder.Status when envelope.Header.From != machine:
+                case BusFolder.Reports or BusFolder.Context or BusFolder.Items or BusFolder.Status or BusFolder.Questions when envelope.Header.From != machine:
                     return new AuditEntry(path, AuditOutcome.WriterMismatch, "from", "from " + envelope.Header.From.Value + " in " + machine.Value + "'s folder");
+
+                // Deliverable 18: only Central decides, so a decision sits in Central's folder and nowhere else (the parser already refuses one not from Central).
+                case BusFolder.Decisions when machine != MachineName.Central:
+                    return new AuditEntry(path, AuditOutcome.WriterMismatch, "from", "a decision in " + machine.Value + "'s folder; decisions belong in central's");
                 case BusFolder.Items when envelope.Header.To != MachineName.Central:
                     return new AuditEntry(path, AuditOutcome.WrongRecipient, "to", "to " + envelope.Header.To.Value + ", items go to central");
                 case BusFolder.Jobs or BusFolder.Claimed or BusFolder.Rejected when envelope.Header.To != machine:

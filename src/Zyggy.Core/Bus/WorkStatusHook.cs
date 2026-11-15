@@ -202,6 +202,7 @@ public sealed partial class WorkStatusHook
                 return new WorkHookOutcome(WorkHookResult.Skipped, "the session's folder gives no project name");
             }
 
+            state = state with { Project = project };
             WorkStatusRequest request = await RequestAsync(project, input, state, now, ct).ConfigureAwait(false);
             WorkStatusResult result = await _publisher().PublishAsync(request, ct).ConfigureAwait(false);
             switch (result)

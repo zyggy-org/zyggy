@@ -10,7 +10,8 @@ namespace Zyggy.Core.Bus;
 /// <param name="Published">When its last status reached the bus checkout; <see langword="null"/> when none did.</param>
 /// <param name="Step">The step the session stated, when it did.</param>
 /// <param name="Failing"><see langword="true"/> while publishing keeps failing, so the failure is reported once per streak.</param>
-internal sealed record WorkSessionState(DateTimeOffset Since, DateTimeOffset? Published = null, string? Step = null, bool Failing = false);
+/// <param name="Project">The project the session works in (its registry name), once a hook call derived it.</param>
+internal sealed record WorkSessionState(DateTimeOffset Since, DateTimeOffset? Published = null, string? Step = null, bool Failing = false, string? Project = null);
 
 /// <summary>
 /// The per-session state files of the status hooks, under <c>&lt;nodeDir&gt;/work/&lt;tenant&gt;/&lt;session&gt;.state</c>, beside the context
@@ -56,7 +57,35 @@ internal sealed class WorkSessionStore
         }
 
         DateTimeOffset? published = values.TryGetValue("published", out string? publishedText) && TryTimestamp(publishedText, out DateTimeOffset p) ? p : null;
-        return new WorkSessionState(since, published, values.GetValueOrDefault("step"), values.ContainsKey("failing"));
+        return new WorkSessionState(since, published, values.GetValueOrDefault("step"), values.ContainsKey("failing"), values.GetValueOrDefault("project"));
+    }
+
+    /// <summary>
+    /// The live session of <paramref name="project"/> on this machine that was heard from last (its last publish, else its start),
+    /// or <see langword="null"/> when no session state names the project.
+    /// </summary>
+    public string? LatestSession(string project)
+    {
+        if (!Directory.Exists(_directory))
+        {
+            return null;
+        }
+
+        (string Session, DateTimeOffset Heard)? latest = null;
+        foreach (string file in Directory.EnumerateFiles(_directory, "*.state", SearchOption.TopDirectoryOnly))
+        {
+            string session = Path.GetFileNameWithoutExtension(file);
+            if (Load(session) is { } state && state.Project == project)
+            {
+                DateTimeOffset heard = state.Published ?? state.Since;
+                if (latest is null || heard > latest.Value.Heard)
+                {
+                    latest = (session, heard);
+                }
+            }
+        }
+
+        return latest?.Session;
     }
 
     public void Save(string session, WorkSessionState state)
@@ -77,6 +106,11 @@ internal sealed class WorkSessionStore
         if (state.Failing)
         {
             text.Append("failing=1\n");
+        }
+
+        if (state.Project is not null)
+        {
+            text.Append("project=").Append(state.Project).Append('\n');
         }
 
         string path = PathOf(session);

@@ -48,6 +48,7 @@ The single configuration file (§10). Path: `--config`, else `ZYGGY_NODE_JSON`, 
 | `devRoots` | the folders whose direct children are scanned for projects; a job path must lie under one | `[]` (nothing found, every path refused) |
 | `discovery.intervalMinutes`, `discovery.lastSeenHours`, `discovery.detail` | rescan period, the liveness stamp's maximum age, `full` or `names` | 60, 6, `full` |
 | `sweep.intervalMinutes` | read only on Central: minutes between two sweep passes of the node service, 1–1440 (out of range: exit 3); ignored on every other machine | 60 |
+| `supervision.enabled`, `supervision.detail`, `supervision.statusMinutes`, `supervision.workMachines` | deliverable 18: whether sessions publish a status and may ask Central, `full` or `fixed` status fields, the refresh period in minutes, the machines `zyggy work` shows with fixed fields only (Cli README, "node.json") | `true`, `fixed` when `discovery.detail` is `names` else `full`, 10, `[]` |
 | `agentCore.path` | absolute path of this machine's `zyggy-core` checkout, whose commit `/health` reports as `agentCoreSha` | the checkout `zyggy setup` makes: `C:/agents/zyggy-core` on Windows, `~/agents/zyggy-core` elsewhere (Central: set it to its working directory) |
 
 Secrets are never in it; any key named like a credential is refused.

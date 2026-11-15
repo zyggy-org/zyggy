@@ -16,7 +16,7 @@ namespace Zyggy.Cli.Commands;
 /// <summary>
 /// <c>zyggy work</c> (deliverable 18, "Live work is visible"): without an option it prints what every machine is doing — live sessions
 /// and open jobs — from the bus checkout as it is. <c>--session-start</c>, <c>--turn-end</c> and <c>--session-end</c> are the laptop
-/// hooks that publish, refresh and remove a session's status; they never print on stdout and always exit 0. <c>--step</c> records the
+/// hooks that publish, refresh and remove a session's status; they always exit 0 and print nothing on stdout, except a decision that came after the wait of a question, once, at session start. <c>--step</c> records the
 /// step a session says it is on. Ordering, option reading and rendering only — every decision is in Core
 /// (<see cref="WorkStatusHook"/>, <see cref="BusInventory.WorkAsync"/>).
 /// </summary>
@@ -68,7 +68,8 @@ internal static class WorkCommand
             foreach (WorkSession session in machine.Sessions)
             {
                 StatusFields s = session.Status;
-                sb.Append("  session ").Append(s.Session).Append("  ").Append(s.Project).Append("  ").Append(session.Activity.ToString().ToLowerInvariant())
+                sb.Append("  session ").Append(s.Session).Append("  ").Append(s.Project).Append("  ")
+                    .Append(session.Activity == SessionActivity.WaitingForCentral ? "waiting for Central" : session.Activity.ToString().ToLowerInvariant())
                     .Append("  last turn ").Append(HealthRules.Age(board.At, s.Activity))
                     .Append("  since ").Append(s.Since.ToUniversalTime().ToString(TimestampFormat, CultureInfo.InvariantCulture));
                 if (s.Branch is not null)
@@ -92,6 +93,14 @@ internal static class WorkCommand
                 }
 
                 sb.Append('\n');
+            }
+
+            // Never the question's text: the board names what waits, `zyggy ask` and the decision carry the words.
+            foreach (WorkQuestion question in machine.Questions)
+            {
+                sb.Append("  question ").Append(question.Id.Value).Append("  ").Append(question.Project).Append("  ")
+                    .Append(question.Job is { } asker ? "job " + asker.Value : "session " + question.Session)
+                    .Append("  asked ").Append(HealthRules.Age(board.At, question.Asked)).Append('\n');
             }
 
             foreach (WorkJob job in machine.Jobs)
@@ -215,6 +224,16 @@ internal static class WorkCommand
         if (line is not null)
         {
             await io.Error.WriteLineAsync(line);
+        }
+
+        if (mode == "start")
+        {
+            // The one thing a hook mode prints on stdout: a decision that came after the wait of a question asked in this project, once.
+            foreach (DecisionRecord late in await services.GetRequiredService<AskFlow>().LateDecisionsAsync(hookJson, ct))
+            {
+                await io.Out.WriteAsync(
+                    "zyggy: Central decided on question " + late.InReplyTo.Value + " (" + EnvelopeWire.ToWire(late.Fields.Kind) + "), after the wait ended:\n" + late.Text);
+            }
         }
 
         return ExitCodes.Ok;

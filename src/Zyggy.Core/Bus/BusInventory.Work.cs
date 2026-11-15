@@ -12,7 +12,8 @@ public sealed partial class BusInventory
 
     /// <summary>
     /// What every machine of the tenant is doing: the sessions whose status verifies and was written by the folder's machine to
-    /// Central, the jobs without a report, and the newest report. A status that fails is counted, never shown.
+    /// Central (waiting for Central while an open question names them), the open questions, the jobs without a report, and the
+    /// newest report. A status that fails is counted, never shown.
     /// </summary>
     /// <param name="workMachines">Machines whose statuses are returned with the four fixed fields only (founding spec §8).</param>
     /// <param name="ct">Cancellation token.</param>
@@ -28,6 +29,18 @@ public sealed partial class BusInventory
         int notShown = 0;
         foreach (MachineName machine in Machines())
         {
+            // An answered question left the folder in its decision's commit, so what is here is open; one that does not verify, or
+            // that another machine wrote, is the auditor's business and makes nobody wait.
+            var questions = new List<WorkQuestion>();
+            foreach ((string path, EnvelopeId id) in Envelopes(BusPaths.Questions(_me.Tenant, machine)).OrderBy(e => e.Id.Value, StringComparer.Ordinal))
+            {
+                (_, Envelope.Envelope? verified) = await SummariseAsync(path, id, ct).ConfigureAwait(false);
+                if (verified?.Question is { } question && verified.Header.From == machine && verified.Header.Id == id)
+                {
+                    questions.Add(new WorkQuestion(id, question.Project, question.Session, question.Job, verified.Header.Created));
+                }
+            }
+
             var sessions = new List<WorkSession>();
             foreach ((string path, EnvelopeId id) in Envelopes(BusPaths.Status(_me.Tenant, machine)))
             {
@@ -39,7 +52,8 @@ public sealed partial class BusInventory
                 }
 
                 StatusFields shown = workMachines.Contains(machine) ? new StatusFields(status.Project, status.Session, status.Since, status.Activity) : status;
-                sessions.Add(new WorkSession(Classify(now, verified.Header.Created, status.Activity), shown));
+                bool waiting = questions.Any(q => q.Session == status.Session);
+                sessions.Add(new WorkSession(waiting ? SessionActivity.WaitingForCentral : Classify(now, verified.Header.Created, status.Activity), shown));
             }
 
             var jobs = new List<WorkJob>();
@@ -58,9 +72,9 @@ public sealed partial class BusInventory
                 (lastReport, _) = await SummariseAsync(newest.Path, newest.Id, ct).ConfigureAwait(false);
             }
 
-            if (sessions.Count > 0 || jobs.Count > 0 || lastReport is not null)
+            if (sessions.Count > 0 || jobs.Count > 0 || questions.Count > 0 || lastReport is not null)
             {
-                machines.Add(new MachineWork(machine, [.. sessions.OrderByDescending(s => s.Status.Activity)], jobs, lastReport));
+                machines.Add(new MachineWork(machine, [.. sessions.OrderByDescending(s => s.Status.Activity)], jobs, lastReport) { Questions = questions });
             }
         }
 

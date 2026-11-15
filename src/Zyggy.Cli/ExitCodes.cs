@@ -16,6 +16,9 @@ internal static class ExitCodes
     public const int Failed = 6;
     public const int PushDeferred = 7;
 
+    /// <summary>Spec 18 CLI table: <c>zyggy ask</c> got no decision within its wait; the agent follows the default it stated.</summary>
+    public const int NoAnswer = 8;
+
     /// <summary>Spec 08 exit-code table: <c>zyggy status</c> amber ("look later"); the same number as <see cref="NoRun"/>.</summary>
     public const int Amber = 1;
 

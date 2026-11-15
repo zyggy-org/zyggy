@@ -222,6 +222,30 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<TimeProvider>(),
                 log);
         });
+        // Deliverable 18: the question and decision senders. Resolving without a KeyId or the secret patterns throws (the verbs check both first — fail closed).
+        services.TryAddSingleton(sp =>
+        {
+            ILogger<QuestionAsker> log = sp.GetService<ILoggerFactory>()?.CreateLogger<QuestionAsker>() ?? NullLogger<QuestionAsker>.Instance;
+            return new QuestionAsker(
+                sp.GetRequiredService<BusRepository>(),
+                sp.GetRequiredService<EnvelopeSigner>(),
+                sp.GetRequiredService<KeyId>(),
+                sp.GetRequiredService<SecretPatterns>(),
+                sp.GetRequiredService<NodeConfiguration>().Supervision.Enabled,
+                sp.GetRequiredService<TimeProvider>(),
+                log);
+        });
+        services.TryAddSingleton(sp =>
+        {
+            ILogger<DecisionWriter> log = sp.GetService<ILoggerFactory>()?.CreateLogger<DecisionWriter>() ?? NullLogger<DecisionWriter>.Instance;
+            return new DecisionWriter(
+                sp.GetRequiredService<BusRepository>(),
+                sp.GetRequiredService<EnvelopeSigner>(),
+                sp.GetRequiredService<KeyId>(),
+                sp.GetRequiredService<SecretPatterns>(),
+                sp.GetRequiredService<TimeProvider>(),
+                log);
+        });
         // Deliverable 41: the item sender. Resolving without a KeyId, the secret patterns or ItemSubmitterOptions throws (the verb registers them first — fail closed).
         services.TryAddSingleton(sp =>
         {

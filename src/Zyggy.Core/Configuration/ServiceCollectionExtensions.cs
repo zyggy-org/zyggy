@@ -51,6 +51,16 @@ public static class ServiceCollectionExtensions
             configuration.Supervision,
             sp.GetRequiredService<TimeProvider>(),
             sp.GetService<ILoggerFactory>()?.CreateLogger<WorkStatusHook>() ?? NullLogger<WorkStatusHook>.Instance));
+        // Deliverable 18: the asking side of a question; the sender is resolved only once a question is written (it needs the signing key and the secret patterns).
+        services.TryAddSingleton(sp => new AskFlow(
+            () => sp.GetRequiredService<QuestionAsker>(),
+            sp.GetRequiredService<BusRepository>(),
+            sp.GetRequiredService<BusInventory>(),
+            new WorkSessionStore(configuration.EffectiveNodeDir, configuration.Tenant),
+            new AskedStore(configuration.EffectiveNodeDir, configuration.Tenant),
+            configuration.Supervision,
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetService<ILoggerFactory>()?.CreateLogger<AskFlow>() ?? NullLogger<AskFlow>.Instance));
         if (configuration.SignWith is { } signWith)
         {
             services.AddSingleton<KeyId>(signWith);

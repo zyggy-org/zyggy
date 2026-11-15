@@ -14,10 +14,21 @@ public enum SessionActivity
 
     /// <summary>The status file itself is 60 minutes old or more: the session stopped saying anything.</summary>
     Silent,
+
+    /// <summary>An open question in the machine's <c>questions/</c> folder names the session: it waits for Central.</summary>
+    WaitingForCentral,
 }
 
+/// <summary>One question of a machine that has no decision yet (it still sits in the machine's <c>questions/</c> folder). Never its text.</summary>
+/// <param name="Id">The question's id.</param>
+/// <param name="Project">The project it is about.</param>
+/// <param name="Session">The asking session, when a session asked.</param>
+/// <param name="Job">The asking job, when a job run asked.</param>
+/// <param name="Asked">When it was asked.</param>
+public sealed record WorkQuestion(EnvelopeId Id, string Project, string? Session, EnvelopeId? Job, DateTimeOffset Asked);
+
 /// <summary>One session of a machine, from a status that verified and passed the writer rule.</summary>
-/// <param name="Activity">Working, idle or silent.</param>
+/// <param name="Activity">Working, idle, silent or waiting for Central.</param>
 /// <param name="Status">The status fields; for a work machine only the four fixed ones.</param>
 public sealed record WorkSession(SessionActivity Activity, StatusFields Status);
 
@@ -33,10 +44,14 @@ public sealed record WorkJob(EnvelopeId Id, string? Project, bool Claimed, DateT
 /// <param name="Sessions">Its sessions, newest activity first.</param>
 /// <param name="Jobs">Its claimed, then queued jobs, oldest first.</param>
 /// <param name="LastReport">The newest file in its <c>reports/</c> folder, when there is one.</param>
-public sealed record MachineWork(MachineName Machine, IReadOnlyList<WorkSession> Sessions, IReadOnlyList<WorkJob> Jobs, EnvelopeSummary? LastReport);
+public sealed record MachineWork(MachineName Machine, IReadOnlyList<WorkSession> Sessions, IReadOnlyList<WorkJob> Jobs, EnvelopeSummary? LastReport)
+{
+    /// <summary>Its open questions, oldest first.</summary>
+    public IReadOnlyList<WorkQuestion> Questions { get; init; } = [];
+}
 
 /// <summary>The board <c>zyggy work</c> prints (deliverable 18).</summary>
 /// <param name="At">The reader's clock.</param>
-/// <param name="Machines">The machines that have a session, an open job or a report, in name order.</param>
+/// <param name="Machines">The machines that have a session, an open job, an open question or a report, in name order.</param>
 /// <param name="StatusesNotShown">Status files left out because their signature or the writer rule failed.</param>
 public sealed record WorkBoard(DateTimeOffset At, IReadOnlyList<MachineWork> Machines, int StatusesNotShown);
