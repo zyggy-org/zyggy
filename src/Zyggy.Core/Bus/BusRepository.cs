@@ -931,7 +931,7 @@ public sealed partial class BusRepository
     }
 
     /// <summary>
-    /// The sweep's archive input (spec 17): under the checkout write lock, every top-level <c>*.md</c> in the <c>reports/</c> then
+    /// The sweep's archive input (spec 17; Central's <c>decisions/</c> after its own two folders since deliverable 18): under the checkout write lock, every top-level <c>*.md</c> in the <c>reports/</c> then
     /// <c>context/</c> folder of every machine of this tenant, Central included, machines and files in ordinal order, each with its
     /// bytes, its leniently read <c>created</c> and — only when that cannot be read — the time of the commit that added it. Never
     /// <c>items/</c> or <c>jobs/</c>, never another tenant's subtree; nothing is verified here.
@@ -954,7 +954,11 @@ public sealed partial class BusRepository
             .OrderBy(m => m.Value, StringComparer.Ordinal);
         foreach (MachineName machine in machines)
         {
-            foreach ((string folder, BusFolder kind) in new[] { (BusPaths.Reports(_me.Tenant, machine), BusFolder.Reports), (BusPaths.Context(_me.Tenant, machine), BusFolder.Context) })
+            // Deliverable 18: Central's own decisions are archived like reports; a decisions/ folder anywhere else is the auditor's business.
+            (string Folder, BusFolder Kind)[] folders = machine == MachineName.Central
+                ? [(BusPaths.Reports(_me.Tenant, machine), BusFolder.Reports), (BusPaths.Context(_me.Tenant, machine), BusFolder.Context), (BusPaths.Decisions(_me.Tenant, machine), BusFolder.Decisions)]
+                : [(BusPaths.Reports(_me.Tenant, machine), BusFolder.Reports), (BusPaths.Context(_me.Tenant, machine), BusFolder.Context)];
+            foreach ((string folder, BusFolder kind) in folders)
             {
                 foreach (BusFile file in await ListFolderAsync(folder, ct).ConfigureAwait(false))
                 {
@@ -1506,7 +1510,7 @@ public sealed partial class BusRepository
 
         bool allowed = role switch
         {
-            ArchiveRole.Source => location.Folder is BusFolder.Reports or BusFolder.Context,
+            ArchiveRole.Source => location.Folder is BusFolder.Reports or BusFolder.Context || (location.Folder == BusFolder.Decisions && location.Machine == MachineName.Central),
             ArchiveRole.Target => location.Folder == BusFolder.Archive,
             ArchiveRole.Question => location.Folder == BusFolder.Questions,
             _ => location.Folder == BusFolder.Items,
@@ -1566,7 +1570,7 @@ public sealed partial class BusRepository
 /// <summary>What a path is in Central's pass commit (the archive branch of the §4 write rule).</summary>
 internal enum ArchiveRole
 {
-    /// <summary>A <c>reports/</c> or <c>context/</c> file moved to the archive.</summary>
+    /// <summary>A <c>reports/</c> or <c>context/</c> file, or a file of Central's <c>decisions/</c> folder (deliverable 18), moved to the archive.</summary>
     Source,
 
     /// <summary>Its target under <c>archive/YYYY-MM/</c>.</summary>

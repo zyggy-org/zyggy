@@ -75,6 +75,38 @@ public sealed class SweepArchiveTests : IAsyncLifetime
         (await _harness.Bus.ExistsOnMainAsync(young.RelativePath, ct)).Should().BeTrue();
     }
 
+    // Spec 18 "Questions and decisions": a decision of Central older than 14 days is archived by the sweep, like a report, and
+    // `zyggy decisions` still lists it.
+    [Fact]
+    public async Task Sweep_OldDecision_Archived_StillListedByDecisions()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        DateTimeOffset twenty = Today.AddDays(-20);
+        EnvelopeId id = EnvelopeId.New(twenty);
+        Model decision = Model.CreateDecision(
+            new EnvelopeHeader(CliHarness.Acme, id, CliHarness.Central, CliHarness.HomeLaptop, twenty, EnvelopePriority.Normal, EnvelopeId.New(twenty.AddMinutes(-1))),
+            new DecisionFields(DecisionKind.Answer, DecisionBasis.Reported, "nothing to undo"),
+            Encoding.UTF8.GetBytes("Use the name central.\n"));
+        EnvelopeResult signed = await new EnvelopeSigner(_harness.Store).SignAsync(decision, TestKeys.Acme1, ct);
+        string path = BusPaths.EnvelopeFile(BusPaths.Decisions(CliHarness.Acme, CliHarness.Central), id);
+        await _harness.Bus.SeedRawFileAsync(path, EnvelopeWriter.Serialize(signed.Envelope!), "acme decision " + id.Value + " central→home-laptop", ct);
+        string blob = await BlobOnMainAsync(path, ct);
+        string target = Archived(id, twenty);
+
+        // Act
+        var (exit, console) = await SweepAsync(["sweep"], TimeProvider.System, ct);
+        var (_, listed) = await _harness.RunAsync(["decisions"], _harness.CentralNodeJson, ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        console.Stdout.Should().Contain("1 archived");
+        (await LastCommitBodyAsync(ct)).Should().Contain($"{path} → {target}");
+        (await BlobOnMainAsync(target, ct)).Should().Be(blob);
+        (await _harness.Bus.ExistsOnMainAsync(path, ct)).Should().BeFalse();
+        listed.Stdout.Should().Contain(id.Value).And.Contain("Use the name central.").And.Contain("(archived)");
+    }
+
     // AC-12: a file that does not parse is aged by, and filed in the month of, the commit that added it.
     [Fact]
     public async Task Sweep_UnparsableReport_ArchivedInMonthOfAddingCommit()
