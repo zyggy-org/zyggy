@@ -14,9 +14,10 @@ namespace Zyggy.Core.Bus;
 /// Central's sweep (spec 17; founding spec §4 state machine): every claim in a machine's <c>jobs/claimed/</c> that is older than
 /// its <c>timeout_minutes</c> + 15 min is re-queued with <c>attempt</c> raised and re-signed, ended with Central's
 /// <c>attempts_exhausted</c> report once it used three attempts, or rejected when it does not verify — one commit per claim.
-/// Never calls a model, never throws to the caller except on cancellation.
+/// Never calls a model, never throws to the caller except on cancellation. Built only by <see cref="ServiceCollectionExtensions.AddBusSweep"/>;
+/// public so <c>zyggy sweep</c> can run a pass, like <see cref="BusPickup"/>.
 /// </summary>
-internal sealed partial class BusSweep
+public sealed partial class BusSweep
 {
     /// <summary>The report reason of a job whose third claim went stale (founding spec §4 as amended by deliverable 17); written only here.</summary>
     internal const string AttemptsExhaustedReason = "attempts_exhausted";
@@ -43,7 +44,10 @@ internal sealed partial class BusSweep
         _log = log ?? throw new ArgumentNullException(nameof(log));
     }
 
-    /// <summary>Runs one pass over the stale claims of every machine of the tenant.</summary>
+    /// <summary>
+    /// Runs one pass over the stale claims of every machine of the tenant. The pass does not pull first: each write pulls, and the
+    /// pull before a pass belongs to the caller (<c>zyggy sweep</c>, Central's node).
+    /// </summary>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>What the pass did; a failure is logged once per streak and carried in the result.</returns>
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="ct"/> is cancelled.</exception>

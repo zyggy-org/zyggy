@@ -24,8 +24,8 @@ public sealed partial class BusRepository
 
     private const string EnvelopeExtension = ".md";
 
-    /// <summary>How a pull or write that never got the checkout lock begins its detail; <see cref="ItemSubmitter"/> maps it to the stage <c>lock</c>.</summary>
-    internal const string BusyDetail = "the bus checkout is busy: another zyggy process held its lock";
+    /// <summary>How a pull or write that never got the checkout lock begins its detail; <see cref="ItemSubmitter"/> maps it to the stage <c>lock</c>, and <c>zyggy sweep</c> to exit 4.</summary>
+    public const string BusyDetail = "the bus checkout is busy: another zyggy process held its lock";
 
     /// <summary>How long a write or pull waits for another process's checkout lock (one full write sequence incl. its push retries fits).</summary>
     private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(60);
