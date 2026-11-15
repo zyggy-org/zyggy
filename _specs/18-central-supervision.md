@@ -1,0 +1,494 @@
+# Spec: 18 — Central supervises and coordinates the owner's agents
+
+## Status
+
+- 2026-11-15: spec written from the handover `_specs/handover-central-supervision.md`. Not approved.
+- 2026-11-15: owner decisions taken in the interview (recorded under Decisions, D1–D8): this deliverable is number 18 and "Policy as data" moves to 44; the Central sweep is finished and released first; `work-laptop` is supervised in this deliverable with narrow built-in limits; Central may also send work into a live session; a merge, release or deploy needs the owner's words in a conversation or an explicit line in the mandate; the decision classes are a fixed list plus the mandate, no `policy.yaml`; the owner is told by a mail to himself; a supervised job may push the mandate's feature branch and `zyggy/<id>` branches.
+- 2026-11-15: critical read by a fresh reviewer, nine blocking findings, all worked in: a work machine's status defaults to the fixed fields; the read restriction is named as a new guard capability with its own slice; how a grant is confirmed is Q6; pause and resume have a stored form and one counting rule (AC-11, AC-12); a job under a mandate has no free-text body, only a template kind and a reference; a late decision has one route (session start); Central's two writes into other machines' folders have guard rules; `zyggy verify` support moved into the slices that add each folder; documents and founding-spec wording travel with each of the three groups. Slices went from thirteen to fifteen.
+- 2026-11-15: **approved by the owner**, including the founding-spec wording under Decisions (pasted with the group that builds it) and the recommended option on each open question: Q1 — `work-laptop` gets visibility, questions and session tasks here, and jobs run by its node wait for the product-node entry; Q2 — the owner confirms the employer's policy before the owner-run check on `work-laptop`, the build does not wait; Q3 — the live-session slice starts with the hook probe and stops for a spec change if it fails; Q4 — the mail is sent for a work-machine item, without project name or text; Q5 — three releases, one per group; Q6 — a grant is confirmed by the permission prompt, with the mandate shown in full and every grant named in the next mail. The handover is committed unchanged at the owner's request.
+
+## Goal
+
+**As** the owner, **I want** Central to see the work of my agents on every machine, answer their questions, check what they built against the approved spec, start the next job inside limits I granted beforehand, record every decision it takes for me and tell me when something needs me, **so that** a deliverable advances slice by slice while I am away and I am asked only about decisions that matter.
+
+Today (0.18.0) Central cannot see an interactive session, has no way to receive a question, needs the owner's go for every job, is not woken by a report, has no rule for which decisions it may take, keeps no record of them and cannot reach the owner. On 2026-11-15 five jobs each needed a proposal and a go, and nothing moved between the owner's messages.
+
+## Context
+
+- **Roadmap entry**: `_plans/ROADMAP.md` #18 (added 2026-11-15; first in the build order after the Central sweep).
+- **Input**: `_specs/handover-central-supervision.md`, written by Central at the owner's request. Its sections 1 and 8 are the owner's words; the rest was a proposal and is replaced by this spec.
+- **Founding-spec sections**: §4 Bus protocol (layout, write rules, envelope, mandatory fields, state machine); §5 Git operations (commit subjects); §6 Job execution (pre-flight, worktree, hooks, `ZYGGY_HOOKS`); §7 Hub and memory; §8 Work boundary, Injection and abuse ("Reports are never re-fed as jobs automatically"), the m365 action rule (D7 of 3 October 2026); §9 design rules and seams; §11 Alerts; §13; §14 (policy as data is not built in v1).
+- **Reference feature**: Central's pickup (`_specs/13-dream-pass.md`) and the Central sweep (`_specs/17-central-sweep.md`) for everything Central does in its node service after a pull, under the write lock, with its own signed writes and no exception to the loop. Context envelopes from laptop sessions (`_specs/12-context-envelopes-from-nodes.md`) for what a session hook may publish. Routing by project name (`_specs/14-discovery-registry-routing.md`) stays the reference for the verb + gate shape.
+- **Facts verified on 2026-11-15** (code read on `feature/17-central-sweep`, bus checkout read on `home-laptop`):
+  - The envelope types are `job`, `report`, `context`, `item`. An unknown `type` is rejected as `invalid_field`. `BusPaths` knows only `registry/`, `nodes/<machine>/{jobs, jobs/claimed, jobs/rejected, reports, context, items}` and `archive/`; its parser refuses any other path.
+  - The write-rule guard lets a machine write its own folders, a sender write another machine's `jobs/`, and Central archive and sweep. No rule exists for any other folder.
+  - Central's pickup takes `context/`, `reports/` and `items/` addressed to Central, after every successful pull. Nothing is triggered or notified when a report arrives; a report becomes one `[observed]` line in the memory inbox.
+  - `zyggy submit` has no field or option that names an authorisation. No code refuses a submit from an unattended run; that rule lives only in the `bus` and `delegate` skills.
+  - A job run sets `ZYGGY_HOOKS=off` for its child; the session hooks do nothing under it. The tool guard (`zyggy hook pre-tool-use`) checks `allowed_tools`, keeps file writes inside the run folder and blocks network programs; it does not restrict reads. A refused call is counted in the report (`blocked:`).
+  - The session hooks are options of `zyggy context`: the `Stop` hook writes one line to a local spool (no network), `SessionEnd` ships the spool as one signed context envelope in a bus write made by the verb itself, without the node service. The envelope carries no branch and no state.
+  - A node rejects a bad job by moving it to `jobs/rejected/` with a `status: rejected` report in the same commit (§4).
+  - Central is the machine named `central`; `node.json` has no `role` key.
+  - `IPolicySource` has one implementation that reads `node.json`. No `INotifier` exists in `src/`. The only filter on outgoing text is the secret patterns (`ZYGGY_SECRET_PATTERNS`), applied to context and report text, not to job bodies. `dlp_filter` is never emitted. Nothing in `src/` implements `work-boundary.json` or treats a machine as a work machine, except `discovery.detail: names`.
+  - A worktree job starts from the default branch, on `zyggy/<id>`, and pushes that branch when it is ahead. A job without `--worktree` runs in the project folder itself. The project lock excludes other Zyggy runs only; nothing detects a live session.
+  - A usage limit ends a job as `failed`, `claude_error`, body starting `claude_error: rate_limit`; the text markers are not confirmed against a live run.
+  - The Hub has `get_context` and `remember`, stdio only.
+  - HMAC keys are per tenant and shared by every machine of the tenant. A signature proves "a machine of this tenant", not "Central".
+  - `work-laptop` on the real bus: the 10 rejected files are probe jobs of 2026-10-15 (transport proof), rejected for `invalid_signature`; the 19 reports are probe answers of the same day. It has no registry file and its last bus write is one archive item of 2026-11-02. It has never run a product job.
+- **Not verified**:
+  - That a Claude Code `Stop` hook can make a live session continue with text the hook supplies, in the installed version. The session-task slice starts with that probe (Q3).
+  - That .NET code on Central can send a mail with the existing Graph certificate. The founding spec lists `Application Mail.Send` scoped to the owner's mailbox; no sending code was read.
+  - The reachability checks of `_specs/spec-work-boundary.md` Part C are still recorded as not run.
+
+## Constraints
+
+- ⚠️ **§4 shared contract.** Four new envelope types (`status`, `question`, `decision`, `mandate`), four new job fields (`mandate`, `step`, `base`, `deliver`), new folders and write rules, new state moves. `PROTOCOL.md` changes with §4. The reviewer verifies: every new write is inside one tenant subtree, each folder has the writers of the table under "Envelope and bus" and no other, and the guard refuses everything else.
+- ⚠️ **Signing.** New types go through `EnvelopeSigner.Canonicalize` unchanged; new golden files are added, existing ones untouched. A mandate is an envelope, not a new signed format.
+- ⚠️ **What a signature proves.** Keys are per tenant, so a node cannot prove a mandate was written by Central rather than by another machine of the tenant. The mandate check protects against Central's model stepping outside what the owner granted; it is not a defence against a compromised machine, which could already submit any job today. The spec claims no more than that.
+- ⚠️ **§8 deliberately loosened, with the owner's approval of the wording under Decisions.** Today a report never leads to a job without the owner, and a chain longer than three hops needs his confirmation. Under a mandate up to `max_jobs` jobs (at most 200) may follow each other for up to 7 days without him. What replaces his confirmation: the mandate he granted, the caps, the pause after three failures, the expiry, and job bodies that hold no model-written text.
+- ⚠️ **§8 work boundary.** `work-laptop` sends statuses with fixed fields only, questions and results under the secret patterns and a size cap; Central answers it from the `outbound` memory paths only; nothing a work machine sends starts an m365, LinkedIn or GitHub action. National register numbers, patient and medical information never leave the client (owner decision D4 of 2026-10-31): the reviewer verifies no free text of a work machine reaches the bus outside a question or a session-task refusal line, and that both are filtered.
+- ⚠️ **New guard capability: a read root.** Today the tool guard restricts writes, not reads. For a supervisor run that answers a work machine the guard gains a read root: file-tool reads and shell commands that name a path outside the listed folders are refused and counted. This is new enforcement, built and proven in its own slice.
+- ⚠️ **§8 injection.** Reports, statuses, questions and spec text read by a supervisor run are data. A job under a mandate has no free-text body: it is a template kind, a step label and at most one reference id. No tool, branch, cap or expiry is ever widened by a run. Enforced by the binary on both ends, not by the model.
+- ⚠️ **§8 m365 rule.** The notification mail is sent by the binary, never by a model, with a fixed text and one fixed recipient. This changes the rule that nothing is sent outside the owner's conversation (wording under Decisions).
+- ⚠️ **Secrets.** The Graph certificate becomes readable by the node service on Central for sending. Nothing secret appears in a status, question, decision, mandate, mail or log.
+- ⚠️ **§6 runner and reason lists.** One new rejection reason `mandate_invalid`, one new report reason `no_session`. A job under a mandate always runs in a worktree.
+- ⚠️ **New seam.** `INotifier` (one of the five §9 seams) gets its first implementation: mail to the owner. Nothing outside it references Graph mail sending.
+- ⚠️ **Public surface and `node.json`.** New `supervision.*` keys; new public registrations in Core for the CLI.
+- ⚠️ **Founding spec.** §4, §5, §6, §8, §10 and §11 change (wording under Decisions; pasted only after the owner approves it, with the group that builds it).
+- §9: bus paths only through `BusPaths`; git only through `GitClient` / `IProcessRunner`; time through `TimeProvider`; nothing throws to the node loop; no static state; log once per state change.
+- One writer per checkout: a supervised job never builds or edits in the owner's checkout.
+- Honest reporting: a decision says what Central verified by a check and what it only read in a report.
+- MVP scope: one tenant, one owner. No `policy.yaml`, no cost cap.
+- Public repo: placeholders only (`acme`, `home-laptop`, `work-laptop`).
+
+## Diagrams
+
+### Components touched
+
+```mermaid
+flowchart LR
+  owner([Owner]) -->|grants, revokes, asks| csess["Central session"]
+  subgraph central [Central]
+    csess --> mverb["zyggy mandate / work / decisions"]
+    cnode["Zyggy.Node"] --> pickup["Pickup (existing)"]
+    cnode --> wake["Supervisor wake"]
+    wake --> srun["Supervisor run<br/>(IModelRunner, fixed tools)"]
+    srun --> sub["zyggy submit --mandate"]
+    srun --> dec["zyggy decide"]
+    cnode --> notif{{"INotifier<br/>mail to the owner"}}
+  end
+  subgraph laptop [Laptop]
+    lsess["Claude Code session<br/>hooks"] --> work["zyggy work / ask"]
+    lnode["Zyggy.Node"] --> intake["Job intake<br/>mandate check"]
+    intake --> runner["Job runner<br/>worktree from base"]
+  end
+  bus[("zyggy-bus<br/>tenants/&lt;org&gt;/…<br/>mandates/ · status/ · questions/ · decisions/")]
+  mverb --> bus
+  sub --> bus
+  dec --> bus
+  work --> bus
+  bus --> intake
+  bus --> pickup
+  runner --> bus
+  classDef new fill:#fde68a,stroke:#b45309,color:#111;
+  class mverb,wake,srun,dec,notif,work,intake new;
+```
+
+### Round trip: a mandate carries a slice while the owner is away
+
+```mermaid
+sequenceDiagram
+  actor Owner
+  participant Central
+  participant Bus as zyggy-bus
+  participant Node as Node (home-laptop)
+  Owner->>Central: grant mandate (project, spec at commit, branch, tools, caps, expiry)
+  Central->>Bus: mandates/<id>.md (signed)
+  Node->>Bus: status of the live session
+  Central->>Bus: job (kind brief): the spec at the approved commit
+  Node->>Bus: report (the spec text)
+  Central->>Bus: job (kind verify, step "slice 2")
+  Node->>Node: mandate check, worktree from the mandate branch
+  Node->>Bus: report done (2 criteria failed)
+  Note over Central: wake on the report, one supervisor step
+  Central->>Bus: decision (correct) + job (kind correct, ref = that report)
+  Node->>Bus: report done, branch pushed
+  Central->>Bus: job (kind verify, same step)
+  Node->>Bus: report done (all criteria met)
+  Central->>Bus: decision (accept, basis verified)
+  Node->>Bus: question (role central or machine central?)
+  Central->>Bus: decision (answer, from the spec)
+  Node->>Bus: question that changes scope
+  Central->>Bus: decision (escalate)
+  Central->>Owner: mail "1 item waits for you"
+  Note over Central,Bus: job cap or expiry reached: Central's node writes the stop decision with the summary
+```
+
+### Mandate states
+
+```mermaid
+stateDiagram-v2
+  [*] --> active: owner grants (attended)
+  active --> paused: 3 counted reports in a row not done
+  paused --> active: owner resumes (a resume decision)
+  active --> exhausted: job cap reached
+  active --> expired: expiry passed
+  paused --> expired: expiry passed
+  active --> revoked: owner revokes or stops everything
+  paused --> revoked: owner revokes
+  exhausted --> [*]
+  expired --> [*]
+  revoked --> [*]
+```
+
+### What happens to a question
+
+```mermaid
+flowchart TD
+  q["question from an agent"] --> filt{"secret pattern or over the size cap?"}
+  filt -->|yes| ref["refused on the sender, exit 5, nothing on the bus"]
+  filt -->|no| cls{"decision class"}
+  cls -->|"spec or memory answers it"| ans["decision: answer"]
+  cls -->|"changes scope, deletes, rewrites history, outward"| esc["decision: escalate, owner notified"]
+  cls -->|"secret, m365, LinkedIn, security rule"| no["decision: refuse"]
+  ans --> asker["asker reads it, or its wait ran out and it took its default"]
+  esc --> asker
+  no --> asker
+```
+
+### Slice map
+
+```mermaid
+flowchart LR
+  subgraph A [See and answer]
+    s1["1 Fake: status"] --> s2["2 Wire: zyggy work"] --> s3["3 Fake: question, decision"] --> s4["4 Wire: ask, decide"]
+  end
+  subgraph B [Mandate and supervisor]
+    s5["5 Fake: mandate limits"] --> s6["6 Wire: grant, submit"] --> s7["7 Wire: node check, pause"] --> s8["8 Wire: mandate branch"] --> s9["9 Fake: next step"] --> s10["10 Wire: wake"] --> s11["11 Wire: work-machine answer"]
+  end
+  subgraph C [Owner view, sessions, away run]
+    s12["12 Fake: what waits"] --> s13["13 Wire: mail, stop"] --> s14["14 Wire: session task"] --> s15["15 Gate: away run"]
+  end
+  s4 --> s5
+  s11 --> s12
+```
+
+## Behavior
+
+### Live work is visible
+
+- **Sessions.** A Claude Code session on a laptop publishes a signed `status` envelope from its hooks, through `zyggy work`, in a bus write the verb makes itself (as the session notes are shipped today), so it works without the node service:
+  - at session start;
+  - at the end of a turn, at most once per `supervision.statusMinutes` (10) per session;
+  - at session end the status file is removed.
+- The hook verb always returns 0 to Claude Code. When the bus cannot be reached the write is skipped, logged once per streak, and the next turn end tries again; nothing is queued.
+- One live status file per session: a new status replaces the session's previous file in the same commit. A machine's write also removes its own status files older than 24 hours (sessions that crashed).
+- **Fields**: `project` (registry name), `session` (8 characters), `since` (session start), `activity` (time of the last turn end), and, with `supervision.detail: full`, `branch`, `head` (short sha), `dirty` (count of uncommitted files), `spec` (the path of the one `_specs/<NN>-*.md` the branch name `feature/<NN>-…` matches, when there is exactly one) and `step` (only when the session stated it with `zyggy work --step`). The body is empty. With `supervision.detail: fixed` only `project`, `session`, `since` and `activity` are written.
+- `supervision.detail` defaults to `fixed` on a machine whose `discovery.detail` is `names` (the work-laptop setting) and to `full` otherwise. Central, when it lists a status of a machine in `supervision.workMachines`, shows the four fixed fields only, whatever the file carries.
+- A status never carries prompt text, code or a file name. Every value passes the secret patterns; a status with a matching value is not written.
+- Under `ZYGGY_HOOKS=off` (a job run) no status is written: a job's state is already on the bus.
+- **Reading.** `zyggy work` lists, per machine and project: sessions (`working` when `activity` is less than 10 minutes old, `idle` when older, `silent` when the file is older than 60 minutes, `waiting for Central` when an open question names the session), jobs (queued, claimed with its age, last report with status and reason), the mandate in force and what waits for the owner. A status whose signature or writer rule fails is not shown and is counted in one line.
+
+### Questions and decisions
+
+- **Asking.** `zyggy ask` writes a signed `question` to Central into the asker's own `questions/` folder: the question (body, at most 600 characters), `project`, `session` (from a session) or `job` (from a job run), `options` (0–5 one-line options) and `default` (one line: what the agent does when no answer comes). Text matching a secret pattern, or over the cap, is refused on the sender (exit 5) and nothing is written. It works from a session and from a job whose `allowed_tools` name it.
+- **Waiting.** `--wait <minutes>` (default 5 in a job, 10 in a session; never beyond the job's remaining time) returns when the decision is on the bus or the wait ran out. Exit 0 prints the decision; exit 8 prints `no answer; default: <default>`. An agent that got exit 8 follows its stated default and says so in its report.
+- **Late decision.** A decision that arrives after the wait is printed at the next session start in that project (once), and is always visible in `zyggy work` and `zyggy decisions`. There is no other route into a running session.
+- **Deciding.** Central answers with a signed `decision` in its own `decisions/` folder, written by `zyggy decide`. A decision is the answer and the record at once:
+  - `in_reply_to` (the id of the question, report, job or mandate it settles), `mandate` (when it acts under one), `project`, `step`;
+  - `kind`: `answer | accept | correct | next | stop | escalate | refuse | resume`;
+  - `basis`: `verified` (Central read the result of a check that ran) or `reported` (Central only read an agent's account);
+  - `evidence` (report ids, commit shas), `undo` (one line: how to reverse it, or `nothing to undo`);
+  - body: what was decided and why, at most 1200 characters, secret patterns applied.
+- The question file moves to `archive/` (Central's write) in the commit that adds its decision. Decisions are archived after 14 days by the sweep, like reports; `zyggy decisions` reads the archive too.
+- **Decision classes** (fixed list, shipped in `zyggy-core`; the binary enforces the last two rows by never giving a supervisor run the tools for them):
+
+| Class | Decisions | Kind |
+| --- | --- | --- |
+| Central decides and records | naming, file placement, order of slices, re-running a failed check, a correction that brings code back to the approved spec, an answer the approved spec or memory already gives, accepting a slice whose checks passed | `answer`, `accept`, `correct`, `next` |
+| Central does it on the owner's request | merge or push to a default branch, release, deploy: only when the owner says so in a conversation, or the mandate's `grants` names the action | `next` with the grant named in `evidence` |
+| Central proposes, the owner decides | anything that changes the spec's meaning or scope, deleting data, rewriting history, anything outward (mail, posts, GitHub writes outside the bus) | `escalate` |
+| Never | secrets, the m365 and LinkedIn action tools, relaxing a security rule | `refuse` |
+
+- A question needs no mandate to be answered. Everything that starts a job does.
+- **Work machines.** For a question from a machine listed in `supervision.workMachines`, the supervisor run has the read root set to the `outbound` memory paths (`supervision.outboundPaths`), no Hub tool, and its decision passes the secret patterns. A read outside the root is refused by the guard and counted in the run's report.
+
+### The mandate
+
+- **Granting.** The owner grants a mandate in a conversation on Central; Central runs `zyggy mandate grant`, which the owner approves at a Claude Code permission prompt that shows the full command (Q6). The verb refuses in an unattended run (`ZYGGY_HOOKS=off`) and on any machine but Central. The `zyggy-core` settings put `zyggy mandate grant` and `zyggy mandate resume` under an ask rule and carry no allow rule for them. The mandate is a signed `mandate` envelope in `mandates/`, `from: central`, `to` the machine:
+
+| Field | Shape | Meaning |
+| --- | --- | --- |
+| `project` | registry name | the project on that machine |
+| `goal` | one line, 1–200 characters | always present |
+| `spec`, `spec_commit` | repository-relative path; 40-character sha | optional, both or neither: the spec and the commit at which the owner approved it |
+| `branches` | list of 0–5 branch names | branches a job may start from and push; `zyggy/<id>` is always allowed; a default branch never, unless `grants` has `merge` |
+| `allowed_tools` | list, same format as a job's | the ceiling: each tool of a job must be an entry of this list, compared as text |
+| `max_jobs` | 1–200 | total jobs under the mandate |
+| `max_jobs_per_hour` | 1–60, default 6 | |
+| `max_jobs_per_step` | 1–20, default 4 | |
+| `expires` | timestamp | mandatory, at most 7 days after the envelope's `created` |
+| `grants` | subset of `accept`, `merge`, `release`, `deploy`; default `[accept]` | what Central may close without asking |
+| `sessions` | `true` or `false` (default) | tasks may be delivered into a live session |
+
+- There is no cost limit (owner decision 3 of the handover).
+- **The mandate as permission.** A mandate with `accept` is the owner's permission for supervised jobs to commit on its branches and for Central to accept a slice whose checks passed. It replaces, inside the mandate, the per-job go and the rule that each slice is accepted by the owner's own commit. Outside a mandate today's rule stays: every job needs a go.
+- **A job under a mandate has no free text.** `zyggy submit --mandate <id> --kind <kind> --step <label> [--ref <id>] [--base <branch>] [--session]` renders the job body from a template shipped with the binary. Kinds: `brief` (return the spec at `spec_commit`), `build`, `verify`, `correct` (`--ref` = the verify report the job must read itself, as data), `merge`, `release`, `deploy` (each of the last three only with its grant). The template is filled only with the mandate's `spec`, `spec_commit`, the step label and the reference id. `step` is 1–60 characters of `[a-z0-9 -]`. A body argument together with `--mandate` is refused.
+- **Counting, one rule for both ends.** A job *counts* under a mandate when it carries the mandate id and sits in `jobs/` or `jobs/claimed/`, or has a report that is not `rejected` (also in `archive/`). Every kind counts, session tasks included. Rejected jobs never count. Total: counted jobs. Per hour: counted jobs whose `created` is within the last 60 minutes. Per step: counted jobs with that `step`. Central refuses a submit when the count has reached the cap. The node, checking job J, counts the other jobs and rejects J when that count has reached `max_jobs`.
+- **Pause.** A mandate is paused when its three newest reports — taken over counted jobs and rejected jobs, after the newest `resume` decision if there is one — all have a status other than `done`. A verify job that ran and found failing criteria reports `done` and does not count towards a pause. `zyggy mandate resume <id>` (attended, Central) writes a `decision` of kind `resume` with `in_reply_to` the mandate id; reports before it no longer count. A step at its cap does not pause the mandate: submits for that step are refused and Central escalates.
+- **Showing and revoking.** `zyggy mandate show` lists every mandate with its state, jobs used and time left. `zyggy mandate revoke <id>` moves it to `mandates/revoked/`.
+- **Enforced on Central.** `zyggy submit --mandate` refuses (exit 3, one line naming the limit) when: the mandate is absent, revoked, expired, paused or at its total cap; the machine or project differs; a tool is outside the ceiling; `base` is not in `branches`; the hourly or step cap is reached; the kind needs a grant the mandate lacks; the newest report under the mandate is a usage limit less than 60 minutes old; the target is in `supervision.workMachines` and `--session` is absent (Q1); the target's registry file does not list the capability `supervision`. In an unattended run `zyggy submit` without `--mandate` is refused.
+- **Enforced on the node.** At intake a job carrying `mandate` is checked against the mandate file in the node's own bus checkout: it exists outside `revoked/`, verifies, is `from: central`, is not expired, names this machine and the job's project, covers the job's tools and `base`, and the total cap is not reached. Otherwise the job is rejected with `mandate_invalid` before any model call. A job with `mandate` and neither `worktree: true` nor `deliver: session` is rejected the same way.
+
+### A job under a mandate
+
+- Runs in a worktree on `zyggy/<id>`, started from `base` (the remote branch of that name) instead of the default branch. Without `base` the existing rule holds.
+- On finish the job's branch is pushed as today. With `base` set, the same commits are also pushed to `base` when that is a fast-forward; when it is not, `zyggy/<id>` stays the result and the report says so. Never a force-push, never a default branch unless the mandate grants `merge` and the job's kind is `merge`.
+- The owner's checkout is never touched. Uncommitted work there is visible in the status (`dirty`) and cannot be verified by a job; Central says so instead of guessing.
+- A job that is running when its mandate expires, is exhausted or is revoked finishes and reports.
+
+### Verification before progress
+
+- Central never accepts a slice on the builder's word. A slice counts when a `verify` job ran the project's independent check (its slice verifier, build and tests) and a `decision` of kind `accept` with `basis: verified` names that report.
+- The reference is the spec at the mandate's `spec_commit`, which Central reads through the `brief` job's report. A working copy of the spec is never the reference.
+
+### The supervisor run
+
+- **Wake.** After a pickup pass, Central's node looks for unhandled events: a report answering a job that carries a mandate which is active, and a question addressed to Central. An event is handled once a decision has it as `in_reply_to`. This is read from the bus, so nothing is lost at a restart and nothing is handled twice.
+- **One bounded step.** For the oldest unhandled event the node starts one model run through `IModelRunner`, in Central's own project (`supervision.project`), with a fixed prompt template that names the event by id, and a fixed tool list: read tools, `zyggy work`, `zyggy report`, `zyggy mandate show`, `zyggy decisions`, `zyggy decide`, `zyggy submit --mandate`, and the Hub's `get_context` (not for a work-machine event). No other tool, no m365, LinkedIn, browser, GitHub or memory write. The run reads the event, checks the work against the spec, writes exactly one decision, and submits at most one job. Then it stops.
+- A run that ends without a decision is retried once; after that the node writes a decision of kind `escalate` itself, in reply to the event ("supervisor could not decide").
+- One run at a time; at most `supervision.runsPerHour` (20). With no active mandate, only questions wake a run.
+- This is the one unattended run that may submit, and only with `--mandate`. Every other unattended prohibition stays.
+- **Written by the node, without a model.** When a mandate pauses, the node writes an `escalate` decision in reply to the third failing report. When a mandate is exhausted, expired or revoked, the node writes one `stop` decision in reply to the mandate id, once; its body lists the steps accepted with their evidence ids, the count of decisions per kind and the ids of what waits for the owner.
+
+### Work into a live session
+
+- With `sessions: true` in the mandate, `--session` writes a job with `deliver: session`. The node service never runs such a job.
+- At the end of a turn the session's hook looks in the bus checkout for a verified `deliver: session` job for this machine and project with a valid mandate. It claims the job and makes the session continue with a fixed frame followed by the rendered template. A session receives at most one task at a time and none while a task is open.
+- The session finishes with `zyggy work --done <id>` (or `--failed <id> --why <line>`), which writes the report and removes the claim. On a work machine the report body is replaced by fixed fields (status, count of files changed, `head`); the `--why` line passes the secret patterns and a 200-character cap.
+- The task runs under the session's own permission settings: the mandate's tool ceiling is not enforced inside a live session, and a permission prompt waits for the owner.
+- A `deliver: session` job still unclaimed after its `timeout_minutes` (default 60 for a session task): Central's node removes it from that machine's `jobs/` and writes a `failed` report with reason `no_session` in its own folder, in one commit. A claimed task whose session ended is a stale claim and follows the sweep.
+
+### The owner's view
+
+- **Waiting list.** An item waits for the owner when the newest decision on an event is `escalate`, or a mandate is paused. `zyggy work --waiting` prints the list; the session-start digest on Central shows its count.
+- **Mail.** Central's node sends a mail to the owner's own mailbox through `INotifier` when the list holds an item that no mail has named yet, and no mail was sent in the last 30 minutes; an item that arrives inside that window is named in the mail sent when the window ends. Subject `Zyggy: <n> item(s) wait for you`; one line per item with kind, machine, project, id and age; no text written by an agent. For an item from a work machine the line has no project name. A failed send is logged once per streak and tried again a minute later.
+- **Record.** `zyggy decisions [--since <date>] [--mandate <id>]` prints the decisions, newest first, with kind, basis, evidence and undo. The morning brief gains a section "Decided for you" with the decisions since the previous brief, one line each.
+- **Stop.** `zyggy supervise stop` on Central revokes every mandate and stops the wake until `zyggy supervise start`. On a laptop the same verb writes a stop marker in the node's own folder: the node rejects every job that carries a mandate (`mandate_invalid`) and delivers no session task until `zyggy supervise start` removes it.
+
+### Envelope and bus
+
+- New folders (all under `tenants/<org>/`):
+
+| Path | Type | Writers |
+| --- | --- | --- |
+| `nodes/<machine>/status/<id>.md` | `status`, `to: central` | that machine: add, replace, remove its own |
+| `nodes/<machine>/questions/<id>.md` | `question`, `to: central` | that machine adds; Central moves it to `archive/YYYY-MM/` in the commit of its decision |
+| `nodes/central/decisions/<id>.md` | `decision`, `to` the machine concerned | Central; the sweep archives it after 14 days |
+| `mandates/<id>.md`, `mandates/revoked/<id>.md` | `mandate`, `to` the machine | Central |
+| `nodes/<machine>/jobs/<id>.md` with `deliver: session`, unclaimed past its timeout | `job` | Central removes it, with its `no_session` report in `nodes/central/reports/` |
+
+- New job fields, all optional: `mandate` (ULID), `step`, `base` (branch name), `deliver` (`run` default, or `session`).
+- New reasons: rejection `mandate_invalid`; report `no_session`, written only by Central's node.
+- New commit subjects: `<tenant> status <id> <machine>→central`, `<tenant> question <id> <machine>→central`, `<tenant> decision <id> central→<machine>`, `<tenant> mandate <id> central→<machine>`, `<tenant> revoke <id> central→<machine>`.
+- Registry file: new key `capabilities` (list; `supervision` when the node's version checks mandates).
+- `zyggy verify` accepts each new folder under its writer rule, from the slice that adds it, and reports anything else as today.
+
+### CLI
+
+| Verb | Where | Exit codes beyond the existing ones |
+| --- | --- | --- |
+| `zyggy work [--waiting]` | any machine | — |
+| `zyggy work --session-start \| --turn-end \| --session-end` | hooks on a laptop | always 0 |
+| `zyggy work --step <label>`, `--done <id>`, `--failed <id> --why <line>` | a session | 5 secret pattern |
+| `zyggy ask [--wait <min>] [--option <line>]… --default <line> <question>` | session or job | 5 secret pattern or size; 8 no answer |
+| `zyggy decide --reply-to <id> --kind <kind> --basis <basis> [--mandate <id>] [--step <label>] [--evidence <id>]… --undo <line> <text>` | Central | 3 not Central |
+| `zyggy decisions [--since <date>] [--mandate <id>]` | any machine | — |
+| `zyggy mandate grant …`, `show`, `revoke <id>`, `resume <id>` | Central (`show` anywhere) | 3 not Central, unattended, or a field out of range |
+| `zyggy submit --to <machine> --mandate <id> --kind <kind> --step <label> [--ref <id>] [--base <branch>] [--session]` | Central | 3 outside the mandate, or a body given |
+| `zyggy supervise stop \| start` | any machine | — |
+
+### Configuration
+
+| Key | Where | Default | Rule |
+| --- | --- | --- | --- |
+| `supervision.enabled` | `node.json` | `true` | `false`: no status, no mandate job accepted, no wake |
+| `supervision.detail` | `node.json` (laptop) | `fixed` when `discovery.detail` is `names`, else `full` | `full` or `fixed` |
+| `supervision.statusMinutes` | `node.json` (laptop) | `10` | 1–120 |
+| `supervision.workMachines` | `node.json` (Central) | `[]` | machine names |
+| `supervision.outboundPaths` | `node.json` (Central) | `[]` | folders a work-machine answer may read; empty with a non-empty `workMachines` refuses the start |
+| `supervision.project` | `node.json` (Central) | none | required for the wake; absent: no supervisor run, one Warning at start |
+| `supervision.runsPerHour` | `node.json` (Central) | `20` | 1–120 |
+
+An invalid value refuses the start like every other `node.json` key. The mail recipient is the owner's mailbox the Graph certificate is scoped to; there is no address setting.
+
+### Failure modes
+
+| Situation | Observable outcome | Runbook entry |
+| --- | --- | --- |
+| Job claims a mandate the node cannot verify, or outside it | rejected, `mandate_invalid`, before any model call | "Mandate refused" |
+| Submit outside the mandate, or unattended without one | exit 3, one line naming the limit, nothing written | "Mandate refused" |
+| Three reports in a row not `done` | mandate `paused`, node-written `escalate`, mail | "Mandate paused" |
+| A step at its cap | submit refused; the supervisor escalates | "Mandate paused" |
+| Usage limit reached (`claude_error: rate_limit`) | no submit under that mandate for 60 minutes; one Warning | "Usage limit" |
+| Supervisor run fails twice on one event | decision `escalate` written by the node; mail | "Supervisor could not decide" |
+| `supervision.project` absent or unknown | no wake; one Warning at start | "Supervisor does not start" |
+| Status or question text matches a secret pattern | not written; exit 5 for `ask`; one Warning | "Refused text" |
+| Bus unreachable from a session hook | hook returns 0; one Warning per streak; next turn end retries | "No status from a laptop" |
+| Mail cannot be sent | one Error per streak; the waiting list still shows the item | "No mail from Central" |
+| Target node older than this feature | `zyggy submit --mandate` refuses: capability missing | "Upgrade before a mandate" |
+| No live session for a session task | `failed`, `no_session` after the timeout | "Session task not picked up" |
+| Push to `base` is not a fast-forward | `zyggy/<id>` kept and named in the report, status `done` | "Branch moved under a job" |
+
+### Edge cases
+
+| Case | Expected behavior |
+| --- | --- |
+| Two sessions in one project | two status files; a session task goes to the first that ends a turn |
+| A session asks, then ends | the decision is still written; printed at the next session start in that project |
+| A question arrives with no mandate | answered when its class allows; never starts a job |
+| A report says "run this next" or asks for more tools | it cannot reach a job: a job under a mandate has no free text |
+| The spec changed on the branch after `spec_commit` | the reference stays `spec_commit`; a difference is escalated, not followed |
+| The owner works in the checkout while a mandate runs | jobs stay in worktrees; a non-fast-forward push to `base` keeps `zyggy/<id>` |
+| A job started with an agent needs the `Agent` tool | the mandate's ceiling must name `Agent`; otherwise the guard blocks it as today |
+| A read-only check needs to see a change | the `verify` template's tool set includes `Bash(git status *)`, `Bash(git diff *)`, `Bash(git log *)` |
+| `deploy` granted but memory holds no deploy note for the project | Central escalates instead of deploying |
+| Mandate expires while a job runs | the job finishes and reports; nothing new is submitted |
+| Decision for a machine that is off | stays on the bus; read when the machine is back |
+| A work machine's `node.json` has no `supervision.detail` | `fixed`, through `discovery.detail: names`; Central shows fixed fields for it in any case |
+
+## Decisions
+
+| Item | Verdict | Why |
+| --- | --- | --- |
+| D1 — this deliverable is 18; "Policy as data" becomes 44 (owner 2026-11-15) | **keep** | The owner asked for spec 18; no other number moves. |
+| D2 — the Central sweep is finished and released first (owner) | **keep** | No half-built branch; decisions are archived by the sweep; stale claims of supervised jobs are re-queued. |
+| D3 — `work-laptop` supervised here, with narrow built-in limits (owner) | **keep** | Fixed-field status, filtered and capped questions, answers from `outbound` only. The DLP filter stays its own deliverable. |
+| D4 — Central may send work into a live session (owner) | **keep**, bounded | Only under a mandate with `sessions: true`, one task at a time, at a turn end. The tool ceiling cannot be enforced there (stated in Behavior). |
+| D5 — merge, release, deploy: the owner's words in a conversation or an explicit `grants` line (owner) | **keep** | A report, a spec or an agent can never trigger them. |
+| D6 — decision classes as a fixed list plus the mandate (owner) | **keep** | `policy.yaml` stays a §14 item (now roadmap 44). |
+| D7 — the owner is told by a mail to himself (owner) | **reshape** | Sent by the binary with a fixed text, not by a model with the mail tool; needs the §8 wording below. |
+| D8 — a supervised job may push the mandate's feature branch and `zyggy/<id>` (owner) | **keep** | Fast-forward only. |
+| Handover: slices accepted by Central, merge and deploy on request (owner decision 1 there) | **keep** | Through `grants`. |
+| Handover: no cost limit (owner decision 3 there) | **keep** | Loop caps instead: per hour, per step, three failures, expiry. |
+| "Reports are never re-fed as jobs automatically … a chain longer than 3 hops requires the user's confirmation via Telegram" (§8) | **reshape** | The mandate is the confirmation given beforehand; the caps replace the hop count. A deliberate loosening (Constraints). Outside a mandate the rule stays. |
+| A job's status as its own envelope (handover 5.1) | **reshape** | A job's state is already on the bus (queued, claimed, report). Only sessions publish a status. |
+| Session states `working`, `waiting for owner`, `waiting for Central` published by the session (handover 5.1) | **reshape** | A commit per turn is too much traffic. The session publishes its last activity; Central derives working, idle and silent from its age and "waiting for Central" from an open question. |
+| A separate answer envelope (handover 5.2) | **reshape** | One `decision` envelope is the answer and the log row. |
+| Supervisor wakes on a timer every minute (owner's first request) | **reshape** | Central's node sees the bus within seconds; the wake is event-driven after a pickup pass. |
+| Central builds the next job's text (handover 6.1) | **reshape** | No text at all: a template kind, a step label, a reference id. |
+| `INotifier` = Telegram (§9, §11) | **reshape** | First implementation is mail to the owner; Telegram stays its own roadmap entry behind the same seam. |
+| Policy as data (§14) | **defer** | Roadmap 44. |
+| DLP filter on reports (§6) | **defer** | Its own roadmap entry; see Q1 for what that means for jobs on `work-laptop`. |
+| A worktree job that does not push (handover friction) | **defer** | Not needed for the away run; no entry. |
+| Verifying uncommitted work in the owner's checkout | **defer** | Breaks one writer per checkout. |
+
+No new package expected; the mail goes through `HttpClient` with the existing Graph token code. If the build finds that code cannot send, that is a spec change, not a new library.
+
+**Founding-spec wording proposed** (pasted only after approval, each with the group that builds it):
+
+- **§4 layout**: add `mandates/` (and `mandates/revoked/`), `nodes/<machine>/status/`, `nodes/<machine>/questions/`, `nodes/central/decisions/` with the writers of the table under "Envelope and bus"; `type` becomes `job | report | context | item | status | question | decision | mandate`; the mandatory-field table gains the four types and the job fields `mandate`, `step`, `base`, `deliver`, exactly as listed in this spec.
+- **§4 write rules**, new bullets: "Central moves a `questions/` file of another machine to `archive/` in the commit that adds its decision" and "Central removes an unclaimed `deliver: session` job from a machine's `jobs/` after its timeout, in the commit of its `no_session` report (deliverable 18)."
+- **§4 rejection reasons**: add `mandate_invalid`. **Report reasons written by Central**: add `no_session`.
+- **§5** `<action>` list: add `status`, `question`, `decision`, `mandate`, `revoke`.
+- **§6**: "A job that carries `mandate` runs in a worktree started from `base`; its branch is also pushed to `base` when that is a fast-forward. The tool guard takes an optional read root: with it, reads outside the listed folders are refused."
+- **§8 Injection and abuse**, replace the last bullet by:
+  > - Reports are never re-fed as jobs automatically. Central starts a job without the owner's go only under a mandate the owner granted in a conversation (deliverable 18): a signed file naming machine, project, branches, the tool ceiling, job caps and an expiry of at most 7 days, checked by the binary on Central and on the receiving node. A job under a mandate carries no free text: its body is a template shipped with the binary, filled with the mandate's spec, a step label and at most one reference id. Outside a mandate every job needs the owner's go.
+- **§8 m365 rule**, add after "unattended runs deny them outright":
+  > One exception: Central's node service sends the owner a notification mail to his own mailbox, with a fixed text that carries no content written by an agent (deliverable 18). No model can send it or change its text or recipient.
+- **§10 `node.json`**: the `supervision` keys of the Configuration table. **§11**: the runbook entries of the Failure modes table.
+
+## Acceptance criteria
+
+| # | Criterion | Check |
+| --- | --- | --- |
+| AC-1 | The four new types parse, sign and verify; a missing or misshapen mandatory field is `missing_field` / `invalid_field`; existing golden files are byte-identical. | Unit tests per type; a golden file for one envelope of each new type |
+| AC-2 | The guard allows exactly the writers of the "Envelope and bus" table — a machine in its own `status/` and `questions/`, Central in `decisions/` and `mandates/`, Central's move of a question to `archive/`, Central's removal of an unclaimed session job past its timeout — and refuses each for another machine, for a job that is not `deliver: session` or not past its timeout, and for another tenant's subtree. | Unit test on the guard, one case per rule and per refusal |
+| AC-3 | A status with `detail: fixed` carries only `project`, `session`, `since`, `activity`; with `full` the further fields; the default is `fixed` when `discovery.detail` is `names`; a value matching a secret pattern prevents the write; under `ZYGGY_HOOKS=off` nothing is written. | Unit tests, one per rule |
+| AC-4 | A session start writes one status commit; a second turn end inside `statusMinutes` writes none; a later one replaces the file in one commit; session end removes it; a file older than 24 hours of the same machine is removed with the next write; with the remote unreachable the hook verb exits 0 and the next turn end writes. | Integration test (bare repo, fake clock) through the verb |
+| AC-5 | `zyggy work` on a second checkout shows the session as `working`, then `idle`, then `silent` as the clock moves, and `waiting for Central` while a question naming the session has no decision; shows a claimed job with its age and the last report; does not show a status whose signature fails; shows only the four fixed fields for a machine in `workMachines` even when the file carries more. | Integration test through the verb |
+| AC-6 | `zyggy ask` with text matching a secret pattern, or over 600 characters, exits 5 and writes nothing. | Unit test; integration test (remote unchanged) |
+| AC-7 | `zyggy ask --wait` returns 0 with the decision text when Central's `zyggy decide` reaches the bus within the wait, and 8 with the default line when it does not; the question file is in `archive/` after the decision. | Integration test: two checkouts, fake clock |
+| AC-8 | `zyggy decide` refuses on a machine that is not Central (exit 3) and refuses a body matching a secret pattern; it writes `kind`, `basis`, `evidence` and `undo` as given; `zyggy decisions` lists it, also once it is archived; a decision that arrived after the wait is printed once at the next session start in that project. | Integration test through the verbs |
+| AC-9 | `zyggy verify` reports no drift on a bus holding status, question and decision files, and reports a status written into another machine's folder. | Integration test |
+| AC-10 | For every limit of the mandate (machine, project, tool outside the ceiling, `base` outside `branches`, kind without its grant, expired, revoked, paused, usage-limit back-off, capability missing, work machine without `--session`) the check refuses and names the limit; a request inside all of them passes. | Unit tests with `FakeTimeProvider`, one per limit |
+| AC-11 | Counting follows the one rule: with `max_jobs` 3 the third submit passes and the fourth is refused; a rejected job does not count; an archived report still counts; the node accepts the third job and rejects a fourth; the hourly and step caps refuse at their boundary and pass after the hour moved or for another step. | Unit tests on bus fixtures, both ends, at each boundary |
+| AC-12 | Three newest reports not `done` (failed, timeout or rejected) pause the mandate; a `done` verify report between them does not; a `resume` decision makes the mandate active and earlier reports no longer count. | Unit test on bus fixtures |
+| AC-13 | `zyggy mandate grant` refuses under `ZYGGY_HOOKS=off`, on a laptop, with `expires` more than 7 days ahead and with a field out of its range; `show` prints state, jobs used and time left; `revoke` moves the file and the next submit is refused. | Integration test through the verb |
+| AC-14 | `zyggy submit` under `ZYGGY_HOOKS=off` without `--mandate` exits 3 and writes nothing; `--mandate` with a body argument exits 3; a valid submit writes a job whose body equals the rendered template byte for byte and that carries `mandate`, `step` and `base`. | Integration test through the verb, comparing the body with the template rendered in the test |
+| AC-15 | The `zyggy-core` settings carry an ask rule for `zyggy mandate grant` and `zyggy mandate resume` and no allow rule that matches them. | Check in the `zyggy-core` pull request (its settings test) |
+| AC-16 | A node rejects with `mandate_invalid`, before any model call, a job whose mandate is absent, revoked, expired, for another machine or project, exceeded in tools, at its total cap, or that has neither `worktree: true` nor `deliver: session`; a valid one is claimed and run; `zyggy verify` reports no drift on the mandate files. | Integration test: real listener, `tools/fake-claude` (asserting it was not started in the refusal cases), bare repo |
+| AC-17 | Over a bare repo: three failing jobs under a mandate pause it, the next submit exits 3, `zyggy mandate resume` writes the `resume` decision and the next submit passes. | Integration test through the verbs and the listener |
+| AC-18 | A job with `base` runs in a worktree started from that branch, pushes `zyggy/<id>` and fast-forwards `base` on the remote; when `base` moved meanwhile the remote `base` is unchanged, `zyggy/<id>` is pushed and the report says so; the project checkout's HEAD and working tree are unchanged in both cases. | Integration test with a project repository and its bare remote |
+| AC-19 | The wake selects the oldest unhandled event, treats an event as handled once a decision replies to it, ignores a report of a mandate that is not active, and selects nothing on an unchanged bus or after a restart with the same bus. | Unit test |
+| AC-20 | The supervisor prompt is the fixed template with the event id; a report and a question carrying a marker string leave no byte of their body in it; each job template renders with only the spec path, the commit, the step label and the reference id. | Unit tests comparing rendered text with the shipped templates |
+| AC-21 | Central's node, after a pickup pass that brings a report of a mandate job, starts one supervisor run; the run's `zyggy decide` and `zyggy submit --mandate` land on the bus; a second event waits until the first run ended; no more than `runsPerHour` runs start. | Integration test through the real node host with `tools/fake-claude` scripted to call the verbs, fake clock |
+| AC-22 | A supervisor run that tries a tool outside the fixed list is blocked and the run's report carries the `blocked:` count; a run that ends twice without a decision leaves a node-written `escalate` decision in reply to the event. | Integration test with a `fake-claude` scenario for each |
+| AC-23 | With a failing supervisor run the node host stays up: `/health` answers and the next event is handled. | Integration test through the real node host |
+| AC-24 | A pause leaves a node-written `escalate` in reply to the third failing report; a mandate that is exhausted, expired or revoked gets exactly one node-written `stop` decision in reply to the mandate id, also after a restart. | Integration test through the node host, fake clock |
+| AC-25 | With a read root set, the guard refuses a file-tool read and a shell command naming a path outside the root and allows both inside it; a supervisor run answering a machine in `workMachines` runs with the root at `outboundPaths` and without the Hub tool; a canary line in a file outside the root never appears in the decision. | Unit tests on the guard; integration test with a `fake-claude` scenario that tries the read |
+| AC-26 | An event whose newest decision is `escalate`, and a paused mandate, are on the waiting list; a later decision of another kind, or a resume, removes the item. | Unit test |
+| AC-27 | A new waiting item sends one notification; a second item inside 30 minutes sends none until the window ends and is then named in one notification; the message has the fixed subject and one line per item, without project name for a work machine and without any body text of a question or report. | Unit test with a substituted `INotifier` and `FakeTimeProvider` |
+| AC-28 | The morning brief shows "Decided for you" with one line per decision since the previous brief, and no section when there is none. | Unit test on the brief's section |
+| AC-29 | The mail implementation posts one message to the owner's own mailbox with that subject and text; a failed send is logged once per streak and does not stop the node. | Integration test with a mocked `HttpMessageHandler` |
+| AC-30 | `zyggy supervise stop` on Central revokes every mandate and no run starts on a new event until `start`; on a laptop a mandate job is rejected with `mandate_invalid` after `stop` and accepted again after `start`. | Integration test through the verb and the node host |
+| AC-31 | With `sessions: true`, a turn end in a live session claims the `deliver: session` job and returns the fixed frame with the rendered template; `zyggy work --done` writes the report and removes the claim; without `sessions: true`, or with an open task, nothing is delivered; the node service never runs such a job. | Integration test through the hook verb and the listener |
+| AC-32 | A session task still unclaimed after its timeout is removed by Central with a `failed` / `no_session` report in one commit; on a work machine a finished task's report body holds only the fixed fields. | Integration test with a fake clock |
+| AC-33 | The away run: with tenant `acme`, a granted mandate with `max_jobs` 5, a session status on the bus, a `brief` job, a `verify` job reporting two failed criteria, a `correct` job, a second `verify` that passes, a question the spec answers, a question that changes scope — the bus ends with decisions `correct`, `accept`, `answer`, `escalate` and a node-written `stop`, one notification, no sixth job, and `zyggy verify` clean. | Gate scenario `Supervision_AwayRun` under `tests/Zyggy.Integration/Gates/` |
+| AC-34 | `PROTOCOL.md` in `zyggy-core` equals §4 after each group's approved wording is pasted. | `git diff --no-index` of `PROTOCOL.md` against the §4 section extracted from the founding spec, run for each `zyggy-core` pull request; its empty output pasted into Status |
+| AC-35 | For each group: the runbook has a row for every Failure-modes entry the group builds; the Core, Cli and Node READMEs describe its verbs and keys; `zyggy-core` carries its skill and rule changes (group A: `bus` skill and the stale statements that laptop jobs do not exist; group B: the `supervise` skill, `delegate`, `security.md`, `operations.md`, `AGENTS.md`; group C: the owner view). | Hygiene test on row titles and verbs; the checks of each `zyggy-core` pull request |
+| AC-36 | No published string, fixture or document of this feature carries a real machine name, tenant, person or id. | The existing source-hygiene test |
+| AC-37 | On the real machines, after group B: the owner grants a mandate for `home-laptop` on a scratch project with a two-step spec and leaves; afterwards `zyggy decisions` shows both steps accepted with `basis: verified` and the branch is on the remote. After group C: one mail arrived for a planted question that changes scope. | Owner-run at the release of groups B and C, evidence in Status |
+| AC-38 | On `work-laptop`, after group A: a session shows in `zyggy work` on Central with the fixed fields only; `zyggy ask` there gets an answer; a text with a planted secret-shaped string is refused locally. | Owner-run at the release of group A, after Q2; evidence in Status |
+
+## Slices
+
+Three groups, each usable alone (Q5). The last slice of a group carries that group's runbook rows, READMEs, founding-spec wording and `zyggy-core` pull request.
+
+| # | Slice | Criteria | Review check |
+| --- | --- | --- | --- |
+| | **A — see and answer** | | |
+| 1 | ⚠️ A session's state becomes a signed status only its own machine may write (Fake) | AC-1 (status), AC-2 (status), AC-3 | `dotnet test tests/Zyggy.Core.Tests --filter "FullyQualifiedName~WorkStatus"` |
+| 2 | ⚠️ `zyggy work` on Central shows a laptop session and its jobs over a local bare repo (Wire) | AC-4, AC-5 (without the question state), AC-9 (status) | `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~WorkStatus"` |
+| 3 | ⚠️ A question and Central's decision exist as signed envelopes with their limits (Fake) | AC-1 (question, decision), AC-2 (questions, decisions, archive move), AC-6 (unit) | `dotnet test tests/Zyggy.Core.Tests --filter "FullyQualifiedName~AskDecide"` |
+| 4 | ⚠️ An agent asks with `zyggy ask` and gets Central's `zyggy decide` answer, or its default when none comes (Wire; group A documents) | AC-5 (question state), AC-6, AC-7, AC-8, AC-9, AC-34, AC-35 (A) | `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~AskDecide"` |
+| | **B — mandate and supervisor** | | |
+| 5 | ⚠️ A mandate decides whether a job may be submitted and whether a node may run it, with one counting rule (Fake) | AC-1 (mandate), AC-2 (mandates), AC-10, AC-11, AC-12 | `dotnet test tests/Zyggy.Core.Tests --filter "FullyQualifiedName~Mandate"` |
+| 6 | ⚠️ The owner grants, shows and revokes a mandate; Central submits a template job inside it and is refused outside (Wire) | AC-13, AC-14, AC-15 | `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~MandateGrant"` |
+| 7 | ⚠️ A node runs a job it can match to a mandate and rejects any other; three failures pause it until the owner resumes (Wire) | AC-16, AC-17 | `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~MandateIntake"` |
+| 8 | ⚠️ A job under a mandate builds on the mandate's branch in a worktree and pushes it without touching the owner's checkout (Wire) | AC-18 | `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~MandateBranch"` |
+| 9 | ⚠️ Central picks the next event and renders the supervisor step and the job templates with no report text (Fake) | AC-19, AC-20 | `dotnet test tests/Zyggy.Core.Tests --filter "FullyQualifiedName~SupervisorStep"` |
+| 10 | ⚠️ Central's node wakes on a report or a question and takes one step that decides and submits; it closes a mandate itself (Wire) | AC-21, AC-22, AC-23, AC-24 | `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~SupervisorWake"` |
+| 11 | ⚠️ A work machine is answered from the `outbound` paths only: the guard's read root (Wire; group B documents) | AC-25, AC-34, AC-35 (B) | `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~ReadRoot"` |
+| | **C — owner view, live sessions, the away run** | | |
+| 12 | ⚠️ Central knows what waits for the owner and notifies once per change through the notifier seam (Fake) | AC-26, AC-27, AC-28 | `dotnet test tests/Zyggy.Core.Tests --filter "FullyQualifiedName~OwnerView"` |
+| 13 | ⚠️ The owner gets the mail, sees the list, and stops everything with one command (Wire) | AC-29, AC-30 | `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~OwnerView"` |
+| 14 | ⚠️ Central hands a task to a live session and gets its result; no session ends in `no_session` (Wire; starts with the hook probe of Q3) | AC-2 (session job removal), AC-31, AC-32 | `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~SessionTask"` |
+| 15 | ⚠️ The away run is green (Gate; group C documents) | AC-33, AC-34, AC-35 (C), AC-36 | `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~Supervision_AwayRun"` (the proof also runs the hygiene tests and the diff of AC-34) |
+
+AC-37 and AC-38 are owner-run at the releases named in them. AC-36 is also part of every slice's Verification Commands.
+
+## Out of scope
+
+- A signed `policy.yaml` (roadmap 44) and the DLP filter on job reports.
+- `work-laptop` running jobs as a product node (its own roadmap entry); see Q1.
+- A push to the owner's phone; Telegram (its own roadmap entry, behind the same `INotifier`).
+- A cost limit per mandate or per day.
+- Central scheduling recurring jobs on laptops outside a mandate.
+- Sending mail to anyone but the owner, posting, or any other outward action.
+- Changing what a work machine may send to or read from memory beyond the kinds named here.
+- Replacing the owner's approval of a spec; merging, releasing or deploying without his request or grant.
+- A worktree job that does not push; verifying uncommitted work; reading a session's transcript.
+- Enforcing the tool ceiling inside a live session; pushing a late decision into a running session.
+- Checking a step label against the slice names of a spec.
+- A Hub tool for any of this; a second tenant.
+
+## Open questions
+
+All six answered by the owner at approval (2026-11-15): the recommended option each. Kept for the reasoning.
+
+- [x] **Q1 — jobs under a mandate on `work-laptop`.** Found: `work-laptop` has no registry file and has never run a product job; its only bus traffic is the probe of 2026-10-15 and one archive item. Making it run jobs is the roadmap entry "work laptop joins as a product node", which depends on policy and the DLP filter, and a job report is free text written by an agent working on client code. Why it matters: the owner named `work-laptop` the primary target, and D3 covers statuses, questions and answers, not job reports. Options: (a) in this deliverable `work-laptop` gets visibility, questions and answers, and session tasks with fixed-field results; mandate jobs run by its node wait for the product-node entry, which is then built right after this one; (b) this deliverable also lets its node run mandate jobs, with the report body replaced by fixed fields (status, files changed, `head`) on a work machine; (c) as (b) with the full report under the secret patterns only. Recommendation: (a) — it gives the owner supervised work on that machine through his own sessions from the first release, and keeps free text of unattended runs on client code off the bus until the filter exists. Behavior, AC-10 and the slices assume (a).
+- [x] **Q2 — the employer's policy.** Found: `policy_checked` records that the employer's IT policy allows this agent and its traffic; nothing records that it covers an outside machine directing work on the employer's laptop (handover, open point 9). Why it matters: AC-38 and every session task on `work-laptop`. Options: (a) the owner confirms and the date is recorded in the instance's `work-boundary.json` before AC-38 is run; (b) `work-laptop` stays visibility-only until he has. Recommendation: (a); the build does not wait for it, the owner-run check does.
+- [x] **Q3 — making a live session continue.** Found: delivery of a session task relies on the `Stop` hook returning text that makes the session go on; this was not tried in the installed Claude Code version. Why it matters: slice 14. Options: (a) approve as written; slice 14 starts with the probe and, when the hook cannot do it, comes back with a spec change before code (the fallback would be printing the task at the next session start); (b) probe before approving. Recommendation: (a).
+- [x] **Q4 — the mail for a work-machine item.** Found: the work-boundary rules say no m365 action is run because of something a work machine sent; the notification is an m365 send. Why it matters: a question from `work-laptop` that needs the owner is the main case. Options: (a) the mail is sent, with machine name and no project name or text (as specified); (b) work-machine items appear only on the waiting list and in the brief. Recommendation: (a) — the mail carries nothing the work machine wrote.
+- [x] **Q5 — one release or three.** Found: fifteen slices, about twice the Central sweep. Groups A, B and C are each usable alone and each carries its own documents. Why it matters: group A would put visibility of `work-laptop` in the owner's hands weeks earlier. Options: (a) one feature, one release after slice 15; (b) three releases, each after its group's reviewer pass. Recommendation: (b). The slices work for either.
+- [x] **Q6 — how a grant is confirmed.** Found: the grant is protected by a Claude Code permission prompt (the protection the mail send tool has today), by the binary's refusal in an unattended run, and by the settings check of AC-15. A permissive allow rule added later, or an attended session acting on injected text while the owner approves without reading, would get past it. Why it matters: the mandate is the ceiling for everything else. Options: (a) as written; (b) the binary also asks for confirmation on a terminal of Central (`zyggy mandate confirm <id>` refuses without one), which the owner cannot do from his phone over remote control. Recommendation: (a), with the mandate printed in full in the prompt and listed by `zyggy mandate show`, and every grant named in the next mail to the owner.
