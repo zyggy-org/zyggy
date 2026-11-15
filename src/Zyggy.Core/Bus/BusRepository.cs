@@ -22,6 +22,9 @@ public sealed partial class BusRepository
 {
     private const int MaxPushAttempts = 4;
 
+    /// <summary>How many conflicting unpushed commits a write's first pull drops before it gives up and aborts the rebase.</summary>
+    private const int MaxSkips = 16;
+
     private const string EnvelopeExtension = ".md";
 
     /// <summary>How a pull or write that never got the checkout lock begins its detail; <see cref="ItemSubmitter"/> maps it to the stage <c>lock</c>, and <c>zyggy sweep</c> to exit 4.</summary>
@@ -1021,6 +1024,12 @@ public sealed partial class BusRepository
         }
 
         BusSyncResult pull = await PullUnlockedAsync(ct).ConfigureAwait(false);
+        if (!pull.Succeeded && await _git.OperationInProgressAsync(_checkoutRoot, ct).ConfigureAwait(false))
+        {
+            // An earlier unpushed commit (deferred while offline) conflicts with the remote: drop it and keep the rest (owner, 2026-11-15).
+            pull = await SkipConflictingCommitsAsync(pull, ct).ConfigureAwait(false);
+        }
+
         if (!pull.Succeeded)
         {
             LogWriteFailed(_me.Tenant.Value, _me.Machine.Value, subject, "pull", pull.Detail);
@@ -1049,7 +1058,13 @@ public sealed partial class BusRepository
         {
             TimeSpan delay = TimeSpan.FromSeconds(1) + TimeSpan.FromSeconds(2) * _jitter();
             await Task.Delay(delay, _clock, ct).ConfigureAwait(false);
-            await PullUnlockedAsync(ct).ConfigureAwait(false);
+            BusSyncResult retryPull = await PullUnlockedAsync(ct).ConfigureAwait(false);
+            if (!retryPull.Succeeded && await _git.OperationInProgressAsync(_checkoutRoot, ct).ConfigureAwait(false))
+            {
+                // Never push while a rebase is stopped: HEAD is detached at the remote tip and the push would report success.
+                return await DropConflictingCommitAsync(subject, retryPull.Detail, ct).ConfigureAwait(false);
+            }
+
             push = await _provider.PushAsync(ct).ConfigureAwait(false);
             attempts++;
         }
@@ -1067,6 +1082,49 @@ public sealed partial class BusRepository
         };
         LogDeferred(_me.Tenant.Value, _me.Machine.Value, subject, attempts, detail);
         return new Deferred(attempts, detail);
+    }
+
+    /// <summary>
+    /// Spec 17 "Conflicting commits": the retry's <c>pull --rebase</c> stopped because a remote commit touched the same file as this
+    /// write's commit. Aborts the rebase, drops this write's commit (the branch tip after the abort, since nothing else commits under the
+    /// write lock) with <c>reset --keep</c> so earlier unpushed commits stay, pulls again, and reports the write as failed. Nothing is
+    /// force-pushed; the checkout ends on the bus branch with no rebase in progress.
+    /// </summary>
+    private async Task<WriteFailed> DropConflictingCommitAsync(string subject, string detail, CancellationToken ct)
+    {
+        await _git.RebaseAbortAsync(_checkoutRoot, ct).ConfigureAwait(false);
+        await _git.ResetKeepAsync(_checkoutRoot, "HEAD~1", ct).ConfigureAwait(false);
+        BusSyncResult again = await PullUnlockedAsync(ct).ConfigureAwait(false);
+        if (!again.Succeeded && await _git.OperationInProgressAsync(_checkoutRoot, ct).ConfigureAwait(false))
+        {
+            await _git.RebaseAbortAsync(_checkoutRoot, ct).ConfigureAwait(false);
+        }
+
+        LogWriteDropped(_me.Tenant.Value, _me.Machine.Value, subject, detail);
+        return new WriteFailed("rebase", detail);
+    }
+
+    /// <summary>
+    /// Spec 17 "Conflicting commits", first pull of a write: the <c>pull --rebase</c> stopped on an earlier unpushed commit that touches a
+    /// file the remote changed. Each commit the rebase cannot apply is skipped (dropped, one Warning naming it); the other unpushed commits
+    /// stay. If the rebase is still stopped after <see cref="MaxSkips"/> skips it is aborted, so no rebase is ever left in progress.
+    /// </summary>
+    private async Task<BusSyncResult> SkipConflictingCommitsAsync(BusSyncResult stopped, CancellationToken ct)
+    {
+        for (int skips = 0; skips < MaxSkips && await _git.OperationInProgressAsync(_checkoutRoot, ct).ConfigureAwait(false); skips++)
+        {
+            string dropped = await _git.RebaseStoppedSubjectAsync(_checkoutRoot, ct).ConfigureAwait(false) ?? "an unpushed commit";
+            await _git.RebaseSkipAsync(_checkoutRoot, ct).ConfigureAwait(false);
+            LogWriteDropped(_me.Tenant.Value, _me.Machine.Value, dropped, stopped.Detail);
+        }
+
+        if (await _git.OperationInProgressAsync(_checkoutRoot, ct).ConfigureAwait(false))
+        {
+            await _git.RebaseAbortAsync(_checkoutRoot, ct).ConfigureAwait(false);
+            return stopped;
+        }
+
+        return new BusSyncResult(true, string.Empty);
     }
 
     /// <summary>Puts every path back as in <c>HEAD</c>; a path that is not in <c>HEAD</c> (a new file) is unstaged and deleted.</summary>
@@ -1233,6 +1291,9 @@ public sealed partial class BusRepository
 
     [LoggerMessage(Level = LogLevel.Error, Message = "{Tenant}/{Machine}: '{Subject}' failed at {Stage}; working copy restored: {Detail}")]
     private partial void LogWriteFailed(string tenant, string machine, string subject, string stage, string detail);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "{Tenant}/{Machine}: '{Subject}' dropped: a remote commit changed the same file; checkout back on the bus branch, no rebase in progress: {Detail}")]
+    private partial void LogWriteDropped(string tenant, string machine, string subject, string detail);
 }
 
 /// <summary>What a path is in Central's pass commit (the archive branch of the §4 write rule).</summary>

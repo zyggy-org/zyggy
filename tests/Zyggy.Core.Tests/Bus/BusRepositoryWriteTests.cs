@@ -175,7 +175,7 @@ public sealed class BusRepositoryWriteTests : IDisposable
 
         // Assert
         outcome.Should().Be(new WriteFailed("pull", "could not resolve host"));
-        _processes.Calls.Should().BeEmpty();
+        _processes.Calls.Select(RecordingProcessRunner.SubCommand).Should().OnlyContain(c => c == "rev-parse", "only the read-only check for a stopped rebase runs (spec 17 slice 4); nothing is changed");
         await _provider.DidNotReceive().PushAsync(Arg.Any<CancellationToken>());
     }
 
