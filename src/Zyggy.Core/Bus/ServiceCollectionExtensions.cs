@@ -180,7 +180,9 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<JobHandler>(),
                 log,
                 sp.GetService<JobGate>(),
-                sp.GetService<BusPickup>());
+                sp.GetService<BusPickup>(),
+                sp.GetService<BusSweep>(),
+                SweepInterval(sp));
         });
         // Deliverable 08: the sender side. Resolving without a registered KeyId throws (the verb checks signWith first, as probe send does).
         services.TryAddSingleton(sp =>
@@ -280,6 +282,11 @@ public static class ServiceCollectionExtensions
         DefaultProxyCredentials = CredentialCache.DefaultCredentials,
         AllowAutoRedirect = false,
     };
+
+    /// <summary>Spec 17: the sweep interval of the node service — a test's override, else <c>sweep.intervalMinutes</c>, else 60 minutes.</summary>
+    private static TimeSpan? SweepInterval(IServiceProvider sp) =>
+        sp.GetService<IOptions<SweepScheduleOptions>>()?.Value.IntervalOverride
+        ?? (sp.GetService<NodeConfiguration>() is { } node ? TimeSpan.FromMinutes(node.Sweep.IntervalMinutes) : null);
 
     private static InvalidOperationException Missing(string option) =>
         new($"GitHubBusOptions.{option} is not set: the bus has no default remote, identity or checkout (configure it from node.json).");

@@ -28,6 +28,10 @@ public sealed partial class BusListener : IDisposable
     private readonly ILogger<BusListener> _log;
     private readonly JobGate? _gate;
     private readonly BusPickup? _pickup;
+    private readonly BusSweep? _sweep;
+    private readonly TimeSpan _sweepInterval;
+    private DateTimeOffset? _nextSweepUtc;
+    private bool _sweepAnnounced;
     private readonly ConcurrentDictionary<string, Task> _runs = new(StringComparer.Ordinal);
     private readonly List<AcceptedJob> _deferredClaims = [];
     private bool _pullErrorLogged;
@@ -55,7 +59,10 @@ public sealed partial class BusListener : IDisposable
     /// <param name="log">The logger.</param>
     /// <param name="gate">Consulted before every claim (spec 07); <see langword="null"/> admits every job and awaits its run inline.</param>
     /// <param name="pickup">Central's pickup (spec 13), run after the job pass of every successful pull; <see langword="null"/> on every other machine.</param>
+    /// <param name="sweep">Central's sweep (spec 17), run after the start-up pickup and then every <paramref name="sweepInterval"/>, each right after a pull, job pass and pickup; <see langword="null"/> on every other machine.</param>
+    /// <param name="sweepInterval">The time between two sweep passes (<c>sweep.intervalMinutes</c>); 60 minutes when <see langword="null"/>. Ignored without <paramref name="sweep"/>.</param>
     /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="sweepInterval"/> is not positive.</exception>
     public BusListener(
         IBusProvider provider,
         BusRepository bus,
@@ -66,8 +73,13 @@ public sealed partial class BusListener : IDisposable
         JobHandler handler,
         ILogger<BusListener> log,
         JobGate? gate = null,
-        BusPickup? pickup = null)
+        BusPickup? pickup = null,
+        BusSweep? sweep = null,
+        TimeSpan? sweepInterval = null)
     {
+        _sweepInterval = sweepInterval ?? TimeSpan.FromMinutes(60);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(_sweepInterval, TimeSpan.Zero, nameof(sweepInterval));
+        _sweep = sweep;
         _provider = provider ?? throw new ArgumentNullException(nameof(provider));
         _bus = bus ?? throw new ArgumentNullException(nameof(bus));
         _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -116,6 +128,13 @@ public sealed partial class BusListener : IDisposable
             return BusStartupResult.ListenerRunning;
         }
 
+        if (_sweep is not null && !_sweepAnnounced)
+        {
+            _sweepAnnounced = true;
+            using IDisposable? scope = Scope("sweep");
+            LogSweepEvery(_sweepInterval.TotalMinutes);
+        }
+
         BusSyncResult pull = await _bus.PullAsync(ct).ConfigureAwait(false);
         if (!pull.Succeeded)
         {
@@ -131,6 +150,12 @@ public sealed partial class BusListener : IDisposable
         if (pull.Succeeded)
         {
             await PickupAsync(ct).ConfigureAwait(false);
+            await SweepAsync(ct).ConfigureAwait(false);
+        }
+
+        if (_sweep is not null)
+        {
+            _nextSweepUtc = _clock.GetUtcNow() + _sweepInterval;
         }
 
         State = PollState.Initial(_clock.GetUtcNow());
@@ -284,11 +309,21 @@ public sealed partial class BusListener : IDisposable
     {
         ArgumentNullException.ThrowIfNull(mode);
         _nextSafetyFetchUtc ??= _clock.GetUtcNow() + _options.SafetyFetchInterval;
+        if (_sweep is not null)
+        {
+            _nextSweepUtc ??= _clock.GetUtcNow() + _sweepInterval;
+        }
+
         try
         {
             while (!ct.IsCancellationRequested)
             {
                 DateTimeOffset due = State.NextDueUtc < _nextSafetyFetchUtc.Value ? State.NextDueUtc : _nextSafetyFetchUtc.Value;
+                if (_nextSweepUtc is { } sweepDue && sweepDue < due)
+                {
+                    due = sweepDue;
+                }
+
                 TimeSpan wait = due - _clock.GetUtcNow();
                 if (wait > TimeSpan.Zero)
                 {
@@ -301,6 +336,24 @@ public sealed partial class BusListener : IDisposable
                 {
                     pulledThisTick = await SafetyFetchAsync(ct).ConfigureAwait(false);
                     _nextSafetyFetchUtc = now + _options.SafetyFetchInterval;
+                }
+
+                // Spec 17: on Central, every sweep interval a pass right after a pickup pass — after this tick's pull when there was one,
+                // else after a pull of its own. A failed pull skips the pass (logged once per streak); the next interval tries again.
+                if (_nextSweepUtc is { } nextSweep && now >= nextSweep)
+                {
+                    _nextSweepUtc = now + _sweepInterval;
+                    if (pulledThisTick)
+                    {
+                        await SweepAsync(ct).ConfigureAwait(false);
+                    }
+                    else if (await PullAndNoteAsync(ct).ConfigureAwait(false))
+                    {
+                        pulledThisTick = true;
+                        await ProcessOnceAsync(ct).ConfigureAwait(false);
+                        await PickupAsync(ct).ConfigureAwait(false);
+                        await SweepAsync(ct).ConfigureAwait(false);
+                    }
                 }
 
                 if (now < State.NextDueUtc)
@@ -366,6 +419,9 @@ public sealed partial class BusListener : IDisposable
 
     /// <summary>§5 item 2 as amended by A13-7: on Central, the pickup after the job pass of a successful pull; a no-op elsewhere.</summary>
     private Task PickupAsync(CancellationToken ct) => _pickup is null ? Task.CompletedTask : _pickup.RunAsync(ct);
+
+    /// <summary>Spec 17: on Central, one sweep pass (it logs its own actions and failures and never throws but on cancellation); a no-op elsewhere.</summary>
+    private Task SweepAsync(CancellationToken ct) => _sweep is null ? Task.CompletedTask : _sweep.RunAsync(ct);
 
     /// <summary>The §5 item 6 safety fetch: Moved ⇒ one warning, the ETag forgotten, a pull and a pass; Failed ⇒ one warning per streak; Unchanged ⇒ silence. True when a pull happened.</summary>
     private async Task<bool> SafetyFetchAsync(CancellationToken ct)
@@ -671,6 +727,9 @@ public sealed partial class BusListener : IDisposable
 
     [LoggerMessage(Level = LogLevel.Information, Message = "pushed {Count} deferred commit(s)")]
     private partial void LogPushedDeferred(int count);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "sweep every {Minutes} min")]
+    private partial void LogSweepEvery(double minutes);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "polling")]
     private partial void LogPhasePolling();
