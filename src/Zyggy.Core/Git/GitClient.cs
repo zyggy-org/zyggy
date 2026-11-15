@@ -220,6 +220,24 @@ internal sealed class GitClient(IProcessRunner processes, GitClientOptions optio
     public Task<GitResult> RebaseAbortAsync(string repository, CancellationToken cancellationToken) =>
         RunAsync(repository, ["rebase", "--abort"], null, cancellationToken);
 
+    /// <summary>Drops the commit a stopped rebase could not apply and continues with the rest (<c>rebase --skip</c>; spec 17 "Conflicting commits").</summary>
+    public Task<GitResult> RebaseSkipAsync(string repository, CancellationToken cancellationToken) =>
+        RunAsync(repository, ["rebase", "--skip"], null, cancellationToken);
+
+    /// <summary>The subject of the commit a stopped rebase could not apply (<c>REBASE_HEAD</c>), or <see langword="null"/>.</summary>
+    public async Task<string?> RebaseStoppedSubjectAsync(string repository, CancellationToken cancellationToken)
+    {
+        var result = await RunAsync(repository, ["log", "-1", "--format=%s", "REBASE_HEAD"], null, cancellationToken).ConfigureAwait(false);
+        return result.Succeeded && result.Stdout.Trim() is { Length: > 0 } subject ? subject : null;
+    }
+
+    /// <summary>
+    /// Moves the current branch back to <paramref name="commit"/> with <c>reset --keep</c> (spec 17 "Conflicting commits"): drops the
+    /// commits after it, and refuses rather than discards when a file it would touch has uncommitted changes.
+    /// </summary>
+    public Task<GitResult> ResetKeepAsync(string repository, string commit, CancellationToken cancellationToken) =>
+        RunAsync(repository, ["reset", "--keep", commit], null, cancellationToken);
+
     /// <summary>Whether a rebase or merge is in progress (<c>rebase-merge</c>, <c>rebase-apply</c> or <c>MERGE_HEAD</c> exists).</summary>
     public async Task<bool> OperationInProgressAsync(string repository, CancellationToken cancellationToken)
     {
@@ -242,6 +260,34 @@ internal sealed class GitClient(IProcessRunner processes, GitClientOptions optio
         return result.Succeeded
             ? result.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Where(l => !l.StartsWith("commit ", StringComparison.Ordinal)).ToList()
             : [];
+    }
+
+    /// <summary>
+    /// The committer time of the newest commit on <c>HEAD</c> that touched <paramref name="path"/> (spec 17: a claim's claim time), or
+    /// <see langword="null"/> when git fails or knows no such commit.
+    /// </summary>
+    public async Task<DateTimeOffset?> LastCommitTimeAsync(string repository, string path, CancellationToken cancellationToken)
+    {
+        var result = await RunAsync(repository, ["log", "-1", "--format=%cI", "--", path], null, cancellationToken).ConfigureAwait(false);
+        return result.Succeeded
+            && DateTimeOffset.TryParse(
+                result.Stdout.Trim(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out DateTimeOffset time)
+            ? time.ToUniversalTime()
+            : null;
+    }
+
+    /// <summary>
+    /// The committer time of the newest commit on <c>HEAD</c> that added <paramref name="path"/> (spec 17: the age of a bus file whose
+    /// <c>created</c> cannot be read), or <see langword="null"/> when git fails or knows no such commit.
+    /// </summary>
+    public async Task<DateTimeOffset?> AddedCommitTimeAsync(string repository, string path, CancellationToken cancellationToken)
+    {
+        var result = await RunAsync(repository, ["log", "-1", "--diff-filter=A", "--format=%cI", "--", path], null, cancellationToken).ConfigureAwait(false);
+        return result.Succeeded
+            && DateTimeOffset.TryParse(
+                result.Stdout.Trim(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out DateTimeOffset time)
+            ? time.ToUniversalTime()
+            : null;
     }
 
     /// <summary>Runs one git command; a command that hits <c>index.lock</c> is retried three times with a two-second back-off.</summary>

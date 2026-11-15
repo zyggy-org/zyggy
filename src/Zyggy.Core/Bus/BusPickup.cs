@@ -492,6 +492,17 @@ public sealed partial class BusPickup
     }
 
     /// <summary>The writer rules (§4, the audit's order): file name = <c>id</c>, <c>type</c> = folder, <c>from</c> = folder machine.</summary>
+    /// <summary>
+    /// Whether a pass would take <paramref name="candidate"/>, whose envelope <paramref name="verified"/> already verified: a
+    /// <c>reports/</c> or <c>context/</c> file of another machine than Central, keeping the writer rules, addressed to Central.
+    /// Central's sweep (spec 17) never archives such a file.
+    /// </summary>
+    internal static bool Takes(PickupCandidate candidate, Model verified) =>
+        candidate.Folder != MachineName.Central
+        && candidate.Kind is BusFolder.Reports or BusFolder.Context
+        && WriterRule(candidate, verified) is null
+        && verified.Header.To == MachineName.Central;
+
     private static (PickupLeftReason Reason, string Field)? WriterRule(PickupCandidate candidate, Model envelope)
     {
         if (!string.Equals(Path.GetFileNameWithoutExtension(candidate.File.RelativePath), envelope.Header.Id.Value, StringComparison.Ordinal))

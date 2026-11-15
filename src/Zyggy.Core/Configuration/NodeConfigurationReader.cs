@@ -235,6 +235,7 @@ public static partial class NodeConfigurationReader
 
         if (!TryArchive(root, out ArchiveSettings archive, out failure)
             || !TryDiscovery(root, out DiscoverySettings discovery, out failure)
+            || !TrySweep(root, machine, out SweepSettings sweep, out failure)
             || !TryAgentCore(root, out AgentCoreSettings agentCore, out failure))
         {
             return failure;
@@ -256,6 +257,7 @@ public static partial class NodeConfigurationReader
             Log = log,
             Archive = archive,
             Discovery = discovery,
+            Sweep = sweep,
             AgentCore = agentCore,
         });
     }
@@ -314,8 +316,8 @@ public static partial class NodeConfigurationReader
             return false;
         }
 
-        if (!TryRangedInt(section, "intervalMinutes", 1, 1440, discovery.IntervalMinutes, out int interval, out failure)
-            || !TryRangedInt(section, "lastSeenHours", 1, 168, discovery.LastSeenHours, out int lastSeen, out failure))
+        if (!TryRangedInt(section, "discovery", "intervalMinutes", 1, 1440, discovery.IntervalMinutes, out int interval, out failure)
+            || !TryRangedInt(section, "discovery", "lastSeenHours", 1, 168, discovery.LastSeenHours, out int lastSeen, out failure))
         {
             return false;
         }
@@ -341,7 +343,35 @@ public static partial class NodeConfigurationReader
         return true;
     }
 
-    private static bool TryRangedInt(JsonElement section, string key, int min, int max, int fallback, out int value, out NodeConfigurationResult failure)
+    /// <summary>
+    /// The <c>sweep</c> section (spec 17): read only when <paramref name="machine"/> is Central — elsewhere it is ignored and the default
+    /// kept. Absent or <c>null</c> means the default; <c>intervalMinutes</c> an integer 1–1440. Unknown keys inside the section are ignored.
+    /// </summary>
+    private static bool TrySweep(JsonElement root, MachineName machine, out SweepSettings sweep, out NodeConfigurationResult failure)
+    {
+        sweep = new SweepSettings();
+        failure = null!;
+        if (machine != MachineName.Central || !root.TryGetProperty("sweep", out JsonElement section) || section.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (section.ValueKind != JsonValueKind.Object)
+        {
+            failure = Invalid("sweep", "must be an object");
+            return false;
+        }
+
+        if (!TryRangedInt(section, "sweep", "intervalMinutes", 1, 1440, sweep.IntervalMinutes, out int interval, out failure))
+        {
+            return false;
+        }
+
+        sweep = new SweepSettings(interval);
+        return true;
+    }
+
+    private static bool TryRangedInt(JsonElement section, string sectionName, string key, int min, int max, int fallback, out int value, out NodeConfigurationResult failure)
     {
         value = fallback;
         failure = null!;
@@ -352,7 +382,7 @@ public static partial class NodeConfigurationReader
 
         if (element.ValueKind != JsonValueKind.Number || !element.TryGetInt32(out value) || value < min || value > max)
         {
-            failure = Invalid("discovery." + key, string.Create(CultureInfo.InvariantCulture, $"must be an integer from {min} to {max}"));
+            failure = Invalid(sectionName + "." + key, string.Create(CultureInfo.InvariantCulture, $"must be an integer from {min} to {max}"));
             return false;
         }
 

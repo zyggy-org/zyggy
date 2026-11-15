@@ -76,6 +76,30 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
+    /// Registers Central's <see cref="BusSweep"/> (spec 17) over the registered <see cref="BusRepository"/>, envelope signer and
+    /// <see cref="NodeConfiguration"/>: Central signs what it writes with <c>signWith</c>, and a claim that names no <c>timeout_minutes</c>
+    /// gets <c>claude.defaultTimeoutMinutes</c>. Only Central calls this (the verb on demand, the node service on its interval).
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns><paramref name="services"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is null.</exception>
+    public static IServiceCollection AddBusSweep(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        services.TryAddSingleton(sp =>
+        {
+            NodeConfiguration node = sp.GetRequiredService<NodeConfiguration>();
+            ILogger<BusSweep> log = sp.GetService<ILoggerFactory>()?.CreateLogger<BusSweep>() ?? NullLogger<BusSweep>.Instance;
+            return new BusSweep(
+                sp.GetRequiredService<BusRepository>(),
+                sp.GetRequiredService<EnvelopeSigner>(),
+                new SweepOptions(node.SignWith, node.Claude.DefaultTimeoutMinutes),
+                log);
+        });
+        return services;
+    }
+
+    /// <summary>
     /// Spec 41 (plan A13, A14; founding spec §8 Graph-certificate row as amended by W41-12): the instance's M365 session and its Graph
     /// reader with no throttling retries — the key read only by <see cref="GraphTokenClient"/>; the drive writer is never taken from the
     /// parts. A load error is the "not configured" detail.
@@ -156,7 +180,9 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<JobHandler>(),
                 log,
                 sp.GetService<JobGate>(),
-                sp.GetService<BusPickup>());
+                sp.GetService<BusPickup>(),
+                sp.GetService<BusSweep>(),
+                SweepInterval(sp));
         });
         // Deliverable 08: the sender side. Resolving without a registered KeyId throws (the verb checks signWith first, as probe send does).
         services.TryAddSingleton(sp =>
@@ -256,6 +282,11 @@ public static class ServiceCollectionExtensions
         DefaultProxyCredentials = CredentialCache.DefaultCredentials,
         AllowAutoRedirect = false,
     };
+
+    /// <summary>Spec 17: the sweep interval of the node service — a test's override, else <c>sweep.intervalMinutes</c>, else 60 minutes.</summary>
+    private static TimeSpan? SweepInterval(IServiceProvider sp) =>
+        sp.GetService<IOptions<SweepScheduleOptions>>()?.Value.IntervalOverride
+        ?? (sp.GetService<NodeConfiguration>() is { } node ? TimeSpan.FromMinutes(node.Sweep.IntervalMinutes) : null);
 
     private static InvalidOperationException Missing(string option) =>
         new($"GitHubBusOptions.{option} is not set: the bus has no default remote, identity or checkout (configure it from node.json).");

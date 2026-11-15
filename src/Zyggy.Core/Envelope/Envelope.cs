@@ -215,6 +215,33 @@ public sealed class Envelope
         return new Envelope(Schema, Type, Header, Job, Report, Context, Item, keyId, signature, new FrontMatterMapping(entries), Body);
     }
 
+    /// <summary>
+    /// Returns an unsigned copy of this job with <c>attempt</c> set to <paramref name="attempt"/> (spec 17, §4 state machine: the
+    /// sweep's re-queue). Every other front-matter field, known or unknown, and the body bytes are carried over untouched;
+    /// <c>key_id</c> and <c>sig</c> are dropped, so the copy must be signed before it is written.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when this envelope is not a job.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="attempt"/> is below 1.</exception>
+    internal Envelope WithAttempt(int attempt)
+    {
+        if (Type != EnvelopeType.Job)
+        {
+            throw new InvalidOperationException("Only a job carries an attempt.");
+        }
+
+        ArgumentOutOfRangeException.ThrowIfLessThan(attempt, 1);
+        var entries = new Dictionary<string, FrontMatterNode>(FrontMatter.Entries, StringComparer.Ordinal)
+        {
+            ["attempt"] = new FrontMatterScalar(attempt.ToString(CultureInfo.InvariantCulture)),
+        };
+        entries.Remove("key_id");
+        entries.Remove("sig");
+        EnvelopeResult result = EnvelopeParser.Interpret(new FrontMatterMapping(entries), Body, Header.Tenant, signed: false);
+        return result.IsAccepted
+            ? result.Envelope
+            : throw new InvalidOperationException("The job no longer reads as a job: " + result.Rejection.Detail + ".");
+    }
+
     private static Dictionary<string, FrontMatterNode> Common(EnvelopeHeader header, EnvelopeType type)
     {
         ArgumentNullException.ThrowIfNull(header.Tenant, nameof(header));

@@ -151,6 +151,9 @@ public static class NodeHost
         if (pickup is not null)
         {
             builder.Services.AddBusPickup(pickup);
+
+            // Spec 17 (D1): Central's node service sweeps after its start-up pickup and every sweep.intervalMinutes; no other machine does.
+            builder.Services.AddBusSweep();
         }
         builder.Services.AddJobDispatcher();
         builder.Services.AddSingleton<NodeExitState>();

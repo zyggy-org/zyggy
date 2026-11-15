@@ -1,3 +1,5 @@
+using System.Globalization;
+
 using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Registry;
@@ -677,6 +679,61 @@ public sealed class NodeConfigurationReaderTests : IDisposable
         result.ToString().Should().Be(message);
     }
 
+    // Spec 17 AC-15: `sweep.intervalMinutes`, read only on Central.
+    [Theory]
+    [InlineData("")]
+    [InlineData("\"sweep\": null,")]
+    [InlineData("\"sweep\": { },")]
+    public void Read_CentralSweepAbsent_SixtyMinutes(string insert)
+    {
+        // Act
+        NodeConfigurationResult result = Read(AsCentral(WithTopLevel(insert)));
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        result.Configuration!.Sweep.Should().Be(new SweepSettings(60));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(1440)]
+    public void Read_CentralSweepIntervalInRange_Typed(int minutes)
+    {
+        // Act
+        NodeConfigurationResult result = Read(AsCentral(WithTopLevel(string.Create(CultureInfo.InvariantCulture, $"\"sweep\": {{ \"intervalMinutes\": {minutes} }},"))));
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        result.Configuration!.Sweep.Should().Be(new SweepSettings(minutes));
+    }
+
+    [Theory]
+    [InlineData("5", "sweep", "sweep: must be an object")]
+    [InlineData("{ \"intervalMinutes\": 0 }", "sweep.intervalMinutes", "sweep.intervalMinutes: must be an integer from 1 to 1440")]
+    [InlineData("{ \"intervalMinutes\": 1441 }", "sweep.intervalMinutes", "sweep.intervalMinutes: must be an integer from 1 to 1440")]
+    [InlineData("{ \"intervalMinutes\": \"60\" }", "sweep.intervalMinutes", "sweep.intervalMinutes: must be an integer from 1 to 1440")]
+    public void Read_CentralSweepInvalid_FieldNamed(string section, string field, string message)
+    {
+        // Act
+        NodeConfigurationResult result = Read(AsCentral(WithTopLevel("\"sweep\": " + section + ",")));
+
+        // Assert
+        result.Error.Should().Be(NodeConfigurationError.InvalidField);
+        result.Field.Should().Be(field);
+        result.ToString().Should().Be(message);
+    }
+
+    [Fact]
+    public void Read_LaptopSweepInvalid_IgnoredWithDefaults()
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"sweep\": { \"intervalMinutes\": 0 },"));
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        result.Configuration!.Sweep.Should().Be(new SweepSettings(60));
+    }
+
     // Spec 15 AC-12: `agentCore.path`, the zyggy-core checkout whose commit /health reports.
     [Theory]
     [InlineData("")]
@@ -721,6 +778,9 @@ public sealed class NodeConfigurationReaderTests : IDisposable
     }
 
     private const string Section10Keys = "\"workHours\": { \"timezone\": \"Europe/Brussels\", \"days\": [\"Mon\",\"Tue\",\"Wed\",\"Thu\",\"Fri\"], \"from\": \"08:00\", \"to\": \"19:00\" }, \"maxConcurrentJobs\": 2, \"log\": { \"level\": \"Information\" },";
+
+    private static string AsCentral(string json) =>
+        json.Replace("\"machine\": \"home-laptop\"", "\"machine\": \"central\"", StringComparison.Ordinal);
 
     private static string WithTopLevel(string insert) =>
         Minimal.Replace("\"tenant\": \"acme\",", "\"tenant\": \"acme\", " + insert, StringComparison.Ordinal);

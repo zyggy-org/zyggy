@@ -1240,6 +1240,32 @@ public sealed partial class SourceHygieneTests
         missing.Should().BeEmpty();
     }
 
+    // Spec 17 AC-20: the four sweep runbook rows in the Node README, which also names the sweep and its node.json key; the Cli README
+    // names the verb with --dry-run and the key; the Core README names the pass; the Integration README names gate part 3.
+    [Fact]
+    public void Readmes_SweepDocumented()
+    {
+        // Arrange
+        static string Read(string relative) => File.ReadAllText(Path.Combine(RepoRoot(), relative));
+        var node = Read("src/Zyggy.Node/README.md");
+        var cli = Read("src/Zyggy.Cli/README.md");
+        var core = Read("src/Zyggy.Core/README.md");
+        var integration = Read("tests/Zyggy.Integration/README.md");
+        string[] nodeNeedles = ["| Job failed 3 times |", "| Sweep: nothing happens |", "| Sweep: cannot sign |", "| Sweep: a job ran twice |", "## Sweep", "| `sweep.intervalMinutes` |"];
+        string[] cliNeedles = ["| `sweep [--dry-run]", "| `sweep.intervalMinutes` |"];
+        string[] coreNeedles = ["`BusSweep`", "`AddBusSweep`", "attempts_exhausted"];
+
+        // Act
+        var missing = nodeNeedles.Where(n => !node.Contains(n, StringComparison.Ordinal)).Select(n => "node: " + n)
+            .Concat(cliNeedles.Where(n => !cli.Contains(n, StringComparison.Ordinal)).Select(n => "cli: " + n))
+            .Concat(coreNeedles.Where(n => !core.Contains(n, StringComparison.Ordinal)).Select(n => "core: " + n))
+            .Concat(integration.Contains("part 3 (deliverable 17)", StringComparison.Ordinal) ? [] : ["integration: part 3 (deliverable 17)"])
+            .ToList();
+
+        // Assert
+        missing.Should().BeEmpty();
+    }
+
     // Spec 41 AC-48/AC-49, plan 41 Step 14: every failure mode has its runbook row in the README the spec names, the Central drop-in
     // documents its two additions, and the files the deliverable added use placeholder identities only.
     [Fact]

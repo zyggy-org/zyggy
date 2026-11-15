@@ -4,7 +4,9 @@
 //   Part 2 (deliverable 16, worktrees): `zyggy submit --project <name> --worktree` → the host runs the fake claude in
 //           <nodeDir>/worktrees/acme/<id> on zyggy/<id>, pushes the branch to the project's own origin → `done` report whose
 //           diff_ref is that branch's SHA on the origin.
-//   Part 3 (deliverable 17, sweep) appends its own region.
+//   Part 3 (deliverable 17, sweep): a node stopped while it runs a claimed job → `zyggy sweep` on Central, its clock past the limit,
+//           re-queues it → the restarted host runs it → `done`; a claim stale at attempt 3 → Central's `attempts_exhausted` report shown
+//           by `zyggy status --id`, and a 15-day-old report moved to archive/ in the same pass; `zyggy verify` clean.
 // Rule: later parts append their own region and reuse the private helpers at the bottom; part 1 is never restructured.
 // Nothing in the envelope wire format changed for this gate; PROTOCOL.md stays the placeholder (15 copies §4).
 using System.Text;
@@ -18,6 +20,7 @@ using Zyggy.Core.Bus;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Jobs;
 using Zyggy.Core.Processes;
+using Zyggy.Core.Tenancy;
 using Zyggy.Core.Tests.Infrastructure;
 using Zyggy.Integration.Infrastructure;
 using Zyggy.Integration.Node;
@@ -29,7 +32,8 @@ namespace Zyggy.Integration.Gates;
 
 /// <summary>
 /// Phase P2 gate, part 1 (spec 14 AC-19, AC-24, AC-25): the registry on the bus and a job routed by registry name; part 2 (spec 16 AC-16):
-/// a worktree job whose branch is pushed — both through the production host and the CLI.
+/// a worktree job whose branch is pushed; part 3 (spec 17 AC-18): Central's sweep re-queues a stopped node's claim, ends a third stale
+/// claim and archives old reports — all through the production host and the CLI.
 /// </summary>
 public sealed partial class P2_RegistryWorktreeSweep : IAsyncLifetime
 {
@@ -169,6 +173,97 @@ public sealed partial class P2_RegistryWorktreeSweep : IAsyncLifetime
 
     #endregion
 
+    #region Part 3 — 17
+
+    // AC-18: a job claimed by a node that is then stopped is re-queued by Central's pass once the clock is past the limit, and the
+    // restarted node runs it and reports done.
+    [Fact]
+    public async Task Part3a_ClaimOfStoppedNode_RequeuedByCentralRunAgainDone()
+    {
+        // Arrange: the node claims the job and is stopped while the model still runs
+        var ct = TestContext.Current.CancellationToken;
+        await _harness.ProjectAsync(ct, "calizr");
+        _harness.FakeEnvironment["ZYGGY_FAKE_CLAUDE_DELAY_MS"] = "600000";
+        string id;
+        using (IHost first = await StartHostWithRegistryAsync(ct))
+        {
+            var (submitExit, submit) = await CliAsync(
+                ["submit", "--to", "home-laptop", "--project", "calizr", "--timeout", "2", "--allowed-tools", "Read", Body], ct);
+            submitExit.Should().Be(0, submit.Stderr);
+            string submitted = SubmittedLine().Match(submit.Stdout).Groups["id"].Value;
+            await NodeHostHarness.WaitUntilAsync(() => _harness.Bus.ExistsOnMainAsync(ClaimedPath(submitted), ct), TimeSpan.FromSeconds(60), ct);
+            await first.StopAsync(ct);
+            id = submitted;
+        }
+
+        _harness.FakeEnvironment.Remove("ZYGGY_FAKE_CLAUDE_DELAY_MS");
+
+        // Act (a): Central's pass, its clock an hour ahead, puts the claim back in the queue
+        var (sweepExit, sweep) = await CliAsync(["sweep"], ct, clock: new OffsetClock(TimeSpan.FromHours(1)));
+        sweepExit.Should().Be(0, sweep.Stderr);
+
+        // Act (b): the restarted node claims it again, runs it and answers on main
+        using IHost second = await StartHostWithRegistryAsync(ct);
+        await NodeHostHarness.WaitUntilAsync(async () => (await _harness.ReportsOnMainAsync(ct)).Count == 1, TimeSpan.FromSeconds(60), ct);
+        await second.StopAsync(ct);
+
+        // Assert
+        sweep.Stdout.Should().StartWith($"requeued {id} home-laptop attempt 2\n");
+        Model report = await SingleReportAsync(ct);
+        report.Header.InReplyTo!.Value.Should().Be(id);
+        report.Report!.Status.Should().Be(ReportStatus.Done, Encoding.UTF8.GetString(report.Body.Span));
+        (await _harness.CommitSubjectsAsync(ct)).Should().Contain($"acme requeue {id} central→home-laptop");
+        var (verifyExit, verify) = await CliAsync(["verify"], ct, _harness.NodeJsonPath);
+        verifyExit.Should().Be(0, verify.Stdout + verify.Stderr);
+        SweepSecrets(sweep, verify);
+    }
+
+    // AC-18: a claim stale at attempt 3 ends in Central's attempts_exhausted report that `zyggy status --id` shows; a 15-day-old
+    // report is archived in the same pass; `zyggy verify` stays clean.
+    [Fact]
+    public async Task Part3b_ThirdStaleClaim_ExhaustedShownByStatus_OldReportArchived_VerifyClean()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        ScratchProject calizr = await _harness.ProjectAsync(ct, "calizr");
+        Model job = await TestEnvelopes.SignedJobAsync(
+            NodeHostHarness.Central, NodeHostHarness.HomeLaptop, _harness.Store, TestKeys.Acme1, Body, ct,
+            fields: new JobFields(calizr.Path, TimeoutMinutes: 2, AllowedTools: ["Read"]));
+        EnvelopeResult third = await new EnvelopeSigner(_harness.Store).SignAsync(job.WithAttempt(3), TestKeys.Acme1, ct);
+        string id = job.Header.Id.Value;
+        await _harness.Bus.SeedRawFileAsync(ClaimedPath(id), EnvelopeWriter.Serialize(third.Envelope!), $"acme claim {id} home-laptop", ct);
+        DateTimeOffset old = new(DateTime.UtcNow.Date.AddDays(-15).AddHours(12), TimeSpan.Zero);
+        SeededJob oldReport = await _harness.Bus.SeedSignedReportAsync(
+            NodeHostHarness.HomeLaptop, MachineName.Parse("work-laptop"), EnvelopeId.New(old), TestKeys.Acme1, _harness.Store, "done\n", created: old, ct: ct);
+        var (sweepExit, sweep) = await CliAsync(["sweep"], ct, clock: new OffsetClock(TimeSpan.FromHours(1)));
+        sweepExit.Should().Be(0, sweep.Stderr);
+
+        // Act
+        var (statusExit, status) = await CliAsync(["status", "--id", id], ct);
+
+        // Assert
+        statusExit.Should().Be(0, status.Stderr);
+        status.Stdout.Should().Contain("failed attempts_exhausted");
+        sweep.Stdout.Should().StartWith($"exhausted {id} home-laptop after 3 attempts\narchived 1 file(s), oldest created ");
+        (await _harness.Bus.ExistsOnMainAsync(ClaimedPath(id), ct)).Should().BeFalse();
+        (await _harness.Bus.ExistsOnMainAsync(oldReport.RelativePath, ct)).Should().BeFalse();
+        (await _harness.Bus.ExistsOnMainAsync(BusPaths.EnvelopeFile(BusPaths.Archive(NodeHostHarness.Acme, old.Year, old.Month), oldReport.Id), ct)).Should().BeTrue();
+        var (verifyExit, verify) = await CliAsync(["verify"], ct, _harness.NodeJsonPath);
+        verifyExit.Should().Be(0, verify.Stdout + verify.Stderr);
+        SweepSecrets(sweep, status, verify);
+    }
+
+    private static string ClaimedPath(string id) =>
+        BusPaths.EnvelopeFile(BusPaths.Claimed(NodeHostHarness.Acme, NodeHostHarness.HomeLaptop), EnvelopeId.Parse(id));
+
+    /// <summary>The system clock moved ahead by a fixed amount; timers stay real.</summary>
+    private sealed class OffsetClock(TimeSpan offset) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => System.GetUtcNow() + offset;
+    }
+
+    #endregion
+
     // ----- helpers shared by every part -----
 
     /// <summary>Starts the production host and waits until it has polled and its registry file is on <c>main</c>.</summary>
@@ -202,10 +297,17 @@ public sealed partial class P2_RegistryWorktreeSweep : IAsyncLifetime
             nodeDir: _harness.Scratch.File("node-central"));
 
     /// <summary>Runs a verb in process — as <c>central</c> unless <paramref name="nodeJson"/> says otherwise — with the harness's edges (the doorbell from the bare repository, recorded processes).</summary>
-    private Task<(int Exit, VerbConsole Console)> CliAsync(string[] args, CancellationToken ct, string? nodeJson = null)
+    private Task<(int Exit, VerbConsole Console)> CliAsync(string[] args, CancellationToken ct, string? nodeJson = null, TimeProvider? clock = null)
     {
         var environment = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { ["ZYGGY_NODE_JSON"] = nodeJson ?? CentralNodeJson() };
-        return ZyggyCliInProcess.RunAsync(args, environment, CliServices, stdin: null, ct);
+        return ZyggyCliInProcess.RunAsync(args, environment, services =>
+        {
+            CliServices(services);
+            if (clock is not null)
+            {
+                services.AddSingleton(clock);
+            }
+        }, stdin: null, ct);
     }
 
     private void CliServices(IServiceCollection services)

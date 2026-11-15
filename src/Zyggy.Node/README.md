@@ -47,6 +47,7 @@ The single configuration file (§10). Path: `--config`, else `ZYGGY_NODE_JSON`, 
 | `secrets.root` | the file secret store's root | the per-OS default |
 | `devRoots` | the folders whose direct children are scanned for projects; a job path must lie under one | `[]` (nothing found, every path refused) |
 | `discovery.intervalMinutes`, `discovery.lastSeenHours`, `discovery.detail` | rescan period, the liveness stamp's maximum age, `full` or `names` | 60, 6, `full` |
+| `sweep.intervalMinutes` | read only on Central: minutes between two sweep passes of the node service, 1–1440 (out of range: exit 3); ignored on every other machine | 60 |
 | `agentCore.path` | absolute path of this machine's `zyggy-core` checkout, whose commit `/health` reports as `agentCoreSha` | the checkout `zyggy setup` makes: `C:/agents/zyggy-core` on Windows, `~/agents/zyggy-core` elsewhere (Central: set it to its working directory) |
 
 Secrets are never in it; any key named like a credential is refused.
@@ -88,7 +89,7 @@ One rolling file per machine, `<nodeDir>/logs/zyggy-<yyyyMMdd>.log`, a new file 
 <UTC timestamp>Z [LEVEL] <tenant> <machine> <phase> <jobId> <category>: <message>
 ```
 
-`phase` is one of `poll pull claim run report reject pickup discover` and `jobId` is set inside a run; both are blank on host lines. One line per state change, nothing on a quiet tick; never the job body, the prompt, a key or a credential. `log.level: Debug` adds the host's diagnostics.
+`phase` is one of `poll pull claim run report reject pickup sweep discover` and `jobId` is set inside a run; both are blank on host lines. One line per state change, nothing on a quiet tick; never the job body, the prompt, a key or a credential. `log.level: Debug` adds the host's diagnostics.
 
 ## Discovery
 
@@ -137,6 +138,14 @@ Deliverable 41: a laptop's `zyggy archive` leaves a signed `item` envelope in it
 
 Each item file stays in every clone's bus history (a bus-route item with its full content); see "Bus repository too large".
 
+## Sweep
+
+Deliverable 17. The node on Central sweeps the bus itself — no timer, no model run: once right after the start-up pull and pickup, then every `sweep.intervalMinutes` (60), each time right after a pull, a job pass and a pickup pass (one `sweep every <n> min` line at start, none per pass). No other machine sweeps. `zyggy sweep` runs one pass on demand, `zyggy sweep --dry-run` shows what a pass would do (Cli README).
+
+- **Stale claims**: a file in any machine's `jobs/claimed/` whose claim commit is more than `timeout_minutes` + 15 min old (Central's `claude.defaultTimeoutMinutes` when the job names none). A claim at attempt 1 or 2 goes back to that machine's `jobs/` with `attempt` raised and signed again with Central's `signWith` (`<tenant> requeue <id> central→<machine>`); at attempt 3 it is removed and Central answers the job's sender with a `failed` report, `reason: attempts_exhausted`; a claim that does not verify moves unchanged to `jobs/rejected/`, with a `rejected` report when its `from` is readable. One commit per job.
+- **Old files**: every `reports/` and `context/` file whose `created` is more than 14 days ago (unreadable: added more than 14 days ago) moves to `archive/<YYYY-MM>/`, except files the pickup still takes; one commit per pass, the pickup's subject and body shape.
+- A pass never throws to the loop: a failed pull skips it until the next interval, a failed git step restores that job's change and the pass goes on, the host keeps running and `/health` answers.
+
 ## Polling every second
 
 Central asks the bus host for the branch head with a conditional request every second, ±0.5 s (the jitter is at most half the interval; the laptops keep 10 s ±2 s and 60 s ±2 s). The budget:
@@ -164,6 +173,15 @@ Latency: within seconds; measured value pending (deliverable 13, AC-24).
 | Pickup: archive failed / deferred | `[ERR] … pickup: archive failed at <stage>: <detail>` once per failure streak, or `picked up … ; archive deferred` | the inbox file is already written and is never written twice; `pull`/`lock`: wait or check the network (`zyggy probe reach`); a push refused four times goes with the next bus write; a push that keeps failing: `runbooks/bus-conflict.md` |
 | Pickup: secret-shaped line dropped | `[WRN] … pickup: <id>: dropped 1 line (pattern <name>)` or `pickup: <id>: report line refused (pattern <name>)` | nothing to undo: the line never reached memory and is archived with its envelope; tell the sender's owner which pattern matched |
 | Pickup: slow (throttled) | `/health` `backoffUntilUtc` set, one throttle warning in the log | the 1 s poll waits at least 120 s after a `403`/`429` or below 100 remaining requests; it resumes on its own; check other tokens of the same account |
+
+## Troubleshooting — Sweep
+
+| Situation | What you see | What to do |
+|-----------|--------------|------------|
+| Job failed 3 times | `[ERR] … sweep: job <id> on <machine> failed after 3 attempts`; `zyggy status --id <id>` shows Central's report `failed attempts_exhausted` (body: machine, attempts, claim time); the claim is gone | the machine claimed the job three times and never answered: check that machine's node (`zyggy status` there, its log and `<nodeDir>/runs/<tenant>/<id>.jsonl`), fix the cause (asleep, crashing, a run longer than its timeout), then submit the job again — a new id, attempt 1 |
+| Sweep: nothing happens | stale claims stay in `jobs/claimed/`; one of `[ERR] … sweep: failed at lock: …` (checkout busy for the whole wait; `zyggy sweep` exit 4), `[ERR] … sweep: failed at <mv/add/commit/pull>: <detail>` (exit 6; that job's change restored, `git status` clean), `[WRN] … sweep: claim time of <path> unreadable; claim left`; or no `sweep every <n> min` line at start | lock: wait, the next interval retries; a git step: `git -C <bus.localPath> status` as the service user, then `runbooks/bus-conflict.md`; claim time unreadable: the claim commit is missing from the checkout's history (a shallow clone) — reclone the bus; no start line: the machine is not named `central`, or the node is older than deliverable 17. A claim younger than `timeout_minutes` + 15 min is not stale yet: `zyggy sweep --dry-run` shows what a pass would do now |
+| Sweep: cannot sign | `[ERR] … sweep: cannot sign: <detail>` once per streak; no claim is re-queued, ended or rejected with a report (nothing unsigned is written); old files are still archived | Central's signing key is missing or unusable: `zyggy secret set` for the key `node.json`'s `signWith` names (Core README "Troubleshooting — Secrets"), then wait for the next interval or run `zyggy sweep` |
+| Sweep: a job ran twice | two reports for one job, or a node's `[WRN] … '<tenant> report <id> …' dropped: a remote commit changed the same file; checkout back on the bus branch, no rebase in progress` (or Central's own `requeue` commit dropped the same way, `zyggy sweep` exit 6) | the node was still running the job when Central re-queued it: its late result is dropped and the job runs again — nothing to repair, both checkouts are clean. To prevent it, give long jobs an explicit `timeout_minutes` (`zyggy submit --timeout <minutes>`): without one Central uses its own `claude.defaultTimeoutMinutes`, which may be shorter than the machine's. A job that must never run twice should not be sent as a job |
 
 ## Structure
 
