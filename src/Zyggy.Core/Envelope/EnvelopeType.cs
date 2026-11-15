@@ -14,4 +14,13 @@ public enum EnvelopeType
 
     /// <summary><c>item</c>: an archive item sent to Central (deliverable 41).</summary>
     Item,
+
+    /// <summary><c>status</c>: the state of a live session, sent to Central (deliverable 18).</summary>
+    Status,
+
+    /// <summary><c>question</c>: what an agent asks Central while it works (deliverable 18).</summary>
+    Question,
+
+    /// <summary><c>decision</c>: Central's answer and its record (deliverable 18).</summary>
+    Decision,
 }

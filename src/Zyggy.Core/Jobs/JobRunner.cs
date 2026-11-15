@@ -182,7 +182,8 @@ public sealed partial class JobRunner
 
         // Spec 06 "ModelRunRequest for a job": no tool set, extra directory, schema, model or system prompt; the project's own
         // hooks, skills, MCP servers and memory apply (Isolation.None, ex-Q7).
-        var request = new ModelRunRequest(_prompt.Render(job, runDirectory, allowedTools), runDirectory, _options.TimeoutOverride ?? TimeSpan.FromMinutes(minutes))
+        var timeout = _options.TimeoutOverride ?? TimeSpan.FromMinutes(minutes);
+        var request = new ModelRunRequest(_prompt.Render(job, runDirectory, allowedTools), runDirectory, timeout)
         {
             MaxTurns = policy.MaxTurns,
             AllowedTools = allowedTools,
@@ -190,7 +191,8 @@ public sealed partial class JobRunner
             Isolation = ModelSessionIsolation.None,
             PreToolUseHook = new ModelHookCommand(hookExecutable, hookArgs),
             // Founding spec §6 Invocation (amended by deliverable 12, D5): a job run is unattended — the memory and context writers do nothing.
-            Environment = WithHooksOff(_options.ModelEnvironment),
+            // Deliverable 18: the run also learns which job it is, in which project, and when it times out, so `zyggy ask` can name it and stop waiting in time.
+            Environment = WithHooksOff(_options.ModelEnvironment, job.Header.Id, ProjectName.Derive(WorkHookInput.LastSegment(project)), _clock.GetUtcNow() + timeout),
             TranscriptPath = TranscriptPaths.For(nodeDir, job.Header.Tenant, job.Header.Id),
         };
 
@@ -368,9 +370,18 @@ public sealed partial class JobRunner
         }
     }
 
-    /// <summary>The model environment with <c>ZYGGY_HOOKS=off</c> set last, so no configured value can switch the hooks back on (spec 12 A5).</summary>
-    private static Dictionary<string, string> WithHooksOff(IReadOnlyDictionary<string, string> environment) =>
-        new(environment, StringComparer.Ordinal) { ["ZYGGY_HOOKS"] = "off" };
+    /// <summary>
+    /// The model environment with <c>ZYGGY_HOOKS=off</c> and the job's id, project and end time set last, so no configured value can
+    /// switch the hooks back on (spec 12 A5) or name another job (deliverable 18).
+    /// </summary>
+    private static Dictionary<string, string> WithHooksOff(IReadOnlyDictionary<string, string> environment, EnvelopeId job, string project, DateTimeOffset ends) =>
+        new(environment, StringComparer.Ordinal)
+        {
+            ["ZYGGY_HOOKS"] = "off",
+            ["ZYGGY_JOB"] = job.Value,
+            ["ZYGGY_JOB_PROJECT"] = project,
+            ["ZYGGY_JOB_ENDS"] = ends.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
+        };
 
     private static int? Clamp(long? tokens) => tokens is { } value ? (int)Math.Clamp(value, 0, int.MaxValue) : null;
 

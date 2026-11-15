@@ -33,6 +33,9 @@ public sealed partial class BusRepository
     /// <summary>How long a write or pull waits for another process's checkout lock (one full write sequence incl. its push retries fits).</summary>
     private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(60);
 
+    /// <summary>Deliverable 18: a machine's own status file older than this is removed with its next status write.</summary>
+    private static readonly TimeSpan StatusMaxAge = TimeSpan.FromHours(24);
+
     private readonly GitClient _git;
     private readonly IBusProvider _provider;
     private readonly BusIdentity _me;
@@ -486,6 +489,229 @@ public sealed partial class BusRepository
     }
 
     /// <summary>
+    /// Deliverable 18 ("Live work is visible"): adds a signed status envelope of this node, addressed to Central, to this node's own
+    /// <c>nodes/&lt;me&gt;/status/</c> folder and, in the same commit <c>&lt;tenant&gt; status &lt;id&gt; &lt;me&gt;→central</c>, removes the
+    /// session's previous status file and this node's own status files older than 24 hours (sessions that ended without saying so).
+    /// </summary>
+    /// <param name="signedStatus">The signed status envelope.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The write outcome.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="signedStatus"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the envelope is not a status, belongs to another tenant, was not sent by this machine or is unsigned (a caller bug).</exception>
+    public async Task<WriteOutcome> PublishStatusAsync(Model signedStatus, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(signedStatus);
+        if (signedStatus.Type != EnvelopeType.Status || signedStatus.Status is null)
+        {
+            throw new InvalidOperationException("write rule: the status envelope is not a status");
+        }
+
+        if (signedStatus.Header.Tenant != _me.Tenant)
+        {
+            throw new InvalidOperationException("write rule: the status envelope belongs to another tenant");
+        }
+
+        if (signedStatus.Header.From != _me.Machine)
+        {
+            throw new InvalidOperationException("write rule: the status envelope was sent by another machine");
+        }
+
+        if (signedStatus.Signature is null)
+        {
+            throw new InvalidOperationException("write rule: the status envelope is unsigned");
+        }
+
+        byte[] bytes = EnvelopeWriter.Serialize(signedStatus);
+        string path = BusPaths.EnvelopeFile(BusPaths.Status(_me.Tenant, _me.Machine), signedStatus.Header.Id);
+        AssertMayWrite(path, BusFolder.Status);
+        IReadOnlyList<string> replaced = [.. (await OwnStatusFilesAsync(signedStatus.Status.Session, signedStatus.Header.Id, ct).ConfigureAwait(false)).Select(f => f.RelativePath)];
+        return await WriteAsync(
+            Subject("status", signedStatus.Header.Id, signedStatus.Header.From.Value, signedStatus.Header.To.Value),
+            [path, .. replaced],
+            async token =>
+            {
+                await WriteFileAsync(path, bytes, token).ConfigureAwait(false);
+                WriteFailed? added = Failure("add", await _git.AddAsync(_checkoutRoot, [path], token).ConfigureAwait(false));
+                return added is not null || replaced.Count == 0
+                    ? added
+                    : Failure("rm", await _git.RemoveAsync(_checkoutRoot, replaced, token).ConfigureAwait(false));
+            },
+            ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Deliverable 18: removes the status file of a session that ended from this node's own <c>status/</c> folder (and this node's own
+    /// status files older than 24 hours), in one commit <c>&lt;tenant&gt; status &lt;id&gt; &lt;me&gt;→central</c>.
+    /// </summary>
+    /// <param name="session">The session's 8-character id.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The write outcome; <c>Pushed(0)</c> when there was nothing to remove and nothing was written.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="session"/> is null or empty.</exception>
+    public async Task<WriteOutcome> RemoveStatusAsync(string session, CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(session);
+        IReadOnlyList<BusFile> files = await OwnStatusFilesAsync(session, null, ct).ConfigureAwait(false);
+        if (files.Count == 0)
+        {
+            return new Pushed(0);
+        }
+
+        IReadOnlyList<string> removed = [.. files.Select(f => f.RelativePath)];
+        return await WriteAsync(
+            Subject("status", files[0].Id, _me.Machine.Value, MachineName.Central.Value),
+            removed,
+            async token => Failure("rm", await _git.RemoveAsync(_checkoutRoot, removed, token).ConfigureAwait(false)),
+            ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Deliverable 18 ("Questions and decisions"): adds a signed question of this node, addressed to Central, to this node's own
+    /// <c>nodes/&lt;me&gt;/questions/</c> folder in one commit <c>&lt;tenant&gt; question &lt;id&gt; &lt;me&gt;→central</c>.
+    /// </summary>
+    /// <param name="signedQuestion">The signed question envelope.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The write outcome.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="signedQuestion"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the envelope is not a question, belongs to another tenant, was not sent by this machine or is unsigned (a caller bug).</exception>
+    public Task<WriteOutcome> PublishQuestionAsync(Model signedQuestion, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(signedQuestion);
+        AssertOwnSigned(signedQuestion, EnvelopeType.Question, "question");
+        byte[] bytes = EnvelopeWriter.Serialize(signedQuestion);
+        string path = BusPaths.EnvelopeFile(BusPaths.Questions(_me.Tenant, _me.Machine), signedQuestion.Header.Id);
+        AssertMayWrite(path, BusFolder.Questions);
+        return WriteAsync(
+            Subject("question", signedQuestion.Header.Id, signedQuestion.Header.From.Value, signedQuestion.Header.To.Value),
+            [path],
+            async token =>
+            {
+                await WriteFileAsync(path, bytes, token).ConfigureAwait(false);
+                return Failure("add", await _git.AddAsync(_checkoutRoot, [path], token).ConfigureAwait(false));
+            },
+            ct);
+    }
+
+    /// <summary>
+    /// Deliverable 18 ("Questions and decisions"): adds Central's signed decision to <c>nodes/central/decisions/</c> and, when it
+    /// answers a question whose file is still in its asker's <c>questions/</c> folder, moves that file to
+    /// <c>archive/&lt;YYYY-MM of the question's created&gt;/</c> — all in one commit <c>&lt;tenant&gt; decision &lt;id&gt; central→&lt;machine&gt;</c>.
+    /// </summary>
+    /// <param name="signedDecision">The signed decision envelope.</param>
+    /// <param name="answeredQuestion">The question the decision answers, or <see langword="null"/> when it answers something else.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The write outcome.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="signedDecision"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when this machine is not Central, the envelope is not a signed decision of this machine and tenant, or
+    /// <paramref name="answeredQuestion"/> is not the question the decision replies to (a caller bug).
+    /// </exception>
+    public Task<WriteOutcome> PublishDecisionAsync(Model signedDecision, Model? answeredQuestion, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(signedDecision);
+        if (_me.Machine != MachineName.Central)
+        {
+            throw new InvalidOperationException("write rule: only central writes decisions");
+        }
+
+        AssertOwnSigned(signedDecision, EnvelopeType.Decision, "decision");
+        byte[] bytes = EnvelopeWriter.Serialize(signedDecision);
+        string path = BusPaths.EnvelopeFile(BusPaths.Decisions(_me.Tenant, _me.Machine), signedDecision.Header.Id);
+        AssertMayWrite(path, BusFolder.Decisions);
+        string? from = null;
+        string? to = null;
+        string? month = null;
+        if (answeredQuestion is not null)
+        {
+            if (answeredQuestion.Type != EnvelopeType.Question || answeredQuestion.Header.Tenant != _me.Tenant || answeredQuestion.Header.Id != signedDecision.Header.InReplyTo)
+            {
+                throw new InvalidOperationException("write rule: the decision does not answer that question");
+            }
+
+            string questionPath = BusPaths.EnvelopeFile(BusPaths.Questions(_me.Tenant, answeredQuestion.Header.From), answeredQuestion.Header.Id);
+            if (File.Exists(BusPaths.Resolve(_checkoutRoot, questionPath)))
+            {
+                DateTime created = answeredQuestion.Header.Created.UtcDateTime;
+                month = BusPaths.Archive(_me.Tenant, created.Year, created.Month);
+                from = questionPath;
+                to = BusPaths.EnvelopeFile(month, answeredQuestion.Header.Id);
+                AssertMayArchive(from, ArchiveRole.Question);
+                AssertMayArchive(to, ArchiveRole.Target);
+            }
+        }
+
+        return WriteAsync(
+            Subject("decision", signedDecision.Header.Id, signedDecision.Header.From.Value, signedDecision.Header.To.Value),
+            from is null ? [path] : [path, from, to!],
+            async token =>
+            {
+                await WriteFileAsync(path, bytes, token).ConfigureAwait(false);
+                WriteFailed? added = Failure("add", await _git.AddAsync(_checkoutRoot, [path], token).ConfigureAwait(false));
+                if (added is not null || from is null)
+                {
+                    return added;
+                }
+
+                Directory.CreateDirectory(BusPaths.Resolve(_checkoutRoot, month!));
+                return Failure("mv", await _git.MoveAsync(_checkoutRoot, from, to!, token).ConfigureAwait(false));
+            },
+            ct);
+    }
+
+    /// <summary>The shared half of the write rule for an envelope this machine sends: the right type, this tenant, this machine, signed.</summary>
+    private void AssertOwnSigned(Model envelope, EnvelopeType type, string noun)
+    {
+        if (envelope.Type != type)
+        {
+            throw new InvalidOperationException("write rule: the " + noun + " envelope is not a " + noun);
+        }
+
+        if (envelope.Header.Tenant != _me.Tenant)
+        {
+            throw new InvalidOperationException("write rule: the " + noun + " envelope belongs to another tenant");
+        }
+
+        if (envelope.Header.From != _me.Machine)
+        {
+            throw new InvalidOperationException("write rule: the " + noun + " envelope was sent by another machine");
+        }
+
+        if (envelope.Signature is null)
+        {
+            throw new InvalidOperationException("write rule: the " + noun + " envelope is unsigned");
+        }
+    }
+
+    /// <summary>This node's own status files that a write replaces: the session's earlier files and any file whose id is older than 24 hours.</summary>
+    private async Task<IReadOnlyList<BusFile>> OwnStatusFilesAsync(string session, EnvelopeId? except, CancellationToken ct)
+    {
+        DateTimeOffset oldest = _clock.GetUtcNow() - StatusMaxAge;
+        var own = new List<BusFile>();
+        foreach (BusFile file in await ListFolderAsync(BusPaths.Status(_me.Tenant, _me.Machine), ct).ConfigureAwait(false))
+        {
+            if (file.Id == except || !BusPaths.TryParse(file.RelativePath, out _))
+            {
+                continue;
+            }
+
+            bool replaced = file.Id.Timestamp < oldest;
+            if (!replaced)
+            {
+                byte[] bytes = await File.ReadAllBytesAsync(BusPaths.Resolve(_checkoutRoot, file.RelativePath), ct).ConfigureAwait(false);
+                EnvelopeResult parsed = EnvelopeParser.Parse(bytes, _me.Tenant);
+                replaced = parsed.IsAccepted && parsed.Envelope!.Status?.Session == session;
+            }
+
+            if (replaced)
+            {
+                AssertMayWrite(file.RelativePath, BusFolder.Status);
+                own.Add(file);
+            }
+        }
+
+        return own;
+    }
+
+    /// <summary>
     /// §4 as amended by deliverable 41 (W41-7, W41-8): adds a signed item envelope of this node, addressed to Central, to this node's own
     /// <c>nodes/&lt;me&gt;/items/</c> folder in one commit <c>&lt;tenant&gt; item &lt;id&gt; &lt;from&gt;→central</c> (W41-9).
     /// </summary>
@@ -705,7 +931,7 @@ public sealed partial class BusRepository
     }
 
     /// <summary>
-    /// The sweep's archive input (spec 17): under the checkout write lock, every top-level <c>*.md</c> in the <c>reports/</c> then
+    /// The sweep's archive input (spec 17; Central's <c>decisions/</c> after its own two folders since deliverable 18): under the checkout write lock, every top-level <c>*.md</c> in the <c>reports/</c> then
     /// <c>context/</c> folder of every machine of this tenant, Central included, machines and files in ordinal order, each with its
     /// bytes, its leniently read <c>created</c> and — only when that cannot be read — the time of the commit that added it. Never
     /// <c>items/</c> or <c>jobs/</c>, never another tenant's subtree; nothing is verified here.
@@ -728,7 +954,11 @@ public sealed partial class BusRepository
             .OrderBy(m => m.Value, StringComparer.Ordinal);
         foreach (MachineName machine in machines)
         {
-            foreach ((string folder, BusFolder kind) in new[] { (BusPaths.Reports(_me.Tenant, machine), BusFolder.Reports), (BusPaths.Context(_me.Tenant, machine), BusFolder.Context) })
+            // Deliverable 18: Central's own decisions are archived like reports; a decisions/ folder anywhere else is the auditor's business.
+            (string Folder, BusFolder Kind)[] folders = machine == MachineName.Central
+                ? [(BusPaths.Reports(_me.Tenant, machine), BusFolder.Reports), (BusPaths.Context(_me.Tenant, machine), BusFolder.Context), (BusPaths.Decisions(_me.Tenant, machine), BusFolder.Decisions)]
+                : [(BusPaths.Reports(_me.Tenant, machine), BusFolder.Reports), (BusPaths.Context(_me.Tenant, machine), BusFolder.Context)];
+            foreach ((string folder, BusFolder kind) in folders)
             {
                 foreach (BusFile file in await ListFolderAsync(folder, ct).ConfigureAwait(false))
                 {
@@ -1280,8 +1510,9 @@ public sealed partial class BusRepository
 
         bool allowed = role switch
         {
-            ArchiveRole.Source => location.Folder is BusFolder.Reports or BusFolder.Context,
+            ArchiveRole.Source => location.Folder is BusFolder.Reports or BusFolder.Context || (location.Folder == BusFolder.Decisions && location.Machine == MachineName.Central),
             ArchiveRole.Target => location.Folder == BusFolder.Archive,
+            ArchiveRole.Question => location.Folder == BusFolder.Questions,
             _ => location.Folder == BusFolder.Items,
         };
         if (!allowed)
@@ -1290,6 +1521,7 @@ public sealed partial class BusRepository
             {
                 ArchiveRole.Source => "archived",
                 ArchiveRole.Target => "an archive target",
+                ArchiveRole.Question => "archived as an answered question",
                 _ => "removed as a settled item",
             };
             throw new InvalidOperationException("write rule: '" + relativePath + "' may not be " + what);
@@ -1338,7 +1570,7 @@ public sealed partial class BusRepository
 /// <summary>What a path is in Central's pass commit (the archive branch of the §4 write rule).</summary>
 internal enum ArchiveRole
 {
-    /// <summary>A <c>reports/</c> or <c>context/</c> file moved to the archive.</summary>
+    /// <summary>A <c>reports/</c> or <c>context/</c> file, or a file of Central's <c>decisions/</c> folder (deliverable 18), moved to the archive.</summary>
     Source,
 
     /// <summary>Its target under <c>archive/YYYY-MM/</c>.</summary>
@@ -1346,4 +1578,7 @@ internal enum ArchiveRole
 
     /// <summary>A settled <c>items/</c> file removed (spec 41).</summary>
     Item,
+
+    /// <summary>A <c>questions/</c> file moved to the archive in the commit of its decision (deliverable 18).</summary>
+    Question,
 }

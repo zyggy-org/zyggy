@@ -264,6 +264,9 @@ public sealed partial class SourceHygieneTests
     [InlineData("context/")]
     [InlineData("archive/")]
     [InlineData("registry/")]
+    [InlineData("status/")]
+    [InlineData("questions/")]
+    [InlineData("decisions/")]
     [InlineData("PROTOCOL.md")]
     public void Src_BusPathLiterals_OnlyInBusPaths(string literal)
     {
@@ -1122,6 +1125,36 @@ public sealed partial class SourceHygieneTests
             Registry = registry is not null && registry.Contains("(stale)", StringComparison.Ordinal) && registry.Contains("Exit 0", StringComparison.Ordinal),
             Hook = hook is not null && hook.Contains("--settings", StringComparison.Ordinal) && hook.Contains("exit 2", StringComparison.Ordinal),
         }.Should().BeEquivalentTo(new { Report = true, Registry = true, Hook = true });
+    }
+
+    // Spec 18 AC-35 (group A): the verb rows of work, ask, decide and decisions with their exit codes, the supervision keys, and a
+    // runbook row for each failure mode the group builds ("Refused text", "No status from a laptop").
+    [Fact]
+    public void Readmes_SupervisionSeeAndAnswerDocumented()
+    {
+        // Arrange
+        var cli = File.ReadAllText(Path.Combine(RepoRoot(), "src/Zyggy.Cli/README.md")).Split('\n');
+        var node = File.ReadAllText(Path.Combine(RepoRoot(), "src/Zyggy.Node/README.md"));
+        var core = File.ReadAllText(Path.Combine(RepoRoot(), "src/Zyggy.Core/README.md"));
+
+        // Act
+        string? Row(string start) => cli.SingleOrDefault(l => l.StartsWith(start, StringComparison.Ordinal));
+        bool Has(string? row, params string[] texts) => row is not null && texts.All(t => row.Contains(t, StringComparison.Ordinal));
+        string[] keys = ["supervision.enabled", "supervision.detail", "supervision.statusMinutes", "supervision.workMachines"];
+
+        // Assert
+        new
+        {
+            Work = Has(Row("| `work ["), "--session-start", "--turn-end", "--session-end", "--step <label> --session <id>", "waiting for Central", "always exit 0"),
+            Ask = Has(Row("| `ask [--wait <minutes>] [--option <line>]… --default <line> <question>`"), "Exit 0", "8 prints `no answer; default: <default>`", "5 a secret pattern", "ZYGGY_JOB"),
+            Decide = Has(Row("| `decide --reply-to <id> --kind <kind> --basis verified\\|reported"), "3 not Central", "5 a secret pattern", "archive/YYYY-MM/"),
+            Decisions = Has(Row("| `decisions [--since <YYYY-MM-DD>] [--mandate <id>]`"), "newest first", "archived"),
+            CliKeys = keys.All(k => cli.Count(l => l.StartsWith("| `" + k + "` |", StringComparison.Ordinal)) == 1),
+            NodeKeys = keys.All(k => node.Contains("`" + k + "`", StringComparison.Ordinal)),
+            RefusedText = Has(Row("| Refused text — "), "exit 5", "Nothing was signed or written"),
+            NoStatus = Has(Row("| No status from a laptop — "), "supervision.enabled", "zyggy probe reach"),
+            Core = core.Contains("## Central supervision: see and answer (deliverable 18, group A)", StringComparison.Ordinal) && core.Contains("`AskFlow`", StringComparison.Ordinal),
+        }.Should().BeEquivalentTo(new { Work = true, Ask = true, Decide = true, Decisions = true, CliKeys = true, NodeKeys = true, RefusedText = true, NoStatus = true, Core = true });
     }
 
     // Spec 15 AC-16 (slice 4): the Node README's health row, node.json row and what-to-do row for the zyggy-core commit.

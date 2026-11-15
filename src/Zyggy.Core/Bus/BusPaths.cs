@@ -102,6 +102,27 @@ public static class BusPaths
     /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
     public static string Items(TenantId tenant, MachineName machine) => Node(tenant, machine) + "/items";
 
+    /// <summary>Returns a machine's live-session statuses for Central: <c>tenants/&lt;org&gt;/nodes/&lt;machine&gt;/status</c> (deliverable 18).</summary>
+    /// <param name="tenant">The tenant.</param>
+    /// <param name="machine">The machine that writes the statuses.</param>
+    /// <returns>The repository-relative path.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
+    public static string Status(TenantId tenant, MachineName machine) => Node(tenant, machine) + "/status";
+
+    /// <summary>Returns a machine's questions for Central: <c>tenants/&lt;org&gt;/nodes/&lt;machine&gt;/questions</c> (deliverable 18).</summary>
+    /// <param name="tenant">The tenant.</param>
+    /// <param name="machine">The machine that asks.</param>
+    /// <returns>The repository-relative path.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
+    public static string Questions(TenantId tenant, MachineName machine) => Node(tenant, machine) + "/questions";
+
+    /// <summary>Returns a machine's decisions folder: <c>tenants/&lt;org&gt;/nodes/&lt;machine&gt;/decisions</c>; only Central has one (deliverable 18).</summary>
+    /// <param name="tenant">The tenant.</param>
+    /// <param name="machine">The machine that decides: Central.</param>
+    /// <returns>The repository-relative path.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
+    public static string Decisions(TenantId tenant, MachineName machine) => Node(tenant, machine) + "/decisions";
+
     /// <summary>Returns a month's archive folder: <c>tenants/&lt;org&gt;/archive/YYYY-MM</c> (§4 sweep).</summary>
     /// <param name="tenant">The tenant.</param>
     /// <param name="year">The year.</param>
@@ -237,6 +258,15 @@ public static class BusPaths
                 break;
             case "items":
                 folder = BusFolder.Items;
+                break;
+            case "status":
+                folder = BusFolder.Status;
+                break;
+            case "questions":
+                folder = BusFolder.Questions;
+                break;
+            case "decisions":
+                folder = BusFolder.Decisions;
                 break;
             case "jobs":
                 folder = BusFolder.Jobs;

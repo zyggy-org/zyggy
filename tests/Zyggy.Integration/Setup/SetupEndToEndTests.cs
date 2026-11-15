@@ -47,7 +47,7 @@ public sealed class SetupEndToEndTests
         var expected = new JsonObject
         {
             ["env"] = new JsonObject { ["ZYGGY_SECRET_PATTERNS"] = harness.Patterns },
-            ["permissions"] = new JsonObject { ["deny"] = new JsonArray("Bash(zyggy secret*)", "Bash(zyggy context --stop-hook*)", "Bash(zyggy context --flush*)") },
+            ["permissions"] = new JsonObject { ["deny"] = new JsonArray("Bash(zyggy secret*)", "Bash(zyggy context --stop-hook*)", "Bash(zyggy context --flush*)", "Bash(zyggy work --session-start*)", "Bash(zyggy work --turn-end*)", "Bash(zyggy work --session-end*)") },
         };
         JsonNode.DeepEquals(JsonNode.Parse(File.ReadAllText(harness.SettingsFile)), expected).Should().BeTrue();
         File.Exists(harness.Patterns).Should().BeTrue();
@@ -157,11 +157,11 @@ public sealed class SetupEndToEndTests
         after["hooks"]!.ToJsonString().Should().Be(before["hooks"]!.ToJsonString());
         JsonNode.DeepEquals(after["permissions"]!["allow"], before["permissions"]!["allow"]).Should().BeTrue();
         after["permissions"]!["deny"]!.AsArray().Select(n => n!.GetValue<string>()).Should().Equal(
-            "Bash(zyggy secret*)", "Bash(rm -rf*)", "Bash(zyggy context --stop-hook*)", "Bash(zyggy context --flush*)");
+            "Bash(zyggy secret*)", "Bash(rm -rf*)", "Bash(zyggy context --stop-hook*)", "Bash(zyggy context --flush*)", "Bash(zyggy work --session-start*)", "Bash(zyggy work --turn-end*)", "Bash(zyggy work --session-end*)");
         after["env"]!.AsObject().Select(p => p.Key).Should().Equal("OTHER", "ZYGGY_SECRET_PATTERNS");
         Lines(console).Where(l => l.StartsWith("setup: settings: ", StringComparison.Ordinal)).Should().Equal(
             $"setup: settings: done - env.ZYGGY_SECRET_PATTERNS set to {harness.Patterns} (backup {backup})",
-            $"setup: settings: done - permissions.deny gained Bash(zyggy context --stop-hook*), Bash(zyggy context --flush*) (backup {backup})");
+            $"setup: settings: done - permissions.deny gained Bash(zyggy context --stop-hook*), Bash(zyggy context --flush*), Bash(zyggy work --session-start*), Bash(zyggy work --turn-end*), Bash(zyggy work --session-end*) (backup {backup})");
     }
 
     [Fact]

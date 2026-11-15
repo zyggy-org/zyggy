@@ -29,4 +29,13 @@ public enum BusFolder
 
     /// <summary><c>…/items</c>: archive items written by the machine, addressed to Central (deliverable 41).</summary>
     Items,
+
+    /// <summary><c>…/status</c>: the state of the machine's live sessions, written by the machine, addressed to Central (deliverable 18).</summary>
+    Status,
+
+    /// <summary><c>…/questions</c>: what the machine's agents ask Central, written by the machine (deliverable 18).</summary>
+    Questions,
+
+    /// <summary><c>…/decisions</c>: Central's answers and decision records, written by Central in its own folder (deliverable 18).</summary>
+    Decisions,
 }

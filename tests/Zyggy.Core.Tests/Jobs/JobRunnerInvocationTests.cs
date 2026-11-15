@@ -147,6 +147,26 @@ public sealed class JobRunnerInvocationTests : IDisposable
         ClaudeSpec().Environment.Should().Contain("ZYGGY_HOOKS", "off");
     }
 
+    // Spec 18 slice 4: `zyggy ask` in a job run names the job and never waits beyond its timeout
+    [Fact]
+    public async Task RunAsync_AnyJob_ModelEnvironmentNamesTheJobItsProjectAndItsEnd()
+    {
+        // Arrange: a configured value may not name another job
+        _h.Options.ModelEnvironment = new Dictionary<string, string> { ["ZYGGY_JOB"] = "other", ["ZYGGY_JOB_PROJECT"] = "other", ["ZYGGY_JOB_ENDS"] = "never" };
+        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root));
+        DateTimeOffset started = _h.Clock.GetUtcNow();
+
+        // Act
+        await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        var environment = ClaudeSpec().Environment;
+        environment.Should().Contain("ZYGGY_JOB", job.Header.Id.Value);
+        environment.Should().Contain("ZYGGY_JOB_PROJECT", Zyggy.Core.Registry.ProjectName.Derive(Path.GetFileName(_project.Root.TrimEnd('\\', '/'))));
+        DateTimeOffset ends = DateTimeOffset.ParseExact(environment["ZYGGY_JOB_ENDS"]!, "yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal);
+        ends.Should().BeAfter(started).And.BeOnOrBefore(started.AddHours(24));
+    }
+
     [Fact]
     public async Task RunAsync_ModelEnvironmentNamesZyggyHooksOn_OffStillWins()
     {

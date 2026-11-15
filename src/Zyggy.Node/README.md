@@ -48,6 +48,7 @@ The single configuration file (§10). Path: `--config`, else `ZYGGY_NODE_JSON`, 
 | `devRoots` | the folders whose direct children are scanned for projects; a job path must lie under one | `[]` (nothing found, every path refused) |
 | `discovery.intervalMinutes`, `discovery.lastSeenHours`, `discovery.detail` | rescan period, the liveness stamp's maximum age, `full` or `names` | 60, 6, `full` |
 | `sweep.intervalMinutes` | read only on Central: minutes between two sweep passes of the node service, 1–1440 (out of range: exit 3); ignored on every other machine | 60 |
+| `supervision.enabled`, `supervision.detail`, `supervision.statusMinutes`, `supervision.workMachines` | deliverable 18: whether sessions publish a status and may ask Central, `full` or `fixed` status fields, the refresh period in minutes, the machines `zyggy work` shows with fixed fields only (Cli README, "node.json") | `true`, `fixed` when `discovery.detail` is `names` else `full`, 10, `[]` |
 | `agentCore.path` | absolute path of this machine's `zyggy-core` checkout, whose commit `/health` reports as `agentCoreSha` | the checkout `zyggy setup` makes: `C:/agents/zyggy-core` on Windows, `~/agents/zyggy-core` elsewhere (Central: set it to its working directory) |
 
 Secrets are never in it; any key named like a credential is refused.
@@ -143,7 +144,7 @@ Each item file stays in every clone's bus history (a bus-route item with its ful
 Deliverable 17. The node on Central sweeps the bus itself — no timer, no model run: once right after the start-up pull and pickup, then every `sweep.intervalMinutes` (60), each time right after a pull, a job pass and a pickup pass (one `sweep every <n> min` line at start, none per pass). No other machine sweeps. `zyggy sweep` runs one pass on demand, `zyggy sweep --dry-run` shows what a pass would do (Cli README).
 
 - **Stale claims**: a file in any machine's `jobs/claimed/` whose claim commit is more than `timeout_minutes` + 15 min old (Central's `claude.defaultTimeoutMinutes` when the job names none). A claim at attempt 1 or 2 goes back to that machine's `jobs/` with `attempt` raised and signed again with Central's `signWith` (`<tenant> requeue <id> central→<machine>`); at attempt 3 it is removed and Central answers the job's sender with a `failed` report, `reason: attempts_exhausted`; a claim that does not verify moves unchanged to `jobs/rejected/`, with a `rejected` report when its `from` is readable. One commit per job.
-- **Old files**: every `reports/` and `context/` file whose `created` is more than 14 days ago (unreadable: added more than 14 days ago) moves to `archive/<YYYY-MM>/`, except files the pickup still takes; one commit per pass, the pickup's subject and body shape.
+- **Old files**: every `reports/` and `context/` file, and every file of Central's own `decisions/` folder (deliverable 18), whose `created` is more than 14 days ago (unreadable: added more than 14 days ago) moves to `archive/<YYYY-MM>/`, except files the pickup still takes; one commit per pass, the pickup's subject and body shape.
 - A pass never throws to the loop: a failed pull skips it until the next interval, a failed git step restores that job's change and the pass goes on, the host keeps running and `/health` answers.
 
 ## Polling every second
