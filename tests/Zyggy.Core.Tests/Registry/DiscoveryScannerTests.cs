@@ -250,8 +250,9 @@ public sealed class DiscoveryScannerTests : IDisposable
         result.EffectiveDetail.Should().Be(DiscoveryDetail.Names);
     }
 
+    // Spec 45 AC-6 reshapes spec 14's edge case: a nested root is scanned too, with a notice; a repeated root is scanned once, silently.
     [Fact]
-    public async Task ScanAsync_DuplicateRootsAndNestedRoot_ScannedOnce()
+    public async Task ScanAsync_DuplicateRootsAndNestedRoot_NestedRootScannedWithNotice()
     {
         // Arrange
         string a = _tree.Root("a");
@@ -263,8 +264,8 @@ public sealed class DiscoveryScannerTests : IDisposable
         ScanResult result = await ScanAsync(Scanner(), a, a + Path.DirectorySeparatorChar, nested);
 
         // Assert
-        Names(result).Should().Equal("calizr");
-        result.Notices.Should().BeEmpty();
+        Names(result).Should().Equal("calizr", "deep");
+        result.Notices.Should().Equal(new ScanNotice(ScanNoticeKind.RootNested, ScanTree.Published(nested), ScanTree.Published(a)));
     }
 
     [Fact]

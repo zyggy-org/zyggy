@@ -365,6 +365,26 @@ public sealed class DiscoverCommandTests : IAsyncLifetime
             .Should().Equal("calizr", "client-portal");
     }
 
+    // Spec 45 AC-6: a root inside another root is scanned too, with a `root nested` line on stderr.
+    [Fact]
+    public async Task DryRun_NestedRoot_StderrNoticeBothListed()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await ScratchProject.CreateInAsync(_harness.Bus, _root, "q", ct);
+        string group = Path.Combine(_root, "g");
+        Directory.CreateDirectory(group);
+        await ScratchProject.CreateInAsync(_harness.Bus, group, "p", ct);
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["discover", "--dry-run"], NodeJsonFor([_root, group], "{ \"depth\": 1 }"), ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        RegistryDocument.Parse(Encoding.UTF8.GetBytes(console.Stdout)).Document!.Projects.Select(p => p.Name).Should().Equal("p", "q");
+        console.Stderr.Should().Be($"discover: root nested {group.Replace('\\', '/')} under {_root.Replace('\\', '/')}\n");
+    }
+
     // Spec 45 AC-3: an out-of-range `discovery.depth` is a configuration error naming the key.
     [Fact]
     public async Task DryRun_DepthSeven_ExitThreeKeyNamed()

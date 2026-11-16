@@ -1,6 +1,6 @@
 namespace Zyggy.Core.Registry;
 
-/// <summary>What a discovery scan noticed but did not publish (spec 14, Failure modes).</summary>
+/// <summary>What a discovery scan noticed but did not publish (spec 14, Failure modes), or did differently than configured (spec 45).</summary>
 public enum ScanNoticeKind
 {
     /// <summary>A <c>devRoots</c> entry does not exist.</summary>
@@ -29,6 +29,12 @@ public enum ScanNoticeKind
 
     /// <summary>The scan took longer than <see cref="DiscoveryOptions.SlowScanThreshold"/>.</summary>
     SlowScan,
+
+    /// <summary>
+    /// A <c>devRoots</c> entry lies inside another entry; both are scanned (spec 45). Subject is the nested root, Detail the closest
+    /// enclosing root.
+    /// </summary>
+    RootNested,
 }
 
 /// <summary>One notice of a scan.</summary>

@@ -171,7 +171,17 @@ public sealed partial class DiscoveryLoop
             {
                 string key = notice.Subject + "\n" + notice.Detail;
                 subjects.Add(key);
-                if (!previous.Contains(key))
+                if (previous.Contains(key))
+                {
+                    continue;
+                }
+
+                // The level is chosen by kind (spec 45 Q8): a nested root is configuration working as asked, not a problem.
+                if (kind == ScanNoticeKind.RootNested)
+                {
+                    LogRootNested(_log, notice.Subject, notice.Detail);
+                }
+                else
                 {
                     LogNotice(_log, NoticeText(notice));
                 }
@@ -200,6 +210,9 @@ public sealed partial class DiscoveryLoop
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "discovery: {Notice}")]
     private static partial void LogNotice(ILogger logger, string notice);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "discovery: root nested {Root} under {Parent}")]
+    private static partial void LogRootNested(ILogger logger, string root, string? parent);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "discovery: scan failed {ExceptionType}")]
     private static partial void LogScanFailed(ILogger logger, string exceptionType);

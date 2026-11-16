@@ -153,6 +153,7 @@ internal static class DiscoverCommand
         ScanNoticeKind.EntryCapReached => $"discover: entry cap reached in {notice.Subject} ({notice.Detail})",
         ScanNoticeKind.SecretRedacted => $"discover: secret pattern {notice.Detail} redacted in {notice.Subject}",
         ScanNoticeKind.SlowScan => $"discover: scan took {notice.Detail}",
+        ScanNoticeKind.RootNested => $"discover: root nested {notice.Subject} under {notice.Detail}",
         ScanNoticeKind.PatternsUnavailable => null,
         _ => $"discover: {notice.Kind} {notice.Subject}",
     };

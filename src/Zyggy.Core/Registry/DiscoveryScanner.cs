@@ -10,7 +10,8 @@ namespace Zyggy.Core.Registry;
 /// <summary>
 /// Scans every <c>devRoots</c> entry to <see cref="DiscoveryOptions.Depth"/> levels for Claude Code projects (a folder holding
 /// <c>.claude/</c>) and builds the registry's project list (founding spec §4 "Registry file", specs 14 and 45). Links are never followed,
-/// hidden folders and folders inside a project are not listed; of folders deriving one name the shallowest keeps it, and a tie at that level
+/// hidden folders and folders inside a project are not listed; a root inside another root is scanned too, with a notice, and a folder
+/// reached from both counts from the innermost root; of folders deriving one name the shallowest keeps it, and a tie at that level
 /// publishes none. Never throws for a file-system or git failure: every such failure becomes a <see cref="ScanNotice"/>.
 /// </summary>
 public sealed partial class DiscoveryScanner
@@ -65,14 +66,19 @@ public sealed partial class DiscoveryScanner
         }
 
         var found = new List<Candidate>();
-        foreach (string root in NormaliseRoots(devRoots))
+        foreach (string root in NormaliseRoots(devRoots, notices))
         {
             cancellationToken.ThrowIfCancellationRequested();
             WalkRoot(root, found, notices, cancellationToken);
         }
 
+        // A folder reached from a root and from a nested root is one project; the innermost root gives its level (spec 45 Q4).
+        IEnumerable<Candidate> merged = found
+            .GroupBy(f => f.Path, OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
+            .Select(g => g.MaxBy(c => c.Root.Length)!);
+
         var unique = new List<(string Name, string Path)>();
-        foreach (IGrouping<string, Candidate> group in found.GroupBy(f => f.Name, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal))
+        foreach (IGrouping<string, Candidate> group in merged.GroupBy(f => f.Name, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal))
         {
             if (group.Count() == 1)
             {
@@ -128,7 +134,11 @@ public sealed partial class DiscoveryScanner
 
     private static bool IsReparsePoint(FileSystemInfo info) => (info.Attributes & FileAttributes.ReparsePoint) != 0;
 
-    private static List<string> NormaliseRoots(IReadOnlyList<string> devRoots)
+    /// <summary>
+    /// The roots, full and de-duplicated (case-folded on Windows). A root inside another root is kept and scanned too, with one
+    /// <see cref="ScanNoticeKind.RootNested"/> notice naming its closest enclosing root (spec 45).
+    /// </summary>
+    private static List<string> NormaliseRoots(IReadOnlyList<string> devRoots, List<ScanNotice> notices)
     {
         var roots = new List<string>();
         foreach (string entry in devRoots)
@@ -154,8 +164,16 @@ public sealed partial class DiscoveryScanner
             }
         }
 
-        // A root lying under another root is scanned as part of that root only (Edge Cases).
-        return roots.Where(r => !roots.Any(other => !ReferenceEquals(other, r) && IsUnder(r, other))).ToList();
+        foreach (string root in roots)
+        {
+            string? parent = roots.Where(other => IsUnder(root, other)).MaxBy(other => other.Length);
+            if (parent is not null)
+            {
+                notices.Add(new ScanNotice(ScanNoticeKind.RootNested, Published(root), Published(parent)));
+            }
+        }
+
+        return roots;
     }
 
     private static bool IsUnder(string path, string root) =>
@@ -224,7 +242,7 @@ public sealed partial class DiscoveryScanner
                         continue;
                     }
 
-                    found.Add(new Candidate(name, path, next.Level));
+                    found.Add(new Candidate(name, path, next.Level, root));
                 }
                 catch (Exception exception) when (exception is UnauthorizedAccessException or IOException or System.Security.SecurityException)
                 {
@@ -235,7 +253,7 @@ public sealed partial class DiscoveryScanner
     }
 
     /// <summary>A project folder found by the walk, with its level below the root it was found from.</summary>
-    private sealed record Candidate(string Name, string Path, int Level);
+    private sealed record Candidate(string Name, string Path, int Level, string Root);
 
     private async Task<RegistryProject> ProjectAsync(string name, string path, DiscoveryDetail detail, List<ScanNotice> notices, CancellationToken cancellationToken)
     {
