@@ -88,7 +88,57 @@ public sealed partial class BusInventory
             }
         }
 
-        return new MandateLedger(
+        return Ledger(id, mandate, present, revoked, jobs, reports, resumed);
+    }
+
+    /// <summary>Every mandate this checkout holds, live and revoked, oldest first, each as its <see cref="MandateLedger"/> (<c>zyggy mandate show</c>).</summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The ledgers.</returns>
+    /// <exception cref="BusBusyException">Another zyggy process held the checkout's write lock for the whole wait.</exception>
+    public async Task<IReadOnlyList<MandateLedger>> MandatesAsync(CancellationToken ct)
+    {
+        EnvelopeId[] ids;
+        using (await LockAsync(ct).ConfigureAwait(false))
+        {
+            ids = [.. Envelopes(BusPaths.Mandates(_me.Tenant)).Concat(Envelopes(BusPaths.RevokedMandates(_me.Tenant)))
+                .Select(f => f.Id).Distinct().OrderBy(i => i.Value, StringComparer.Ordinal)];
+        }
+
+        var ledgers = new List<MandateLedger>(ids.Length);
+        foreach (EnvelopeId id in ids)
+        {
+            ledgers.Add(await MandateLedgerAsync(id, ct).ConfigureAwait(false));
+        }
+
+        return ledgers;
+    }
+
+    /// <summary>
+    /// The capabilities <paramref name="machine"/>'s registry file lists in this checkout; empty when the file is absent or does not
+    /// parse (deliverable 18: a submit under a mandate needs the target's <c>supervision</c> capability).
+    /// </summary>
+    internal async Task<IReadOnlyList<string>> CapabilitiesAsync(MachineName machine, CancellationToken ct)
+    {
+        using IDisposable handle = await LockAsync(ct).ConfigureAwait(false);
+        string path = BusPaths.Resolve(_root, BusPaths.Registry(_me.Tenant, machine));
+        if (!File.Exists(path))
+        {
+            return [];
+        }
+
+        Registry.RegistryParse parsed = Registry.RegistryDocument.Parse(await File.ReadAllBytesAsync(path, ct).ConfigureAwait(false));
+        return parsed.Document is { } document && document.Machine == machine && document.Tenant == _me.Tenant ? document.Capabilities : [];
+    }
+
+    private static MandateLedger Ledger(
+        EnvelopeId id,
+        Envelope.Envelope? mandate,
+        bool present,
+        bool revoked,
+        List<MandateJobEntry> jobs,
+        List<MandateReportEntry> reports,
+        DateTimeOffset? resumed) =>
+        new(
             id,
             mandate,
             present,
@@ -96,5 +146,4 @@ public sealed partial class BusInventory
             [.. jobs.OrderBy(j => j.Id.Value, StringComparer.Ordinal)],
             [.. reports.OrderBy(r => r.Id.Value, StringComparer.Ordinal)],
             resumed);
-    }
 }

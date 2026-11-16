@@ -66,6 +66,10 @@ public sealed record AskDecideSkipped(string Why) : AskDecideResult;
 /// <param name="Detail">Why; for a secret pattern, <c>matches secret pattern &lt;name&gt;</c>.</param>
 public sealed record AskDecideRefused(string Field, string Detail) : AskDecideResult;
 
+/// <summary>Nothing on the bus has the id the write needs (deliverable 18: a mandate to revoke that is not live); nothing was written.</summary>
+/// <param name="Detail">What was looked for.</param>
+public sealed record AskDecideNotFound(string Detail) : AskDecideResult;
+
 /// <summary>Signing or the bus write failed; nothing is on the bus.</summary>
 /// <param name="Stage">The stage that failed.</param>
 /// <param name="Detail">The failure text.</param>

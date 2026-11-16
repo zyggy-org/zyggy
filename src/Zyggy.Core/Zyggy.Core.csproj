@@ -24,6 +24,8 @@
     <EmbeddedResource Include="Brief/Prompts/*" LogicalName="Zyggy.Core.Brief.Prompts.%(Filename)%(Extension)" />
     <!-- The job prompt (spec 06 ex-Q6): embedded, so nothing in a project or on the bus can alter it (§8). -->
     <EmbeddedResource Include="Jobs/Prompts/*" LogicalName="Zyggy.Core.Jobs.Prompts.%(Filename)%(Extension)" />
+    <!-- Deliverable 18: the bodies of a job under a mandate are templates shipped with the binary (no free text, §8). -->
+    <EmbeddedResource Include="Bus/MandateJobs/*" LogicalName="Zyggy.Core.Bus.MandateJobs.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

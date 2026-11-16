@@ -246,6 +246,29 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<TimeProvider>(),
                 log);
         });
+        // Deliverable 18: the owner's grant and revoke, and Central's submit under a mandate. Resolving without a KeyId throws (the verbs check signWith first).
+        services.TryAddSingleton(sp =>
+        {
+            ILogger<MandateGranter> log = sp.GetService<ILoggerFactory>()?.CreateLogger<MandateGranter>() ?? NullLogger<MandateGranter>.Instance;
+            return new MandateGranter(
+                sp.GetRequiredService<BusRepository>(),
+                sp.GetRequiredService<BusInventory>(),
+                sp.GetRequiredService<EnvelopeSigner>(),
+                sp.GetRequiredService<KeyId>(),
+                sp.GetRequiredService<TimeProvider>(),
+                log);
+        });
+        services.TryAddSingleton(sp =>
+        {
+            ILogger<MandateSubmission> log = sp.GetService<ILoggerFactory>()?.CreateLogger<MandateSubmission>() ?? NullLogger<MandateSubmission>.Instance;
+            return new MandateSubmission(
+                sp.GetRequiredService<BusRepository>(),
+                sp.GetRequiredService<BusInventory>(),
+                sp.GetRequiredService<JobSubmitter>(),
+                sp.GetRequiredService<NodeConfiguration>().Supervision.WorkMachines,
+                sp.GetRequiredService<TimeProvider>(),
+                log);
+        });
         // Deliverable 41: the item sender. Resolving without a KeyId, the secret patterns or ItemSubmitterOptions throws (the verb registers them first — fail closed).
         services.TryAddSingleton(sp =>
         {

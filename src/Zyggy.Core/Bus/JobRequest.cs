@@ -37,6 +37,18 @@ public sealed partial record JobRequest(
     /// </summary>
     public bool Worktree { get; init; }
 
+    /// <summary>Gets the mandate the job runs under (deliverable 18); set only by <see cref="MandateSubmission"/>.</summary>
+    public EnvelopeId? Mandate { get; init; }
+
+    /// <summary>Gets the step the job belongs to (deliverable 18).</summary>
+    public string? Step { get; init; }
+
+    /// <summary>Gets the branch a worktree job starts from and pushes back to (deliverable 18).</summary>
+    public string? Base { get; init; }
+
+    /// <summary>Gets how the job reaches its machine (deliverable 18); <see cref="JobDelivery.Run"/> by default.</summary>
+    public JobDelivery Deliver { get; init; }
+
     /// <summary>The body cap in UTF-8 bytes (a sanity check against a pasted document, not a protocol rule).</summary>
     public const int MaxBodyBytes = 65_536;
 

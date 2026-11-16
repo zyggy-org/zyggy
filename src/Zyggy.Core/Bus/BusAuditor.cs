@@ -179,6 +179,9 @@ public sealed partial class BusAuditor
             BusFolder.Status => EnvelopeType.Status,
             BusFolder.Questions => EnvelopeType.Question,
             BusFolder.Decisions => EnvelopeType.Decision,
+
+            // Deliverable 18: only mandates sit in mandates/ and mandates/revoked/ (the parser already refuses one not from Central).
+            BusFolder.Mandates or BusFolder.RevokedMandates => EnvelopeType.Mandate,
             _ => null,
         };
         if (expected is { } type && envelope.Type != type)
