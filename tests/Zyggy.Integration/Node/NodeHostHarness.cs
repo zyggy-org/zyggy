@@ -234,11 +234,13 @@ internal sealed class NodeHostHarness : IAsyncDisposable
 
     /// <summary>
     /// Creates a scratch project under <see cref="ProjectsRoot"/> (plan 14 A10: inside <c>devRoots</c>, found by the host's scan): a repository
-    /// on <c>main</c> with <c>.claude/</c>, named <paramref name="name"/> or a fresh GUID label, optionally with an agent.
+    /// on <c>main</c> with <c>.claude/</c>, named <paramref name="name"/> or a fresh GUID label, optionally with an agent; with
+    /// <paramref name="group"/>, inside that sub-folder of <see cref="ProjectsRoot"/> (spec 45: a level-2 project).
     /// </summary>
-    public async Task<ScratchProject> ProjectAsync(CancellationToken ct, string? name = null, string? agent = null, string? agentDescription = null)
+    public async Task<ScratchProject> ProjectAsync(CancellationToken ct, string? name = null, string? agent = null, string? agentDescription = null, string? group = null)
     {
-        ScratchProject project = await ScratchProject.CreateInAsync(Bus, ProjectsRoot, name ?? Guid.NewGuid().ToString("N"), ct, agent, agentDescription);
+        string parent = group is null ? ProjectsRoot : Directory.CreateDirectory(Path.Combine(ProjectsRoot, group)).FullName;
+        ScratchProject project = await ScratchProject.CreateInAsync(Bus, parent, name ?? Guid.NewGuid().ToString("N"), ct, agent, agentDescription);
         await File.WriteAllTextAsync(Path.Combine(project.Path, "README.md"), "Scratch project for a job round trip.\n", ct);
         _projects.Add(project);
         return project;

@@ -45,8 +45,9 @@ The single configuration file (§10). Path: `--config`, else `ZYGGY_NODE_JSON`, 
 | `nodeDir` | transcripts under `runs/<tenant>/`, the log under `logs/` | the per-OS data directory |
 | `log.level` | `Debug`, `Information`, `Warning`, `Error` | `Information` |
 | `secrets.root` | the file secret store's root | the per-OS default |
-| `devRoots` | the folders whose direct children are scanned for projects; a job path must lie under one | `[]` (nothing found, every path refused) |
+| `devRoots` | the folders scanned for projects to `discovery.depth` levels; a root inside another root is scanned too, with a notice; a job path must lie under one | `[]` (nothing found, every path refused) |
 | `discovery.intervalMinutes`, `discovery.lastSeenHours`, `discovery.detail` | rescan period, the liveness stamp's maximum age, `full` or `names` | 60, 6, `full` |
+| `discovery.depth`, `discovery.exclude`, `discovery.naming` | folder levels searched below each root (1–6; `1` = the roots' own children only), extra folder-name globs never descended into (added to the built-in list), `leaf` or `path` names (Cli README, "node.json") | 2, `[]`, `leaf` |
 | `sweep.intervalMinutes` | read only on Central: minutes between two sweep passes of the node service, 1–1440 (out of range: exit 3); ignored on every other machine | 60 |
 | `supervision.enabled`, `supervision.detail`, `supervision.statusMinutes`, `supervision.workMachines` | deliverable 18: whether sessions publish a status and may ask Central, `full` or `fixed` status fields, the refresh period in minutes, the machines `zyggy work` shows with fixed fields only (Cli README, "node.json") | `true`, `fixed` when `discovery.detail` is `names` else `full`, 10, `[]` |
 | `agentCore.path` | absolute path of this machine's `zyggy-core` checkout, whose commit `/health` reports as `agentCoreSha` | the checkout `zyggy setup` makes: `C:/agents/zyggy-core` on Windows, `~/agents/zyggy-core` elsewhere (Central: set it to its working directory) |
@@ -96,7 +97,7 @@ One rolling file per machine, `<nodeDir>/logs/zyggy-<yyyyMMdd>.log`, a new file 
 
 Deliverable 14. The node tells the bus what it can run and routes jobs by project name:
 
-- **First scan before any job.** At start the node scans the direct children of every `devRoots` entry for Claude Code projects (a `.claude/` folder) **before** its listener admits a single job, so a job by name that was already waiting resolves against a real scan.
+- **First scan before any job.** At start the node scans every `devRoots` entry to `discovery.depth` levels (default 2) for Claude Code projects (a `.claude/` folder), not descending into projects, hidden or excluded folders, or links, **before** its listener admits a single job, so a job by name that was already waiting resolves against a real scan.
 - **First publish after the first poll.** The registry file `tenants/<tenant>/registry/<machine>.yaml` is committed once the listener is up and has polled (at most 60 s), so its `health` is not the "never polled" `red`. A refused start-up (exit 6) publishes nothing.
 - **Then every `discovery.intervalMinutes`** (60): a rescan replaces the in-memory snapshot; a commit happens only when the content changed or `last_seen` is older than `discovery.lastSeenHours` (6). Scans never overlap; a failing scan keeps the previous snapshot.
 - **Routing.** A job's `project` that is a name resolves only through this node's own snapshot — never through the registry file on the bus, which anyone with push access could rewrite. A path must lie under a `devRoots` entry. Anything else is `rejected` with `unknown_project: unknown name` or `outside devRoots`.
