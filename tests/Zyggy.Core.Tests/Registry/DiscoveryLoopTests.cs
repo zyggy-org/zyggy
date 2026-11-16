@@ -262,7 +262,10 @@ public sealed class DiscoveryLoopTests : IDisposable
 
         // Assert
         _log.AtLevel(LogLevel.Warning).Select(e => e.Message).Should().Equal(
-            "discovery: duplicate name calizr: " + string.Join("; ", new[] { Path.Combine(_root, "calizr"), Path.Combine(second, "Calizr") }.Select(ScanTree.Published).Order(StringComparer.Ordinal)),
-            "discovery: duplicate name billing: " + string.Join("; ", new[] { Path.Combine(_root, "billing"), Path.Combine(second, "Billing") }.Select(ScanTree.Published).Order(StringComparer.Ordinal)));
+            "discovery: duplicate name calizr: " + string.Join("; ", new[] { Path.Combine(_root, "calizr"), Path.Combine(second, "Calizr") }.Select(ScanTree.Published).Order(StringComparer.Ordinal)) + DuplicateHint,
+            "discovery: duplicate name billing: " + string.Join("; ", new[] { Path.Combine(_root, "billing"), Path.Combine(second, "Billing") }.Select(ScanTree.Published).Order(StringComparer.Ordinal)) + DuplicateHint);
     }
+
+    // Spec 45 AC-4: the duplicate notice tells the owner how to resolve it.
+    private const string DuplicateHint = " - set discovery.naming to path or rename one";
 }

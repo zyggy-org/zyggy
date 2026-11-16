@@ -8,10 +8,10 @@ using Zyggy.Core.Memory;
 namespace Zyggy.Core.Registry;
 
 /// <summary>
-/// Scans the direct children of every <c>devRoots</c> entry for Claude Code projects (a folder holding <c>.claude/</c>) and builds the
-/// registry's project list (founding spec §4 "Registry file" as amended by A14-1, spec 14). Links are never followed, hidden folders
-/// and nested projects are not listed, two folders deriving one name are both left out. Never throws for a file-system or git failure:
-/// every such failure becomes a <see cref="ScanNotice"/>.
+/// Scans every <c>devRoots</c> entry to <see cref="DiscoveryOptions.Depth"/> levels for Claude Code projects (a folder holding
+/// <c>.claude/</c>) and builds the registry's project list (founding spec §4 "Registry file", specs 14 and 45). Links are never followed,
+/// hidden folders and folders inside a project are not listed; of folders deriving one name the shallowest keeps it, and a tie at that level
+/// publishes none. Never throws for a file-system or git failure: every such failure becomes a <see cref="ScanNotice"/>.
 /// </summary>
 public sealed partial class DiscoveryScanner
 {
@@ -29,7 +29,7 @@ public sealed partial class DiscoveryScanner
     {
     }
 
-    /// <summary>Test hook (A7): <paramref name="listChildren"/> replaces the listing of a root's direct children.</summary>
+    /// <summary>Test hook (A7): <paramref name="listChildren"/> replaces the listing of a folder's direct children (a root or a folder below it).</summary>
     internal DiscoveryScanner(
         GitClient git,
         SecretPatterns? patterns,
@@ -64,24 +64,34 @@ public sealed partial class DiscoveryScanner
             notices.Add(new ScanNotice(ScanNoticeKind.PatternsUnavailable, "ZYGGY_SECRET_PATTERNS", "descriptions and summaries not published"));
         }
 
-        var found = new List<(string Name, string Path)>();
+        var found = new List<Candidate>();
         foreach (string root in NormaliseRoots(devRoots))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            ListProjects(root, found, notices);
+            WalkRoot(root, found, notices, cancellationToken);
         }
 
         var unique = new List<(string Name, string Path)>();
-        foreach (IGrouping<string, (string Name, string Path)> group in found.GroupBy(f => f.Name, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal))
+        foreach (IGrouping<string, Candidate> group in found.GroupBy(f => f.Name, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal))
         {
-            if (group.Count() > 1)
+            if (group.Count() == 1)
             {
-                string paths = string.Join("; ", group.Select(g => Published(g.Path)).Order(StringComparer.Ordinal));
-                notices.Add(new ScanNotice(ScanNoticeKind.DuplicateName, group.Key, paths));
+                Candidate only = group.Single();
+                unique.Add((only.Name, only.Path));
                 continue;
             }
 
-            unique.Add(group.Single());
+            // Shallowest wins (spec 45 Q9): the one candidate at the lowest level keeps the name; a tie at that level publishes none.
+            int lowest = group.Min(c => c.Level);
+            List<Candidate> shallowest = group.Where(c => c.Level == lowest).ToList();
+            Candidate? winner = shallowest.Count == 1 ? shallowest[0] : null;
+            IEnumerable<string> others = group.Where(c => c != winner).Select(c => Published(c.Path)).Order(StringComparer.Ordinal);
+            string paths = string.Join("; ", winner is null ? others : others.Prepend(Published(winner.Path)));
+            notices.Add(new ScanNotice(ScanNoticeKind.DuplicateName, group.Key, paths));
+            if (winner is not null)
+            {
+                unique.Add((winner.Name, winner.Path));
+            }
         }
 
         if (unique.Count > _options.MaxProjects)
@@ -153,7 +163,11 @@ public sealed partial class DiscoveryScanner
         && path.StartsWith(root, PathComparison)
         && (path[root.Length] == Path.DirectorySeparatorChar || path[root.Length] == Path.AltDirectorySeparatorChar);
 
-    private void ListProjects(string root, List<(string Name, string Path)> found, List<ScanNotice> notices)
+    /// <summary>
+    /// Walks one root breadth-first to <see cref="DiscoveryOptions.Depth"/> levels (root children are level 1, spec 45). A folder holding a
+    /// real <c>.claude/</c> is a project and is not descended into; hidden folders and links are skipped. Folders are visited in ordinal order.
+    /// </summary>
+    private void WalkRoot(string root, List<Candidate> found, List<ScanNotice> notices, CancellationToken cancellationToken)
     {
         if (!Directory.Exists(root))
         {
@@ -161,48 +175,67 @@ public sealed partial class DiscoveryScanner
             return;
         }
 
-        List<DirectoryInfo> children;
-        try
+        var queue = new Queue<(string Folder, int Level)>();
+        queue.Enqueue((root, 1));
+        while (queue.TryDequeue(out (string Folder, int Level) next))
         {
-            children = [.. _listChildren(root)];
-        }
-        catch (Exception exception) when (exception is UnauthorizedAccessException or IOException or System.Security.SecurityException)
-        {
-            notices.Add(new ScanNotice(ScanNoticeKind.RootUnreadable, Published(root), exception.GetType().Name));
-            return;
-        }
-
-        foreach (DirectoryInfo child in children)
-        {
+            cancellationToken.ThrowIfCancellationRequested();
+            List<DirectoryInfo> children;
             try
             {
-                if (child.Name.StartsWith('.') || IsReparsePoint(child))
-                {
-                    continue;
-                }
-
-                var claude = new DirectoryInfo(Path.Join(child.FullName, ".claude"));
-                if (!claude.Exists || IsReparsePoint(claude))
-                {
-                    continue;
-                }
-
-                string name = ProjectName.Derive(child.Name);
-                string path = Path.TrimEndingDirectorySeparator(child.FullName);
-                if (!ProjectName.IsLabel(name))
-                {
-                    notices.Add(new ScanNotice(ScanNoticeKind.NameUnusable, Published(path), null));
-                    continue;
-                }
-
-                found.Add((name, path));
+                children = [.. _listChildren(next.Folder).OrderBy(c => c.Name, StringComparer.Ordinal)];
             }
             catch (Exception exception) when (exception is UnauthorizedAccessException or IOException or System.Security.SecurityException)
             {
-                notices.Add(new ScanNotice(ScanNoticeKind.RootUnreadable, Published(child.FullName), exception.GetType().Name));
+                notices.Add(new ScanNotice(ScanNoticeKind.RootUnreadable, Published(next.Folder), exception.GetType().Name));
+                continue;
+            }
+
+            foreach (DirectoryInfo child in children)
+            {
+                try
+                {
+                    if (child.Name.StartsWith('.') || IsReparsePoint(child))
+                    {
+                        continue;
+                    }
+
+                    var claude = new DirectoryInfo(Path.Join(child.FullName, ".claude"));
+                    if (!claude.Exists)
+                    {
+                        if (next.Level < _options.Depth)
+                        {
+                            queue.Enqueue((child.FullName, next.Level + 1));
+                        }
+
+                        continue;
+                    }
+
+                    if (IsReparsePoint(claude))
+                    {
+                        continue; // a linked .claude marks no project, and nothing is read through it (spec 45 Q7)
+                    }
+
+                    string name = ProjectName.Derive(child.Name);
+                    string path = Path.TrimEndingDirectorySeparator(child.FullName);
+                    if (!ProjectName.IsLabel(name))
+                    {
+                        notices.Add(new ScanNotice(ScanNoticeKind.NameUnusable, Published(path), null));
+                        continue;
+                    }
+
+                    found.Add(new Candidate(name, path, next.Level));
+                }
+                catch (Exception exception) when (exception is UnauthorizedAccessException or IOException or System.Security.SecurityException)
+                {
+                    notices.Add(new ScanNotice(ScanNoticeKind.RootUnreadable, Published(child.FullName), exception.GetType().Name));
+                }
             }
         }
     }
+
+    /// <summary>A project folder found by the walk, with its level below the root it was found from.</summary>
+    private sealed record Candidate(string Name, string Path, int Level);
 
     private async Task<RegistryProject> ProjectAsync(string name, string path, DiscoveryDetail detail, List<ScanNotice> notices, CancellationToken cancellationToken)
     {

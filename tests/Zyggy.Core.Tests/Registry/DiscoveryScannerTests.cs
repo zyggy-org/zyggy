@@ -8,13 +8,14 @@ using Zyggy.Core.Tests.Infrastructure;
 
 namespace Zyggy.Core.Tests.Registry;
 
+// Spec 45 AC-1: every test of this class runs unchanged at `discovery.depth: 1` (the 0.20.0 behaviour).
 public sealed class DiscoveryScannerTests : IDisposable
 {
     private readonly ScanTree _tree = new();
     private readonly RecordingProcessRunner _processes = new();
     private readonly FakeTimeProvider _clock = new(new DateTimeOffset(2026, 11, 7, 9, 0, 0, TimeSpan.Zero));
     private readonly RecordingLogger<DiscoveryScanner> _log = new();
-    private readonly DiscoveryOptions _options = new();
+    private readonly DiscoveryOptions _options = new() { Depth = 1 };
 
     internal static SecretPatterns Patterns { get; } =
         SecretPatterns.Load(Path.Combine(Golden.Directory, "secret-patterns", "secret-patterns.txt")).Patterns!;

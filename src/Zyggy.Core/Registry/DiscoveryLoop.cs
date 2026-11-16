@@ -181,9 +181,12 @@ public sealed partial class DiscoveryLoop
         }
     }
 
+    /// <summary>How the owner resolves a duplicate name (spec 45, Failure modes); the same text as the <c>discover</c> verb's line.</summary>
+    private const string DuplicateHint = " - set discovery.naming to path or rename one";
+
     private static string NoticeText(ScanNotice notice) => notice.Kind switch
     {
-        ScanNoticeKind.DuplicateName => $"duplicate name {notice.Subject}: {notice.Detail}",
+        ScanNoticeKind.DuplicateName => $"duplicate name {notice.Subject}: {notice.Detail}{DuplicateHint}",
         ScanNoticeKind.RootMissing => $"root missing {notice.Subject}",
         ScanNoticeKind.RootUnreadable => $"root unreadable {notice.Subject}",
         ScanNoticeKind.NameUnusable => $"name unusable for {notice.Subject}",

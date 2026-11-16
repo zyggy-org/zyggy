@@ -301,7 +301,8 @@ public static partial class NodeConfigurationReader
 
     /// <summary>
     /// The <c>discovery</c> section (spec 14, A14-5): absent or <c>null</c> means the defaults; <c>intervalMinutes</c> an integer 1–1440,
-    /// <c>lastSeenHours</c> an integer 1–168, <c>detail</c> <c>full</c> or <c>names</c>. Unknown keys inside the section are ignored.
+    /// <c>lastSeenHours</c> an integer 1–168, <c>detail</c> <c>full</c> or <c>names</c>, <c>depth</c> an integer 1–6 (spec 45, default 2).
+    /// Unknown keys inside the section are ignored.
     /// </summary>
     private static bool TryDiscovery(JsonElement root, out DiscoverySettings discovery, out NodeConfigurationResult failure)
     {
@@ -319,7 +320,8 @@ public static partial class NodeConfigurationReader
         }
 
         if (!TryRangedInt(section, "discovery", "intervalMinutes", 1, 1440, discovery.IntervalMinutes, out int interval, out failure)
-            || !TryRangedInt(section, "discovery", "lastSeenHours", 1, 168, discovery.LastSeenHours, out int lastSeen, out failure))
+            || !TryRangedInt(section, "discovery", "lastSeenHours", 1, 168, discovery.LastSeenHours, out int lastSeen, out failure)
+            || !TryRangedInt(section, "discovery", "depth", 1, 6, discovery.Depth, out int depth, out failure))
         {
             return false;
         }
@@ -341,7 +343,7 @@ public static partial class NodeConfigurationReader
             }
         }
 
-        discovery = new DiscoverySettings(interval, lastSeen, detail);
+        discovery = new DiscoverySettings(interval, lastSeen, detail, depth);
         return true;
     }
 

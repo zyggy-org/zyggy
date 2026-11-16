@@ -139,10 +139,13 @@ internal static class DiscoverCommand
         return (true, verdict.Level is HealthLevel.Green or HealthLevel.Amber or HealthLevel.Red ? verdict.Level : null);
     }
 
+    /// <summary>How the owner resolves a duplicate name (spec 45, Failure modes); the same text as the node's log line.</summary>
+    private const string DuplicateHint = " - set discovery.naming to path or rename one";
+
     /// <summary>One stderr line per notice (spec 14, Failure modes); the patterns notice is the verb's own line above, so it prints nothing here.</summary>
     internal static string? NoticeLine(ScanNotice notice) => notice.Kind switch
     {
-        ScanNoticeKind.DuplicateName => $"discover: duplicate name {notice.Subject}: {notice.Detail}",
+        ScanNoticeKind.DuplicateName => $"discover: duplicate name {notice.Subject}: {notice.Detail}{DuplicateHint}",
         ScanNoticeKind.RootMissing => $"discover: root missing {notice.Subject}",
         ScanNoticeKind.RootUnreadable => $"discover: root unreadable {notice.Subject}",
         ScanNoticeKind.NameUnusable => $"discover: name unusable for {notice.Subject}",

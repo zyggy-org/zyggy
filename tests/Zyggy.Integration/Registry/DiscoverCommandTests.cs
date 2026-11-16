@@ -88,7 +88,7 @@ public sealed class DiscoverCommandTests : IAsyncLifetime
         document.Projects.Select(p => p.Name).Should().Equal("client-portal");
         string expected = string.Join("; ", new[] { Path.Combine(_root, "calizr"), Path.Combine(second, "Calizr") }
             .Select(p => p.Replace('\\', '/')).Order(StringComparer.Ordinal));
-        console.Stderr.Should().Be($"discover: duplicate name calizr: {expected}\n");
+        console.Stderr.Should().Be($"discover: duplicate name calizr: {expected} - set discovery.naming to path or rename one\n"); // spec 45 AC-4
         SecretSweep.AssertAbsent([console.Stdout, console.Stderr]);
     }
 
@@ -323,5 +323,58 @@ public sealed class DiscoverCommandTests : IAsyncLifetime
         exit.Should().Be(3);
         console.Stdout.Should().BeEmpty();
         console.Stderr.Should().StartWith("zyggy: configuration error: ");
+    }
+
+    // Spec 45 AC-5: with the default depth (2), a project inside a grouping folder is published.
+    [Fact]
+    public async Task DryRun_ProjectInGroupFolder_DefaultDepthLists()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await SeedTwoProjectsAsync(ct);
+        string group = Path.Combine(_root, "group");
+        Directory.CreateDirectory(group);
+        await ScratchProject.CreateInAsync(_harness.Bus, group, "deep", ct);
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["discover", "--dry-run"], NodeJsonFor([_root]), ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        RegistryDocument.Parse(Encoding.UTF8.GetBytes(console.Stdout)).Document!.Projects.Select(p => p.Name)
+            .Should().Equal("calizr", "client-portal", "deep");
+    }
+
+    // Spec 45 AC-1: `discovery.depth: 1` in node.json reaches the scanner — the 0.20.0 behaviour.
+    [Fact]
+    public async Task DryRun_ProjectInGroupFolder_DepthOneLeavesOut()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await SeedTwoProjectsAsync(ct);
+        string group = Path.Combine(_root, "group");
+        Directory.CreateDirectory(group);
+        await ScratchProject.CreateInAsync(_harness.Bus, group, "deep", ct);
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["discover", "--dry-run"], NodeJsonFor([_root], "{ \"depth\": 1 }"), ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        RegistryDocument.Parse(Encoding.UTF8.GetBytes(console.Stdout)).Document!.Projects.Select(p => p.Name)
+            .Should().Equal("calizr", "client-portal");
+    }
+
+    // Spec 45 AC-3: an out-of-range `discovery.depth` is a configuration error naming the key.
+    [Fact]
+    public async Task DryRun_DepthSeven_ExitThreeKeyNamed()
+    {
+        // Act
+        var ct = TestContext.Current.CancellationToken;
+        var (exit, console) = await _harness.RunAsync(["discover", "--dry-run"], NodeJsonFor([_root], "{ \"depth\": 7 }"), ct: ct);
+
+        // Assert
+        exit.Should().Be(3);
+        console.Stderr.Should().Be("zyggy: configuration error: discovery.depth: must be an integer from 1 to 6\n");
     }
 }

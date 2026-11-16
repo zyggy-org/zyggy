@@ -5,6 +5,7 @@
 - 2026-11-16: draft written from the owner's request; §1's claim checked against the code (Context). No roadmap entry yet (45 is the next free number; the project-manager adds the row).
 - 2026-11-16: owner answered Q1–Q9 (Decisions). `spec-critic` run; its findings fixed: slices reordered (depth first) and made vertical through `zyggy discover --dry-run`, the bounded walk split from depth, a slice map added, every Behavior rule given a failing check, notice level and notice fields pinned down.
 - 2026-11-16: **approved by the owner.** Roadmap row 45 added; founding spec §4 (A14-1) sentence replaced with the Q6 wording ("default 2").
+- 2026-11-16: **slice 1 done** (depth, walk, shallowest wins; AC-1–AC-5 met). Proof: `verify.mjs` green (build, unit 6,560 passed / 56 skipped, integration, format); 17 discover integration tests incl. 3 new (level-2 found at default depth, `depth: 1` leaves it out, `depth: 7` → exit 3); `slice-verifier` PASS with every mutation caught, its two gaps closed (tie → one notice; depth wiring through `node.json`). Decisions: the duplicate hint is appended by the CLI and node formatters, not stored in `ScanNotice.Detail`; a deeper folder that cannot be listed reports `root unreadable <folder>` until slice 3 adds `folder unreadable`; `DiscoverySettings` gains a trailing `Depth = 2`. Owner approved 2026-11-16.
 
 ## Goal
 
