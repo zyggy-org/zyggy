@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO.Enumeration;
 
 using Microsoft.Extensions.Logging;
 
@@ -10,7 +11,8 @@ namespace Zyggy.Core.Registry;
 /// <summary>
 /// Scans every <c>devRoots</c> entry to <see cref="DiscoveryOptions.Depth"/> levels for Claude Code projects (a folder holding
 /// <c>.claude/</c>) and builds the registry's project list (founding spec §4 "Registry file", specs 14 and 45). Links are never followed,
-/// hidden folders and folders inside a project are not listed; a root inside another root is scanned too, with a notice, and a folder
+/// hidden, built-in or excluded folders and folders inside a project are not listed, and one scan looks into at most
+/// <see cref="DiscoveryOptions.MaxFolders"/> folders; a root inside another root is scanned too, with a notice, and a folder
 /// reached from both counts from the innermost root; of folders deriving one name the shallowest keeps it, and a tie at that level
 /// publishes none. Never throws for a file-system or git failure: every such failure becomes a <see cref="ScanNotice"/>.
 /// </summary>
@@ -66,10 +68,16 @@ public sealed partial class DiscoveryScanner
         }
 
         var found = new List<Candidate>();
+        var walk = new WalkCount();
         foreach (string root in NormaliseRoots(devRoots, notices))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            WalkRoot(root, found, notices, cancellationToken);
+            if (walk.CapReached)
+            {
+                break;
+            }
+
+            WalkRoot(root, found, notices, walk, cancellationToken);
         }
 
         // A folder reached from a root and from a nested root is one project; the innermost root gives its level (spec 45 Q4).
@@ -125,7 +133,7 @@ public sealed partial class DiscoveryScanner
                 ((int)elapsed.TotalSeconds).ToString(CultureInfo.InvariantCulture) + " s"));
         }
 
-        LogScanned(_log, projects.Count, notices.Count);
+        LogScanned(_log, projects.Count, notices.Count, walk.Visited, _options.Depth);
         return new ScanResult(projects, notices, elapsed, effective);
     }
 
@@ -185,7 +193,7 @@ public sealed partial class DiscoveryScanner
     /// Walks one root breadth-first to <see cref="DiscoveryOptions.Depth"/> levels (root children are level 1, spec 45). A folder holding a
     /// real <c>.claude/</c> is a project and is not descended into; hidden folders and links are skipped. Folders are visited in ordinal order.
     /// </summary>
-    private void WalkRoot(string root, List<Candidate> found, List<ScanNotice> notices, CancellationToken cancellationToken)
+    private void WalkRoot(string root, List<Candidate> found, List<ScanNotice> notices, WalkCount walk, CancellationToken cancellationToken)
     {
         if (!Directory.Exists(root))
         {
@@ -205,7 +213,8 @@ public sealed partial class DiscoveryScanner
             }
             catch (Exception exception) when (exception is UnauthorizedAccessException or IOException or System.Security.SecurityException)
             {
-                notices.Add(new ScanNotice(ScanNoticeKind.RootUnreadable, Published(next.Folder), exception.GetType().Name));
+                ScanNoticeKind kind = next.Level == 1 ? ScanNoticeKind.RootUnreadable : ScanNoticeKind.FolderUnreadable;
+                notices.Add(new ScanNotice(kind, Published(next.Folder), exception.GetType().Name));
                 continue;
             }
 
@@ -218,10 +227,22 @@ public sealed partial class DiscoveryScanner
                         continue;
                     }
 
+                    // The folder cap bounds the .claude checks of one scan over all roots (spec 45 Bounds).
+                    if (walk.Visited >= _options.MaxFolders)
+                    {
+                        walk.CapReached = true;
+                        notices.Add(new ScanNotice(
+                            ScanNoticeKind.FolderCapReached,
+                            Published(root),
+                            _options.MaxFolders.ToString(CultureInfo.InvariantCulture)));
+                        return;
+                    }
+
+                    walk.Visited++;
                     var claude = new DirectoryInfo(Path.Join(child.FullName, ".claude"));
                     if (!claude.Exists)
                     {
-                        if (next.Level < _options.Depth)
+                        if (next.Level < _options.Depth && !IsSkipped(child.Name))
                         {
                             queue.Enqueue((child.FullName, next.Level + 1));
                         }
@@ -246,10 +267,32 @@ public sealed partial class DiscoveryScanner
                 }
                 catch (Exception exception) when (exception is UnauthorizedAccessException or IOException or System.Security.SecurityException)
                 {
-                    notices.Add(new ScanNotice(ScanNoticeKind.RootUnreadable, Published(child.FullName), exception.GetType().Name));
+                    notices.Add(new ScanNotice(ScanNoticeKind.FolderUnreadable, Published(child.FullName), exception.GetType().Name));
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Whether the walk never descends into a folder of this name: the built-in list or a <see cref="DiscoveryOptions.Exclude"/> glob
+    /// (spec 45). Checked only before descending, never for a project's own name. Case is ignored on Windows only.
+    /// </summary>
+    private bool IsSkipped(string name)
+    {
+        bool ignoreCase = OperatingSystem.IsWindows();
+        return BuiltInSkips.Concat(_options.Exclude).Any(glob => FileSystemName.MatchesSimpleExpression(glob, name, ignoreCase));
+    }
+
+    /// <summary>Folders the walk never descends into, whatever <c>discovery.exclude</c> says (spec 45 Q3).</summary>
+    private static readonly string[] BuiltInSkips =
+        ["node_modules", "bin", "obj", "dist", "out", "target", "packages", "TestResults", "__pycache__", "*.worktrees"];
+
+    /// <summary>The folder count of one scan, shared by its roots.</summary>
+    private sealed class WalkCount
+    {
+        public int Visited { get; set; }
+
+        public bool CapReached { get; set; }
     }
 
     /// <summary>A project folder found by the walk, with its level below the root it was found from.</summary>
@@ -281,6 +324,6 @@ public sealed partial class DiscoveryScanner
         return await _git.DefaultBranchAsync(path, cancellationToken).ConfigureAwait(false);
     }
 
-    [LoggerMessage(Level = LogLevel.Debug, Message = "discover: scanned {Projects} projects, {Notices} notices")]
-    private static partial void LogScanned(ILogger logger, int projects, int notices);
+    [LoggerMessage(Level = LogLevel.Debug, Message = "discover: scanned {Projects} projects, {Notices} notices, {Folders} folders visited, depth {Depth}")]
+    private static partial void LogScanned(ILogger logger, int projects, int notices, int folders, int depth);
 }

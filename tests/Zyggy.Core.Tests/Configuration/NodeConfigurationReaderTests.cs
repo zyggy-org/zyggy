@@ -703,6 +703,46 @@ public sealed class NodeConfigurationReaderTests : IDisposable
         result.ToString().Should().Be("discovery.depth: must be an integer from 1 to 6");
     }
 
+    // Spec 45 AC-10: no `discovery.exclude` → no extra folders excluded.
+    [Theory]
+    [InlineData("\"discovery\": { },")]
+    [InlineData("\"discovery\": { \"exclude\": null },")]
+    public void Read_DiscoveryExcludeAbsent_Empty(string insert)
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel(insert));
+
+        // Assert
+        result.Configuration!.Discovery.Exclude.Should().BeEmpty();
+    }
+
+    // Spec 45 AC-10: a list of folder-name globs is taken as given.
+    [Fact]
+    public void Read_DiscoveryExcludeList_Typed()
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"discovery\": { \"exclude\": [\"archive*\", \"tmp?\"] },"));
+
+        // Assert
+        result.Configuration!.Discovery.Exclude.Should().Equal("archive*", "tmp?");
+    }
+
+    // Spec 45 AC-10: not an array, or an empty or non-string entry, is refused with the key named.
+    [Theory]
+    [InlineData("\"archive*\"")]
+    [InlineData("{ }")]
+    [InlineData("[\"\"]")]
+    [InlineData("[1]")]
+    [InlineData("[\"ok\", null]")]
+    public void Read_DiscoveryExcludeInvalid_FieldNamed(string value)
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"discovery\": { \"exclude\": " + value + " },"));
+
+        // Assert
+        result.ToString().Should().Be("discovery.exclude: must be an array of non-empty strings");
+    }
+
     [Theory]
     [InlineData("5", "discovery", "discovery: must be an object")]
     [InlineData("{ \"intervalMinutes\": 0 }", "discovery.intervalMinutes", "discovery.intervalMinutes: must be an integer from 1 to 1440")]

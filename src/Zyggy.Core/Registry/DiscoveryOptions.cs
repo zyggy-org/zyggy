@@ -17,6 +17,15 @@ public sealed class DiscoveryOptions
     /// <summary>Gets or sets the folder levels below each root that are searched, 1–6 (spec 45; root children are level 1).</summary>
     public int Depth { get; set; } = 2;
 
+    /// <summary>
+    /// Gets or sets the folder-name globs (<c>*</c>, <c>?</c>) never descended into, added to the built-in list; a project's own name is
+    /// never checked against them (spec 45).
+    /// </summary>
+    public IReadOnlyList<string> Exclude { get; set; } = [];
+
+    /// <summary>Gets or sets the most folders one scan looks into for <c>.claude/</c>, over all roots (spec 45).</summary>
+    public int MaxFolders { get; set; } = 20_000;
+
     /// <summary>Gets or sets the most projects one registry file lists.</summary>
     public int MaxProjects { get; set; } = 500;
 

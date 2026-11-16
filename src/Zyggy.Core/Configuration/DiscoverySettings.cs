@@ -10,4 +10,11 @@ namespace Zyggy.Core.Configuration;
 /// <param name="LastSeenHours">Hours after which an unchanged registry file is committed again, 1–168.</param>
 /// <param name="Detail">How much the registry file carries; <see cref="DiscoveryDetail.Names"/> on the work laptop (§8).</param>
 /// <param name="Depth">Folder levels below each root that are searched, 1–6 (spec 45; root children are level 1).</param>
-public sealed record DiscoverySettings(int IntervalMinutes = 60, int LastSeenHours = 6, DiscoveryDetail Detail = DiscoveryDetail.Full, int Depth = 2);
+public sealed record DiscoverySettings(int IntervalMinutes = 60, int LastSeenHours = 6, DiscoveryDetail Detail = DiscoveryDetail.Full, int Depth = 2)
+{
+    /// <summary>
+    /// Gets the folder-name globs (<c>*</c>, <c>?</c>) never descended into, added to the built-in list (spec 45, <c>discovery.exclude</c>);
+    /// empty when absent.
+    /// </summary>
+    public IReadOnlyList<string> Exclude { get; init; } = [];
+}

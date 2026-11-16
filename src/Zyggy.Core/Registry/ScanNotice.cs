@@ -35,6 +35,15 @@ public enum ScanNoticeKind
     /// enclosing root.
     /// </summary>
     RootNested,
+
+    /// <summary>A folder below a root could not be listed; the scan continues (spec 45). Subject is the folder.</summary>
+    FolderUnreadable,
+
+    /// <summary>
+    /// More folders than <see cref="DiscoveryOptions.MaxFolders"/>; the walk stopped and the projects found so far are published (spec 45).
+    /// Subject is the root being walked, Detail the cap.
+    /// </summary>
+    FolderCapReached,
 }
 
 /// <summary>One notice of a scan.</summary>

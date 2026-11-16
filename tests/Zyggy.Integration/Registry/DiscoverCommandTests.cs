@@ -1,5 +1,7 @@
 using System.Text;
 
+using Microsoft.Extensions.DependencyInjection;
+
 using Zyggy.Core.Bus;
 using Zyggy.Core.Registry;
 using Zyggy.Core.Tests.Infrastructure;
@@ -383,6 +385,81 @@ public sealed class DiscoverCommandTests : IAsyncLifetime
         exit.Should().Be(0, console.Stderr);
         RegistryDocument.Parse(Encoding.UTF8.GetBytes(console.Stdout)).Document!.Projects.Select(p => p.Name).Should().Equal("p", "q");
         console.Stderr.Should().Be($"discover: root nested {group.Replace('\\', '/')} under {_root.Replace('\\', '/')}\n");
+    }
+
+    // Spec 45 AC-9: a project inside `node_modules` is never published; `discovery.exclude` from node.json reaches the scanner.
+    [Fact]
+    public async Task DryRun_ProjectsInNodeModulesAndExcluded_NotListed()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await ScratchProject.CreateInAsync(_harness.Bus, _root, "q", ct);
+        foreach (string folder in new[] { "node_modules", "archive-2024" })
+        {
+            string parent = Path.Combine(_root, folder);
+            Directory.CreateDirectory(parent);
+            await ScratchProject.CreateInAsync(_harness.Bus, parent, "x-" + folder, ct);
+        }
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["discover", "--dry-run"], NodeJsonFor([_root], "{ \"exclude\": [\"archive*\"] }"), ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        RegistryDocument.Parse(Encoding.UTF8.GetBytes(console.Stdout)).Document!.Projects.Select(p => p.Name).Should().Equal("q");
+    }
+
+    // Spec 45 AC-10: a wrong `discovery.exclude` is a configuration error naming the key.
+    [Fact]
+    public async Task DryRun_ExcludeNotArray_ExitThreeKeyNamed()
+    {
+        // Act
+        var ct = TestContext.Current.CancellationToken;
+        var (exit, console) = await _harness.RunAsync(["discover", "--dry-run"], NodeJsonFor([_root], "{ \"exclude\": \"archive*\" }"), ct: ct);
+
+        // Assert
+        exit.Should().Be(3);
+        console.Stderr.Should().Be("zyggy: configuration error: discovery.exclude: must be an array of non-empty strings\n");
+    }
+
+    // Spec 45 AC-13: with the folder cap reached, the projects found so far are printed, a stderr line says so, and the verb exits 0.
+    [Fact]
+    public async Task DryRun_FolderCapReached_PartialListExitZero()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await SeedTwoProjectsAsync(ct);
+        await ScratchProject.CreateInAsync(_harness.Bus, _root, "third", ct);
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(
+            ["discover", "--dry-run"], NodeJsonFor([_root]), more: s => s.PostConfigure<DiscoveryOptions>(o => o.MaxFolders = 2), ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        console.Stderr.Should().Be("discover: folder cap reached (2)\n");
+        RegistryDocument.Parse(Encoding.UTF8.GetBytes(console.Stdout)).Document!.Projects.Select(p => p.Name).Should().Equal("calizr", "client-portal");
+    }
+
+    // Spec 45 AC-14: `--verbose` shows the folders visited and the depth. The console logger writes to the process's own stderr, so
+    // this runs the compiled `zyggy` as a child process.
+    [Fact]
+    public async Task DryRunVerbose_Default_FoldersVisitedAndDepthTwo()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await SeedTwoProjectsAsync(ct);
+        var env = new Dictionary<string, string?>
+        {
+            ["ZYGGY_NODE_JSON"] = NodeJsonFor([_root]),
+            ["ZYGGY_SECRET_PATTERNS"] = CliHarness.PatternsPath,
+        };
+
+        // Act
+        ZyggyRun run = await ZyggyCli.RunAsync(["discover", "--dry-run", "--verbose"], env, null, _root, ct);
+
+        // Assert
+        run.Stderr.Should().Contain("discover: scanned 2 projects, 0 notices, 2 folders visited, depth 2", "exit code {0}", run.ExitCode);
     }
 
     // Spec 45 AC-3: an out-of-range `discovery.depth` is a configuration error naming the key.

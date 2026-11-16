@@ -205,6 +205,8 @@ public sealed partial class DiscoveryLoop
         ScanNoticeKind.SecretRedacted => $"secret pattern {notice.Detail} redacted in {notice.Subject}",
         ScanNoticeKind.PatternsUnavailable => "secret patterns not registered; publishing names only",
         ScanNoticeKind.SlowScan => $"scan took {notice.Detail}",
+        ScanNoticeKind.FolderUnreadable => $"folder unreadable {notice.Subject}",
+        ScanNoticeKind.FolderCapReached => $"folder cap reached ({notice.Detail})",
         _ => notice.Kind + " " + notice.Subject,
     };
 

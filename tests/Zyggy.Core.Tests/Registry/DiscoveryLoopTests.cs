@@ -314,6 +314,42 @@ public sealed class DiscoveryLoopTests : IDisposable
             $"discovery: root nested {ScanTree.Published(nested)} under {ScanTree.Published(_root)}");
     }
 
+    // Spec 45 AC-12: a folder that cannot be listed is logged at Warning, once while unchanged.
+    [Fact]
+    public async Task RunAsync_FolderUnreadableTwice_OneWarning()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        string locked = _tree.Folder(_root, "group");
+        DiscoveryLoop loop = Loop(folder => string.Equals(Path.GetFullPath(folder), Path.GetFullPath(locked), StringComparison.Ordinal)
+            ? throw new UnauthorizedAccessException("denied")
+            : new DirectoryInfo(folder).EnumerateDirectories());
+
+        // Act
+        await loop.RunCycleAsync(ct);
+        await loop.RunCycleAsync(ct);
+
+        // Assert
+        _log.AtLevel(LogLevel.Warning).Select(e => e.Message).Should().Equal($"discovery: folder unreadable {ScanTree.Published(locked)}");
+    }
+
+    // Spec 45 AC-13: the folder cap is logged at Warning.
+    [Fact]
+    public async Task RunAsync_FolderCapReached_Warning()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        _tree.Project(_root, "billing", git: false);
+        _options.MaxFolders = 1;
+        DiscoveryLoop loop = Loop();
+
+        // Act
+        await loop.RunCycleAsync(ct);
+
+        // Assert
+        _log.AtLevel(LogLevel.Warning).Select(e => e.Message).Should().Equal("discovery: folder cap reached (1)");
+    }
+
     // Spec 45 AC-4: the duplicate notice tells the owner how to resolve it.
     private const string DuplicateHint = " - set discovery.naming to path or rename one";
 }

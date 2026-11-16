@@ -301,7 +301,8 @@ public static partial class NodeConfigurationReader
 
     /// <summary>
     /// The <c>discovery</c> section (spec 14, A14-5): absent or <c>null</c> means the defaults; <c>intervalMinutes</c> an integer 1–1440,
-    /// <c>lastSeenHours</c> an integer 1–168, <c>detail</c> <c>full</c> or <c>names</c>, <c>depth</c> an integer 1–6 (spec 45, default 2).
+    /// <c>lastSeenHours</c> an integer 1–168, <c>detail</c> <c>full</c> or <c>names</c>, <c>depth</c> an integer 1–6 (spec 45, default 2),
+    /// <c>exclude</c> an array of non-empty folder-name globs (spec 45, default empty).
     /// Unknown keys inside the section are ignored.
     /// </summary>
     private static bool TryDiscovery(JsonElement root, out DiscoverySettings discovery, out NodeConfigurationResult failure)
@@ -343,7 +344,20 @@ public static partial class NodeConfigurationReader
             }
         }
 
-        discovery = new DiscoverySettings(interval, lastSeen, detail, depth);
+        IReadOnlyList<string> exclude = discovery.Exclude;
+        if (section.TryGetProperty("exclude", out JsonElement excludeElement) && excludeElement.ValueKind != JsonValueKind.Null)
+        {
+            if (excludeElement.ValueKind != JsonValueKind.Array
+                || excludeElement.EnumerateArray().Any(e => e.ValueKind != JsonValueKind.String || string.IsNullOrEmpty(e.GetString())))
+            {
+                failure = Invalid("discovery.exclude", "must be an array of non-empty strings");
+                return false;
+            }
+
+            exclude = [.. excludeElement.EnumerateArray().Select(e => e.GetString()!)];
+        }
+
+        discovery = new DiscoverySettings(interval, lastSeen, detail, depth) { Exclude = exclude };
         return true;
     }
 

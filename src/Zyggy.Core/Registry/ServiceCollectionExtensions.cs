@@ -37,6 +37,7 @@ public static class ServiceCollectionExtensions
                     options.LastSeenHours = configuration.Discovery.LastSeenHours;
                     options.Detail = configuration.Discovery.Detail;
                     options.Depth = configuration.Discovery.Depth;
+                    options.Exclude = configuration.Discovery.Exclude;
                 }
             })
             .Validate(options => options.Validate() is null, "discovery: intervalMinutes 1-1440, lastSeenHours 1-168, depth 1-6");
