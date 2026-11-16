@@ -17,4 +17,7 @@ public sealed record DiscoverySettings(int IntervalMinutes = 60, int LastSeenHou
     /// empty when absent.
     /// </summary>
     public IReadOnlyList<string> Exclude { get; init; } = [];
+
+    /// <summary>Gets how a project's name is derived (spec 45, <c>discovery.naming</c>); <see cref="DiscoveryNaming.Leaf"/> when absent.</summary>
+    public DiscoveryNaming Naming { get; init; } = DiscoveryNaming.Leaf;
 }

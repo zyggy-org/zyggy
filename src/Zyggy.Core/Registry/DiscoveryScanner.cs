@@ -13,7 +13,7 @@ namespace Zyggy.Core.Registry;
 /// <c>.claude/</c>) and builds the registry's project list (founding spec §4 "Registry file", specs 14 and 45). Links are never followed,
 /// hidden, built-in or excluded folders and folders inside a project are not listed, and one scan looks into at most
 /// <see cref="DiscoveryOptions.MaxFolders"/> folders; a root inside another root is scanned too, with a notice, and a folder
-/// reached from both counts from the innermost root; of folders deriving one name the shallowest keeps it, and a tie at that level
+/// reached from both counts, and with <see cref="DiscoveryNaming.Path"/> is named, from the innermost root; of folders deriving one name the shallowest keeps it, and a tie at that level
 /// publishes none. Never throws for a file-system or git failure: every such failure becomes a <see cref="ScanNotice"/>.
 /// </summary>
 public sealed partial class DiscoveryScanner
@@ -255,8 +255,10 @@ public sealed partial class DiscoveryScanner
                         continue; // a linked .claude marks no project, and nothing is read through it (spec 45 Q7)
                     }
 
-                    string name = ProjectName.Derive(child.Name);
                     string path = Path.TrimEndingDirectorySeparator(child.FullName);
+
+                    // `path` naming folds the path below this root; the merge then keeps the innermost root's name (spec 45 AC-15).
+                    string name = ProjectName.Derive(_options.Naming == DiscoveryNaming.Path ? Path.GetRelativePath(root, path) : child.Name);
                     if (!ProjectName.IsLabel(name))
                     {
                         notices.Add(new ScanNotice(ScanNoticeKind.NameUnusable, Published(path), null));

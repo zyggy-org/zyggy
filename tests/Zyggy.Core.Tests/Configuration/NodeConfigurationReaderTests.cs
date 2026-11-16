@@ -743,6 +743,46 @@ public sealed class NodeConfigurationReaderTests : IDisposable
         result.ToString().Should().Be("discovery.exclude: must be an array of non-empty strings");
     }
 
+    // Spec 45 AC-15: no `discovery.naming` → leaf.
+    [Theory]
+    [InlineData("\"discovery\": { },")]
+    [InlineData("\"discovery\": { \"naming\": null },")]
+    [InlineData("\"discovery\": { \"naming\": \"leaf\" },")]
+    public void Read_DiscoveryNamingAbsentOrLeaf_Leaf(string insert)
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel(insert));
+
+        // Assert
+        result.Configuration!.Discovery.Naming.Should().Be(DiscoveryNaming.Leaf);
+    }
+
+    // Spec 45 AC-15: `path` is taken.
+    [Fact]
+    public void Read_DiscoveryNamingPath_Typed()
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"discovery\": { \"naming\": \"path\" },"));
+
+        // Assert
+        result.Configuration!.Discovery.Naming.Should().Be(DiscoveryNaming.Path);
+    }
+
+    // Spec 45 AC-15: anything else is refused with the key named.
+    [Theory]
+    [InlineData("\"full\"")]
+    [InlineData("\"\"")]
+    [InlineData("\"Path\"")]
+    [InlineData("1")]
+    public void Read_DiscoveryNamingInvalid_FieldNamed(string value)
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"discovery\": { \"naming\": " + value + " },"));
+
+        // Assert
+        result.ToString().Should().Be("discovery.naming: must be leaf or path");
+    }
+
     [Theory]
     [InlineData("5", "discovery", "discovery: must be an object")]
     [InlineData("{ \"intervalMinutes\": 0 }", "discovery.intervalMinutes", "discovery.intervalMinutes: must be an integer from 1 to 1440")]

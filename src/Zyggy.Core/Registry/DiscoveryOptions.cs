@@ -23,6 +23,9 @@ public sealed class DiscoveryOptions
     /// </summary>
     public IReadOnlyList<string> Exclude { get; set; } = [];
 
+    /// <summary>Gets or sets how a project's name is derived (spec 45, <c>discovery.naming</c>).</summary>
+    public DiscoveryNaming Naming { get; set; } = DiscoveryNaming.Leaf;
+
     /// <summary>Gets or sets the most folders one scan looks into for <c>.claude/</c>, over all roots (spec 45).</summary>
     public int MaxFolders { get; set; } = 20_000;
 

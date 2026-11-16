@@ -6,7 +6,8 @@ namespace Zyggy.Core.Registry;
 
 /// <summary>
 /// The registry name rule (founding spec §4 "Registry file" as amended by A14-1): a project's name is its folder name lowercased
-/// with every run of other characters replaced by one hyphen, trimmed of hyphens and cut to the label length.
+/// with every run of other characters replaced by one hyphen, trimmed of hyphens and cut to the label length. With
+/// <c>discovery.naming: path</c> (spec 45) the same rule folds the path below the root, so a separator becomes one hyphen.
 /// </summary>
 internal static class ProjectName
 {

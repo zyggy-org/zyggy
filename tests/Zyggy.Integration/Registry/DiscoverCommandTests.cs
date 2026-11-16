@@ -474,4 +474,36 @@ public sealed class DiscoverCommandTests : IAsyncLifetime
         exit.Should().Be(3);
         console.Stderr.Should().Be("zyggy: configuration error: discovery.depth: must be an integer from 1 to 6\n");
     }
+
+    // Spec 45 AC-15: `discovery.naming: path` in node.json reaches the scanner — `G/q` is listed as `g-q` next to `q`.
+    [Fact]
+    public async Task DryRun_NamingPath_GroupedProjectPrefixed()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await ScratchProject.CreateInAsync(_harness.Bus, _root, "q", ct);
+        string group = Path.Combine(_root, "G");
+        Directory.CreateDirectory(group);
+        await ScratchProject.CreateInAsync(_harness.Bus, group, "q", ct);
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["discover", "--dry-run"], NodeJsonFor([_root], "{ \"naming\": \"path\" }"), ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        RegistryDocument.Parse(Encoding.UTF8.GetBytes(console.Stdout)).Document!.Projects.Select(p => p.Name).Should().Equal("g-q", "q");
+    }
+
+    // Spec 45 AC-15: a wrong `discovery.naming` is a configuration error naming the key.
+    [Fact]
+    public async Task DryRun_NamingFull_ExitThreeKeyNamed()
+    {
+        // Act
+        var ct = TestContext.Current.CancellationToken;
+        var (exit, console) = await _harness.RunAsync(["discover", "--dry-run"], NodeJsonFor([_root], "{ \"naming\": \"full\" }"), ct: ct);
+
+        // Assert
+        exit.Should().Be(3);
+        console.Stderr.Should().Be("zyggy: configuration error: discovery.naming: must be leaf or path\n");
+    }
 }
