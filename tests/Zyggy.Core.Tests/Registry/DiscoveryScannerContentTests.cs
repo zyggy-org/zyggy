@@ -17,7 +17,7 @@ public sealed class DiscoveryScannerContentTests : IDisposable
     private readonly RecordingProcessRunner _processes = new();
     private readonly FakeTimeProvider _clock = new(new DateTimeOffset(2026, 11, 7, 9, 0, 0, TimeSpan.Zero));
     private readonly RecordingLogger<DiscoveryScanner> _log = new();
-    private readonly DiscoveryOptions _options = new();
+    private readonly DiscoveryOptions _options = new() { Depth = 1 }; // spec 45 AC-1: unchanged at depth 1
     private readonly string _root;
 
     public DiscoveryScannerContentTests() => _root = _tree.Root("src");

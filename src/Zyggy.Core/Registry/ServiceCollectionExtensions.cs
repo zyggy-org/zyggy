@@ -36,9 +36,12 @@ public static class ServiceCollectionExtensions
                     options.IntervalMinutes = configuration.Discovery.IntervalMinutes;
                     options.LastSeenHours = configuration.Discovery.LastSeenHours;
                     options.Detail = configuration.Discovery.Detail;
+                    options.Depth = configuration.Discovery.Depth;
+                    options.Exclude = configuration.Discovery.Exclude;
+                    options.Naming = configuration.Discovery.Naming;
                 }
             })
-            .Validate(options => options.Validate() is null, "discovery: intervalMinutes 1-1440, lastSeenHours 1-168");
+            .Validate(options => options.Validate() is null, "discovery: intervalMinutes 1-1440, lastSeenHours 1-168, depth 1-6");
         services.TryAddSingleton(sp =>
         {
             TimeProvider clock = sp.GetRequiredService<TimeProvider>();

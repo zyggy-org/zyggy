@@ -14,6 +14,21 @@ public sealed class DiscoveryOptions
     /// <summary>Gets or sets how much the registry file carries.</summary>
     public DiscoveryDetail Detail { get; set; } = DiscoveryDetail.Full;
 
+    /// <summary>Gets or sets the folder levels below each root that are searched, 1–6 (spec 45; root children are level 1).</summary>
+    public int Depth { get; set; } = 2;
+
+    /// <summary>
+    /// Gets or sets the folder-name globs (<c>*</c>, <c>?</c>) never descended into, added to the built-in list; a project's own name is
+    /// never checked against them (spec 45).
+    /// </summary>
+    public IReadOnlyList<string> Exclude { get; set; } = [];
+
+    /// <summary>Gets or sets how a project's name is derived (spec 45, <c>discovery.naming</c>).</summary>
+    public DiscoveryNaming Naming { get; set; } = DiscoveryNaming.Leaf;
+
+    /// <summary>Gets or sets the most folders one scan looks into for <c>.claude/</c>, over all roots (spec 45).</summary>
+    public int MaxFolders { get; set; } = 20_000;
+
     /// <summary>Gets or sets the most projects one registry file lists.</summary>
     public int MaxProjects { get; set; } = 500;
 
@@ -30,9 +45,10 @@ public sealed class DiscoveryOptions
     public TimeSpan Interval => IntervalOverride ?? TimeSpan.FromMinutes(IntervalMinutes);
 
     /// <summary>Checks the ranges.</summary>
-    /// <returns>The first offending key (<c>intervalMinutes</c>, <c>lastSeenHours</c>), or <see langword="null"/> when valid.</returns>
+    /// <returns>The first offending key (<c>intervalMinutes</c>, <c>lastSeenHours</c>, <c>depth</c>), or <see langword="null"/> when valid.</returns>
     public string? Validate() =>
         IntervalMinutes is < 1 or > 1440 ? "intervalMinutes"
         : LastSeenHours is < 1 or > 168 ? "lastSeenHours"
+        : Depth is < 1 or > 6 ? "depth"
         : null;
 }

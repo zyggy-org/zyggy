@@ -661,6 +661,128 @@ public sealed class NodeConfigurationReaderTests : IDisposable
         result.Configuration!.Discovery.Should().Be(new DiscoverySettings(15, 24, DiscoveryDetail.Names));
     }
 
+    // Spec 45 AC-3: `discovery.depth` defaults to 2.
+    [Fact]
+    public void Read_DiscoveryDepthAbsent_Two()
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"discovery\": { \"detail\": \"full\" },"));
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        result.Configuration!.Discovery.Depth.Should().Be(2);
+    }
+
+    // Spec 45 AC-3: `discovery.depth` in range is taken as given.
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    [InlineData(6)]
+    public void Read_DiscoveryDepthInRange_Typed(int depth)
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel(string.Create(CultureInfo.InvariantCulture, $"\"discovery\": {{ \"depth\": {depth} }},")));
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        result.Configuration!.Discovery.Depth.Should().Be(depth);
+    }
+
+    // Spec 45 AC-3: 0, 7, a string and a fraction are refused with the key named.
+    [Theory]
+    [InlineData("0")]
+    [InlineData("7")]
+    [InlineData("\"2\"")]
+    [InlineData("1.5")]
+    public void Read_DiscoveryDepthInvalid_FieldNamed(string value)
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"discovery\": { \"depth\": " + value + " },"));
+
+        // Assert
+        result.ToString().Should().Be("discovery.depth: must be an integer from 1 to 6");
+    }
+
+    // Spec 45 AC-10: no `discovery.exclude` → no extra folders excluded.
+    [Theory]
+    [InlineData("\"discovery\": { },")]
+    [InlineData("\"discovery\": { \"exclude\": null },")]
+    public void Read_DiscoveryExcludeAbsent_Empty(string insert)
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel(insert));
+
+        // Assert
+        result.Configuration!.Discovery.Exclude.Should().BeEmpty();
+    }
+
+    // Spec 45 AC-10: a list of folder-name globs is taken as given.
+    [Fact]
+    public void Read_DiscoveryExcludeList_Typed()
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"discovery\": { \"exclude\": [\"archive*\", \"tmp?\"] },"));
+
+        // Assert
+        result.Configuration!.Discovery.Exclude.Should().Equal("archive*", "tmp?");
+    }
+
+    // Spec 45 AC-10: not an array, or an empty or non-string entry, is refused with the key named.
+    [Theory]
+    [InlineData("\"archive*\"")]
+    [InlineData("{ }")]
+    [InlineData("[\"\"]")]
+    [InlineData("[1]")]
+    [InlineData("[\"ok\", null]")]
+    public void Read_DiscoveryExcludeInvalid_FieldNamed(string value)
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"discovery\": { \"exclude\": " + value + " },"));
+
+        // Assert
+        result.ToString().Should().Be("discovery.exclude: must be an array of non-empty strings");
+    }
+
+    // Spec 45 AC-15: no `discovery.naming` → leaf.
+    [Theory]
+    [InlineData("\"discovery\": { },")]
+    [InlineData("\"discovery\": { \"naming\": null },")]
+    [InlineData("\"discovery\": { \"naming\": \"leaf\" },")]
+    public void Read_DiscoveryNamingAbsentOrLeaf_Leaf(string insert)
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel(insert));
+
+        // Assert
+        result.Configuration!.Discovery.Naming.Should().Be(DiscoveryNaming.Leaf);
+    }
+
+    // Spec 45 AC-15: `path` is taken.
+    [Fact]
+    public void Read_DiscoveryNamingPath_Typed()
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"discovery\": { \"naming\": \"path\" },"));
+
+        // Assert
+        result.Configuration!.Discovery.Naming.Should().Be(DiscoveryNaming.Path);
+    }
+
+    // Spec 45 AC-15: anything else is refused with the key named.
+    [Theory]
+    [InlineData("\"full\"")]
+    [InlineData("\"\"")]
+    [InlineData("\"Path\"")]
+    [InlineData("1")]
+    public void Read_DiscoveryNamingInvalid_FieldNamed(string value)
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel("\"discovery\": { \"naming\": " + value + " },"));
+
+        // Assert
+        result.ToString().Should().Be("discovery.naming: must be leaf or path");
+    }
+
     [Theory]
     [InlineData("5", "discovery", "discovery: must be an object")]
     [InlineData("{ \"intervalMinutes\": 0 }", "discovery.intervalMinutes", "discovery.intervalMinutes: must be an integer from 1 to 1440")]

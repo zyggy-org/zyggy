@@ -262,7 +262,94 @@ public sealed class DiscoveryLoopTests : IDisposable
 
         // Assert
         _log.AtLevel(LogLevel.Warning).Select(e => e.Message).Should().Equal(
-            "discovery: duplicate name calizr: " + string.Join("; ", new[] { Path.Combine(_root, "calizr"), Path.Combine(second, "Calizr") }.Select(ScanTree.Published).Order(StringComparer.Ordinal)),
-            "discovery: duplicate name billing: " + string.Join("; ", new[] { Path.Combine(_root, "billing"), Path.Combine(second, "Billing") }.Select(ScanTree.Published).Order(StringComparer.Ordinal)));
+            "discovery: duplicate name calizr: " + string.Join("; ", new[] { Path.Combine(_root, "calizr"), Path.Combine(second, "Calizr") }.Select(ScanTree.Published).Order(StringComparer.Ordinal)) + DuplicateHint,
+            "discovery: duplicate name billing: " + string.Join("; ", new[] { Path.Combine(_root, "billing"), Path.Combine(second, "Billing") }.Select(ScanTree.Published).Order(StringComparer.Ordinal)) + DuplicateHint);
     }
+
+    // Spec 45 AC-8: `root nested` is logged at Information, a duplicate name at Warning, each once while unchanged.
+    [Fact]
+    public async Task RunAsync_NestedRootAndDuplicateTwice_RootNestedOnceAtInformation()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        string nested = _tree.Folder(_root, "group");
+        _tree.Project(nested, "Calizr", git: false);
+        string other = _tree.Root("other");
+        _tree.Project(other, "calizr", git: false);
+        DiscoveryLoop loop = Loop();
+        Roots = [_root, nested, other];
+
+        // Act
+        await loop.RunCycleAsync(ct);
+        await loop.RunCycleAsync(ct);
+
+        // Assert
+        _log.Entries.Select(e => (e.Level, NoticeKind(e.Message))).Where(e => e.Item2 is not null)
+            .Should().BeEquivalentTo([(LogLevel.Information, RootNestedPrefix), (LogLevel.Warning, DuplicatePrefix)]);
+    }
+
+    private const string RootNestedPrefix = "discovery: root nested ";
+    private const string DuplicatePrefix = "discovery: duplicate name ";
+
+    private static string? NoticeKind(string message) =>
+        message.StartsWith(RootNestedPrefix, StringComparison.Ordinal) ? RootNestedPrefix
+        : message.StartsWith(DuplicatePrefix, StringComparison.Ordinal) ? DuplicatePrefix
+        : null;
+
+    // Spec 45 AC-8: the node's line reads `discovery: root nested <root> under <parent>`.
+    [Fact]
+    public async Task RunAsync_NestedRoot_InformationLineNamesRootAndParent()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        string nested = _tree.Folder(_root, "group");
+        DiscoveryLoop loop = Loop();
+        Roots = [_root, nested];
+
+        // Act
+        await loop.RunCycleAsync(ct);
+
+        // Assert
+        _log.AtLevel(LogLevel.Information).Select(e => e.Message).Should().Contain(
+            $"discovery: root nested {ScanTree.Published(nested)} under {ScanTree.Published(_root)}");
+    }
+
+    // Spec 45 AC-12: a folder that cannot be listed is logged at Warning, once while unchanged.
+    [Fact]
+    public async Task RunAsync_FolderUnreadableTwice_OneWarning()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        string locked = _tree.Folder(_root, "group");
+        DiscoveryLoop loop = Loop(folder => string.Equals(Path.GetFullPath(folder), Path.GetFullPath(locked), StringComparison.Ordinal)
+            ? throw new UnauthorizedAccessException("denied")
+            : new DirectoryInfo(folder).EnumerateDirectories());
+
+        // Act
+        await loop.RunCycleAsync(ct);
+        await loop.RunCycleAsync(ct);
+
+        // Assert
+        _log.AtLevel(LogLevel.Warning).Select(e => e.Message).Should().Equal($"discovery: folder unreadable {ScanTree.Published(locked)}");
+    }
+
+    // Spec 45 AC-13: the folder cap is logged at Warning.
+    [Fact]
+    public async Task RunAsync_FolderCapReached_Warning()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        _tree.Project(_root, "billing", git: false);
+        _options.MaxFolders = 1;
+        DiscoveryLoop loop = Loop();
+
+        // Act
+        await loop.RunCycleAsync(ct);
+
+        // Assert
+        _log.AtLevel(LogLevel.Warning).Select(e => e.Message).Should().Equal("discovery: folder cap reached (1)");
+    }
+
+    // Spec 45 AC-4: the duplicate notice tells the owner how to resolve it.
+    private const string DuplicateHint = " - set discovery.naming to path or rename one";
 }

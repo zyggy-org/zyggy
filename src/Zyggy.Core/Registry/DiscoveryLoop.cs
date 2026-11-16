@@ -171,7 +171,17 @@ public sealed partial class DiscoveryLoop
             {
                 string key = notice.Subject + "\n" + notice.Detail;
                 subjects.Add(key);
-                if (!previous.Contains(key))
+                if (previous.Contains(key))
+                {
+                    continue;
+                }
+
+                // The level is chosen by kind (spec 45 Q8): a nested root is configuration working as asked, not a problem.
+                if (kind == ScanNoticeKind.RootNested)
+                {
+                    LogRootNested(_log, notice.Subject, notice.Detail);
+                }
+                else
                 {
                     LogNotice(_log, NoticeText(notice));
                 }
@@ -181,9 +191,12 @@ public sealed partial class DiscoveryLoop
         }
     }
 
+    /// <summary>How the owner resolves a duplicate name (spec 45, Failure modes); the same text as the <c>discover</c> verb's line.</summary>
+    private const string DuplicateHint = " - set discovery.naming to path or rename one";
+
     private static string NoticeText(ScanNotice notice) => notice.Kind switch
     {
-        ScanNoticeKind.DuplicateName => $"duplicate name {notice.Subject}: {notice.Detail}",
+        ScanNoticeKind.DuplicateName => $"duplicate name {notice.Subject}: {notice.Detail}{DuplicateHint}",
         ScanNoticeKind.RootMissing => $"root missing {notice.Subject}",
         ScanNoticeKind.RootUnreadable => $"root unreadable {notice.Subject}",
         ScanNoticeKind.NameUnusable => $"name unusable for {notice.Subject}",
@@ -192,11 +205,16 @@ public sealed partial class DiscoveryLoop
         ScanNoticeKind.SecretRedacted => $"secret pattern {notice.Detail} redacted in {notice.Subject}",
         ScanNoticeKind.PatternsUnavailable => "secret patterns not registered; publishing names only",
         ScanNoticeKind.SlowScan => $"scan took {notice.Detail}",
+        ScanNoticeKind.FolderUnreadable => $"folder unreadable {notice.Subject}",
+        ScanNoticeKind.FolderCapReached => $"folder cap reached ({notice.Detail})",
         _ => notice.Kind + " " + notice.Subject,
     };
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "discovery: {Notice}")]
     private static partial void LogNotice(ILogger logger, string notice);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "discovery: root nested {Root} under {Parent}")]
+    private static partial void LogRootNested(ILogger logger, string root, string? parent);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "discovery: scan failed {ExceptionType}")]
     private static partial void LogScanFailed(ILogger logger, string exceptionType);
