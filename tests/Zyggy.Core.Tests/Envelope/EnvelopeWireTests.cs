@@ -13,6 +13,7 @@ public sealed class EnvelopeWireTests
         { EnvelopeType.Status, "status" },
         { EnvelopeType.Question, "question" },
         { EnvelopeType.Decision, "decision" },
+        { EnvelopeType.Mandate, "mandate" },
     };
 
     public static TheoryData<EnvelopePriority, string> Priorities => new()

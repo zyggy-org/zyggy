@@ -23,4 +23,7 @@ public enum EnvelopeType
 
     /// <summary><c>decision</c>: Central's answer and its record (deliverable 18).</summary>
     Decision,
+
+    /// <summary><c>mandate</c>: what the owner pre-approved for one project on one machine (deliverable 18).</summary>
+    Mandate,
 }

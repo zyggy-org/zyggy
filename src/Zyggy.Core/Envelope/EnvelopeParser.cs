@@ -155,7 +155,7 @@ public static class EnvelopeParser
 
             if (!EnvelopeWire.TryFromWire(typeText, out EnvelopeType type))
             {
-                return Fail<Envelope>(FieldReader.Invalid("type", "must be job, report, context, item, status, question or decision"));
+                return Fail<Envelope>(FieldReader.Invalid("type", "must be job, report, context, item, status, question, decision or mandate"));
             }
 
             // 5. key_id
@@ -192,6 +192,7 @@ public static class EnvelopeParser
             StatusFields? status = null;
             QuestionFields? question = null;
             DecisionFields? decision = null;
+            MandateFields? mandate = null;
             bool ok = type switch
             {
                 EnvelopeType.Job => ReadJob(out job),
@@ -200,6 +201,7 @@ public static class EnvelopeParser
                 EnvelopeType.Status => ReadStatus(out status, header, body),
                 EnvelopeType.Question => ReadQuestion(out question, header, body),
                 EnvelopeType.Decision => ReadDecision(out decision, header, body),
+                EnvelopeType.Mandate => ReadMandate(out mandate, header, body),
                 _ => ReadContext(out context),
             };
             if (!ok)
@@ -211,7 +213,7 @@ public static class EnvelopeParser
             string? signature = signed ? ReadSignature() : null;
             return signed && signature is null
                 ? null
-                : new Envelope(schema, type, header, job, report, context, item, status, question, decision, keyId, signature, map, body);
+                : new Envelope(schema, type, header, job, report, context, item, status, question, decision, mandate, keyId, signature, map, body);
         }
 
         private EnvelopeHeader? ReadHeader(TenantId tenant, EnvelopeType type)
@@ -268,14 +270,186 @@ public static class EnvelopeParser
                 || !List("report_back", out IReadOnlyList<string>? reportBack)
                 || !Int("timeout_minutes", 1, out int? timeout)
                 || !Timestamp("deadline", false, out DateTimeOffset? deadline)
-                || !Int("attempt", 1, out int? attempt))
+                || !Int("attempt", 1, out int? attempt)
+                || !MandateRef(out EnvelopeId? mandate, out string? step)
+                || !Text("base", false, out string? baseBranch))
             {
                 return false;
             }
 
-            job = new JobFields(project!, agent, worktree ?? false, allowedTools, reportBack, timeout, deadline, attempt ?? 1);
+            if (baseBranch is not null && !IsBranch(baseBranch))
+            {
+                return Reject(FieldReader.Invalid("base", "must be a branch name"));
+            }
+
+            if (!Text("deliver", false, out string? deliverText))
+            {
+                return false;
+            }
+
+            JobDelivery deliver = JobDelivery.Run;
+            if (deliverText is not null && !EnvelopeWire.TryFromWire(deliverText, out deliver))
+            {
+                return Reject(FieldReader.Invalid("deliver", "must be run or session"));
+            }
+
+            job = new JobFields(project!, agent, worktree ?? false, allowedTools, reportBack, timeout, deadline, attempt ?? 1, mandate, step, baseBranch, deliver);
             return true;
         }
+
+        // Deliverable 18: the optional `mandate` and `step` a job carries and its report copies.
+        private bool MandateRef(out EnvelopeId? mandate, out string? step)
+        {
+            mandate = null;
+            step = null;
+            if (!Text("mandate", false, out string? mandateText))
+            {
+                return false;
+            }
+
+            if (mandateText is not null && !EnvelopeId.TryParse(mandateText, out mandate))
+            {
+                return Reject(FieldReader.Invalid("mandate", "must be a ULID"));
+            }
+
+            if (!Text("step", false, out step))
+            {
+                return false;
+            }
+
+            return step is null || IsStep(step) || Reject(FieldReader.Invalid("step", "must be 1 to 60 lowercase letters, digits, spaces or hyphens"));
+        }
+
+        // Deliverable 18: a mandate comes from Central, has an empty body, and states every limit of the work it allows.
+        private bool ReadMandate(out MandateFields? mandate, EnvelopeHeader header, ReadOnlyMemory<byte> body)
+        {
+            mandate = null;
+            if (header.From != MachineName.Central)
+            {
+                return Reject(FieldReader.Invalid("from", "must be central"));
+            }
+
+            if (!Text("project", true, out string? project))
+            {
+                return false;
+            }
+
+            if (!IsRegistryName(project!))
+            {
+                return Reject(FieldReader.Invalid("project", "must be a registry name of at most 100 characters"));
+            }
+
+            if (!LineField("goal", SupervisionLimits.LineMax, out string? goal)
+                || !Text("spec", false, out string? spec)
+                || !Text("spec_commit", false, out string? specCommit))
+            {
+                return false;
+            }
+
+            if (spec is not null && !IsRelativePath(spec))
+            {
+                return Reject(FieldReader.Invalid("spec", "must be a repository-relative path with / separators"));
+            }
+
+            if (specCommit is not null && (specCommit.Length != 40 || !IsCommit(specCommit)))
+            {
+                return Reject(FieldReader.Invalid("spec_commit", "must be 40 lowercase hexadecimal characters"));
+            }
+
+            if (spec is null != specCommit is null)
+            {
+                return Reject(FieldReader.Invalid(spec is null ? "spec_commit" : "spec", "spec and spec_commit come together"));
+            }
+
+            if (!List("branches", out IReadOnlyList<string>? branches))
+            {
+                return false;
+            }
+
+            if (branches is not null && (branches.Count > SupervisionLimits.BranchesMax || branches.Any(b => !IsBranch(b))))
+            {
+                return Reject(FieldReader.Invalid("branches", "must be at most 5 branch names"));
+            }
+
+            if (!List("allowed_tools", out IReadOnlyList<string>? allowedTools))
+            {
+                return false;
+            }
+
+            if (allowedTools is null)
+            {
+                return Reject(new EnvelopeRejection(EnvelopeRejectionReason.MissingField, "allowed_tools", "allowed_tools is missing"));
+            }
+
+            if (!Ranged("max_jobs", 1, SupervisionLimits.MaxJobsMax, null, out int maxJobs)
+                || !Ranged("max_jobs_per_hour", 1, SupervisionLimits.MaxJobsPerHourMax, MandateFields.DefaultMaxJobsPerHour, out int perHour)
+                || !Ranged("max_jobs_per_step", 1, SupervisionLimits.MaxJobsPerStepMax, MandateFields.DefaultMaxJobsPerStep, out int perStep)
+                || !Timestamp("expires", true, out DateTimeOffset? expires))
+            {
+                return false;
+            }
+
+            if (expires <= header.Created || expires > header.Created + SupervisionLimits.MandateLifetimeMax)
+            {
+                return Reject(FieldReader.Invalid("expires", "must be after created and at most 7 days after it"));
+            }
+
+            if (!List("grants", out IReadOnlyList<string>? grantTexts))
+            {
+                return false;
+            }
+
+            var grants = new List<MandateGrant>();
+            foreach (string text in grantTexts ?? [])
+            {
+                if (!EnvelopeWire.TryFromWire(text, out MandateGrant grant) || grants.Contains(grant))
+                {
+                    return Reject(FieldReader.Invalid("grants", "must be distinct members of accept, merge, release, deploy"));
+                }
+
+                grants.Add(grant);
+            }
+
+            if (!Bool("sessions", out bool? sessions))
+            {
+                return false;
+            }
+
+            if (!body.IsEmpty)
+            {
+                return Reject(FieldReader.Invalid("body", "must be empty"));
+            }
+
+            mandate = new MandateFields(project!, goal!, allowedTools, maxJobs, expires!.Value, spec, specCommit, branches, perHour, perStep, grantTexts is null ? null : grants, sessions ?? false);
+            return true;
+        }
+
+        private bool Ranged(string key, int minimum, int maximum, int? fallback, out int value)
+        {
+            value = fallback ?? 0;
+            if (!Text(key, fallback is null, out string? text))
+            {
+                return false;
+            }
+
+            if (text is null)
+            {
+                return true;
+            }
+
+            return (FieldReader.TryInt(text, out value) && value >= minimum && value <= maximum)
+                || Reject(FieldReader.Invalid(key, "must be an integer from " + minimum.ToString(CultureInfo.InvariantCulture) + " to " + maximum.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        /// <summary>A branch name a mandate or a job may carry: a cautious subset of git's ref-name rules.</summary>
+        private static bool IsBranch(string text) =>
+            text.Length is > 0 and <= 200
+            && text[0] is not ('-' or '/' or '.')
+            && text[^1] is not ('/' or '.')
+            && !text.Contains("..", StringComparison.Ordinal)
+            && !text.Contains("//", StringComparison.Ordinal)
+            && !text.Contains("@{", StringComparison.Ordinal)
+            && !text.Any(c => char.IsControl(c) || c is ' ' or '~' or '^' or ':' or '?' or '*' or '[' or '\\');
 
         private bool ReadReport(out ReportFields? report)
         {
@@ -314,12 +488,13 @@ public static class EnvelopeParser
                 || !Int("num_turns", 0, out int? numTurns)
                 || !Text("model", false, out string? model)
                 || !List("files_changed", out IReadOnlyList<string>? filesChanged)
-                || !Text("diff_ref", false, out string? diffRef))
+                || !Text("diff_ref", false, out string? diffRef)
+                || !MandateRef(out EnvelopeId? mandate, out string? step))
             {
                 return false;
             }
 
-            report = new ReportFields(status, reason, started, finished, duration, cost, inputTokens, outputTokens, numTurns, model, filesChanged, diffRef);
+            report = new ReportFields(status, reason, started, finished, duration, cost, inputTokens, outputTokens, numTurns, model, filesChanged, diffRef, mandate, step);
             return true;
         }
 

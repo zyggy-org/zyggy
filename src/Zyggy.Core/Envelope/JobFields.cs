@@ -9,6 +9,10 @@ namespace Zyggy.Core.Envelope;
 /// <param name="TimeoutMinutes">The <c>timeout_minutes</c>; <see langword="null"/> when absent (the node default applies).</param>
 /// <param name="Deadline">The optional <c>deadline</c>, in UTC.</param>
 /// <param name="Attempt">The <c>attempt</c> counter; 1 when absent.</param>
+/// <param name="Mandate">The <c>mandate</c> the job runs under (deliverable 18); <see langword="null"/> for a job the owner gave a go for.</param>
+/// <param name="Step">The <c>step</c> the job belongs to: 1–60 characters of <c>[a-z0-9 -]</c>.</param>
+/// <param name="Base">The <c>base</c> branch a worktree job starts from and pushes back to.</param>
+/// <param name="Deliver">The <c>deliver</c> mode; <see cref="JobDelivery.Run"/> when absent, and then never written.</param>
 public sealed record JobFields(
     string Project,
     string? Agent = null,
@@ -17,4 +21,8 @@ public sealed record JobFields(
     IReadOnlyList<string>? ReportBack = null,
     int? TimeoutMinutes = null,
     DateTimeOffset? Deadline = null,
-    int Attempt = 1);
+    int Attempt = 1,
+    EnvelopeId? Mandate = null,
+    string? Step = null,
+    string? Base = null,
+    JobDelivery Deliver = JobDelivery.Run);

@@ -34,6 +34,9 @@ All `schema: 1`, `tenant: acme`, LF line endings unless stated.
 | `status` | canonical style | `acme/1` | deliverable 18: `type: status`, `home-laptop` → `central`, every field of `detail: full` (`branch`, `head`, `dirty`, `spec`, `step`), empty body (spec 18 AC-1); produced like the `item-*` cases, the file ending with the closing `---\n` |
 | `question` | canonical style | `acme/1` | deliverable 18: `type: question`, `home-laptop` → `central`, asked from a session, two `options` (a flow sequence), `default`; the body is the question (spec 18 AC-1); produced like the `item-*` cases |
 | `decision` | canonical style | `acme/1` | deliverable 18: `type: decision`, `central` → `home-laptop`, `in_reply_to` = the `question` case's id, `kind: answer`, `basis: verified`, `mandate`, `step`, two `evidence` items (an envelope id and a commit sha), `undo`; the body says what and why (spec 18 AC-1); produced like the `item-*` cases |
+| `mandate` | canonical style | `acme/1` | deliverable 18: `type: mandate`, `central` → `home-laptop`, every field written (`project`, `goal`, `spec` + `spec_commit`, one `branches` item, three `allowed_tools`, the three caps, `expires` three days after `created`, `grants: [accept]`, `sessions: false`), empty body (spec 18 AC-1); produced like the `item-*` cases |
+| `job-mandate` | canonical style | `acme/1` | deliverable 18: a job carrying `mandate` (the `mandate` case's id), `step` and `base`, `worktree: true`, no `deliver` (the default `run` is never written); produced like the `item-*` cases |
+| `report-mandate` | canonical style | `acme/1` | deliverable 18: a `done` report on the `job-mandate` case carrying its `mandate` and `step`, so the job still counts under its mandate once its file is gone; produced like the `item-*` cases |
 
 ## How the oracle files are produced — never by the code under test
 

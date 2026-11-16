@@ -13,6 +13,8 @@ namespace Zyggy.Core.Envelope;
 /// <param name="Model">The optional <c>model</c>.</param>
 /// <param name="FilesChanged">The <c>files_changed</c> list; <see langword="null"/> when absent.</param>
 /// <param name="DiffRef">The optional <c>diff_ref</c>.</param>
+/// <param name="Mandate">The <c>mandate</c> of the job this report answers, copied from the job (deliverable 18), so the job still counts under its mandate once its file is gone.</param>
+/// <param name="Step">The <c>step</c> of that job, copied from it.</param>
 public sealed record ReportFields(
     ReportStatus Status,
     string? Reason = null,
@@ -25,4 +27,6 @@ public sealed record ReportFields(
     int? NumTurns = null,
     string? Model = null,
     IReadOnlyList<string>? FilesChanged = null,
-    string? DiffRef = null);
+    string? DiffRef = null,
+    EnvelopeId? Mandate = null,
+    string? Step = null);

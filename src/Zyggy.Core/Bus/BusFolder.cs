@@ -38,4 +38,10 @@ public enum BusFolder
 
     /// <summary><c>…/decisions</c>: Central's answers and decision records, written by Central in its own folder (deliverable 18).</summary>
     Decisions,
+
+    /// <summary><c>tenants/&lt;org&gt;/mandates</c>: the mandates in force, written by Central (deliverable 18).</summary>
+    Mandates,
+
+    /// <summary><c>tenants/&lt;org&gt;/mandates/revoked</c>: the mandates Central revoked (deliverable 18).</summary>
+    RevokedMandates,
 }
