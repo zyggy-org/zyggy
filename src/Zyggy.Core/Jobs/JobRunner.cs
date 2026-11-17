@@ -211,7 +211,10 @@ public sealed partial class JobRunner
         if (baseSha is not null)
         {
             var machine = job.Header.To.Value;
-            var outcome = await worktrees.FinishAsync(project, runDirectory, id, baseSha, new GitIdentity("zyggy (" + machine + ")", machine + "@zyggy.org"), ct)
+            // Spec 53: Finish learns the run's outcome and the job's branch (an empty branch counts as absent).
+            var identity = new GitIdentity("zyggy (" + machine + ")", machine + "@zyggy.org");
+            var named = string.IsNullOrEmpty(fields.Branch) ? null : fields.Branch;
+            var outcome = await worktrees.FinishAsync(project, runDirectory, id, baseSha, identity, reply.Status, named, ct)
                 .ConfigureAwait(false);
             reply = WithWorktree(id, reply, outcome);
             hasResultLines = outcome.ResultLines is not null;

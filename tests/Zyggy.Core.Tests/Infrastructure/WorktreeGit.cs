@@ -48,6 +48,12 @@ internal sealed class WorktreeGit
     /// <summary>Gets the steps whose git process times out (the runner's kill after <see cref="ProcessSpec.Timeout"/>).</summary>
     public HashSet<string> TimingOut { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>Gets further fully qualified refs <c>rev-parse --verify</c> resolves, ref → SHA (spec 53: <c>origin/&lt;branch&gt;</c>, a local named branch).</summary>
+    public Dictionary<string, string> Refs { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Gets the destination refs (<c>refs/heads/&lt;name&gt;</c>) whose push <c>origin</c> refuses (spec 53: a race or a ref clash).</summary>
+    public HashSet<string> RefusedPushDestinations { get; } = new(StringComparer.Ordinal);
+
     public static ProcessResult TimedOut() => new(null, "", "", true, false, false, TimeSpan.FromMinutes(2));
 
     private static bool Has(ProcessSpec spec, string argument) => spec.Arguments.Contains(argument);
@@ -73,6 +79,16 @@ internal sealed class WorktreeGit
         }
 
         var args = spec.Arguments;
+        if (RecordingProcessRunner.SubCommand(spec) == "push" && RefusedPushDestinations.Any(d => args[^1].EndsWith(":" + d, StringComparison.Ordinal)))
+        {
+            return RecordingProcessRunner.Fail(1, " ! [rejected] (fetch first)");
+        }
+
+        if (Has(spec, "--verify") && Refs.TryGetValue(args[^1], out var known))
+        {
+            return RecordingProcessRunner.Ok(known + "\n");
+        }
+
         if (NoDefaultBranch && (RecordingProcessRunner.SubCommand(spec) == "symbolic-ref" || (Has(spec, "--verify") && !args[^1].StartsWith("refs/heads/zyggy/", StringComparison.Ordinal))))
         {
             return RecordingProcessRunner.Fail(1, "");
