@@ -38,8 +38,9 @@ public sealed partial record JobRequest(
     public bool Worktree { get; init; }
 
     /// <summary>
-    /// Gets the optional branch the job runs on instead of <c>zyggy/&lt;id&gt;</c> (spec 53, job field <c>branch</c>); only with
-    /// <see cref="Worktree"/>. The shape is checked when the envelope is built (§4 parse rules); a refused value is a build refusal.
+    /// Gets the optional branch the job starts from when it exists on <c>origin</c> and that a <c>done</c> run is pushed to (spec 53, job
+    /// field <c>branch</c>); only with <see cref="Worktree"/>. <see cref="TryWithBranch"/> checks it for <c>zyggy submit</c>; the shape is
+    /// checked again when the envelope is built (§4 parse rules), where a refused value is a build refusal.
     /// </summary>
     public string? Branch { get; init; }
 
@@ -155,6 +156,56 @@ public sealed partial record JobRequest(
         request = new JobRequest(machine, reference, agent, timeoutMinutes, tools, level, bytes);
         return null;
     }
+
+    /// <summary>
+    /// Checks the <c>--worktree</c>, <c>--branch</c> and <c>--description</c> options of <c>zyggy submit</c> (spec 53 AC-15) before
+    /// anything is signed, in this order: <paramref name="branch"/> needs <paramref name="worktree"/> (never implied); both values have
+    /// the §4 shape; <paramref name="branch"/> is not, in any letter case, the <c>default_branch</c> of this request's project in
+    /// <paramref name="targetRegistry"/>. The registry check is skipped when there is no file, the file is another machine's, the project
+    /// is given by path or is not in it, or its entry has no <c>default_branch</c>: the node checks again at run time in every case.
+    /// </summary>
+    /// <param name="worktree">The <c>--worktree</c> flag.</param>
+    /// <param name="branch">The <c>--branch</c> value, or <see langword="null"/>.</param>
+    /// <param name="description">The <c>--description</c> value, or <see langword="null"/>.</param>
+    /// <param name="targetRegistry">The target machine's registry file as read from the bus checkout, or <see langword="null"/>.</param>
+    /// <param name="named">This request with the three values set, when every check passes.</param>
+    /// <returns>The first refusal (field <c>branch</c> or <c>description</c>), or <see langword="null"/>.</returns>
+    public JobRequestError? TryWithBranch(bool worktree, string? branch, string? description, Registry.RegistryDocument? targetRegistry, out JobRequest? named)
+    {
+        named = null;
+        if (branch is not null)
+        {
+            if (!worktree)
+            {
+                return new JobRequestError("branch", "--branch requires --worktree");
+            }
+
+            if (!JobBranchRules.IsValidBranch(branch))
+            {
+                return new JobRequestError("branch", "branch " + JobBranchRules.BranchRule);
+            }
+
+            if (DefaultBranchOf(targetRegistry) is { } defaultBranch && string.Equals(branch, defaultBranch, StringComparison.OrdinalIgnoreCase))
+            {
+                return new JobRequestError("branch", $"{branch} is the default branch {defaultBranch} of project {Project.Value} on {To.Value}");
+            }
+        }
+
+        if (description is not null && !JobBranchRules.IsValidDescription(description))
+        {
+            return new JobRequestError("description", "description " + JobBranchRules.DescriptionRule);
+        }
+
+        named = this with { Worktree = worktree, Branch = branch, Description = description };
+        return null;
+    }
+
+    // The registry entry is matched as the node routes: the project's registry name, ordinal, in the target machine's own file. A project
+    // given by path never matches (a registry name is a [a-z0-9-] label, a path is absolute), so it is skipped without a rule of its own.
+    private string? DefaultBranchOf(Registry.RegistryDocument? registry) =>
+        registry is null || registry.Machine != To
+            ? null
+            : registry.Projects.FirstOrDefault(p => string.Equals(p.Name, Project.Value, StringComparison.Ordinal))?.DefaultBranch;
 
     [GeneratedRegex(@"^[A-Za-z0-9._-]{1,64}\z")]
     private static partial Regex AgentName();
