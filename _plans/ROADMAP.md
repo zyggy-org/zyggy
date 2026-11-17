@@ -1032,7 +1032,7 @@ Raised here so the technical-analyst does not have to rediscover them. Only the 
 
 **Current (2026-11-17 — owner priority; proposed, awaiting the roadmap gate).**
 - **First: a job's branch gets a meaningful name and a description (53)**, built before the remaining slices of 47 (added 2026-11-17, owner priority; proposed, awaiting the roadmap gate), so later slices land on named branches instead of `zyggy/<job id>`. Nothing is renumbered.
-- **The owner's highest priority: browsable memory on a laptop (47), then problems handled autonomously on a laptop with manual intake (48), then automatic Teams intake for support requests on the work laptop (49).** These three are the next features to build, in that order, ahead of every other Not started deliverable (including Reminders, 46). 48 depends on 47; 49 on 47 and 48. Nothing is renumbered.
+- **The owner's highest priority: browsable memory on a laptop (47), then problems handled autonomously on a laptop with manual intake (48), then automatic Teams intake for support requests on the work laptop (49).** These three follow 53, which comes first (owner, 2026-11-17); they are built in that order after 53, ahead of every other Not started deliverable (including Reminders, 46). 48 depends on 47; 49 on 47 and 48. Nothing is renumbered.
 - **Next after 47, 48 and 49: a model per type of job (50)**, ahead of every other Not started deliverable (added 2026-11-17, owner priority; proposed, awaiting the roadmap gate). Nothing is renumbered.
 
 **Earlier (2026-11-15, later — the Central sweep released as v0.19.0; reconciled against `_specs/17-central-sweep.md`, `_specs/18-central-supervision.md` and the v0.19.0 release).**
