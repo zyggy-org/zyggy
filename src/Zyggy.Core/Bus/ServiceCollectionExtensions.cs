@@ -182,7 +182,15 @@ public static class ServiceCollectionExtensions
                 sp.GetService<JobGate>(),
                 sp.GetService<BusPickup>(),
                 sp.GetService<BusSweep>(),
-                SweepInterval(sp));
+                SweepInterval(sp))
+            {
+                Mandates = new MandateIntake(
+                    sp.GetRequiredService<BusInventory>(),
+                    (options.Identity ?? throw Missing(nameof(GitHubBusOptions.Identity))).Machine,
+                    sp.GetService<NodeConfiguration>()?.Supervision.Enabled ?? true,
+                    sp.GetRequiredService<TimeProvider>(),
+                    log),
+            };
         });
         // Deliverable 08: the sender side. Resolving without a registered KeyId throws (the verb checks signWith first, as probe send does).
         services.TryAddSingleton(sp =>

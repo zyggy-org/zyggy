@@ -106,7 +106,11 @@ public sealed record RegistryDocument(
             seconds,
             health,
             configuration.WorkHours,
-            scan.Projects);
+            scan.Projects)
+        {
+            // Deliverable 18: this version checks mandates at intake; with supervision off it accepts none, so it does not offer them.
+            Capabilities = configuration.Supervision.Enabled ? [SupervisionCapability] : [],
+        };
     }
 
     /// <summary>Parses a registry file. Never throws on input: every defect is a refusal naming the field.</summary>

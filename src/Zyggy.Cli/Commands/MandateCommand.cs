@@ -7,13 +7,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Zyggy.Core.Bus;
 using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
+using Zyggy.Core.Memory;
 using Zyggy.Core.Tenancy;
 using Zyggy.Core.Verbs;
 
 namespace Zyggy.Cli.Commands;
 
 /// <summary>
-/// <c>zyggy mandate grant | show | revoke</c> (deliverable 18, "The mandate"): the owner grants and revokes a mandate in an attended
+/// <c>zyggy mandate grant | show | revoke | resume</c> (deliverable 18, "The mandate"): the owner grants, revokes and resumes a mandate in an attended
 /// session on Central; any machine shows them. Ordering, option reading and rendering only — every decision is in Core
 /// (<see cref="MandateGranter"/>, <see cref="BusInventory.MandatesAsync"/>, <see cref="MandateLedger.StateAt"/>).
 /// </summary>
@@ -22,11 +23,12 @@ internal static class MandateCommand
     private const string TimestampFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'";
 
     public static Command Create(CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure) =>
-        new("mandate", "What the owner pre-approved Central to run on a machine: grant (Central, attended), show (anywhere), revoke (Central).")
+        new("mandate", "What the owner pre-approved Central to run on a machine: grant (Central, attended), show (anywhere), revoke and resume (Central, attended).")
         {
             CreateGrant(environment, io, configure),
             CreateShow(environment, io, configure),
             CreateRevoke(environment, io, configure),
+            CreateResume(environment, io, configure),
         };
 
     /// <summary>The mandate as <c>zyggy mandate grant</c> prints it: every field, so the owner sees what was granted.</summary>
@@ -156,6 +158,14 @@ internal static class MandateCommand
         return command;
     }
 
+    private static Command CreateResume(CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure)
+    {
+        var id = new Argument<string>("id") { Description = "The mandate's id." };
+        var command = new Command("resume", "Central, attended only: write a resume decision on a paused mandate; earlier reports no longer count towards a pause.") { id, BusHost.ConfigOption, BusHost.VerboseOption };
+        command.SetAction((parseResult, ct) => ResumeAsync(environment, io, configure, parseResult, parseResult.GetValue(id), ct));
+        return command;
+    }
+
     private static async Task<int> GrantAsync(CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure, ParseResult parseResult, GrantGiven given, CancellationToken ct)
     {
         if (environment.HooksOff)
@@ -280,17 +290,44 @@ internal static class MandateCommand
         }
     }
 
-    private static async Task<int> RevokeAsync(CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure, ParseResult parseResult, string? idText, CancellationToken ct)
+    private static Task<int> RevokeAsync(CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure, ParseResult parseResult, string? idText, CancellationToken ct) =>
+        ChangeAsync(environment, io, configure, parseResult, idText, "revoke", "revoked", withPatterns: false, (services, id, token) => services.GetRequiredService<MandateGranter>().RevokeAsync(id, token), ct);
+
+    private static Task<int> ResumeAsync(CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure, ParseResult parseResult, string? idText, CancellationToken ct) =>
+        ChangeAsync(
+            environment,
+            io,
+            configure,
+            parseResult,
+            idText,
+            "resume",
+            "resumed",
+            withPatterns: true,
+            (services, id, token) => services.GetRequiredService<MandateGranter>().ResumeAsync(id, services.GetRequiredService<DecisionWriter>(), token),
+            ct);
+
+    // revoke and resume: attended, Central only, pull, then one Core call whose result is printed the same way.
+    private static async Task<int> ChangeAsync(
+        CliEnvironment environment,
+        VerbIo io,
+        Action<IServiceCollection>? configure,
+        ParseResult parseResult,
+        string? idText,
+        string verb,
+        string done,
+        bool withPatterns,
+        Func<IServiceProvider, EnvelopeId, CancellationToken, Task<AskDecideResult>> act,
+        CancellationToken ct)
     {
         if (environment.HooksOff)
         {
-            await io.Error.WriteLineAsync("zyggy: refused: a mandate is revoked only in an attended session");
+            await io.Error.WriteLineAsync("zyggy: refused: a mandate is " + done + " only in an attended session");
             return ExitCodes.Configuration;
         }
 
         if (!EnvelopeId.TryParse(idText, out EnvelopeId? id))
         {
-            await io.Error.WriteLineAsync("zyggy: mandate revoke: the id must be a ULID");
+            await io.Error.WriteLineAsync("zyggy: mandate " + verb + ": the id must be a ULID");
             return ExitCodes.Usage;
         }
 
@@ -302,11 +339,25 @@ internal static class MandateCommand
 
         if (configuration.Machine != MachineName.Central)
         {
-            await io.Error.WriteLineAsync("zyggy: refused: only central revokes a mandate");
+            await io.Error.WriteLineAsync("zyggy: refused: only central " + verb + "s a mandate");
             return ExitCodes.Configuration;
         }
 
-        await using ServiceProvider services = BusHost.BuildServices(configuration, parseResult.GetValue(BusHost.VerboseOption), environment, configure);
+        string? patternsError = null;
+        await using ServiceProvider services = BusHost.BuildServices(configuration, parseResult.GetValue(BusHost.VerboseOption), environment, s =>
+        {
+            if (withPatterns)
+            {
+                patternsError = s.AddSecretPatterns(environment.Variables);
+            }
+
+            configure?.Invoke(s);
+        });
+        if (patternsError is not null)
+        {
+            return BusHost.ConfigurationError(io, patternsError);
+        }
+
         int checkout = await BusHost.CheckCheckoutAsync(services, configuration, io, ct);
         if (checkout != ExitCodes.Ok)
         {
@@ -315,23 +366,23 @@ internal static class MandateCommand
 
         // The mandate may have reached the remote a moment ago; a failed pull leaves the checkout as it was and the lookup says so.
         await services.GetRequiredService<BusRepository>().PullAsync(ct);
-        AskDecideResult result = await services.GetRequiredService<MandateGranter>().RevokeAsync(id, ct);
+        AskDecideResult result = await act(services, id, ct);
         switch (result)
         {
             case AskDecidePublished { Pushed: true } published:
-                await io.Out.WriteLineAsync("revoked " + published.Id.Value);
+                await io.Out.WriteLineAsync(done + " " + published.Id.Value);
                 return ExitCodes.Ok;
             case AskDecidePublished deferred:
-                await io.Out.WriteLineAsync("revoked " + deferred.Id.Value + "  (not pushed yet)");
+                await io.Out.WriteLineAsync(done + " " + deferred.Id.Value + "  (not pushed yet)");
                 return ExitCodes.PushDeferred;
             case AskDecideNotFound notFound:
-                await io.Error.WriteLineAsync("zyggy: mandate revoke: " + notFound.Detail);
+                await io.Error.WriteLineAsync("zyggy: mandate " + verb + ": " + notFound.Detail);
                 return ExitCodes.NotFound;
             case AskDecideRefused refused:
                 await io.Error.WriteLineAsync("zyggy: refused: " + refused.Field + ": " + refused.Detail);
                 return ExitCodes.Configuration;
             default:
-                await io.Error.WriteLineAsync("zyggy: mandate not revoked: " + (result is AskDecideFailed failed ? failed.Stage + ": " + failed.Detail : result.GetType().Name));
+                await io.Error.WriteLineAsync("zyggy: mandate not " + done + ": " + (result is AskDecideFailed failed ? failed.Stage + ": " + failed.Detail : result.GetType().Name));
                 return ExitCodes.Failed;
         }
     }

@@ -109,6 +109,65 @@ public sealed partial class MandateGranter
         return result;
     }
 
+    /// <summary>
+    /// Resumes the live mandate <paramref name="id"/> (deliverable 18, "Pause"): writes a <c>decision</c> of kind <c>resume</c> with
+    /// <c>in_reply_to</c> and <c>mandate</c> the id, addressed to the mandate's machine; reports before it no longer count towards a pause.
+    /// </summary>
+    /// <param name="id">The mandate's id.</param>
+    /// <param name="writer">Central's decision writer.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns><see cref="AskDecidePublished"/> with the decision, <see cref="AskDecideNotFound"/> when no live mandate has the id, <see cref="AskDecideRefused"/> or <see cref="AskDecideFailed"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
+    public async Task<AskDecideResult> ResumeAsync(EnvelopeId id, DecisionWriter writer, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        ArgumentNullException.ThrowIfNull(writer);
+        if (_bus.Me.Machine != MachineName.Central)
+        {
+            return new AskDecideRefused("machine", "only central resumes a mandate");
+        }
+
+        MandateLedger ledger;
+        try
+        {
+            ledger = await _inventory.MandateLedgerAsync(id, ct).ConfigureAwait(false);
+        }
+        catch (BusBusyException ex)
+        {
+            return new AskDecideFailed("lock", ex.Message);
+        }
+
+        if (!ledger.FilePresent || ledger.Revoked)
+        {
+            return new AskDecideNotFound("no live mandate " + id.Value);
+        }
+
+        if (ledger.Mandate?.Mandate is not { } fields)
+        {
+            return new AskDecideRefused("mandate", "the mandate file does not verify");
+        }
+
+        var request = new DecisionRequest(
+            id,
+            ledger.Mandate.Header.To,
+            DecisionKind.Resume,
+            DecisionBasis.Reported,
+            "The owner resumed the mandate.\n",
+            "zyggy mandate revoke " + id.Value,
+            Mandate: id,
+            Project: fields.Project);
+        AskDecideResult result = await writer.DecideAsync(request, null, ct).ConfigureAwait(false);
+        if (result is AskDecidePublished)
+        {
+            LogResumed(id.Value);
+        }
+
+        return result;
+    }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "resumed mandate {Id}")]
+    private partial void LogResumed(string id);
+
     [LoggerMessage(Level = LogLevel.Information, Message = "granted mandate {Id} for {Machine}, project {Project}")]
     private partial void LogGranted(string id, string machine, string project);
 

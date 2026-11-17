@@ -259,7 +259,8 @@ public sealed partial class BusSweep
             }
 
             string body = "rejected: " + reason + (refusal.Field is null ? string.Empty : " (" + refusal.Field + ")") + "\n";
-            EnvelopeResult rejection = await SignReportAsync(from, id, new ReportFields(ReportStatus.Rejected, reason), body, ct).ConfigureAwait(false);
+            JobFields? refused = parsed.IsAccepted ? parsed.Envelope.Job : null;
+            EnvelopeResult rejection = await SignReportAsync(from, id, new ReportFields(ReportStatus.Rejected, reason, Mandate: refused?.Mandate, Step: refused?.Step), body, ct).ConfigureAwait(false);
             return rejection.IsAccepted
                 ? (await _bus.RejectStaleAsync(claim, rejection.Envelope, ct).ConfigureAwait(false), rejected)
                 : (new WriteFailed("sign", rejection.Rejection.Detail), rejected);
@@ -277,7 +278,7 @@ public sealed partial class BusSweep
         if (attempt >= MaxAttempts)
         {
             string body = string.Create(CultureInfo.InvariantCulture, $"machine: {claim.Folder.Value}\nattempts: {attempt}\nclaimed: {Utc(claimed)}\n");
-            EnvelopeResult report = await SignReportAsync(job.Header.From, id, new ReportFields(ReportStatus.Failed, AttemptsExhaustedReason), body, ct).ConfigureAwait(false);
+            EnvelopeResult report = await SignReportAsync(job.Header.From, id, new ReportFields(ReportStatus.Failed, AttemptsExhaustedReason, Mandate: job.Job.Mandate, Step: job.Job.Step), body, ct).ConfigureAwait(false);
             var exhausted = new SweepAction(SweepActionKind.Exhausted, id, claim.Folder, attempt, null);
             return report.IsAccepted
                 ? (await _bus.ExhaustAsync(claim, report.Envelope, ct).ConfigureAwait(false), exhausted)

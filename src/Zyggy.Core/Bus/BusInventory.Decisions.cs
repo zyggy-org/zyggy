@@ -72,7 +72,7 @@ public sealed partial class BusInventory
 
     /// <summary>
     /// Finds what a decision replies to: a question in a machine's <c>questions/</c> folder, a job in <c>jobs/</c>, <c>claimed/</c> or
-    /// <c>rejected/</c>, a report in <c>reports/</c>, or a question or report already in the archive. Only a file that verifies under
+    /// <c>rejected/</c>, a report in <c>reports/</c>, a mandate of Central (live or revoked), or a question or report already in the archive. Only a file that verifies under
     /// its own id and its folder's writer counts.
     /// </summary>
     /// <param name="id">The id to reply to.</param>
@@ -104,6 +104,15 @@ public sealed partial class BusInventory
                 && report.Header.From == machine)
             {
                 return new DecisionTarget(machine, null, null);
+            }
+        }
+
+        // Deliverable 18 group B: a decision on a mandate (live or revoked) goes to the machine the mandate is for.
+        foreach (string folder in new[] { BusPaths.Mandates(_me.Tenant), BusPaths.RevokedMandates(_me.Tenant) })
+        {
+            if (await VerifiedAtAsync(folder, id, ct).ConfigureAwait(false) is { Mandate: { } mandate } found && found.Header.From == MachineName.Central)
+            {
+                return new DecisionTarget(found.Header.To, mandate.Project, null);
             }
         }
 

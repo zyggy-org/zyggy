@@ -60,4 +60,10 @@ public sealed record RejectedJob : JobIntake
 
     /// <summary>Gets the sender, when it could be read.</summary>
     public MachineName? From { get; }
+
+    /// <summary>Gets the job's <c>mandate</c> when the job was read, copied into the rejection report (deliverable 18).</summary>
+    public EnvelopeId? Mandate { get; init; }
+
+    /// <summary>Gets the job's <c>step</c> when the job was read, copied into the rejection report (deliverable 18).</summary>
+    public string? Step { get; init; }
 }

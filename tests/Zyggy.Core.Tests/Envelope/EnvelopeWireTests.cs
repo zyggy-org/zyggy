@@ -50,6 +50,7 @@ public sealed class EnvelopeWireTests
         { EnvelopeRejectionReason.UnknownKey, "unknown_key" },
         { EnvelopeRejectionReason.InvalidSignature, "invalid_signature" },
         { EnvelopeRejectionReason.WrongRecipient, "wrong_recipient" },
+        { EnvelopeRejectionReason.MandateInvalid, "mandate_invalid" },
     };
 
     [Theory]
@@ -196,7 +197,7 @@ public sealed class EnvelopeWireTests
     public void EveryMember_HasATestRow()
     {
         // Assert
-        Reasons.Count.Should().Be(10);
+        Reasons.Count.Should().Be(11);
         Types.Count.Should().Be(Enum.GetValues<EnvelopeType>().Length);
         Priorities.Count.Should().Be(Enum.GetValues<EnvelopePriority>().Length);
         Statuses.Count.Should().Be(Enum.GetValues<ReportStatus>().Length);

@@ -216,7 +216,11 @@ public sealed partial class BusRepository
         Model envelope = result.Envelope!;
         if (envelope.Header.To != _me.Machine)
         {
-            return new RejectedJob(file, EnvelopeRejectionReason.WrongRecipient, "to", "to is not this machine", envelope.Header.From);
+            return new RejectedJob(file, EnvelopeRejectionReason.WrongRecipient, "to", "to is not this machine", envelope.Header.From)
+            {
+                Mandate = envelope.Job?.Mandate,
+                Step = envelope.Job?.Step,
+            };
         }
 
         if (envelope.Header.Id != file.Id)
@@ -336,7 +340,7 @@ public sealed partial class BusRepository
         var header = new EnvelopeHeader(_me.Tenant, reportId, _me.Machine, job.From, now, EnvelopePriority.Normal, job.File.Id);
         string body = "rejected: " + reason + (job.Field is null ? string.Empty : " (" + job.Field + ")") + "\n";
         EnvelopeResult signed = await _signer.SignAsync(
-            Model.CreateReport(header, new ReportFields(ReportStatus.Rejected, reason), Encoding.UTF8.GetBytes(body)), signWith, ct).ConfigureAwait(false);
+            Model.CreateReport(header, new ReportFields(ReportStatus.Rejected, reason, Mandate: job.Mandate, Step: job.Step), Encoding.UTF8.GetBytes(body)), signWith, ct).ConfigureAwait(false);
         if (!signed.IsAccepted)
         {
             LogWriteFailed(_me.Tenant.Value, _me.Machine.Value, "reject " + job.File.Id.Value, "sign", signed.Rejection!.Detail);

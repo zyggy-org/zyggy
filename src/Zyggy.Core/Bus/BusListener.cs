@@ -94,6 +94,9 @@ public sealed partial class BusListener : IDisposable
         Status = new ListenerStatus(State, null, null, null, null, 0, 0, PollMode.Active);
     }
 
+    /// <summary>Gets the node's mandate check (deliverable 18); the production composition always sets it, a bare test listener may not.</summary>
+    internal MandateIntake? Mandates { get; init; }
+
     /// <summary>Gets the poller's state: health for the Node service and the probe's status line.</summary>
     public PollState State { get; private set; }
 
@@ -255,11 +258,27 @@ public sealed partial class BusListener : IDisposable
         foreach (BusFile file in await _bus.ListNewJobsAsync(ct).ConfigureAwait(false))
         {
             JobIntake intake = await _bus.VerifyIntakeAsync(file, ct).ConfigureAwait(false);
+            if (intake is AcceptedJob verified && Mandates is not null)
+            {
+                // Deliverable 18: a job under a mandate is matched against this node's checkout before the gate, the claim or the model.
+                if (await Mandates.CheckAsync(verified, ct).ConfigureAwait(false) is not { } checkedIntake)
+                {
+                    continue;
+                }
+
+                intake = checkedIntake;
+            }
+
             switch (intake)
             {
                 case RejectedJob rejected:
                     using (Scope("reject"))
                     {
+                        if (rejected.Reason == EnvelopeRejectionReason.MandateInvalid)
+                        {
+                            LogMandateRefused(file.Id.Value, rejected.Mandate?.Value ?? "-", rejected.Detail);
+                        }
+
                         WriteOutcome outcome = await _bus.RejectAsync(rejected, _signWith, ct).ConfigureAwait(false);
                         deferredBefore = await NoteDeferredAsync(outcome, deferredBefore, ct).ConfigureAwait(false);
                         if (outcome is not WriteFailed)
@@ -664,7 +683,9 @@ public sealed partial class BusListener : IDisposable
                 reply.NumTurns,
                 reply.Model,
                 reply.FilesChanged,
-                reply.DiffRef);
+                reply.DiffRef,
+                accepted.Job.Job?.Mandate,
+                accepted.Job.Job?.Step);
             WriteOutcome report = await _bus.ReportAsync(accepted, fields, reply.Body, _signWith, ct).ConfigureAwait(false);
             if (report is WriteFailed failed)
             {
@@ -760,6 +781,9 @@ public sealed partial class BusListener : IDisposable
 
     [LoggerMessage(Level = LogLevel.Error, Message = "the handler threw {Exception} for job {Id}; the job stays claimed")]
     private partial void LogHandlerFailed(string id, string exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id} refused under mandate {Mandate}: {Limit}")]
+    private partial void LogMandateRefused(string id, string mandate, string limit);
 
     /// <summary>The lease of the probe path (no gate): nothing to release.</summary>
     private sealed class NoopLease : IDisposable
