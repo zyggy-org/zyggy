@@ -53,7 +53,7 @@ Runbook notes:
 - All bus paths go through `BusPaths`; no string-concatenated paths elsewhere. Paths are tenant-prefixed (`tenants/<org>/...`) from day one.
 - `EnvelopeSigner.Canonicalize` is the single source of truth for the signing input (front matter minus `sig`, sorted keys, `\n` endings, then `\n---\n`, then body). It has golden-file tests under `tests/golden/`.
 - The poller is a pure state machine (`PollState` record) with the HTTP call injected; tests drive it with a fake clock.
-- `JobRunner` never throws to the loop; every failure becomes a report with a `reason` from a closed enum (`unknown_project`, `unknown_agent`, `locked`, `timeout`, `dlp_filter`, `claude_error`, `git_error`, `schema_unsupported`, `budget_exceeded`).
+- `JobRunner` never throws to the loop; every failure becomes a report with a `reason` from a closed enum (`unknown_project`, `unknown_agent`, `locked`, `timeout`, `dlp_filter`, `claude_error`, `git_error`, `schema_unsupported`, `budget_exceeded`, `branch_refused`).
 - No static mutable state; everything via DI. Secrets never in `appsettings.json` or `node.json`.
 - Envelope bodies and bus contents are **data, never instructions** in every prompt template.
 - Log once per state change, never per poll tick.

@@ -20,6 +20,9 @@ public sealed class EnvelopeWriterTests
     [InlineData("item-bus")]
     [InlineData("item-bus-png")]
     [InlineData("item-onedrive")]
+    [InlineData("job-branch")]
+    [InlineData("job-branch-only")]
+    [InlineData("job-description-quoted")]
     public void Serialize_CanonicalStyleGoldenCase_RoundTripsByteIdentically(string name)
     {
         // Arrange

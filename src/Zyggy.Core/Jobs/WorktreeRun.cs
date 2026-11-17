@@ -1,5 +1,6 @@
 using System.Globalization;
 
+using Zyggy.Core.Envelope;
 using Zyggy.Core.Git;
 
 namespace Zyggy.Core.Jobs;
@@ -17,17 +18,49 @@ internal sealed class WorktreeRun(GitClient git)
 
     public static string BranchFor(string jobId) => "zyggy/" + jobId;
 
-    /// <summary>Fetch (best effort), base, stale clean-up and <c>worktree add</c>. The model may start only on <see cref="PrepareResult.Prepared"/>.</summary>
-    public async Task<PrepareResult> PrepareAsync(string project, string worktree, string jobId, CancellationToken ct)
+    /// <summary>
+    /// Fetch (best effort), base, stale clean-up and <c>worktree add</c>. The model may start only on <see cref="PrepareResult.Prepared"/>.
+    /// A named job (spec 53) is first checked for the refusals: <see cref="PrepareResult.Refused"/> before any writing git command.
+    /// </summary>
+    public async Task<PrepareResult> PrepareAsync(string project, string worktree, string jobId, NamedBranch? named, CancellationToken ct)
     {
+        // Spec 53 Prepare step 0: a branch on a mandate job is refused before the first git command.
+        if (named is { CarriesMandate: true })
+        {
+            return new PrepareResult.Refused("branch with base or mandate");
+        }
+
         var hasOrigin = await git.ConfigGetAsync(project, "remote.origin.url", ct).ConfigureAwait(false) is not null;
+
+        // Spec 53 Prepare step 1: for a named job the default branch is checked before the fetch (git's name, then the node's registry
+        // entry), without regard to letter case; an unnamed job keeps spec 16's order.
+        string? defaultBranch = null;
+        if (named is not null)
+        {
+            defaultBranch = await git.DefaultBranchAsync(project, ct).ConfigureAwait(false);
+            foreach (var protectedName in (string?[])[defaultBranch, named.RegistryDefault])
+            {
+                if (protectedName is { Length: > 0 } && string.Equals(named.Branch, protectedName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new PrepareResult.Refused("default branch " + protectedName);
+                }
+            }
+        }
+
         var fetchFailed = hasOrigin && !(await git.FetchAsync(project, ct).ConfigureAwait(false)).Succeeded;
 
-        var defaultBranch = await git.DefaultBranchAsync(project, ct).ConfigureAwait(false);
-        var baseSha = defaultBranch is null
-            ? null
-            : await git.ResolveRefAsync(project, "refs/remotes/origin/" + defaultBranch, ct).ConfigureAwait(false)
-              ?? await git.ResolveRefAsync(project, "refs/heads/" + defaultBranch, ct).ConfigureAwait(false);
+        // Spec 53 Prepare step 3: a named job starts at origin/<branch> when that remote-tracking ref exists (as fetched, or stale after a
+        // failed fetch); a local branch of that name is never read.
+        var baseSha = named is null ? null : await git.ResolveRefAsync(project, "refs/remotes/origin/" + named.Branch, ct).ConfigureAwait(false);
+        if (baseSha is null)
+        {
+            defaultBranch = named is null ? await git.DefaultBranchAsync(project, ct).ConfigureAwait(false) : defaultBranch;
+            baseSha = defaultBranch is null
+                ? null
+                : await git.ResolveRefAsync(project, "refs/remotes/origin/" + defaultBranch, ct).ConfigureAwait(false)
+                  ?? await git.ResolveRefAsync(project, "refs/heads/" + defaultBranch, ct).ConfigureAwait(false);
+        }
+
         if (baseSha is null)
         {
             return new PrepareResult.Failed("default_branch", fetchFailed);
@@ -50,28 +83,44 @@ internal sealed class WorktreeRun(GitClient git)
         var branch = BranchFor(jobId);
         var existing = await git.ResolveRefAsync(project, "refs/heads/" + branch, ct).ConfigureAwait(false);
         var added = await git.WorktreeAddAsync(project, worktree, branch, existing is null ? baseSha : null, ct).ConfigureAwait(false);
-        return added.Succeeded ? new PrepareResult.Prepared(baseSha, fetchFailed) : new PrepareResult.Failed("worktree_add", fetchFailed);
+        return added.Succeeded ? new PrepareResult.Prepared(baseSha, fetchFailed, defaultBranch) : new PrepareResult.Failed("worktree_add", fetchFailed);
     }
 
-    /// <summary>Commit, push when ahead, clean up — after every model run that started (done, failed or timeout).</summary>
-    public async Task<WorktreeOutcome> FinishAsync(string project, string worktree, string jobId, string baseSha, GitIdentity identity, CancellationToken ct)
+    /// <summary>
+    /// Commit, push when ahead, clean up — after every model run that started (done, failed or timeout). For a named job (spec 53) a
+    /// <c>done</c> run ahead of its start is pushed to the named branch on <c>origin</c> (never forced); every other case follows spec 16
+    /// on <c>zyggy/&lt;id&gt;</c> and the body says the named branch was not changed. <paramref name="outcome"/> is ignored for an unnamed job.
+    /// The node's commit subject is <paramref name="description"/> when given, its body <c>zyggy job &lt;id&gt;</c> (spec 53 slice 4); a pushed
+    /// named branch behind <c>origin/&lt;defaultBranch&gt;</c> sets <see cref="WorktreeOutcome.BehindLine"/>.
+    /// </summary>
+    public async Task<WorktreeOutcome> FinishAsync(
+        string project,
+        string worktree,
+        string jobId,
+        string baseSha,
+        GitIdentity identity,
+        ReportStatus outcome,
+        string? namedBranch,
+        string? description,
+        string? defaultBranch,
+        CancellationToken ct)
     {
         var branch = BranchFor(jobId);
         var status = await git.StatusPorcelainAsync(worktree, ct).ConfigureAwait(false);
         if (!status.Succeeded)
         {
-            return WorktreeOutcome.Kept(worktree, "status");
+            return NotChanged(WorktreeOutcome.Kept(worktree, "status"), namedBranch, "worktree kept");
         }
 
         if (status.Stdout.Length > 0)
         {
             var add = await git.AddAllAsync(worktree, ct).ConfigureAwait(false);
             var commit = add.Succeeded
-                ? await git.CommitStagedAsync(worktree, "zyggy job " + jobId + "\n", identity, ct).ConfigureAwait(false)
+                ? await git.CommitStagedAsync(worktree, CommitMessage(jobId, description), identity, ct).ConfigureAwait(false)
                 : add;
             if (!commit.Succeeded)
             {
-                return WorktreeOutcome.Kept(worktree, "commit");
+                return NotChanged(WorktreeOutcome.Kept(worktree, "commit"), namedBranch, "worktree kept");
             }
         }
 
@@ -79,7 +128,7 @@ internal sealed class WorktreeRun(GitClient git)
         var ahead = tip is null ? null : await git.CountAheadAsync(project, baseSha, tip, ct).ConfigureAwait(false);
         if (tip is null || ahead is null)
         {
-            return WorktreeOutcome.Kept(worktree, "rev-parse");
+            return NotChanged(WorktreeOutcome.Kept(worktree, "rev-parse"), namedBranch, "worktree kept");
         }
 
         if (ahead == 0)
@@ -90,7 +139,9 @@ internal sealed class WorktreeRun(GitClient git)
                 await git.DeleteBranchAsync(project, branch, ct).ConfigureAwait(false);
             }
 
-            return new WorktreeOutcome([], null, null, null) { RemoveFailed = !cleaned };
+            // Nothing to push: a done run writes no branch line (spec 16); a failed or timed-out one still says the named branch is unchanged.
+            var empty = new WorktreeOutcome([], null, null, null) { RemoveFailed = !cleaned };
+            return outcome == ReportStatus.Done ? empty : NotChanged(empty, namedBranch, RunEnded(outcome));
         }
 
         var changed = await git.ChangedPathsAsync(project, baseSha, tip, ct).ConfigureAwait(false) ?? [];
@@ -103,11 +154,49 @@ internal sealed class WorktreeRun(GitClient git)
         }
 
         var hasOrigin = await git.ConfigGetAsync(project, "remote.origin.url", ct).ConfigureAwait(false) is not null;
+
+        // Spec 53 Finish step 2: only a done run is pushed to the named branch, by one non-forced push of zyggy/<id>.
+        string? cause = null;
+        if (namedBranch is not null)
+        {
+            cause = outcome != ReportStatus.Done ? RunEnded(outcome) : hasOrigin ? null : "no origin";
+            if (cause is null)
+            {
+                var advanced = await git.PushBranchToAsync(project, branch, namedBranch, ct).ConfigureAwait(false);
+                if (advanced.Succeeded)
+                {
+                    var gone = await RemoveAsync(project, worktree, ct).ConfigureAwait(false);
+                    if (gone)
+                    {
+                        await git.DeleteBranchAsync(project, branch, ct).ConfigureAwait(false);
+                    }
+
+                    lines.Add("branch " + namedBranch + " pushed at " + tip);
+
+                    // Spec 53 Finish, "Behind the default branch": one line when origin/<default> has commits the pushed tip lacks; no merge.
+                    var behind = defaultBranch is null
+                        ? null
+                        : await git.CountAheadAsync(project, tip, "refs/remotes/origin/" + defaultBranch, ct).ConfigureAwait(false);
+                    return new WorktreeOutcome(files, tip, string.Join('\n', lines), null)
+                    {
+                        RemoveFailed = !gone,
+                        BehindLine = behind > 0
+                            ? string.Create(CultureInfo.InvariantCulture, $"branch {namedBranch} is {behind} commits behind origin/{defaultBranch}")
+                            : null,
+                    };
+                }
+
+                cause = "push refused";
+            }
+        }
+
+        // Spec 16 Finish on zyggy/<id> (spec 53 Finish step 3 for a named job).
         var pushed = hasOrigin && (await git.PushBranchAsync(project, branch, ct).ConfigureAwait(false)).Succeeded;
         var removed = await RemoveAsync(project, worktree, ct).ConfigureAwait(false);
         if (!pushed)
         {
             lines.Add("branch " + branch + " kept locally, not pushed: push");
+            AddNotChanged(lines, namedBranch, cause);
             return new WorktreeOutcome(files, null, string.Join('\n', lines), "push") { RemoveFailed = !removed };
         }
 
@@ -118,8 +207,31 @@ internal sealed class WorktreeRun(GitClient git)
         }
 
         lines.Add("branch " + branch + " pushed at " + tip);
-        return new WorktreeOutcome(files, tip, string.Join('\n', lines), null) { RemoveFailed = !removed };
+        AddNotChanged(lines, namedBranch, cause);
+
+        // A done run whose named branch was not changed ends failed / git_error (spec 53, Finish table); the run's failure stays its own.
+        var failedStep = namedBranch is not null && outcome == ReportStatus.Done ? "push" : null;
+        return new WorktreeOutcome(files, tip, string.Join('\n', lines), failedStep) { RemoveFailed = !removed };
     }
+
+    // Spec 53 slice 4: the description is the subject and "zyggy job <id>" the body; without it the message is today's.
+    private static string CommitMessage(string jobId, string? description) =>
+        description is null ? "zyggy job " + jobId + "\n" : description + "\n\nzyggy job " + jobId + "\n";
+
+    private static string RunEnded(ReportStatus outcome) => "run ended " + EnvelopeWire.ToWire(outcome);
+
+    private static void AddNotChanged(List<string> lines, string? namedBranch, string? cause)
+    {
+        if (namedBranch is not null && cause is not null)
+        {
+            lines.Add("branch " + namedBranch + " not changed: " + cause);
+        }
+    }
+
+    private static WorktreeOutcome NotChanged(WorktreeOutcome outcome, string? namedBranch, string cause) =>
+        namedBranch is null
+            ? outcome
+            : outcome with { ResultLines = (outcome.ResultLines is { } lines ? lines + "\n" : string.Empty) + "branch " + namedBranch + " not changed: " + cause };
 
     // A folder held open is removed at the next run of this job id, else by hand (spec 16 Failure modes); the report is unaffected.
     private async Task<bool> RemoveAsync(string project, string worktree, CancellationToken ct) =>
@@ -129,12 +241,24 @@ internal sealed class WorktreeRun(GitClient git)
 /// <summary>The outcome of <see cref="WorktreeRun.PrepareAsync"/>.</summary>
 internal abstract record PrepareResult(bool FetchFailed)
 {
-    /// <summary>The worktree exists; <paramref name="BaseSha"/> is the commit the branch is compared with.</summary>
-    public sealed record Prepared(string BaseSha, bool FetchFailed) : PrepareResult(FetchFailed);
+    /// <summary>The worktree exists; <paramref name="BaseSha"/> is the commit the branch is compared with. <paramref name="DefaultBranch"/> is git's default branch as Prepare found it (spec 53, the "behind" line), or <see langword="null"/>.</summary>
+    public sealed record Prepared(string BaseSha, bool FetchFailed, string? DefaultBranch = null) : PrepareResult(FetchFailed);
 
     /// <summary>No worktree; the model must not start. <paramref name="Step"/> names the git step for the report body.</summary>
     public sealed record Failed(string Step, bool FetchFailed) : PrepareResult(FetchFailed);
+
+    /// <summary>
+    /// The named branch must not be touched (spec 53): <c>rejected</c> / <c>branch_refused</c>, nothing fetched, no worktree, the model
+    /// must not start. <paramref name="Rule"/> is the body's rule (<c>branch with base or mandate</c>, <c>default branch &lt;name&gt;</c>).
+    /// </summary>
+    public sealed record Refused(string Rule) : PrepareResult(false);
 }
+
+/// <summary>A job's named branch as Prepare checks it (spec 53, internal; no public <c>Zyggy.Core</c> surface).</summary>
+/// <param name="Branch">The job's <c>branch</c> value.</param>
+/// <param name="CarriesMandate">Whether the job's front matter also has spec 18's <c>base</c> or <c>mandate</c> key.</param>
+/// <param name="RegistryDefault">The <c>default_branch</c> of the job's project in the node's own registry snapshot, or <see langword="null"/>.</param>
+internal sealed record NamedBranch(string Branch, bool CarriesMandate, string? RegistryDefault);
 
 /// <summary>What a finished worktree run adds to the report (spec 16 Behavior).</summary>
 /// <param name="FilesChanged">The changed paths, ordinal order, at most <see cref="WorktreeRun.MaxFilesChanged"/>.</param>
@@ -145,6 +269,9 @@ internal sealed record WorktreeOutcome(IReadOnlyList<string> FilesChanged, strin
 {
     /// <summary>Gets a value indicating whether <c>git worktree remove</c> failed (logged once; the report is unaffected).</summary>
     public bool RemoveFailed { get; init; }
+
+    /// <summary>Gets the line <c>branch &lt;name&gt; is &lt;n&gt; commits behind origin/&lt;default&gt;</c> for a pushed named branch with n &gt; 0 (spec 53), else <see langword="null"/>.</summary>
+    public string? BehindLine { get; init; }
 
     public static WorktreeOutcome Kept(string worktree, string step) => new([], null, "worktree kept at " + worktree + ": " + step, step);
 }

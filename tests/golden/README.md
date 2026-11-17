@@ -34,6 +34,9 @@ All `schema: 1`, `tenant: acme`, LF line endings unless stated.
 | `status` | canonical style | `acme/1` | deliverable 18: `type: status`, `home-laptop` → `central`, every field of `detail: full` (`branch`, `head`, `dirty`, `spec`, `step`), empty body (spec 18 AC-1); produced like the `item-*` cases, the file ending with the closing `---\n` |
 | `question` | canonical style | `acme/1` | deliverable 18: `type: question`, `home-laptop` → `central`, asked from a session, two `options` (a flow sequence), `default`; the body is the question (spec 18 AC-1); produced like the `item-*` cases |
 | `decision` | canonical style | `acme/1` | deliverable 18: `type: decision`, `central` → `home-laptop`, `in_reply_to` = the `question` case's id, `kind: answer`, `basis: verified`, `mandate`, `step`, two `evidence` items (an envelope id and a commit sha), `undo`; the body says what and why (spec 18 AC-1); produced like the `item-*` cases |
+| `job-branch` | canonical style | `acme/1` | deliverable 53: the optional job fields `branch: feature/12-cart` and `description` (plain), `worktree: true`, project `shop`; the factory output for the same fields equals this file (spec 53 AC-1) |
+| `job-branch-only` | canonical style | `acme/1` | deliverable 53: `branch` only, mixed case and every allowed character class (`Feature/Cart-Totals_v2.1`) (AC-1) |
+| `job-description-quoted` | canonical style | `acme/1` | deliverable 53: `description` only, with `: `, ` #`, a leading `-` and both quote characters; plain and single quotes are excluded (a `'` in the text), so it is double-quoted with `\"`, as `job-noncanonical`'s `x_quote` (AC-1) |
 
 ## How the oracle files are produced — never by the code under test
 

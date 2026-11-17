@@ -15,6 +15,9 @@ public sealed class RunFailureReasonWireTests
         { RunFailureReason.GitError, "git_error" },
         { RunFailureReason.SchemaUnsupported, "schema_unsupported" },
         { RunFailureReason.BudgetExceeded, "budget_exceeded" },
+
+        // AC-8c (spec 53): a named branch the node must not touch.
+        { RunFailureReason.BranchRefused, "branch_refused" },
     };
 
     [Theory]
@@ -58,6 +61,6 @@ public sealed class RunFailureReasonWireTests
     public void EveryMember_HasATestRow()
     {
         // Assert
-        Reasons.Count.Should().Be(Enum.GetValues<RunFailureReason>().Length).And.Be(9);
+        Reasons.Count.Should().Be(Enum.GetValues<RunFailureReason>().Length).And.Be(10);
     }
 }

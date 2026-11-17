@@ -9,6 +9,13 @@ namespace Zyggy.Core.Envelope;
 /// <param name="TimeoutMinutes">The <c>timeout_minutes</c>; <see langword="null"/> when absent (the node default applies).</param>
 /// <param name="Deadline">The optional <c>deadline</c>, in UTC.</param>
 /// <param name="Attempt">The <c>attempt</c> counter; 1 when absent.</param>
+/// <param name="Branch">
+/// The optional <c>branch</c> the job runs on and pushes (spec 53): a git branch name of the §4 shape (1–100 characters of <c>[A-Za-z0-9._/-]</c>, see spec 53)
+/// checks, only with <c>worktree: true</c>; <see langword="null"/> runs on <c>zyggy/&lt;id&gt;</c> as before.
+/// </param>
+/// <param name="Description">
+/// The optional one-line <c>description</c> of what the branch holds after this job (spec 53); data, never shown to the model.
+/// </param>
 public sealed record JobFields(
     string Project,
     string? Agent = null,
@@ -17,4 +24,6 @@ public sealed record JobFields(
     IReadOnlyList<string>? ReportBack = null,
     int? TimeoutMinutes = null,
     DateTimeOffset? Deadline = null,
-    int Attempt = 1);
+    int Attempt = 1,
+    string? Branch = null,
+    string? Description = null);

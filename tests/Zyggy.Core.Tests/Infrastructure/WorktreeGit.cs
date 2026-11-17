@@ -33,8 +33,14 @@ internal sealed class WorktreeGit
     /// <summary>Gets or sets how many commits the job branch is ahead of its base after Finish's commit.</summary>
     public int Ahead { get; set; } = 1;
 
+    /// <summary>Gets or sets how many commits <c>origin/&lt;default&gt;</c> has that the pushed tip lacks (spec 53, the "behind" line).</summary>
+    public int Behind { get; set; }
+
     /// <summary>Gets or sets the changed paths <c>git diff --name-only -z</c> prints, in git's order.</summary>
     public IReadOnlyList<string> ChangedPaths { get; set; } = ["src/new.txt"];
+
+    /// <summary>Gets or sets the branch <c>refs/remotes/origin/HEAD</c> points at (git's default branch; spec 53).</summary>
+    public string OriginHeadBranch { get; set; } = "main";
 
     /// <summary>Gets or sets a value indicating whether no default branch can be found (no origin/HEAD, no main, no master, detached HEAD).</summary>
     public bool NoDefaultBranch { get; set; }
@@ -44,6 +50,12 @@ internal sealed class WorktreeGit
 
     /// <summary>Gets the steps whose git process times out (the runner's kill after <see cref="ProcessSpec.Timeout"/>).</summary>
     public HashSet<string> TimingOut { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Gets further fully qualified refs <c>rev-parse --verify</c> resolves, ref → SHA (spec 53: <c>origin/&lt;branch&gt;</c>, a local named branch).</summary>
+    public Dictionary<string, string> Refs { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Gets the destination refs (<c>refs/heads/&lt;name&gt;</c>) whose push <c>origin</c> refuses (spec 53: a race or a ref clash).</summary>
+    public HashSet<string> RefusedPushDestinations { get; } = new(StringComparer.Ordinal);
 
     public static ProcessResult TimedOut() => new(null, "", "", true, false, false, TimeSpan.FromMinutes(2));
 
@@ -70,6 +82,16 @@ internal sealed class WorktreeGit
         }
 
         var args = spec.Arguments;
+        if (RecordingProcessRunner.SubCommand(spec) == "push" && RefusedPushDestinations.Any(d => args[^1].EndsWith(":" + d, StringComparison.Ordinal)))
+        {
+            return RecordingProcessRunner.Fail(1, " ! [rejected] (fetch first)");
+        }
+
+        if (Has(spec, "--verify") && Refs.TryGetValue(args[^1], out var known))
+        {
+            return RecordingProcessRunner.Ok(known + "\n");
+        }
+
         if (NoDefaultBranch && (RecordingProcessRunner.SubCommand(spec) == "symbolic-ref" || (Has(spec, "--verify") && !args[^1].StartsWith("refs/heads/zyggy/", StringComparison.Ordinal))))
         {
             return RecordingProcessRunner.Fail(1, "");
@@ -86,7 +108,7 @@ internal sealed class WorktreeGit
                     return JobBranchExists ? RecordingProcessRunner.Ok(TipSha + "\n") : RecordingProcessRunner.Fail(1, "");
                 }
 
-                if (reference == "refs/remotes/origin/main")
+                if (reference == "refs/remotes/origin/" + OriginHeadBranch)
                 {
                     return OriginMainExists ? RecordingProcessRunner.Ok(BaseSha + "\n") : RecordingProcessRunner.Fail(1, "");
                 }
@@ -95,9 +117,11 @@ internal sealed class WorktreeGit
             case "rev-parse" when args[^1].StartsWith("refs/heads/zyggy/", StringComparison.Ordinal):
                 return RecordingProcessRunner.Ok((Ahead > 0 ? TipSha : BaseSha) + "\n");
             case "symbolic-ref" when Has(spec, "refs/remotes/origin/HEAD"):
-                return OriginUrl is null ? RecordingProcessRunner.Fail(1, "") : RecordingProcessRunner.Ok("origin/main\n");
+                return OriginUrl is null ? RecordingProcessRunner.Fail(1, "") : RecordingProcessRunner.Ok("origin/" + OriginHeadBranch + "\n");
             case "status":
                 return RecordingProcessRunner.Ok(StatusAfterRun);
+            case "rev-list" when args[^1].Contains("..refs/remotes/origin/", StringComparison.Ordinal):
+                return RecordingProcessRunner.Ok(Behind.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n");
             case "rev-list":
                 return RecordingProcessRunner.Ok(Ahead.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n");
             case "diff":

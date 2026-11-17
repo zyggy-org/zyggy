@@ -17,7 +17,7 @@ public sealed partial class JobSubmitter
     private static readonly HashSet<string> Section4Keys =
     [
         "schema", "id", "tenant", "type", "from", "to", "created", "in_reply_to", "priority", "project", "agent", "worktree",
-        "allowed_tools", "report_back", "timeout_minutes", "deadline", "attempt", "key_id", "sig",
+        "allowed_tools", "report_back", "timeout_minutes", "deadline", "attempt", "branch", "description", "key_id", "sig",
     ];
 
     private readonly BusRepository _bus;
@@ -60,7 +60,7 @@ public sealed partial class JobSubmitter
         BusIdentity me = _bus.Me;
         DateTimeOffset now = _clock.GetUtcNow();
         var header = new EnvelopeHeader(me.Tenant, EnvelopeId.New(now), me.Machine, request.To, now, request.Priority);
-        var fields = new JobFields(request.Project.Value, request.Agent, request.Worktree, request.AllowedTools, ReportBack: null, request.TimeoutMinutes, Deadline: null, Attempt: 1);
+        var fields = new JobFields(request.Project.Value, request.Agent, request.Worktree, request.AllowedTools, ReportBack: null, request.TimeoutMinutes, Deadline: null, Attempt: 1, request.Branch, request.Description);
         Model job;
         try
         {
@@ -224,6 +224,16 @@ public sealed partial class JobSubmitter
         if (j.Attempt != 1)
         {
             return "attempt";
+        }
+
+        if (!string.Equals(j.Branch, request.Branch, StringComparison.Ordinal))
+        {
+            return "branch";
+        }
+
+        if (!string.Equals(j.Description, request.Description, StringComparison.Ordinal))
+        {
+            return "description";
         }
 
         if (!parsed.Body.Span.SequenceEqual(request.Body.Span))
