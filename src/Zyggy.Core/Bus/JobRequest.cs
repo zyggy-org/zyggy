@@ -37,6 +37,15 @@ public sealed partial record JobRequest(
     /// </summary>
     public bool Worktree { get; init; }
 
+    /// <summary>
+    /// Gets the optional branch the job runs on instead of <c>zyggy/&lt;id&gt;</c> (spec 53, job field <c>branch</c>); only with
+    /// <see cref="Worktree"/>. The shape is checked when the envelope is built (§4 parse rules); a refused value is a build refusal.
+    /// </summary>
+    public string? Branch { get; init; }
+
+    /// <summary>Gets the optional one-line description of what the branch holds after the job (spec 53, job field <c>description</c>).</summary>
+    public string? Description { get; init; }
+
     /// <summary>The body cap in UTF-8 bytes (a sanity check against a pasted document, not a protocol rule).</summary>
     public const int MaxBodyBytes = 65_536;
 

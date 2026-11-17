@@ -268,12 +268,25 @@ public static class EnvelopeParser
                 || !List("report_back", out IReadOnlyList<string>? reportBack)
                 || !Int("timeout_minutes", 1, out int? timeout)
                 || !Timestamp("deadline", false, out DateTimeOffset? deadline)
-                || !Int("attempt", 1, out int? attempt))
+                || !Int("attempt", 1, out int? attempt)
+                || !Text("branch", false, out string? branch)
+                || !Text("description", false, out string? description))
             {
                 return false;
             }
 
-            job = new JobFields(project!, agent, worktree ?? false, allowedTools, reportBack, timeout, deadline, attempt ?? 1);
+            // Spec 53: `branch` only with `worktree: true` and of the §4 shape; `description` one line. An empty value is absent (§4 null rule).
+            if (branch is not null && (worktree != true || !JobBranchRules.IsValidBranch(branch)))
+            {
+                return Reject(FieldReader.Invalid("branch", worktree == true ? JobBranchRules.BranchRule : "requires worktree: true"));
+            }
+
+            if (description is not null && !JobBranchRules.IsValidDescription(description))
+            {
+                return Reject(FieldReader.Invalid("description", JobBranchRules.DescriptionRule));
+            }
+
+            job = new JobFields(project!, agent, worktree ?? false, allowedTools, reportBack, timeout, deadline, attempt ?? 1, branch, description);
             return true;
         }
 

@@ -164,6 +164,8 @@ deadline: 2026-09-29T18:00:00Z
 project: calizr               # registry name; an absolute path is accepted only as described in §6 pre-flight
 agent: env-debugger           # optional subagent name
 worktree: true
+branch: feature/12-cart       # optional; requires worktree: true; never the default branch (deliverable 53)
+description: Cart, slice 2: totals   # optional; one line, the node's commit subject and a report line
 allowed_tools: [Read, Grep, Glob, "Bash(dotnet *)", "Bash(kubectl get *)"]
 report_back: [summary, diff, files_changed]
 timeout_minutes: 30
@@ -175,6 +177,8 @@ Do not change code; report root cause and a proposed fix.
 ```
 
 Report-specific fields: `status` (`done | failed | timeout | rejected`), `reason` (closed enum, §9; present when `status` is not `done`), `started`, `finished`, `duration_seconds`, `cost_usd`, `input_tokens`, `output_tokens`, `num_turns`, `model` (from the `IModelRunner` result; informational, summed by `agentbus status --costs`, §11), `files_changed` (list), `diff_ref` (path in the report or a commit SHA in the project repo).
+
+Job-specific fields (deliverable 53): `branch` (a git branch name of 1–100 characters from `[A-Za-z0-9._/-]`, no empty segment, no segment starting with `.` or `-`, no segment ending in `.lock`, no `..`, not ending in `/` or `.`, not `HEAD`, not starting with `zyggy/` or `refs/` in any letter case; only with `worktree: true`; not on a job that carries `base` or `mandate`) and `description` (one line of 1–200 characters, no control characters). Both are data, never instructions, and never shown to the model.
 
 Context-specific fields: `scope` (`project:<name> | machine | general`), body = one `[stated]`-style fact per line.
 
@@ -191,7 +195,7 @@ Decision-specific fields (deliverable 18): `kind` (`answer | accept | correct | 
 | Type | Mandatory | Optional (default) |
 | --- | --- | --- |
 | all | `schema` (positive integer; a node supports exactly `1`), `id` (ULID), `tenant`, `type`, `from`, `to`, `created`, `key_id`, `sig` | `in_reply_to` (`null`; mandatory on `report` and `decision`), `priority` (`normal`) |
-| `job` | `project` | `agent` (none), `worktree` (`false`), `allowed_tools` (empty = `node.json` `claude.defaultAllowedTools`), `report_back` (empty), `timeout_minutes` (`node.json` `claude.defaultTimeoutMinutes`), `deadline` (none), `attempt` (`1`) |
+| `job` | `project` | `agent` (none), `worktree` (`false`), `allowed_tools` (empty = `node.json` `claude.defaultAllowedTools`), `report_back` (empty), `timeout_minutes` (`node.json` `claude.defaultTimeoutMinutes`), `deadline` (none), `attempt` (`1`), `branch` (none; only with `worktree: true`), `description` (none) |
 | `report` | `in_reply_to` (the job id, or the item id for Central's report on an item), `status`; `reason` when `status` is not `done` (must be absent when `done`) | `started`, `finished`, `duration_seconds`, `cost_usd`, `input_tokens`, `output_tokens`, `num_turns`, `model`, `files_changed` (empty), `diff_ref` |
 | `context` | `scope` | — |
 | `item` | `via`, `project`, `slug`, `name`, `description`, `source_name`, `size`, `sha256`; `drive_name` when `via` is `onedrive` | — |
