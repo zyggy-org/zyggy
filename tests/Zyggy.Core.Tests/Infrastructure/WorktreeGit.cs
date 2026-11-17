@@ -33,6 +33,9 @@ internal sealed class WorktreeGit
     /// <summary>Gets or sets how many commits the job branch is ahead of its base after Finish's commit.</summary>
     public int Ahead { get; set; } = 1;
 
+    /// <summary>Gets or sets how many commits <c>origin/&lt;default&gt;</c> has that the pushed tip lacks (spec 53, the "behind" line).</summary>
+    public int Behind { get; set; }
+
     /// <summary>Gets or sets the changed paths <c>git diff --name-only -z</c> prints, in git's order.</summary>
     public IReadOnlyList<string> ChangedPaths { get; set; } = ["src/new.txt"];
 
@@ -117,6 +120,8 @@ internal sealed class WorktreeGit
                 return OriginUrl is null ? RecordingProcessRunner.Fail(1, "") : RecordingProcessRunner.Ok("origin/" + OriginHeadBranch + "\n");
             case "status":
                 return RecordingProcessRunner.Ok(StatusAfterRun);
+            case "rev-list" when args[^1].Contains("..refs/remotes/origin/", StringComparison.Ordinal):
+                return RecordingProcessRunner.Ok(Behind.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n");
             case "rev-list":
                 return RecordingProcessRunner.Ok(Ahead.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n");
             case "diff":

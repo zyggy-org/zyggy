@@ -147,6 +147,7 @@ public sealed partial class JobRunner
         // Spec 16: a worktree job runs in <nodeDir>/worktrees/<tenant>/<id> on zyggy/<id>; the lock stays on the project.
         var runDirectory = project;
         string? baseSha = null;
+        string? defaultBranch = null;
         var worktrees = new WorktreeRun(_git);
         if (fields.Worktree)
         {
@@ -173,6 +174,7 @@ public sealed partial class JobRunner
             }
 
             baseSha = ((PrepareResult.Prepared)prepared).BaseSha;
+            defaultBranch = ((PrepareResult.Prepared)prepared).DefaultBranch;
         }
 
         var allowedTools = fields.AllowedTools is { Count: > 0 } tools ? tools : policy.DefaultAllowedTools;
@@ -208,16 +210,27 @@ public sealed partial class JobRunner
         var result = await _model.RunAsync(request, ct).ConfigureAwait(false);
         var reply = Map(id, result, minutes, started);
         var hasResultLines = false;
+        var description = string.IsNullOrEmpty(fields.Description) ? null : fields.Description;
+        string? behindLine = null;
         if (baseSha is not null)
         {
             var machine = job.Header.To.Value;
-            // Spec 53: Finish learns the run's outcome and the job's branch (an empty branch counts as absent).
+            // Spec 53: Finish learns the run's outcome, the job's branch (an empty branch counts as absent) and its description.
             var identity = new GitIdentity("zyggy (" + machine + ")", machine + "@zyggy.org");
             var named = string.IsNullOrEmpty(fields.Branch) ? null : fields.Branch;
-            var outcome = await worktrees.FinishAsync(project, runDirectory, id, baseSha, identity, reply.Status, named, ct)
+            var outcome = await worktrees.FinishAsync(project, runDirectory, id, baseSha, identity, reply.Status, named, description, defaultBranch, ct)
                 .ConfigureAwait(false);
             reply = WithWorktree(id, reply, outcome);
             hasResultLines = outcome.ResultLines is not null;
+            behindLine = outcome.BehindLine;
+        }
+
+        // Spec 53 Report body lines: after the branch lines, "description: <text>" when the job has one, then the "behind" line.
+        string[] trailing = [.. new[] { description is null ? null : "description: " + description, behindLine }.OfType<string>()];
+        if (trailing.Length > 0)
+        {
+            reply = reply with { Body = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(reply.Body.Span) + string.Join('\n', trailing) + "\n") };
+            hasResultLines = true;
         }
 
         reply = WithBlocked(id, reply, blockedFile, hasResultLines);

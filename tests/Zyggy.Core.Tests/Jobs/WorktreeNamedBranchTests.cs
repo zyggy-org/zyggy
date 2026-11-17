@@ -181,10 +181,10 @@ public sealed class WorktreeNamedBranchTests : IDisposable
         // Act
         await _h.Build().RunAsync(job, CancellationToken.None);
 
-        // Assert
+        // Assert (the first rev-list is the ahead check; slice 4 adds the behind count after the push)
         new
         {
-            Ahead = Git("rev-list").Single().Arguments[^1],
+            Ahead = Git("rev-list")[0].Arguments[^1],
             Diff = Git("diff").Single().Arguments[^1],
         }.Should().BeEquivalentTo(new { Ahead = OriginNamedSha + ".." + WorktreeGit.TipSha, Diff = OriginNamedSha + "..." + WorktreeGit.TipSha });
     }
