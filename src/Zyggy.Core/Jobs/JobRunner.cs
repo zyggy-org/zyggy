@@ -151,7 +151,7 @@ public sealed partial class JobRunner
         if (fields.Worktree)
         {
             runDirectory = TranscriptPaths.WorktreeFor(nodeDir, job.Header.Tenant, job.Header.Id);
-            var prepared = await worktrees.PrepareAsync(project, runDirectory, id, ct).ConfigureAwait(false);
+            var prepared = await worktrees.PrepareAsync(project, runDirectory, id, fields.Base, ct).ConfigureAwait(false);
             if (prepared.FetchFailed)
             {
                 LogFetchFailed(id);
@@ -203,7 +203,7 @@ public sealed partial class JobRunner
         if (baseSha is not null)
         {
             var machine = job.Header.To.Value;
-            var outcome = await worktrees.FinishAsync(project, runDirectory, id, baseSha, new GitIdentity("zyggy (" + machine + ")", machine + "@zyggy.org"), ct)
+            var outcome = await worktrees.FinishAsync(project, runDirectory, id, baseSha, fields.Base, new GitIdentity("zyggy (" + machine + ")", machine + "@zyggy.org"), ct)
                 .ConfigureAwait(false);
             reply = WithWorktree(id, reply, outcome);
             hasResultLines = outcome.ResultLines is not null;

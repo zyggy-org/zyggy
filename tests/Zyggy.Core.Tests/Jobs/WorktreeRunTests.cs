@@ -360,4 +360,134 @@ public sealed class WorktreeRunTests : IDisposable
         new { reply.Status, reply.DiffRef, Commits = Git("commit").Count, Pushes = Git("push").Count }
             .Should().BeEquivalentTo(new { Status = ReportStatus.Timeout, DiffRef = WorktreeGit.TipSha, Commits = 1, Pushes = 1 });
     }
+
+    // Spec 18 slice 8 (AC-18): a job with base.
+    private Task<Model> BaseJobAsync(string baseBranch = "feature/shop") =>
+        JobRunnerHarness.JobAsync(new JobFields(_project.Root, Worktree: true, Base: baseBranch));
+
+    [Fact]
+    public async Task RunAsync_WithBase_AddsNewBranchFromTheBaseOnOrigin()
+    {
+        // Arrange
+        var job = await BaseJobAsync();
+
+        // Act
+        await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        Git("worktree").Should().ContainSingle(c => Is(c, "add"))
+            .Which.Arguments.Should().Equal("worktree", "add", "-b", Branch(job), WorktreePath(job), WorktreeGit.FeatureSha);
+    }
+
+    [Fact]
+    public async Task RunAsync_WithBaseAbsentOnOrigin_FailedGitErrorBase_NoLocalFallback_ModelNeverStarted()
+    {
+        // Arrange
+        _git.OriginFeatureExists = false;
+        var job = await BaseJobAsync();
+
+        // Act
+        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        new
+        {
+            reply.Status,
+            reply.Reason,
+            Body = Encoding.UTF8.GetString(reply.Body.Span),
+            LocalLookedUp = Git("rev-parse").Any(c => c.Arguments[^1] == "refs/heads/feature/shop"),
+            Model = _h.Model.ReceivedCalls().Count(),
+        }.Should().BeEquivalentTo(new { Status = ReportStatus.Failed, Reason = "git_error", Body = "git_error: base\n", LocalLookedUp = false, Model = 0 });
+    }
+
+    [Fact]
+    public async Task RunAsync_WithBase_PushesTheSameLocalRefToBaseUnforced_BeforeTheBranchIsDeleted()
+    {
+        // Arrange
+        var job = await BaseJobAsync();
+
+        // Act
+        await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        new
+        {
+            Pushes = Git("push").Select(c => string.Join(' ', c.Arguments)).ToList(),
+            BeforeDelete = IndexOf(c => Is(c, "push") && c.Arguments[^1].EndsWith(":refs/heads/feature/shop", StringComparison.Ordinal)) < IndexOf(c => Is(c, "branch", "-D")),
+        }.Should().BeEquivalentTo(new
+        {
+            Pushes = new[]
+            {
+                "push origin refs/heads/" + Branch(job) + ":refs/heads/" + Branch(job),
+                "push origin refs/heads/" + Branch(job) + ":refs/heads/feature/shop",
+            },
+            BeforeDelete = true,
+        });
+    }
+
+    [Fact]
+    public async Task RunAsync_WithBaseFastForwarded_DoneAndBodyNamesIt()
+    {
+        // Arrange
+        var job = await BaseJobAsync();
+
+        // Act
+        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        new { reply.Status, Body = Encoding.UTF8.GetString(reply.Body.Span) }.Should().BeEquivalentTo(new
+        {
+            Status = ReportStatus.Done,
+            Body = "done\n\nbranch " + Branch(job) + " pushed at " + WorktreeGit.TipSha + "\nbranch feature/shop fast-forwarded to " + WorktreeGit.TipSha + "\n",
+        });
+    }
+
+    [Fact]
+    public async Task RunAsync_WithBaseRefused_StillDoneWithDiffRef_BodyNamesTheJobBranchAsResult()
+    {
+        // Arrange
+        _git.FeaturePushRefused = true;
+        var job = await BaseJobAsync();
+
+        // Act
+        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        new { reply.Status, reply.Reason, reply.DiffRef, Body = Encoding.UTF8.GetString(reply.Body.Span) }.Should().BeEquivalentTo(new
+        {
+            Status = ReportStatus.Done,
+            Reason = (string?)null,
+            DiffRef = WorktreeGit.TipSha,
+            Body = "done\n\nbranch " + Branch(job) + " pushed at " + WorktreeGit.TipSha + "\nbranch feature/shop not updated (moved meanwhile); the result is " + Branch(job) + "\n",
+        });
+    }
+
+    [Fact]
+    public async Task RunAsync_WithBaseTheDefaultBranch_OnlyTheJobBranchPushed()
+    {
+        // Arrange
+        var job = await BaseJobAsync("main");
+
+        // Act
+        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        new { Pushes = Git("push").Count, Line = Encoding.UTF8.GetString(reply.Body.Span).EndsWith("\nbranch main not updated: default branch\n", StringComparison.Ordinal) }
+            .Should().BeEquivalentTo(new { Pushes = 1, Line = true });
+    }
+
+    [Fact]
+    public async Task RunAsync_WithBaseAndNoCommits_NothingPushed()
+    {
+        // Arrange
+        _git.StatusAfterRun = "";
+        _git.Ahead = 0;
+        var job = await BaseJobAsync();
+
+        // Act
+        await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        Git("push").Should().BeEmpty();
+    }
 }

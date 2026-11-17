@@ -17,11 +17,23 @@ internal sealed class WorktreeRun(GitClient git)
 
     public static string BranchFor(string jobId) => "zyggy/" + jobId;
 
-    /// <summary>Fetch (best effort), base, stale clean-up and <c>worktree add</c>. The model may start only on <see cref="PrepareResult.Prepared"/>.</summary>
-    public async Task<PrepareResult> PrepareAsync(string project, string worktree, string jobId, CancellationToken ct)
+    /// <summary>
+    /// Fetch (best effort), base, stale clean-up and <c>worktree add</c>. The model may start only on <see cref="PrepareResult.Prepared"/>.
+    /// With <paramref name="baseBranch"/> (spec 18) the branch starts from that branch of the origin, never a local one; absent there is
+    /// <c>base</c>. The start point is always a SHA, so git records no upstream in the project's config.
+    /// </summary>
+    public async Task<PrepareResult> PrepareAsync(string project, string worktree, string jobId, string? baseBranch, CancellationToken ct)
     {
         var hasOrigin = await git.ConfigGetAsync(project, "remote.origin.url", ct).ConfigureAwait(false) is not null;
         var fetchFailed = hasOrigin && !(await git.FetchAsync(project, ct).ConfigureAwait(false)).Succeeded;
+
+        if (baseBranch is not null)
+        {
+            var start = await git.ResolveRefAsync(project, "refs/remotes/origin/" + baseBranch, ct).ConfigureAwait(false);
+            return start is null
+                ? new PrepareResult.Failed("base", fetchFailed)
+                : await AddAsync(project, worktree, jobId, start, fetchFailed, ct).ConfigureAwait(false);
+        }
 
         var defaultBranch = await git.DefaultBranchAsync(project, ct).ConfigureAwait(false);
         var baseSha = defaultBranch is null
@@ -33,6 +45,11 @@ internal sealed class WorktreeRun(GitClient git)
             return new PrepareResult.Failed("default_branch", fetchFailed);
         }
 
+        return await AddAsync(project, worktree, jobId, baseSha, fetchFailed, ct).ConfigureAwait(false);
+    }
+
+    private async Task<PrepareResult> AddAsync(string project, string worktree, string jobId, string baseSha, bool fetchFailed, CancellationToken ct)
+    {
         // An interrupted run of the same job: its folder goes, its branch stays (spec 16 step 3).
         try
         {
@@ -53,8 +70,13 @@ internal sealed class WorktreeRun(GitClient git)
         return added.Succeeded ? new PrepareResult.Prepared(baseSha, fetchFailed) : new PrepareResult.Failed("worktree_add", fetchFailed);
     }
 
-    /// <summary>Commit, push when ahead, clean up — after every model run that started (done, failed or timeout).</summary>
-    public async Task<WorktreeOutcome> FinishAsync(string project, string worktree, string jobId, string baseSha, GitIdentity identity, CancellationToken ct)
+    /// <summary>
+    /// Commit, push when ahead, clean up — after every model run that started (done, failed or timeout). With
+    /// <paramref name="baseBranch"/> the pushed tip also goes to that branch of the origin when git accepts it as a fast-forward; a refusal
+    /// keeps <c>zyggy/&lt;id&gt;</c> as the result and names it, the status unchanged (spec 18). The project's default branch is never
+    /// pushed this way.
+    /// </summary>
+    public async Task<WorktreeOutcome> FinishAsync(string project, string worktree, string jobId, string baseSha, string? baseBranch, GitIdentity identity, CancellationToken ct)
     {
         var branch = BranchFor(jobId);
         var status = await git.StatusPorcelainAsync(worktree, ct).ConfigureAwait(false);
@@ -111,14 +133,40 @@ internal sealed class WorktreeRun(GitClient git)
             return new WorktreeOutcome(files, null, string.Join('\n', lines), "push") { RemoveFailed = !removed };
         }
 
+        lines.Add("branch " + branch + " pushed at " + tip);
+        if (baseBranch is not null)
+        {
+            // Before the local branch goes: the base push sends the same local ref.
+            lines.Add(await PushToBaseAsync(project, branch, baseBranch, tip, ct).ConfigureAwait(false));
+        }
+
         // git refuses to delete a branch a worktree still has checked out; the next run of this job id cleans both.
         if (removed)
         {
             await git.DeleteBranchAsync(project, branch, ct).ConfigureAwait(false);
         }
 
-        lines.Add("branch " + branch + " pushed at " + tip);
         return new WorktreeOutcome(files, tip, string.Join('\n', lines), null) { RemoveFailed = !removed };
+    }
+
+    // Spec 18: never a default branch (the merge kind, which may, is not built); never forced, so a moved base is refused by git itself.
+    private async Task<string> PushToBaseAsync(string project, string branch, string baseBranch, string tip, CancellationToken ct)
+    {
+        var defaultBranch = await git.DefaultBranchAsync(project, ct).ConfigureAwait(false);
+        if (defaultBranch is null)
+        {
+            return "branch " + baseBranch + " not updated: default branch unknown";
+        }
+
+        if (string.Equals(defaultBranch, baseBranch, StringComparison.Ordinal))
+        {
+            return "branch " + baseBranch + " not updated: default branch";
+        }
+
+        var pushed = await git.PushBranchToAsync(project, branch, baseBranch, ct).ConfigureAwait(false);
+        return pushed.Succeeded
+            ? "branch " + baseBranch + " fast-forwarded to " + tip
+            : "branch " + baseBranch + " not updated (moved meanwhile); the result is " + branch;
     }
 
     // A folder held open is removed at the next run of this job id, else by hand (spec 16 Failure modes); the report is unaffected.
