@@ -99,6 +99,36 @@ public sealed class MemoryMirrorSnapshotTests : IDisposable
             "acme/alice/business/clients/acme-corp.md");
     }
 
+    // AC-25: one snapshot holds exactly one principal: files of another user of the same tenant, and of another tenant, in the same
+    // memory root never reach it, whatever the reach.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Build_OtherPrincipalsInRoot_OnlyTheOnePrincipalDirectory(bool businessReach)
+    {
+        // Arrange
+        WriteAtRoot("acme/bob/profile.md");
+        WriteAtRoot("acme/bob/business/clients/acme-corp.md");
+        WriteAtRoot("other/alice/profile.md");
+        WriteAtRoot("other/alice/business/clients/acme-corp.md");
+        WriteAtRoot("loose.md");
+        var reach = businessReach ? MirrorReach.Of(["business/"]) : MirrorReach.Default;
+
+        // Act
+        var snapshot = Build(businessReach ? WorkLaptop : HomeLaptop, reach);
+
+        // Assert
+        snapshot.Files.Keys.Where(k => k != "MIRROR.md")
+            .Should().NotBeEmpty().And.OnlyContain(k => k.StartsWith("acme/alice/", StringComparison.Ordinal));
+    }
+
+    private void WriteAtRoot(string relative)
+    {
+        var full = Path.Combine(_tree.Root, relative.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+        File.WriteAllText(full, "- other principal\n");
+    }
+
     // AC-2: a symbolic link under business/ (file or folder) is skipped.
     [Fact]
     public void Build_BusinessReach_SymbolicLinksSkipped()

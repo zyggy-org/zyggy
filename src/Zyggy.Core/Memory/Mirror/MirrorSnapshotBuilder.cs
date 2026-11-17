@@ -7,7 +7,7 @@ using Zyggy.Core.Tenancy;
 namespace Zyggy.Core.Memory.Mirror;
 
 /// <summary>
-/// Builds the snapshot one machine may read from a principal's memory working tree (spec 47 "What each machine may read"): the files
+/// Builds the snapshot one machine may read from one principal's memory at a committed revision (spec 47 "What each machine may read"): the files
 /// its reach covers, never <c>inbox/</c>, <c>auto/</c>, <c>.dream/</c>, a symbolic link or an archived item file (under
 /// <c>archive/</c> only sidecars), each file withheld whole when a line hits a secret or contact-detail pattern — its path logged once,
 /// never the line — plus <c>MIRROR.md</c>. Reads files only; no process, no network.
@@ -27,7 +27,10 @@ internal sealed partial class MirrorSnapshotBuilder
     }
 
     /// <summary>Builds the snapshot of <paramref name="memory"/> for <paramref name="machine"/>.</summary>
-    /// <param name="memory">The principal's memory paths (the working tree at the source revision).</param>
+    /// <param name="memory">
+    /// The one principal's memory paths, in a folder holding exactly the files committed at the source revision (never the memory
+    /// working tree; the publisher exports that folder). Only that principal's directory is read: one snapshot, one principal.
+    /// </param>
     /// <param name="machine">The machine the mirror serves (for the log).</param>
     /// <param name="reach">What it may read.</param>
     /// <param name="source">The revision and date <c>MIRROR.md</c> names.</param>
