@@ -26,6 +26,8 @@
     <EmbeddedResource Include="Jobs/Prompts/*" LogicalName="Zyggy.Core.Jobs.Prompts.%(Filename)%(Extension)" />
     <!-- Deliverable 18: the bodies of a job under a mandate are templates shipped with the binary (no free text, §8). -->
     <EmbeddedResource Include="Bus/MandateJobs/*" LogicalName="Zyggy.Core.Bus.MandateJobs.%(Filename)%(Extension)" />
+    <!-- Deliverable 18: the supervisor step's prompt names its event by id only; no bus text is ever filled in. -->
+    <EmbeddedResource Include="Supervision/Prompts/*" LogicalName="Zyggy.Core.Supervision.Prompts.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

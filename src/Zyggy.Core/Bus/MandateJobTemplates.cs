@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 
 using Zyggy.Core.Envelope;
 
@@ -9,7 +10,7 @@ namespace Zyggy.Core.Bus;
 /// the binary as <c>Zyggy.Core.Bus.MandateJobs.&lt;kind&gt;.md</c>, filled only with the mandate's <c>spec</c> and <c>spec_commit</c>,
 /// the step label and the reference id. Nothing a model, a report or the bus holds can reach the text otherwise.
 /// </summary>
-public static class MandateJobTemplates
+public static partial class MandateJobTemplates
 {
     private const string Absent = "(none)";
 
@@ -37,11 +38,18 @@ public static class MandateJobTemplates
     public static string Render(MandateJobKind kind, string? spec, string? specCommit, string step, EnvelopeId? reference)
     {
         ArgumentNullException.ThrowIfNull(step);
-        return Template(kind)
-            .Replace("{{spec_commit}}", specCommit ?? Absent, StringComparison.Ordinal)
-            .Replace("{{spec}}", spec ?? Absent, StringComparison.Ordinal)
-            .Replace("{{step}}", step, StringComparison.Ordinal)
-            .Replace("{{ref}}", reference?.Value ?? Absent, StringComparison.Ordinal)
-            .TrimEnd('\n') + "\n";
+        var values = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["spec_commit"] = specCommit ?? Absent,
+            ["spec"] = spec ?? Absent,
+            ["step"] = step,
+            ["ref"] = reference?.Value ?? Absent,
+        };
+
+        // One pass (AC-20): a value is inserted once and never searched for a placeholder again.
+        return Placeholder().Replace(Template(kind), m => values[m.Groups[1].Value]).TrimEnd('\n') + "\n";
     }
+
+    [GeneratedRegex(@"\{\{(spec_commit|spec|step|ref)\}\}", RegexOptions.CultureInvariant)]
+    private static partial Regex Placeholder();
 }
