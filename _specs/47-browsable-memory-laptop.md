@@ -3,6 +3,7 @@
 ## Status
 
 - 2026-11-17: spec written in an unattended job from the owner's brief (no interview held; every gap is under Open questions). Not approved. The `spec-critic` pass has not run yet (the job could not start agents); it runs before the owner reads this.
+- 2026-11-17: the 14 open questions decided (list under "Decided 2026-11-17": all 14 by Zyggy on the owner's standing delegation, each as recommended) and written into Behavior, Configuration, Decisions and the acceptance criteria; AC-21..AC-24 added; build plan `_plans/47-browsable-memory-laptop.md` written. Not approved; `spec-critic` still to run.
 
 ## Goal
 
@@ -16,25 +17,25 @@ Today a laptop sees no memory at all: the Hub runs on Central only (stdio), `zyg
 - **Founding-spec sections**: §7 Memory model and dream pass (layout, dream steps 6–7, Hub "On laptops" paragraph), §8 Work boundary, Secrets, Isolation, Injection, Data protection, §5 Credentials per machine and proxy, §9 design rules, §10 Laptops and Central, §11 Runbooks, §13 (MVP-scope decision), §14.
 - **Reference feature**: the dream pass on Central (`_specs/28-central-dream-local.md`) for everything Central does to the memory repository — the verb, the lock, the run record, the shared commit-and-push path with one rebase retry and never a force push. The laptop side follows the discovery registry (`_specs/14-discovery-registry-routing.md`, the CLAUDE.md reference feature) for a Node timer that keeps one git checkout current, and laptop setup in one command (`_specs/42-laptop-setup-one-command.md`) for what `zyggy setup` writes into the user's Claude Code configuration. Central supervision (`_specs/18-central-supervision.md`) is the reference for the work-machine list and the `outbound` memory paths.
 - **Facts verified on 2026-11-17** (code and specs read in this worktree at `2ba708b`):
-  - The memory repository lives on Central at `/srv/agent/central/memory`, layout `<tenant>/<user>/` with `profile.md`, `preferences.md`, `agents.md`, `private/<category>/`, `business/<category>/`, `daily/`, `inbox/`, `auto/`, `.dream/`, `archive/<project>/` (founding spec §7). Central pushes it with a read/write deploy key (§8 Secrets).
+  - The memory repository lives on Central at `/srv/agent/central/memory`, layout `<tenant>/<user>/` with `profile.md`, `preferences.md`, `agents.md`, `private/<category>/`, `business/<category>/`, `daily/`, `inbox/`, `auto/`, `.dream/`, `archive/<project>/` (founding spec §7). An archived item is `archive/<project>/<slug>.<ext>`, its sidecar `archive/<project>/<slug>.md` (name, description, project, media type, size, SHA-256, archived date, source name). Central pushes the memory repository with a read/write deploy key `~/.ssh/zyggy_zyggy-memory_ed25519` (§8 Secrets).
   - `zyggy dream` runs from `zyggy-dream.service` (nightly timer, request-file path unit, by hand). It ends with a commit and push through the shared memory publisher; outcomes `committed`, `nothing_to_do`, `aborted`, `failed`, `partial`; exit 7 = committed but push deferred (spec 28). The `remember` and `archive` writers commit to the same repository between dream passes.
-  - `supervision.workMachines` exists in `node.json` and is read (`SupervisionSettings`). `supervision.outboundPaths` is specified by spec 18 (slice 11, ⚠️ read root) and **not built yet**: no code reads it today. Nothing in `src/` reads `instance/work-boundary.json`; the handover for spec 18 says that file and `security.md` name `business/` as the `outbound` path.
+  - `supervision.workMachines` exists in `node.json` and is read (`SupervisionSettings`). `supervision.outboundPaths` is specified by spec 18 (Configuration table: `node.json` (Central), default `[]`, "empty with a non-empty `workMachines` refuses the start"; slice 11) and **not built yet**: no code in `src/` reads it today. Nothing in `src/` reads `instance/work-boundary.json`.
   - `zyggy setup` on a laptop writes user-scope Claude Code settings (an env variable, deny rules, skills) and clones the public `zyggy-core` with `GIT_TERMINAL_PROMPT=0`; git's own `http.proxy` serves the work laptop (spec 42).
-  - The GitHub token a laptop holds may be an account-wide Git Credential Manager login, not a repository-scoped token (spec 42, accepted by the owner on 2026-11-04). Such a login can read — and write — every repository of the owner's account, including the memory repository.
+  - The GitHub token a laptop holds may be an account-wide Git Credential Manager login, not a repository-scoped token (spec 42, accepted by the owner on 2026-11-04). Such a login can read — and write — every repository of the owner's account, including the memory repository. The bus's `github-pat` is read from the secret store for the GitHub API poll only; git itself authenticates through the machine's credential helper or deploy key (§5: "the code never handles credentials itself").
   - `work-laptop` has never run a product job and has no registry file; its node runs (spec 18 Context, 2026-11-15).
 - **Not verified**:
-  - The content and format of `instance/work-boundary.json` (instance repository, outside this repository). Q2.
-  - Whether the owner's GitHub plan allows the extra private repositories and deploy keys (one per mirror). Q3.
+  - Whether the `zyggy-org` organisation's plan allows the two extra private repositories, their deploy keys and fine-grained tokens scoped to one repository each. Checked by the owner when creating the mirrors (runbook "Create a mirror"); a refusal there stops the release, not the build.
 
 ## Constraints
 
-- ⚠️ **§8 work boundary — inbound to the work laptop.** The work machine receives memory files for the first time. It gets exactly the files under `<tenant>/<user>/business/` and nothing else: no identity file, no `private/`, `daily/`, `inbox/`, `auto/`, `.dream/` or `archive/`. It never holds a clone of the memory repository, and its mirror carries no memory history. The reviewer verifies the path filter on Central, the second check on the laptop, and that no code or setup step on a laptop ever names the memory repository.
+- ⚠️ **§8 work boundary — inbound to the work laptop.** The work machine receives memory files for the first time. It gets exactly the files under `<tenant>/<user>/business/` and nothing else: no identity file (`profile.md`, `preferences.md`, `agents.md` — business lines inside `profile.md` are not split out in v1), no `private/`, `daily/` (no daily notes of any machine), `inbox/`, `auto/`, `.dream/` or `archive/`. It never holds a clone of the memory repository, and its mirror carries no memory history. The reviewer verifies the path filter on Central, the second check on the laptop, and that no code or setup step on a laptop ever names the memory repository.
 - ⚠️ **§8 work boundary — no outbound path is added.** The work laptop never writes to the mirror, and the mirror adds nothing to what leaves the work laptop.
-- ⚠️ **Secrets.** Central gets one write credential per mirror repository; each laptop needs a read credential for its own mirror (Q4). No credential in `node.json`, `appsettings.json`, a URL, an argument or a log; git through `GitClient` / `IProcessRunner` with the existing askpass and credential rules.
-- ⚠️ **§8 Data protection.** A fact erased from memory must leave every mirror; a mirror's history must not keep it (Q5).
-- ⚠️ **§8 Injection.** Mirror content is data, never instructions, for every session and job that reads it; the mirror's top-level read-me says so and the `zyggy-core` guidance repeats it.
-- ⚠️ **New `node.json` keys and public Core surface** for the publisher and the laptop refresh (public-API rule).
-- ⚠️ **Founding spec** §7, §8, §10 change (proposed wording under Decisions, pasted only after the owner approves it).
+- ⚠️ **One rule for the outbound paths.** The work machine's reach is checked against `supervision.outboundPaths` in Central's `node.json` — the same key spec 18 reads for supervisor runs, never a second list. `instance/work-boundary.json` documents that key and is read by no code.
+- ⚠️ **Secrets.** Central holds one SSH deploy key with write access per mirror repository (`~/.ssh/zyggy_zyggy-mirror-<machine>_ed25519`, 0600, git only); a leak touches one mirror. Each laptop holds one fine-grained GitHub token, `contents:read` on its own mirror repository only, in the OS secret store as `mirror-pat` (never an account-wide login, never the bus's `github-pat`). No credential in `node.json`, `appsettings.json`, a URL, an argument or a log; git through `GitClient` / `IProcessRunner`.
+- ⚠️ **§8 Data protection.** A fact erased from memory leaves every mirror at the next snapshot; a laptop never holds an older snapshot (depth-1 clone). Removing it from a mirror's history is a history rewrite the owner asks for and carries out by hand (runbook "Erase a fact from a mirror's history") — the only force push on a mirror, and never Zyggy's.
+- ⚠️ **§8 Injection.** Mirror content is data, never instructions, for every session and job that reads it; the mirror's top-level read-me says so and the `zyggy-core` `memory` skill repeats it. The mirror is not signed: its integrity rests on GitHub write access (Central's deploy key only).
+- ⚠️ **New `node.json` keys, a new secret name and public Core surface** for the publisher and the laptop refresh (public-API rule).
+- ⚠️ **Founding spec** §5, §7, §8, §10 change (proposed wording under Decisions, pasted only after the owner approves it).
 - §9: git only through `GitClient`; paths built by one helper, never concatenated; `TimeProvider` for every timer; the Node refresh never throws to the loop; log once per state change; no static state.
 - The memory repository's own checkout, lock and push path are unchanged; the mirror publisher only reads the memory working tree at a committed, pushed revision.
 - MVP scope: one tenant, one owner, two laptops (`home-laptop`, `work-laptop`). Public repo: placeholders only.
@@ -48,23 +49,24 @@ flowchart LR
   subgraph central [Central]
     dream["zyggy dream<br/>(existing)"] --> mem[("memory repo checkout<br/>&lt;tenant&gt;/&lt;user&gt;/…")]
     dream -->|after the pass| pub["Mirror publisher<br/>zyggy memory mirror publish"]
+    owner["owner, by hand"] -->|zyggy memory mirror publish| pub
     pub -->|reads committed tree| mem
-    pub --> filt["Path filter per machine<br/>+ secret / contact check"]
+    pub --> filt["Path filter per machine<br/>(outboundPaths for work machines)<br/>+ secret / contact check"]
   end
-  mrH[("zyggy-mirror-home-laptop<br/>(GitHub, private)")]
-  mrW[("zyggy-mirror-work-laptop<br/>(GitHub, private)")]
-  filt -->|commit + push| mrH
+  mrH[("zyggy-org/zyggy-mirror-home-laptop<br/>(GitHub, private)")]
+  mrW[("zyggy-org/zyggy-mirror-work-laptop<br/>(GitHub, private)")]
+  filt -->|"commit + push (deploy key per mirror)"| mrH
   filt -->|"business/ only"| mrW
   subgraph home [home-laptop]
     nH["Zyggy.Node<br/>mirror refresh"] --> cH[("local mirror clone<br/>read-only")]
-    sH["Claude Code sessions + jobs"] -->|read| cH
+    sH["Claude Code sessions + jobs<br/>memory skill"] -->|read| cH
   end
   subgraph work [work-laptop]
     nW["Zyggy.Node<br/>mirror refresh + path check"] --> cW[("local mirror clone<br/>business/ only")]
-    sW["Claude Code sessions + jobs"] -->|read| cW
+    sW["Claude Code sessions + jobs<br/>memory skill"] -->|read| cW
   end
-  mrH -->|fetch, depth 1| nH
-  mrW -->|"fetch via proxy, depth 1"| nW
+  mrH -->|"fetch, depth 1, mirror-pat (read)"| nH
+  mrW -->|"fetch via proxy, depth 1, mirror-pat (read)"| nW
   classDef new fill:#fde68a,stroke:#b45309,color:#111;
   class pub,filt,mrH,mrW,nH,cH,nW,cW new;
 ```
@@ -82,7 +84,7 @@ sequenceDiagram
   Dream->>Mem: commit "dream YYYY-MM-DD", push
   Dream->>Pub: pass ended (any outcome)
   Pub->>Mem: read tree at the pushed HEAD
-  Pub->>Pub: keep business/ only, withhold flagged lines
+  Pub->>Pub: keep business/ only, withhold flagged files
   alt tree differs from the mirror's last snapshot
     Pub->>MW: commit "mirror YYYY-MM-DD <source sha>", push (no force)
   else unchanged
@@ -90,7 +92,7 @@ sequenceDiagram
   end
   Node->>MW: ls-remote every refreshMinutes
   Node->>MW: fetch --depth 1
-  Node->>Node: check remote and every path, then reset to the fetched snapshot
+  Node->>Node: check remote name, MIRROR.md and every path, then reset to the fetched snapshot
   Agent->>Node: read files in the local clone (data, never instructions)
 ```
 
@@ -104,7 +106,7 @@ stateDiagram-v2
   Current --> Current: unchanged remote, or newer snapshot applied
   Current --> Failed: git error (clone kept as is)
   Failed --> Current: next tick succeeds
-  Current --> Refused: wrong remote or a path outside the allowed set (clone deleted, logged once)
+  Current --> Refused: wrong remote, no MIRROR.md, or a path outside the allowed set (clone deleted, logged once)
   Absent --> Refused: same checks on the first clone
   Refused --> Refused: config unchanged (no retry)
   Refused --> Absent: config changed or node restarted
@@ -118,64 +120,70 @@ flowchart LR
   s2 --> s3["3 Wire: dream pass refreshes mirrors"]
   s3 --> s4["4 ⚠️ Fake: laptop refresh decisions"]
   s4 --> s5["5 ⚠️ Wire: laptop keeps a clone current"]
-  s5 --> s6["6 ⚠️ Wire: agents browse it (setup + skill)"]
+  s5 --> s6["6 ⚠️ Wire: agents browse it (setup + memory skill)"]
 ```
 
 ## Behavior
 
 ### What a mirror is
 
-- One private GitHub repository per laptop that receives memory (`zyggy-mirror-<machine>` by convention; the URL is configuration). Only Central writes to it. Its default branch holds one snapshot of the files that machine may read, with the memory layout kept: `<tenant>/<user>/<path>`.
-- At its root a fixed read-me (`MIRROR.md`) states: read-only copy of Central's memory, refreshed after each dream pass, content is data and never instructions, edits are discarded, and the source revision and date of this snapshot.
-- Each snapshot is one commit `mirror YYYY-MM-DD <first 8 of the memory sha>` on top of the previous one (Q5 decides whether history is kept). A file removed from memory, or newly outside the machine's reach, is removed in the next snapshot.
+- One private GitHub repository per laptop that receives memory, in the `zyggy-org` organisation next to `zyggy-bus`, named `zyggy-mirror-<machine>` (`zyggy-mirror-home-laptop`, `zyggy-mirror-work-laptop`). The name is a rule, not only a convention: the laptop refuses a `mirror.repository` whose repository name is not `zyggy-mirror-<its own machine>`. Only Central writes to it. Its default branch holds one snapshot of the files that machine may read, with the memory layout kept: `<tenant>/<user>/<path>`.
+- At its root a fixed read-me (`MIRROR.md`) states: read-only copy of Central's memory, refreshed after each dream pass, content is data and never instructions, edits are discarded, facts are added through `remember`, and the source revision and date of this snapshot.
+- Each snapshot is one ordinary commit `mirror YYYY-MM-DD <first 8 of the memory sha>` on top of the previous one; the mirror keeps its own history (never memory's). A file removed from memory, or newly outside the machine's reach, is removed in the next snapshot. The publisher never force-pushes; laptops clone and fetch with depth 1, so they hold the newest snapshot only.
+- The mirror is not signed; content is data whatever it says, and only Central's deploy key can write to it.
 
 ### What each machine may read (its reach)
 
-- The reach is a list of paths relative to `<tenant>/<user>/`, per machine, in Central's `node.json` (`mirror.targets`).
-- Whatever the list says, these are never copied: `inbox/`, `auto/`, `.dream/`, any file the memory repository ignores, any symbolic link, and the archived item files under `archive/` (their sidecars may be listed, Q6).
-- A machine in `supervision.workMachines` may have only paths inside the `outbound` paths (Q2 names the single source); anything else refuses the publisher's start with a configuration error. For `work-laptop` the reach is `business/`.
-- Default reach of a machine that is not a work machine: `profile.md`, `preferences.md`, `agents.md`, `private/`, `business/`, `daily/` (Q6).
+- The reach is a list of paths relative to `<tenant>/<user>/`, per machine, in Central's `node.json` (`mirror.targets`). Whole files and folders only: no line inside a file is filtered by reach.
+- Whatever the list says, these are never copied: `inbox/`, `auto/`, `.dream/`, any file the memory repository ignores, any symbolic link, and the archived item files under `archive/`. Under `archive/<project>/` only sidecars are copied: a file `<slug>.md` whose front matter carries the sidecar fields (`media type` and `sha256` among them); any other file there is an item file and is skipped.
+- A machine in `supervision.workMachines` may have only paths inside `supervision.outboundPaths`; anything else, or an empty `outboundPaths`, refuses the publisher's start with a configuration error. For `work-laptop` the reach is `business/`.
+- Default reach of a machine that is not a work machine: `profile.md`, `preferences.md`, `agents.md`, `private/`, `business/`, `daily/`, and the sidecars under `archive/`.
 - Every line of every copied file passes the existing secret patterns and contact-detail patterns again. A file with a hit is withheld whole from that snapshot (its earlier copy is removed too), and the publisher logs the file path once — never the line.
 
 ### Publishing on Central
 
+- The mirror is refreshed by exactly two triggers: the end of every dream pass, and `zyggy memory mirror publish` run by hand. A `remember` or `archive` commit does not publish; it reaches the mirrors at the next dream pass or the next manual publish.
 - `zyggy memory mirror publish [--machine <name>] [--dry-run]` builds and pushes the snapshot of each target (or one), from the memory working tree at its current HEAD, only when HEAD equals the pushed remote branch (an unpushed memory commit is never mirrored).
+- A target whose `repository` equals the memory repository's remote URL (compared after normalising SSH and HTTPS forms of the same GitHub repository) refuses the publisher's start with a configuration error. Central is the only machine that knows that URL; laptops are never given it.
 - A target is published when its filtered tree differs from the tree of the mirror's last snapshot; otherwise nothing is committed (idempotent).
-- The publisher keeps a checkout of each mirror under Central's state directory, commits with `add` + `commit` of exactly the snapshot, and pushes through the shared path (one fetch-and-rebase retry, never a force push, unless Q5 chooses the single-commit history).
+- The publisher keeps a checkout of each mirror under Central's state directory, commits with `add` + `commit` of exactly the snapshot, and pushes through the shared path (one fetch-and-rebase retry, never a force push) with that mirror's own deploy key (`GIT_SSH_COMMAND` naming the key file for that call only).
 - It holds its own lock, so two publishes never overlap; it waits for no dream lock because it reads only committed content.
 - `--dry-run` prints, per target, the files that would be added, changed, removed and withheld, and touches nothing.
-- After every dream pass, whatever its outcome, `zyggy dream` runs the publish of every target before it exits. The dream's exit code and outcome are unchanged by the mirror; the run record gains one `mirror` entry per target (`published <sha>`, `unchanged`, `failed <reason>`, `withheld <n>`). A failed target is retried at the next pass or by hand.
+- After every dream pass, whatever its outcome, `zyggy dream` runs the publish of every target before it exits. The dream's exit code and outcome are unchanged by the mirror; the run record gains one `mirror` entry per target (`published <sha>`, `unchanged`, `failed <reason>`, `withheld <n>`, `skipped unpushed`). A failed target is retried at the next pass or by hand.
 
 ### Keeping a clone on a laptop
 
 - When `mirror.repository` is set in the laptop's `node.json`, the Node service clones it to `mirror.path` at start, then checks the remote every `mirror.refreshMinutes` (`ls-remote`), and fetches only when the remote head moved. Clone and fetch are shallow (depth 1), so the laptop never holds an older snapshot.
-- Before the working tree is updated, the node checks (a) that the clone's `origin` is exactly `mirror.repository`, and (b) that every path of the fetched snapshot is `MIRROR.md` or lies under one of `mirror.allowedPaths` below `<tenant>/<user>/`. On a failure it deletes the clone, logs once, and shows `refused` with the reason until the configuration changes or the node restarts.
+- Every git call on the mirror authenticates with the laptop's `mirror-pat` from the OS secret store, handed to that one git process through its environment as an HTTP authorization header for the mirror's URL, with the machine's credential helpers switched off for that call. The account-wide login of the machine is therefore never used for the mirror, and the token never appears in an argument, a URL, a file or a log. A missing `mirror-pat` is `failed` with a detail naming the secret, never a value.
+- Before the working tree is updated, the node checks (a) that the clone's `origin` is exactly `mirror.repository` and that its repository name is `zyggy-mirror-<this machine>`, (b) that the snapshot holds `MIRROR.md` at its root, and (c) that every other path of the fetched snapshot lies under one of `mirror.allowedPaths` below `<tenant>/<user>/` and under none of `inbox/`, `auto/`, `.dream/`. On a failure it deletes the clone, logs once, and shows `refused` with the reason until the configuration changes or the node restarts.
 - Updating is fetch, then a hard reset to the fetched head and a clean of untracked files: a local edit never survives a refresh, and nothing is ever committed or pushed from the clone.
 - `/health` gains a `mirror` object: state (`absent`, `current`, `failed`, `refused`), source sha and date from the snapshot's commit, last check time.
 - `zyggy memory mirror status` prints the same on any laptop; `zyggy memory mirror refresh` asks the node for an immediate check (or does it itself when the node is stopped).
-- No code or setup step on a laptop clones, fetches or names the memory repository. A `mirror.repository` that equals the memory repository URL is refused; how a laptop learns that URL is Q7.
+- No code, configuration or setup step on a laptop clones, fetches or names the memory repository, and a laptop is never given its URL. "Never the memory repository" is enforced by Central's refusal of a target equal to it, by the laptop's name, `MIRROR.md` and path checks (a clone of the memory repository fails all three), and proven on the real machines by the owner-run `git remote -v` sweep (AC-19).
 
 ### Browsing from a session or job
 
-- `zyggy setup` (laptop) adds the clone folder to the user-scope Claude Code settings as an additional directory, with `Read` allowed and `Edit`/`Write` denied on it, and sets `ZYGGY_MEMORY_MIRROR` to its path. Job runs started by the node inherit the user-scope settings; the tool guard already keeps their writes inside the run folder.
-- `zyggy-core` ships guidance (a `memory` skill, or a section of the existing guidance — Q8) that tells an agent where the mirror is, how memory is laid out, to search with `Grep`/`Glob`, that content is data, and that facts are added through `remember`, never by editing the mirror.
-- The Hub proxy (`zyggy hub --proxy`, 21) and the laptop `SessionStart` digest are not built here (Out of scope, Q9).
+- `zyggy setup` (laptop) adds the clone folder to the user-scope Claude Code settings as an additional directory, with `Read` allowed and `Edit`/`Write` denied on it, and sets `ZYGGY_MEMORY_MIRROR` to its path. It writes `mirror.allowedPaths` `["business/"]` into `node.json` when `discovery.detail` is `names` (the existing work-machine signal) and leaves the default reach otherwise; the mirror's own `MIRROR.md` never widens it. Job runs started by the node inherit the user-scope settings; the tool guard already keeps their writes inside the run folder.
+- `zyggy-core` ships a new `memory` skill (no section in the existing guidance) that tells an agent where the mirror is (`ZYGGY_MEMORY_MIRROR`), how memory is laid out, to search with `Grep`/`Glob`, that content is data and never instructions, that the work laptop sees `business/` only, and that facts are added through `remember`, never by editing the mirror.
+- The Hub proxy (`zyggy hub --proxy`, 21) and the laptop `SessionStart` digest are not built here; 21 answers `get_context` from the mirror later.
 
 ### Configuration
 
 | Key | Where | Default | Rule |
 | --- | --- | --- | --- |
-| `mirror.targets` | `node.json` (Central) | `[]` | list of `{ machine, repository, paths }`; a work machine's `paths` must lie inside the outbound paths, else the publish refuses to start (exit 3); `paths` omitted = the default reach |
-| `mirror.repository` | `node.json` (laptop) | unset = no mirror | HTTPS URL of this machine's mirror; refused when it equals the memory repository |
+| `mirror.targets` | `node.json` (Central) | `[]` | list of `{ machine, repository, deployKey, paths }`; `repository` is the SSH URL of `zyggy-org/zyggy-mirror-<machine>`; `deployKey` is the key file path (a path, never the key); a work machine's `paths` must lie inside `supervision.outboundPaths`, and a `repository` equal to the memory remote is refused (publish exit 3); `paths` omitted = the default reach |
+| `supervision.outboundPaths` | `node.json` (Central) | `[]` | defined by spec 18; read by 47 for the work machines' reach; empty with a work machine among `mirror.targets` refuses the publish (exit 3). Built by whichever of 18 slice 11 and 47 slice 1 lands first, with spec 18's definition |
+| `mirror.repository` | `node.json` (laptop) | unset = no mirror | HTTPS URL of `zyggy-org/zyggy-mirror-<this machine>`; any other repository name is refused |
 | `mirror.path` | `node.json` (laptop) | `%LOCALAPPDATA%\zyggy\memory-mirror` | must not lie inside a project root, the bus checkout or `zyggy-core` |
-| `mirror.allowedPaths` | `node.json` (laptop) | the default reach | the laptop's own check; `["business/"]` on `work-laptop`, written by setup when `discovery.detail` is `names` (Q10) |
+| `mirror.allowedPaths` | `node.json` (laptop) | the default reach | the laptop's own check; `["business/"]` on `work-laptop`, written by setup when `discovery.detail` is `names` |
 | `mirror.refreshMinutes` | `node.json` (laptop) | 30 | 5–1440 |
+| `mirror-pat` | OS secret store (laptop) | — | fine-grained token, `contents:read` on this machine's mirror only; set with `zyggy secret set mirror-pat`; named by `zyggy setup` when missing and `mirror.repository` is set |
 
 ### CLI
 
 | Verb | Machine | Exit codes |
 | --- | --- | --- |
-| `zyggy memory mirror publish [--machine <name>] [--dry-run]` | Central | 0 published or unchanged · 2 usage · 3 configuration (reach outside outbound, unknown machine, memory not pushed) · 4 locked · 6 git error (any target) · 8 a file withheld (published otherwise) |
+| `zyggy memory mirror publish [--machine <name>] [--dry-run]` | Central | 0 published or unchanged · 2 usage · 3 configuration (reach outside outbound, empty outbound, target equal to the memory repository, unknown machine, memory not pushed) · 4 locked · 6 git error (any target) · 8 a file withheld (published otherwise) |
 | `zyggy memory mirror status [--json]` | laptop | 0 current · 1 absent · 5 refused · 6 failed |
 | `zyggy memory mirror refresh` | laptop | as `status`, after one check |
 
@@ -185,54 +193,65 @@ flowchart LR
 | --- | --- | --- |
 | Mirror push rejected twice (someone wrote to the mirror) | target `failed git_error`, exit 6, next pass retries; no force | "Mirror push rejected": find the foreign commit, revert it on GitHub |
 | A copied line matches a secret or contact pattern | file withheld, path logged once, exit 8 / run record `withheld` | "File withheld from a mirror": fix the memory line, rerun publish |
-| Work machine's reach outside the outbound paths | publish refused at start, exit 3, nothing pushed | "Mirror reach refused" |
+| Work machine's reach outside the outbound paths, or outbound paths empty | publish refused at start, exit 3, nothing pushed | "Mirror reach refused" |
+| A target names the memory repository | publish refused at start, exit 3, nothing pushed | "Mirror reach refused" |
 | Laptop fetch fails (offline, proxy) | `failed`, clone kept, logged once per streak | "Mirror not refreshing" |
-| Snapshot holds a path outside `mirror.allowedPaths`, or wrong remote | clone deleted, `refused`, logged once | "Mirror refused on a laptop": check Central's `mirror.targets` |
+| Snapshot holds a path outside `mirror.allowedPaths`, no `MIRROR.md`, wrong remote or wrong repository name | clone deleted, `refused`, logged once | "Mirror refused on a laptop": check Central's `mirror.targets` and the laptop's `mirror.repository` |
 | Local edit in the clone | discarded at the next refresh | — |
-| Read credential missing on the laptop | `failed git_error` naming the credential, never its value | "Mirror credential" |
+| `mirror-pat` missing or rejected on the laptop | `failed git_error` naming `mirror-pat`, never its value | "Mirror credential": create the fine-grained token, `zyggy secret set mirror-pat` |
+| Deploy key of a mirror missing on Central | that target `failed git_error`, the others published | "Create a mirror" |
+| A fact must leave a mirror's history | — | "Erase a fact from a mirror's history": the owner rewrites the mirror's history by hand; laptops pick it up at the next refresh (depth 1) |
 
 ### Edge cases
 
 | Case | Expected behavior |
 | --- | --- |
+| A `remember`/`archive` commit between dream passes | not published until the next dream pass or a manual publish |
 | Dream pass with `nothing_to_do` but a `remember`/`archive` commit since the last snapshot | published (the tree differs) |
 | Memory HEAD ahead of its remote (push deferred, exit 7) | no target published, run record `mirror: skipped unpushed` |
 | A category moved from `private/` to `business/` | appears in the work mirror at the next pass |
+| A business fact written only in `profile.md` | not in the work mirror (whole-file rule) |
 | `mirror.targets` gains a machine whose repository is empty | first snapshot created on the empty default branch |
 | Laptop node stopped for a week | next start fetches the newest snapshot only |
-| Work laptop's account-wide token could read the memory repository | nothing in Zyggy uses it for that; the owner-run check confirms no clone exists (AC-19) |
+| The owner rewrote a mirror's history | the laptop's next fetch replaces its one commit; the publisher's checkout is re-cloned when its branch no longer descends from the remote one (never a force push) |
+| Work laptop's account-wide login could read the memory repository | nothing in Zyggy uses it: mirror calls switch credential helpers off and use `mirror-pat`; the owner-run check confirms no clone exists (AC-19) |
 
 ## Decisions
 
 | Founding-spec item (section) | Verdict | Why |
 | --- | --- | --- |
 | §7 "Nodes never write durable memory" | **keep** | the mirror is read-only and the laptop's write path stays `context` envelopes and `remember` |
-| §7 Hub "On laptops … `hub --proxy` answers `get_context` from a cached copy of the machine's own `context/` folder" | **reshape, later** | the mirror is the better cache; 21 should answer from it. Not built here (Q9) |
+| §7 Hub "On laptops … `hub --proxy` answers `get_context` from a cached copy of the machine's own `context/` folder" | **reshape, later** | the mirror is the better cache; 21 answers from it. Not built here (Q9) |
 | §7 `work/` memory "never synced to Central" | **keep** | untouched: the mirror runs Central → laptop only |
-| §8 Work boundary "work-related memory lives on the work laptop … outbound envelopes contain only …" | **reshape (add an inbound rule)** | new: the work laptop receives `business/` from Central, read-only, never the memory repository; proposed wording W47-2 |
-| §8 Secrets table | **reshape** | add the mirror write credential on Central and the mirror read credential per laptop (W47-3) |
+| §8 Work boundary "work-related memory lives on the work laptop … outbound envelopes contain only …" | **reshape (add an inbound rule)** | new: the work laptop receives `business/` from Central, read-only, never the memory repository (W47-2) |
+| §8 Secrets table | **reshape** | a write deploy key per mirror on Central (Q14), a read-only fine-grained `mirror-pat` per laptop (Q4) (W47-3) |
+| §5 "the code never handles credentials itself" | **reshape** | the mirror fetch hands `mirror-pat` to git per call, because the machine's own login may be account-wide (Q4); the bus's git path is unchanged (W47-6) |
 | §5 credentials per machine, transport over HTTPS through the proxy | **keep** | mirror fetch uses the same git and proxy path as the bus |
 | §7 dream step 7 "commit and push" | **reshape** | then publish the mirrors (W47-1) |
-| Delivery through the bus (envelopes) instead of a repository | **rejected** | the bus history would keep every file on every machine's checkout, including `private/` on the work laptop; a per-machine repository gives a GitHub-enforced reach |
+| Delivery through the bus (envelopes) instead of a repository | **rejected** | the bus history would keep every file on every machine's checkout, including `private/` on the work laptop; a per-machine repository gives a GitHub-enforced reach (Q3) |
+| One repository per reach, or one with a branch per machine | **rejected** | GitHub cannot restrict reads per branch; per machine keeps one credential per reach (Q3) |
+| Signing the mirror | **rejected for v1** | content is data anyway; signing adds key distribution to the work laptop (Q11) |
+| Line-level filtering of `profile.md` | **rejected for v1** | fragile; a mistake leaks private data to the employer's machine. Splitting business facts into `business/` at the dream pass may come later (Q13) |
 | A library | none | git through `GitClient` covers it; no package added |
 
 Proposed founding-spec wording (pasted only after approval):
 
-- **W47-1** §7 dream step 7, append: "Then `zyggy memory mirror publish` refreshes each laptop's mirror (deliverable 47)."
-- **W47-2** §8 Work boundary, new bullet: "Inbound, the work node receives only a read-only mirror of the memory paths under `business/`, published by Central to a repository of its own; it never clones, fetches or writes the memory repository, and never writes to the mirror (deliverable 47)."
-- **W47-3** §8 Secrets, new rows: "Mirror write credential (Central) — one per mirror repository, git only" and "Mirror read credential (laptop) — per Q4".
+- **W47-1** §7 dream step 7, append: "Then `zyggy memory mirror publish` refreshes each laptop's mirror (deliverable 47); the owner can run it by hand."
+- **W47-2** §8 Work boundary, new bullet: "Inbound, the work node receives only a read-only mirror of the memory paths under `business/` (`supervision.outboundPaths`), published by Central to a repository of its own; it never clones, fetches or writes the memory repository, and never writes to the mirror (deliverable 47)."
+- **W47-3** §8 Secrets, new rows: "Mirror deploy key (Central) — `~/.ssh/zyggy_zyggy-mirror-<machine>_ed25519`, 0600, write, that mirror only — git only" and "`mirror-pat` (laptop) — fine-grained, `contents:read`, the machine's own mirror only, OS secret store — git only (mirror fetch)".
 - **W47-4** §7 Layout, after the tree: "A laptop holds a read-only mirror of the paths its reach names (deliverable 47); `inbox/`, `auto/`, `.dream/` and archived item files are never mirrored."
-- **W47-5** §10 Laptops: the mirror clone at `mirror.path`, wired by `zyggy setup`.
+- **W47-5** §10 Laptops: the mirror clone at `mirror.path`, wired by `zyggy setup`, read through the `memory` skill.
+- **W47-6** §5 Git transport, after "the code never handles credentials itself": "Exception: the memory mirror fetch on a laptop hands the machine's `mirror-pat` to that git call only, with credential helpers off (deliverable 47)."
 
 ## Acceptance criteria
 
 | # | Criterion | Check |
 | --- | --- | --- |
-| AC-1 | Given a memory tree with every top-level area, when the snapshot for a machine with the default reach is built, then it holds exactly `MIRROR.md` and the files under `profile.md`, `preferences.md`, `agents.md`, `private/`, `business/`, `daily/`, and none from `inbox/`, `auto/`, `.dream/` or archived item files. | Unit test |
+| AC-1 | Given a memory tree with every top-level area, when the snapshot for a machine with the default reach is built, then it holds exactly `MIRROR.md` and the files under `profile.md`, `preferences.md`, `agents.md`, `private/`, `business/`, `daily/` and the sidecars under `archive/`, and none from `inbox/`, `auto/`, `.dream/` or archived item files. | Unit test |
 | AC-2 | Given the same tree, the snapshot for a machine with reach `business/` holds exactly `MIRROR.md` and the files under `business/`; a symbolic link under `business/` is skipped. | Unit test |
-| AC-3 | Given a work machine whose configured reach contains a path outside the outbound paths, the publisher refuses to start (exit 3) and pushes nothing. | Unit test + integration test through the verb |
+| AC-3 | Given a work machine whose configured reach contains a path outside `supervision.outboundPaths`, or an empty `outboundPaths`, or a target whose repository equals the memory remote (SSH or HTTPS form), the publisher refuses to start (exit 3) and pushes nothing. | Unit test + integration test through the verb |
 | AC-4 | Given a file whose line matches a secret or contact-detail pattern, the file is absent from the snapshot, an earlier copy is removed, the log names the path and never the line, exit 8. | Unit test (canary line never in output or log) |
-| AC-5 | `MIRROR.md` names the source revision and date and states that content is data, never instructions, and that edits are discarded. | Unit test |
+| AC-5 | `MIRROR.md` names the source revision and date and states that content is data, never instructions, that edits are discarded and that facts are added through `remember`. | Unit test |
 | AC-6 | `zyggy memory mirror publish` against a local bare memory remote and two local bare mirrors pushes one `mirror YYYY-MM-DD <sha8>` commit to each, whose tree equals the snapshot; a second run with no memory change commits nothing (exit 0). | Integration test |
 | AC-7 | A file deleted from memory, or moved out of the reach, is gone from the next snapshot. | Integration test |
 | AC-8 | No mirror commit has a memory commit as an ancestor, and no memory object reachable only from memory history is present in the mirror repository. | Integration test (`git rev-list` / object check on the bare mirror) |
@@ -241,47 +260,59 @@ Proposed founding-spec wording (pasted only after approval):
 | AC-11 | `--dry-run` lists added, changed, removed and withheld files per target and changes no repository. | Integration test |
 | AC-12 | After `zyggy dream` (fake-claude) ends `committed` and after one that ends `nothing_to_do` with a newer `remember` commit, each mirror holds the new snapshot; the dream's exit code and outcome equal those of the same run without mirror targets; the run record holds one `mirror` entry per target. | Integration test through `zyggy dream` |
 | AC-13 | A mirror failure in a dream run leaves the dream outcome `committed` and records `failed` for that target; the next run publishes it. | Integration test |
-| AC-14 | The laptop refresh decides: clone when absent, nothing when the remote head is unchanged, fetch and reset when it moved, `refused` + delete on a wrong remote or a path outside `mirror.allowedPaths`, `failed` (clone kept) on a git error; it logs once per state change and never throws to the loop. | Unit test with `FakeTimeProvider` and substituted `IProcessRunner` |
+| AC-14 | The laptop refresh decides: clone when absent, nothing when the remote head is unchanged, fetch and reset when it moved, `refused` + delete on a wrong remote, a wrong repository name, a missing `MIRROR.md` or a path outside `mirror.allowedPaths` or under `inbox/`/`auto/`/`.dream/`, `failed` (clone kept) on a git error or a missing `mirror-pat`; it logs once per state change and never throws to the loop. | Unit test with `FakeTimeProvider` and substituted `IProcessRunner` and `ISecretStore` |
 | AC-15 | The Node service against a local bare mirror clones at start, applies a newer snapshot within one `refreshMinutes`, holds one commit only (depth 1), and discards a local edit and an untracked file. | Integration test (Node host) |
 | AC-16 | A snapshot with a `private/` file on a node whose `mirror.allowedPaths` is `["business/"]` leaves no clone on disk, `/health` shows `refused` with the path's area, and `zyggy memory mirror status` exits 5. | Integration test |
-| AC-17 | A `mirror.repository` equal to the memory repository URL, or a `mirror.path` inside a project root, the bus checkout or `zyggy-core`, is refused at start (exit 3, `refused`). | Unit test + integration test |
-| AC-18 | `zyggy setup` adds the mirror folder as an additional directory with `Read` allowed and `Edit`/`Write` denied, sets `ZYGGY_MEMORY_MIRROR`, writes `mirror.allowedPaths` `["business/"]` when `discovery.detail` is `names`, and is idempotent. | Integration test through `zyggy setup` against a temporary profile |
-| AC-19 | On the real machines: after a dream pass, `home-laptop` and `work-laptop` show `current` with the pass's source sha; on `work-laptop` every file in the clone is under `business/` or `MIRROR.md`; no checkout on `work-laptop` has the memory repository as a remote (`git remote -v` over every repository under the user profile); a session on each laptop answers a question from a mirrored fact. | Owner-run check at release |
-| AC-20 | The founding-spec wording W47-1..W47-5 and the runbook rows of Failure modes exist in the shipped documents; `zyggy-core` carries the mirror guidance. | Slice 6 review + reviewer pass |
+| AC-17 | A `mirror.repository` whose repository name is not `zyggy-mirror-<this machine>`, or a `mirror.path` inside a project root, the bus checkout or `zyggy-core`, is refused at start (exit 3, `refused`); a bare repository laid out like the memory repository (no `MIRROR.md`, an `inbox/`) is refused even when its name matches. | Unit test + integration test |
+| AC-18 | `zyggy setup` adds the mirror folder as an additional directory with `Read` allowed and `Edit`/`Write` denied, sets `ZYGGY_MEMORY_MIRROR`, writes `mirror.allowedPaths` `["business/"]` when `discovery.detail` is `names`, names a missing `mirror-pat` with the `zyggy secret set mirror-pat` line when `mirror.repository` is set, and is idempotent. | Integration test through `zyggy setup` against a temporary profile |
+| AC-19 | On the real machines: after a dream pass, `home-laptop` and `work-laptop` show `current` with the pass's source sha; on `work-laptop` every file in the clone is under `business/` or `MIRROR.md`; no checkout on `work-laptop` has the memory repository as a remote (`git remote -v` over every repository under the user profile); a session on each laptop answers a question from a mirrored fact through the `memory` skill. | Owner-run check at release |
+| AC-20 | The founding-spec wording W47-1..W47-6 and the runbook rows of Failure modes exist in the shipped documents; `zyggy-core` carries the `memory` skill with its bats tests. | Slice 6 review + reviewer pass |
+| AC-21 | Every git call on a laptop mirror carries `mirror-pat` only through that process's environment, switches credential helpers off, and the token value appears in no argument, URL, file, log line or `/health` output. | Unit test (recorded process specs) + `SecretSweep` in the slice 5 integration test |
+| AC-22 | Every push of the publisher to a mirror uses that target's own deploy key (per-call `GIT_SSH_COMMAND` naming its key file) and never a force push; a missing key file fails that target only. | Unit test (recorded process specs) + integration test |
+| AC-23 | A `remember` commit with no dream pass after it does not change any mirror; `zyggy memory mirror publish` by hand then publishes it. | Integration test |
+| AC-24 | An `archive/<project>/` folder with an item file and its `.md` sidecar yields only the sidecar in the default-reach snapshot and nothing in the `business/` snapshot. | Unit test |
 
 ## Slices
 
 | # | Slice | Criteria | Review check |
 | --- | --- | --- | --- |
-| 1 | ⚠️ Central builds the snapshot a machine may read, through the seams (fake) | AC-1, AC-2, AC-3 (unit), AC-4, AC-5 | `dotnet test tests/Zyggy.Core.Tests --filter "FullyQualifiedName~MemoryMirror"` |
-| 2 | ⚠️ `zyggy memory mirror publish` pushes each snapshot to its own mirror repository (wire) | AC-3, AC-6, AC-7, AC-8, AC-9, AC-10, AC-11 | `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~MirrorPublish"` |
-| 3 | Every dream pass refreshes the mirrors (wire) | AC-12, AC-13 | `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~DreamMirror"` |
-| 4 | ⚠️ A laptop node decides when to clone, refresh, refuse or wait (fake) | AC-14, AC-17 (unit) | `dotnet test tests/Zyggy.Core.Tests --filter "FullyQualifiedName~MirrorRefresh"` |
-| 5 | ⚠️ A laptop node keeps a read-only clone current and refuses one it may not hold (wire) | AC-15, AC-16, AC-17 | `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~MirrorRefresh"` |
-| 6 | ⚠️ Agents on a laptop browse the mirror: setup wiring, `zyggy-core` guidance, documents and founding-spec wording (wire) | AC-18, AC-20 | `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~SetupMirror"` |
+| 1 | ⚠️ Central builds the snapshot a machine may read, through the seams (fake) | AC-1, AC-2, AC-3 (unit), AC-4, AC-5, AC-24 | `dotnet test tests/Zyggy.Core.Tests --filter "FullyQualifiedName~MemoryMirror"` |
+| 2 | ⚠️ `zyggy memory mirror publish` pushes each snapshot to its own mirror repository (wire) | AC-3, AC-6, AC-7, AC-8, AC-9, AC-10, AC-11, AC-22 | `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~MirrorPublish"` |
+| 3 | Every dream pass refreshes the mirrors (wire) | AC-12, AC-13, AC-23 | `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~DreamMirror"` |
+| 4 | ⚠️ A laptop node decides when to clone, refresh, refuse or wait (fake) | AC-14, AC-17 (unit), AC-21 (unit) | `dotnet test tests/Zyggy.Core.Tests --filter "FullyQualifiedName~MirrorRefresh"` |
+| 5 | ⚠️ A laptop node keeps a read-only clone current and refuses one it may not hold (wire) | AC-15, AC-16, AC-17, AC-21 | `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~MirrorRefresh"` |
+| 6 | ⚠️ Agents on a laptop browse the mirror: setup wiring, `zyggy-core` `memory` skill, documents and founding-spec wording (wire) | AC-18, AC-20 | `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~SetupMirror"` and the `zyggy-core` bats suite |
 
 AC-19 is run by the owner (and by the `ship` skill where it can) at release.
 
 ## Out of scope
 
-- The Hub proxy on laptops (`zyggy hub --proxy`, `get_context` from the mirror) and a laptop `SessionStart` digest (21; Q9).
+- The Hub proxy on laptops (`zyggy hub --proxy`, `get_context` from the mirror) and a laptop `SessionStart` digest (21).
+- Publishing after each `remember` or `archive` commit.
+- Splitting business facts out of `profile.md`, or any line-level reach filter.
 - Any write from a laptop into memory other than the existing `context` envelopes, `remember` and `item`.
 - A mirror for Central itself, or for a machine that is not a laptop of this owner.
-- Signing the mirror's content (Q11).
+- Signing the mirror's content.
+- Automatic erasure from a mirror's history.
 - Deliverables 48 and 49.
 
-## Open questions
+## Decided 2026-11-17
 
-The full list for 47, 48 and 49 is in the job report that delivered this spec; the ones below change 47's behavior.
+All 14 questions were decided by Zyggy on the owner's standing delegation, each as recommended (source: `_specs/47-49-open-questions.md`, questions 1–14). None is left open.
 
-- [ ] **Q1 — Refresh trigger.** Options: (a) after every dream pass only; (b) also after every `remember`/`archive` commit; (c) dream pass plus `zyggy memory mirror publish` by hand. Recommendation: (c).
-- [ ] **Q2 — Single source of the outbound paths.** Found: `instance/work-boundary.json` (unread, instance repo) and spec 18's `supervision.outboundPaths` (unbuilt). Options: (a) the binary reads `work-boundary.json`; (b) one `node.json` key shared by 18 and 47; (c) both, refused at start when they differ. Recommendation: (b), with `work-boundary.json` documenting it.
-- [ ] **Q3 — One mirror repository per machine or per reach.** Options: (a) per machine; (b) per distinct reach (`full`, `business`). Recommendation: (a).
-- [ ] **Q4 — Laptop read credential.** Found: a laptop's token may be account-wide (spec 42). Options: (a) reuse it (can read and write the memory repository too); (b) a fine-grained read-only token per laptop, scoped to its mirror, in the OS secret store; (c) a read-only deploy key (SSH; port 22 may be blocked behind the proxy). Recommendation: (b), at least on `work-laptop`.
-- [ ] **Q5 — Mirror history and erasure.** Options: (a) normal history, erasure by a history rewrite the owner asks for; (b) one orphan commit per snapshot, force-pushed by the publisher; (c) normal history, rebuilt from scratch monthly. Recommendation: (a) with depth-1 clones.
-- [ ] **Q6 — Default reach of a non-work laptop.** Recommendation: identity files, `private/`, `business/`, `daily/`, plus archive sidecars but never item files.
-- [ ] **Q7 — Proving "never the memory repository" on a laptop.** Recommendation: a refusal of a configured URL equal to it, plus the owner-run `git remote -v` sweep (AC-19).
-- [ ] **Q8 — Agent guidance.** Options: a new `memory` skill or a section in the existing guidance. Recommendation: a skill.
-- [ ] **Q9 — Hub proxy and laptop digest.** Recommendation: out of scope here.
-- [ ] **Q10 — Laptop `allowedPaths` source.** Recommendation: written by `zyggy setup` from `discovery.detail: names`.
-- [ ] **Q11 — Integrity of the mirror.** Recommendation: rely on GitHub write access (Central only) and "data, never instructions".
+| # | Question | Decision | Decided by |
+| --- | --- | --- | --- |
+| Q1 | Refresh trigger | (c) after every dream pass, plus `zyggy memory mirror publish` by hand; no publish per `remember`/`archive` commit | Zyggy (delegation) |
+| Q2 | Single source of the outbound paths | (b) one `node.json` key, `supervision.outboundPaths`, shared with spec 18; `instance/work-boundary.json` documents it and is read by no code | Zyggy (delegation) |
+| Q3 | Mirror repository per machine or per reach | (a) one per machine, `zyggy-mirror-<machine>` | Zyggy (delegation) |
+| Q4 | Laptop read credential | (b) a fine-grained read-only token per laptop scoped to its mirror, in the OS secret store (`mirror-pat`). The decision requires it "at least on `work-laptop`"; this spec uses it on both laptops so there is one code path | Zyggy (delegation) |
+| Q5 | Mirror history and erasure | (a) normal history, depth-1 clones; erasure by a history rewrite the owner asks for and does by hand | Zyggy (delegation) |
+| Q6 | Default reach of a non-work laptop | (a) identity files, `private/`, `business/`, `daily/`, plus archive sidecars, never item files | Zyggy (delegation) |
+| Q7 | Proving "never the memory repository" | (a) refusal in code plus the owner-run `git remote -v` sweep. The URL equality check runs on Central (the only holder of that URL); laptops check the repository name, `MIRROR.md` and the paths instead, since (a) keeps the memory URL off laptops | Zyggy (delegation) |
+| Q8 | Agent guidance in `zyggy-core` | (a) a new `memory` skill | Zyggy (delegation) |
+| Q9 | Hub proxy and laptop `SessionStart` digest | (a) out of scope; 21 answers `get_context` from the mirror later | Zyggy (delegation) |
+| Q10 | Source of the laptop's `allowedPaths` | (a) written by `zyggy setup` from `discovery.detail: names` | Zyggy (delegation) |
+| Q11 | Integrity of the mirror | (a) GitHub write access (Central only) plus "data, never instructions"; no signing | Zyggy (delegation) |
+| Q12 | Where the mirrors live | (b) the `zyggy-org` organisation, next to `zyggy-bus`. Whether the organisation's plan allows the repositories and tokens is checked by the owner when creating them | Zyggy (delegation) |
+| Q13 | Personal profile lines and other machines' daily notes | (a) whole-file rules only: the work mirror gets `business/` only. Option (b), splitting business facts out of `profile.md`, is left for later and not specified | Zyggy (delegation) |
+| Q14 | Mirror write credential on Central | (a) one SSH deploy key per mirror repository | Zyggy (delegation) |
