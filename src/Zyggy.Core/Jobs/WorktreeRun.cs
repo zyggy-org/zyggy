@@ -17,13 +17,38 @@ internal sealed class WorktreeRun(GitClient git)
 
     public static string BranchFor(string jobId) => "zyggy/" + jobId;
 
-    /// <summary>Fetch (best effort), base, stale clean-up and <c>worktree add</c>. The model may start only on <see cref="PrepareResult.Prepared"/>.</summary>
-    public async Task<PrepareResult> PrepareAsync(string project, string worktree, string jobId, CancellationToken ct)
+    /// <summary>
+    /// Fetch (best effort), base, stale clean-up and <c>worktree add</c>. The model may start only on <see cref="PrepareResult.Prepared"/>.
+    /// A named job (spec 53) is first checked for the refusals: <see cref="PrepareResult.Refused"/> before any writing git command.
+    /// </summary>
+    public async Task<PrepareResult> PrepareAsync(string project, string worktree, string jobId, NamedBranch? named, CancellationToken ct)
     {
+        // Spec 53 Prepare step 0: a branch on a mandate job is refused before the first git command.
+        if (named is { CarriesMandate: true })
+        {
+            return new PrepareResult.Refused("branch with base or mandate");
+        }
+
         var hasOrigin = await git.ConfigGetAsync(project, "remote.origin.url", ct).ConfigureAwait(false) is not null;
+
+        // Spec 53 Prepare step 1: for a named job the default branch is checked before the fetch (git's name, then the node's registry
+        // entry), without regard to letter case; an unnamed job keeps spec 16's order.
+        string? defaultBranch = null;
+        if (named is not null)
+        {
+            defaultBranch = await git.DefaultBranchAsync(project, ct).ConfigureAwait(false);
+            foreach (var protectedName in (string?[])[defaultBranch, named.RegistryDefault])
+            {
+                if (protectedName is { Length: > 0 } && string.Equals(named.Branch, protectedName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new PrepareResult.Refused("default branch " + protectedName);
+                }
+            }
+        }
+
         var fetchFailed = hasOrigin && !(await git.FetchAsync(project, ct).ConfigureAwait(false)).Succeeded;
 
-        var defaultBranch = await git.DefaultBranchAsync(project, ct).ConfigureAwait(false);
+        defaultBranch = named is null ? await git.DefaultBranchAsync(project, ct).ConfigureAwait(false) : defaultBranch;
         var baseSha = defaultBranch is null
             ? null
             : await git.ResolveRefAsync(project, "refs/remotes/origin/" + defaultBranch, ct).ConfigureAwait(false)
@@ -134,7 +159,19 @@ internal abstract record PrepareResult(bool FetchFailed)
 
     /// <summary>No worktree; the model must not start. <paramref name="Step"/> names the git step for the report body.</summary>
     public sealed record Failed(string Step, bool FetchFailed) : PrepareResult(FetchFailed);
+
+    /// <summary>
+    /// The named branch must not be touched (spec 53): <c>rejected</c> / <c>branch_refused</c>, nothing fetched, no worktree, the model
+    /// must not start. <paramref name="Rule"/> is the body's rule (<c>branch with base or mandate</c>, <c>default branch &lt;name&gt;</c>).
+    /// </summary>
+    public sealed record Refused(string Rule) : PrepareResult(false);
 }
+
+/// <summary>A job's named branch as Prepare checks it (spec 53, internal; no public <c>Zyggy.Core</c> surface).</summary>
+/// <param name="Branch">The job's <c>branch</c> value.</param>
+/// <param name="CarriesMandate">Whether the job's front matter also has spec 18's <c>base</c> or <c>mandate</c> key.</param>
+/// <param name="RegistryDefault">The <c>default_branch</c> of the job's project in the node's own registry snapshot, or <see langword="null"/>.</param>
+internal sealed record NamedBranch(string Branch, bool CarriesMandate, string? RegistryDefault);
 
 /// <summary>What a finished worktree run adds to the report (spec 16 Behavior).</summary>
 /// <param name="FilesChanged">The changed paths, ordinal order, at most <see cref="WorktreeRun.MaxFilesChanged"/>.</param>

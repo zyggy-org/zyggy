@@ -36,6 +36,9 @@ internal sealed class WorktreeGit
     /// <summary>Gets or sets the changed paths <c>git diff --name-only -z</c> prints, in git's order.</summary>
     public IReadOnlyList<string> ChangedPaths { get; set; } = ["src/new.txt"];
 
+    /// <summary>Gets or sets the branch <c>refs/remotes/origin/HEAD</c> points at (git's default branch; spec 53).</summary>
+    public string OriginHeadBranch { get; set; } = "main";
+
     /// <summary>Gets or sets a value indicating whether no default branch can be found (no origin/HEAD, no main, no master, detached HEAD).</summary>
     public bool NoDefaultBranch { get; set; }
 
@@ -86,7 +89,7 @@ internal sealed class WorktreeGit
                     return JobBranchExists ? RecordingProcessRunner.Ok(TipSha + "\n") : RecordingProcessRunner.Fail(1, "");
                 }
 
-                if (reference == "refs/remotes/origin/main")
+                if (reference == "refs/remotes/origin/" + OriginHeadBranch)
                 {
                     return OriginMainExists ? RecordingProcessRunner.Ok(BaseSha + "\n") : RecordingProcessRunner.Fail(1, "");
                 }
@@ -95,7 +98,7 @@ internal sealed class WorktreeGit
             case "rev-parse" when args[^1].StartsWith("refs/heads/zyggy/", StringComparison.Ordinal):
                 return RecordingProcessRunner.Ok((Ahead > 0 ? TipSha : BaseSha) + "\n");
             case "symbolic-ref" when Has(spec, "refs/remotes/origin/HEAD"):
-                return OriginUrl is null ? RecordingProcessRunner.Fail(1, "") : RecordingProcessRunner.Ok("origin/main\n");
+                return OriginUrl is null ? RecordingProcessRunner.Fail(1, "") : RecordingProcessRunner.Ok("origin/" + OriginHeadBranch + "\n");
             case "status":
                 return RecordingProcessRunner.Ok(StatusAfterRun);
             case "rev-list":

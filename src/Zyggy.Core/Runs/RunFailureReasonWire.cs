@@ -18,6 +18,7 @@ public static class RunFailureReasonWire
         RunFailureReason.GitError => "git_error",
         RunFailureReason.SchemaUnsupported => "schema_unsupported",
         RunFailureReason.BudgetExceeded => "budget_exceeded",
+        RunFailureReason.BranchRefused => "branch_refused",
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 

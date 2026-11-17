@@ -32,4 +32,10 @@ public enum RunFailureReason
 
     /// <summary>The monthly budget is exhausted (<c>budget_exceeded</c>; reserved, never emitted in v1, §11).</summary>
     BudgetExceeded,
+
+    /// <summary>
+    /// A job's named branch the node must not touch (<c>branch_refused</c>, deliverable 53): it is the project's default branch, or
+    /// the job also carries spec 18's <c>base</c> or <c>mandate</c>. Sent with <c>status: rejected</c>; the model never ran.
+    /// </summary>
+    BranchRefused,
 }

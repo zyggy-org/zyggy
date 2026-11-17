@@ -17,7 +17,7 @@ namespace Zyggy.Core.Jobs;
 
 /// <summary>
 /// Runs one verified, claimed job (founding spec §6): pre-flight, project lock, the fenced prompt through <see cref="IModelRunner"/>,
-/// and always a <see cref="JobReply"/> — every failure carries one of the nine §9 reason strings. Its <see cref="RunAsync"/> has the
+/// and always a <see cref="JobReply"/> — every failure carries one of the closed §9 reason strings. Its <see cref="RunAsync"/> has the
 /// signature of <see cref="JobHandler"/>; the job's body is data, never instructions, and never reaches a log line.
 /// </summary>
 public sealed partial class JobRunner
@@ -151,10 +151,18 @@ public sealed partial class JobRunner
         if (fields.Worktree)
         {
             runDirectory = TranscriptPaths.WorktreeFor(nodeDir, job.Header.Tenant, job.Header.Id);
-            var prepared = await worktrees.PrepareAsync(project, runDirectory, id, ct).ConfigureAwait(false);
+            var prepared = await worktrees.PrepareAsync(project, runDirectory, id, NamedBranchOf(job, fields), ct).ConfigureAwait(false);
             if (prepared.FetchFailed)
             {
                 LogFetchFailed(id);
+            }
+
+            // Spec 53: a refusal before the model travels the path of pre-flight's rejection (report in reports/, claimed file removed).
+            if (prepared is PrepareResult.Refused refused)
+            {
+                var branchRefused = RunFailureReasonWire.ToWire(RunFailureReason.BranchRefused);
+                LogBranchRefused(id, refused.Rule);
+                return Reply(ReportStatus.Rejected, branchRefused, $"{branchRefused}: {refused.Rule}\n", started);
             }
 
             if (prepared is PrepareResult.Failed failed)
@@ -212,6 +220,22 @@ public sealed partial class JobRunner
         reply = WithBlocked(id, reply, blockedFile, hasResultLines);
         LogFinished(id, reply, result);
         return reply;
+    }
+
+    // Spec 53 Prepare steps 0–1: the job's branch, whether it also carries spec 18's base or mandate (read as front-matter keys, so the
+    // rule holds before and after spec 18's parser knows them), and its project's default_branch in this node's own registry snapshot
+    // (looked up by the job's project name; none for a project given by path, before the first scan, or an entry without one).
+    private NamedBranch? NamedBranchOf(Envelope.Envelope job, JobFields fields)
+    {
+        if (string.IsNullOrEmpty(fields.Branch))
+        {
+            return null;
+        }
+
+        var keys = job.FrontMatter.Entries;
+        var registryDefault = _registry.Current?.Projects
+            .FirstOrDefault(p => string.Equals(p.Name, fields.Project, StringComparison.Ordinal))?.DefaultBranch;
+        return new NamedBranch(fields.Branch, keys.ContainsKey("base") || keys.ContainsKey("mandate"), registryDefault);
     }
 
     // Spec 16 Behavior: files and diff_ref from the branch; a git failure turns a done run into failed/git_error, a failed or
@@ -436,6 +460,9 @@ public sealed partial class JobRunner
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: blocked-calls file unreadable; the transcript shows the refusals")]
     private partial void LogBlockedUnreadable(string id);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: rejected: branch_refused ({Rule})")]
+    private partial void LogBranchRefused(string id, string rule);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: worktree git step failed: {Step}")]
     private partial void LogWorktreeFailed(string id, string step);
