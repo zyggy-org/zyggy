@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Zyggy.Core.Bus;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Registry;
+using Zyggy.Core.Tenancy;
 using Zyggy.Integration.Infrastructure;
 
 using Model = Zyggy.Core.Envelope.Envelope;
@@ -144,6 +145,25 @@ public sealed partial class SubmitNamedBranchTests : IAsyncLifetime
         {
             await SeedRegistryAsync(new RegistryProject("calizr", "/home/alice/src/calizr", "main", [], [], null), ct);
         }
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["submit", "--to", "home-laptop", "--project", "shop", "--worktree", "--branch", "main", Body], _harness.CentralNodeJson, ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        (await _harness.ParseOnMainAsync(JobPath(console.Stdout), ct)).Job!.Branch.Should().Be("main");
+    }
+
+    // AC-15: a registry file at the target machine's path that belongs to another tenant is skipped: its default branch refuses
+    // nothing, so another tenant's file never influences a job; the job is sent and the node decides at run time.
+    [Fact]
+    public async Task Submit_RegistryFileOfAnotherTenant_SkippedAndJobSentWithBranch()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        var foreign = new RegistryDocument(TenantId.Parse("globex"), CliHarness.HomeLaptop, RegistryOs.Linux, null, null, null, [new RegistryProject("shop", "/home/alice/src/shop", "main", [], [], null)]);
+        await _harness.Bus.SeedRawFileAsync(BusPaths.Registry(CliHarness.Acme, CliHarness.HomeLaptop), foreign.Serialize(), "globex registry at acme home-laptop", ct);
+        await _harness.Bus.RunGitAsync(_harness.Bus.SenderDir, ["pull", "-q", "--rebase"], ct);
 
         // Act
         var (exit, console) = await _harness.RunAsync(["submit", "--to", "home-laptop", "--project", "shop", "--worktree", "--branch", "main", Body], _harness.CentralNodeJson, ct: ct);
