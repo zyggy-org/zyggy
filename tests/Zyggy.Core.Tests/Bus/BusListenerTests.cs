@@ -723,6 +723,36 @@ public sealed class BusListenerTests : IAsyncLifetime
         _log.AtLevel(LogLevel.Error).Should().BeEmpty("cancellation is a normal stop, not a handler failure");
     }
 
+    public static TheoryData<int> DrainRepetitions() => [.. Enumerable.Range(1, 100)];
+
+    // Regression (tag CI v0.22.0, ubuntu): DrainAsync returned once the run task was complete, before the
+    // continuation that untracks it had run on another thread, so Status still counted the run. A thread race:
+    // repeated to make the window likely; it did not reproduce on Windows before the fix.
+    [Theory]
+    [MemberData(nameof(DrainRepetitions))]
+    public async Task DrainAsync_AfterCancelledRun_ReturnsOnlyOnceTheRunIsUntracked(int repetition)
+    {
+        // Arrange
+        _ = repetition;
+        var ct = TestContext.Current.CancellationToken;
+        await DropJobAsync(ct);
+        _handler = async (_, handlerCt) =>
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, handlerCt);
+            throw new InvalidOperationException("unreachable");
+        };
+        BusListener listener = Listener(gate: Gate(() => new Admitted(new TrackingLease())));
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        await listener.StartAsync(cts.Token);
+
+        // Act
+        await cts.CancelAsync();
+        await listener.DrainAsync(ct);
+
+        // Assert
+        listener.Status.JobsRunning.Should().Be(0);
+    }
+
     [Fact]
     public async Task Status_AfterStartAndTick_CarriesPollPullHeadShaAndClaimedCount()
     {
