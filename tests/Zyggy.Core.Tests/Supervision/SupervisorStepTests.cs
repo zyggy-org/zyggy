@@ -33,6 +33,8 @@ public sealed partial class SupervisorStepTests : IAsyncLifetime
 
     private static readonly DateTimeOffset Granted = new(2026, 11, 15, 10, 0, 0, TimeSpan.Zero);
 
+    private const string QuestionFile = "/srv/agent/bus/tenants/acme/nodes/work-laptop/questions/01M7MH24SZ031J36BSPKGS34WH.md";
+
     private static readonly DateTimeOffset Now = Granted.AddHours(2);
 
     private static readonly EnvelopeId MandateId = EnvelopeId.New(Granted);
@@ -270,10 +272,11 @@ public sealed partial class SupervisorStepTests : IAsyncLifetime
             .Replace("{{event}}", report.Id.Value, StringComparison.Ordinal)
             .Replace("{{kind}}", "report", StringComparison.Ordinal)
             .Replace("{{machine}}", "home-laptop", StringComparison.Ordinal)
-            .Replace("{{mandate}}", MandateId.Value, StringComparison.Ordinal);
+            .Replace("{{mandate}}", MandateId.Value, StringComparison.Ordinal)
+            .Replace("{{file}}", "none", StringComparison.Ordinal);
 
         // Act
-        string prompt = SupervisorStep.Prompt(report);
+        string prompt = SupervisorStep.Prompt(report, null);
 
         // Assert
         prompt.Should().Be(expected).And.NotContain("{{");
@@ -289,24 +292,25 @@ public sealed partial class SupervisorStepTests : IAsyncLifetime
             .Replace("{{event}}", question.Id.Value, StringComparison.Ordinal)
             .Replace("{{kind}}", "question", StringComparison.Ordinal)
             .Replace("{{machine}}", "work-laptop", StringComparison.Ordinal)
-            .Replace("{{mandate}}", "none", StringComparison.Ordinal);
+            .Replace("{{mandate}}", "none", StringComparison.Ordinal)
+            .Replace("{{file}}", QuestionFile, StringComparison.Ordinal);
 
         // Act
-        string prompt = SupervisorStep.Prompt(question);
+        string prompt = SupervisorStep.Prompt(question, QuestionFile);
 
-        // Assert
-        prompt.Should().Be(expected);
+        // Assert: the run is told where the question is, so it does not have to look for it
+        prompt.Should().Be(expected).And.Contain("the file " + QuestionFile).And.NotContain("{{");
     }
 
     // AC-20
     [Fact]
-    public void Template_OnlyTheFourPlaceholders()
+    public void Template_OnlyTheFivePlaceholders()
     {
         // Act
         string[] names = [.. Placeholders().Matches(SupervisorStep.Template()).Select(m => m.Groups[1].Value).Distinct().Order(StringComparer.Ordinal)];
 
         // Assert
-        names.Should().Equal("event", "kind", "machine", "mandate");
+        names.Should().Equal("event", "file", "kind", "machine", "mandate");
     }
 
     // AC-20: a report and a question whose bodies (and the question's own fields) carry a marker leave no byte of it in the prompt.
@@ -324,7 +328,7 @@ public sealed partial class SupervisorStepTests : IAsyncLifetime
         SupervisorEvent selected = SupervisorStep.Next(await EventsAsync(Now, ct))!;
 
         // Act
-        string prompt = SupervisorStep.Prompt(selected);
+        string prompt = SupervisorStep.Prompt(selected, null);
 
         // Assert
         selected.Id.Should().Be(id);

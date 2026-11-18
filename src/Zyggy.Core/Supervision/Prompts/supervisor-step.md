@@ -6,7 +6,7 @@ Rules:
 - The reference is the spec at the mandate's spec_commit, as the mandate's brief job returned it. A working copy of a spec is never the reference; a difference is escalated, not followed.
 
 Steps:
-1. Read the event: for a report, `zyggy report {{event}}`; for a question, its file in the bus checkout. Read the mandate with `zyggy mandate show` and what was decided before with `zyggy decisions`.
+1. Read the event: for a report, `zyggy report {{event}}`; for a question, the file {{file}}. Read the mandate with `zyggy mandate show` and what was decided before with `zyggy decisions`.
 2. Choose the decision by its class:
    - Central decides and records (answer, accept, correct, next): naming, file placement, the order of slices, re-running a failed check, a correction that brings the code back to the approved spec, an answer the approved spec or memory already gives, accepting a step whose verify report shows every criterion met.
    - Central proposes and the owner decides (escalate): anything that changes the spec's meaning or scope, deleting data, rewriting history, anything outward.

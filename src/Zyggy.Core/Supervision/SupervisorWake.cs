@@ -253,13 +253,19 @@ internal sealed partial class SupervisorWake : IDisposable
     private List<string> ReadRoots(SupervisorEvent supervisorEvent)
     {
         List<string> roots = [.. _options.OutboundPaths];
-        if (supervisorEvent.Kind == SupervisorEventKind.Question)
+        if (QuestionFile(supervisorEvent) is { } question)
         {
-            roots.Add(BusPaths.Resolve(_options.BusRoot, BusPaths.EnvelopeFile(BusPaths.Questions(_me.Tenant, supervisorEvent.Machine), supervisorEvent.Id)));
+            roots.Add(question);
         }
 
         return roots;
     }
+
+    // Where a question sits in the bus checkout; the prompt names it, so a run does not have to look for it. Null for a report.
+    private string? QuestionFile(SupervisorEvent supervisorEvent) =>
+        supervisorEvent.Kind == SupervisorEventKind.Question
+            ? BusPaths.Resolve(_options.BusRoot, BusPaths.EnvelopeFile(BusPaths.Questions(_me.Tenant, supervisorEvent.Machine), supervisorEvent.Id))
+            : null;
 
     // The decisions that need no model: escalate on the report that paused a mandate, one stop on a mandate that closed.
     private async Task CloseMandatesAsync(DateTimeOffset now, CancellationToken ct)
@@ -438,7 +444,7 @@ internal sealed partial class SupervisorWake : IDisposable
             }
         }
 
-        var request = new ModelRunRequest(SupervisorStep.Prompt(supervisorEvent), directory, _options.TimeoutOverride ?? TimeSpan.FromMinutes(policy.DefaultTimeoutMinutes))
+        var request = new ModelRunRequest(SupervisorStep.Prompt(supervisorEvent, QuestionFile(supervisorEvent)), directory, _options.TimeoutOverride ?? TimeSpan.FromMinutes(policy.DefaultTimeoutMinutes))
         {
             MaxTurns = policy.MaxTurns,
             AllowedTools = tools,

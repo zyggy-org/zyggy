@@ -32,7 +32,8 @@ internal sealed record SupervisorEvent(EnvelopeId Id, SupervisorEventKind Kind, 
 /// <summary>
 /// The pure part of one supervisor step (deliverable 18, slice 9): which event is next, and the fixed prompt that names it. The
 /// prompt is the embedded template <c>Zyggy.Core.Supervision.Prompts.supervisor-step.md</c> filled in one pass with the event's id,
-/// kind, machine and mandate id — values the bus validated as ids and names, never text.
+/// kind, machine and mandate id — values the bus validated as ids and names, never text — and the path of a question's file in
+/// the node's own bus checkout.
 /// </summary>
 internal static partial class SupervisorStep
 {
@@ -62,8 +63,11 @@ internal static partial class SupervisorStep
         return reader.ReadToEnd().Replace("\r\n", "\n", StringComparison.Ordinal);
     }
 
-    /// <summary>The prompt of one step on <paramref name="supervisorEvent"/>.</summary>
-    public static string Prompt(SupervisorEvent supervisorEvent)
+    /// <summary>
+    /// The prompt of one step on <paramref name="supervisorEvent"/>; <paramref name="questionFile"/> is where a question sits in the
+    /// bus checkout (<c>none</c> in the prompt for a report, which is read with <c>zyggy report</c>).
+    /// </summary>
+    public static string Prompt(SupervisorEvent supervisorEvent, string? questionFile)
     {
         ArgumentNullException.ThrowIfNull(supervisorEvent);
         var values = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -72,12 +76,15 @@ internal static partial class SupervisorStep
             ["kind"] = supervisorEvent.Kind == SupervisorEventKind.Report ? "report" : "question",
             ["machine"] = supervisorEvent.Machine.Value,
             ["mandate"] = supervisorEvent.Mandate?.Value ?? NoMandate,
+
+            // A path the node built from its own checkout root and the event's validated tenant, machine and id: never agent text.
+            ["file"] = questionFile ?? NoMandate,
         };
 
         // One pass: a value is never searched for a placeholder again.
         return Placeholder().Replace(Template(), m => values[m.Groups[1].Value]);
     }
 
-    [GeneratedRegex(@"\{\{(event|kind|machine|mandate)\}\}", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"\{\{(event|kind|machine|mandate|file)\}\}", RegexOptions.CultureInvariant)]
     private static partial Regex Placeholder();
 }
