@@ -154,6 +154,12 @@ public static class NodeHost
 
             // Spec 17 (D1): Central's node service sweeps after its start-up pickup and every sweep.intervalMinutes; no other machine does.
             builder.Services.AddBusSweep();
+
+            // Deliverable 18: Central's node wakes its supervisor after every pickup pass; supervision.enabled false means no wake.
+            if (configuration.Supervision.Enabled)
+            {
+                builder.Services.AddSupervisorWake();
+            }
         }
         builder.Services.AddJobDispatcher();
         builder.Services.AddSingleton<NodeExitState>();

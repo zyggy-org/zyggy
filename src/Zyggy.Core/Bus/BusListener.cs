@@ -97,6 +97,9 @@ public sealed partial class BusListener : IDisposable
     /// <summary>Gets the node's mandate check (deliverable 18); the production composition always sets it, a bare test listener may not.</summary>
     internal MandateIntake? Mandates { get; init; }
 
+    /// <summary>Gets Central's supervisor wake (deliverable 18), run after every pickup pass; <see langword="null"/> on every other machine.</summary>
+    internal Supervision.SupervisorWake? Wake { get; init; }
+
     /// <summary>Gets the poller's state: health for the Node service and the probe's status line.</summary>
     public PollState State { get; private set; }
 
@@ -228,6 +231,12 @@ public sealed partial class BusListener : IDisposable
     /// <returns>A task that completes when no run is pending.</returns>
     public async Task DrainAsync(CancellationToken ct)
     {
+        // Deliverable 18: a supervisor run in flight is stopped and waited for like a job run.
+        if (Wake is not null)
+        {
+            await Wake.StopAsync().WaitAsync(ct).ConfigureAwait(false);
+        }
+
         Task[] pending = [.. _runs.Values];
         if (pending.Length == 0)
         {
@@ -449,7 +458,19 @@ public sealed partial class BusListener : IDisposable
     }
 
     /// <summary>§5 item 2 as amended by A13-7: on Central, the pickup after the job pass of a successful pull; a no-op elsewhere.</summary>
-    private Task PickupAsync(CancellationToken ct) => _pickup is null ? Task.CompletedTask : _pickup.RunAsync(ct);
+    /// <remarks>Deliverable 18: Central's supervisor wake follows every pickup pass; it starts its run in the background and never throws but on cancellation.</remarks>
+    private async Task PickupAsync(CancellationToken ct)
+    {
+        if (_pickup is not null)
+        {
+            await _pickup.RunAsync(ct).ConfigureAwait(false);
+        }
+
+        if (Wake is not null)
+        {
+            await Wake.RunAsync(ct).ConfigureAwait(false);
+        }
+    }
 
     /// <summary>Spec 17: on Central, one sweep pass (it logs its own actions and failures and never throws but on cancellation); a no-op elsewhere.</summary>
     private Task SweepAsync(CancellationToken ct) => _sweep is null ? Task.CompletedTask : _sweep.RunAsync(ct);

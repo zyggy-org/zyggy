@@ -281,7 +281,11 @@ public sealed partial class JobRunner
 
     // Spec 15 (review of 2026-11-14): the hook's self-test. `zyggy hook pre-tool-use` with no rules and no input must answer exit 2
     // and writes no file; a binary that exists but allows, crashes, hangs or cannot start would let every tool call through.
-    private async Task<bool> HookRefusesAnEmptyCallAsync(string hookExecutable, CancellationToken ct)
+    private Task<bool> HookRefusesAnEmptyCallAsync(string hookExecutable, CancellationToken ct) =>
+        HookRefusesAnEmptyCallAsync(_processes, hookExecutable, ct);
+
+    /// <summary>The hook's self-test for every run that relies on it: a job run, and Central's supervisor run (deliverable 18).</summary>
+    internal static async Task<bool> HookRefusesAnEmptyCallAsync(IProcessRunner processes, string hookExecutable, CancellationToken ct)
     {
         try
         {
@@ -289,7 +293,7 @@ public sealed partial class JobRunner
             {
                 Timeout = HookSelfTestTimeout,
             };
-            var result = await _processes.RunAsync(spec, ct).ConfigureAwait(false);
+            var result = await processes.RunAsync(spec, ct).ConfigureAwait(false);
             return result.ExitCode == 2;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

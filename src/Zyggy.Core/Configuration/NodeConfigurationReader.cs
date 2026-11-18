@@ -455,7 +455,24 @@ public static partial class NodeConfigurationReader
             }
         }
 
-        supervision = new SupervisionSettings(enabled, statusMinutes, detail);
+        // Slice 10: Central's wake — the project a supervisor run starts in, and the most runs it starts within 60 minutes.
+        string? project = null;
+        if (section.TryGetProperty("project", out JsonElement projectElement) && projectElement.ValueKind != JsonValueKind.Null)
+        {
+            project = projectElement.ValueKind == JsonValueKind.String ? projectElement.GetString() : null;
+            if (string.IsNullOrWhiteSpace(project))
+            {
+                failure = Invalid("supervision.project", "must be a project name");
+                return false;
+            }
+        }
+
+        if (!TryRangedInt(section, "supervision", "runsPerHour", 1, 120, supervision.RunsPerHour, out int runsPerHour, out failure))
+        {
+            return false;
+        }
+
+        supervision = new SupervisionSettings(enabled, statusMinutes, detail) { Project = project, RunsPerHour = runsPerHour };
         if (workMachines.Count > 0)
         {
             supervision = supervision with { WorkMachines = workMachines };

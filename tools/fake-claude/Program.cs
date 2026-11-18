@@ -111,6 +111,20 @@ if (!string.IsNullOrEmpty(toolCallsText))
             File.WriteAllText(target, toolInput["content"]?.GetValue<string>() ?? string.Empty, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         }
 
+        // Spec 18: an allowed call that carries "run" starts the zyggy binary of ZYGGY_FAKE_CLAUDE_ZYGGY with those arguments and
+        // waits for it — the model running a `zyggy` verb through its shell tool. The verb's exit code is not the fake's concern.
+        if (!blocked && node["run"] is JsonArray run)
+        {
+            var zyggy = Environment.GetEnvironmentVariable("ZYGGY_FAKE_CLAUDE_ZYGGY");
+            if (string.IsNullOrEmpty(zyggy) || run.Any(a => a is null || a.GetValueKind() != JsonValueKind.String))
+            {
+                Console.Error.WriteLine($"fake-claude: invalid ZYGGY_FAKE_CLAUDE_TOOL_CALLS line '{call}'");
+                return 5;
+            }
+
+            RunZyggy(zyggy, [.. run.Select(a => a!.GetValue<string>())]);
+        }
+
         if (!string.IsNullOrEmpty(toolLog))
         {
             File.AppendAllText(toolLog, (blocked ? "blocked " : "allowed ") + toolName + "\n");
@@ -273,6 +287,38 @@ static int RunHook(string command, List<string> hookArgs, string input)
     catch (System.ComponentModel.Win32Exception)
     {
         return -1;
+    }
+}
+
+// The zyggy verb of a scripted call: the fake's own environment and working directory, output passed to stderr.
+static void RunZyggy(string zyggy, List<string> zyggyArgs)
+{
+    var info = new ProcessStartInfo(zyggy)
+    {
+        UseShellExecute = false,
+        RedirectStandardInput = true,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+    };
+    foreach (var arg in zyggyArgs)
+    {
+        info.ArgumentList.Add(arg);
+    }
+
+    try
+    {
+        using var process = Process.Start(info)!;
+        process.StandardInput.Close();
+        var stderr = process.StandardError.ReadToEndAsync();
+        var stdout = process.StandardOutput.ReadToEnd();
+        process.WaitForExit();
+        Console.Error.Write(stdout);
+        Console.Error.Write(stderr.Result);
+        Console.Error.WriteLine($"fake-claude: zyggy {zyggyArgs.FirstOrDefault()} exit {process.ExitCode}");
+    }
+    catch (System.ComponentModel.Win32Exception ex)
+    {
+        Console.Error.WriteLine($"fake-claude: zyggy did not start: {ex.Message}");
     }
 }
 
