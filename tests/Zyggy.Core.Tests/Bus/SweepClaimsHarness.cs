@@ -74,10 +74,12 @@ internal sealed class SweepClaimsHarness : IDisposable
         int? timeoutMinutes = 2,
         TimeSpan? claimedAgo = null,
         Func<byte[], byte[]>? mutate = null,
-        MachineName? to = null)
+        MachineName? to = null,
+        EnvelopeId? mandate = null,
+        string? step = null)
     {
         Model job = await TestEnvelopes.SignedJobAsync(
-            WorkLaptop, to ?? machine, await StoreAsync(ct), TestKeys.Acme1, "probe body\n", ct, fields: new JobFields("probe", TimeoutMinutes: timeoutMinutes, Attempt: attempt));
+            WorkLaptop, to ?? machine, await StoreAsync(ct), TestKeys.Acme1, "probe body\n", ct, fields: new JobFields("probe", TimeoutMinutes: timeoutMinutes, Attempt: attempt, Mandate: mandate, Step: step));
         byte[] bytes = EnvelopeWriter.Serialize(job);
         bytes = mutate is null ? bytes : mutate(bytes);
         string path = BusPaths.EnvelopeFile(BusPaths.Claimed(Acme, machine), job.Header.Id);

@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 using Zyggy.Core.Bus;
 using Zyggy.Core.Configuration;
+using Zyggy.Core.Envelope;
 using Zyggy.Core.Registry;
 using Zyggy.Core.Tenancy;
 using Zyggy.Core.Verbs;
@@ -20,7 +21,7 @@ internal static class SubmitCommand
     public static Command Create(CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure)
     {
         var to = new Option<string>("--to") { Description = "The target machine (a lowercase label).", Required = true };
-        var project = new Option<string>("--project") { Description = "The project: a registry name or an absolute path on the target.", Required = true };
+        var project = new Option<string?>("--project") { Description = "The project: a registry name or an absolute path on the target (required without --mandate)." };
         var agent = new Option<string?>("--agent") { Description = "The subagent to run (optional)." };
         var timeout = new Option<int?>("--timeout") { Description = "The time limit in minutes (1–1440; the node's default when absent)." };
         var allowedTools = new Option<string[]>("--allowed-tools") { Description = "Tool approval rules, comma-separated; may be repeated.", AllowMultipleArgumentsPerToken = false, Arity = ArgumentArity.ZeroOrMore };
@@ -29,11 +30,35 @@ internal static class SubmitCommand
         var branch = new Option<string?>("--branch") { Description = "With --worktree: start from this branch on the project's origin when it exists and push a successful run to it (never the default branch)." };
         var description = new Option<string?>("--description") { Description = "One line saying what the branch holds after the job: the node's commit subject and a report line." };
         var body = new Argument<string?>("body") { Description = "The job's instructions; read from standard input when absent.", Arity = ArgumentArity.ZeroOrOne };
+        var mandate = new Option<string?>("--mandate") { Description = "Central: submit under this mandate; the body is the kind's shipped template, the project and tools are the mandate's." };
+        var kind = new Option<string?>("--kind") { Description = "With --mandate: brief, build, verify, correct, merge, release or deploy." };
+        var step = new Option<string?>("--step") { Description = "With --mandate: the step label (1-60 lowercase letters, digits, spaces or hyphens)." };
+        var reference = new Option<string?>("--ref") { Description = "With --mandate: the id the template names (the verify report for --kind correct)." };
+        var baseBranch = new Option<string?>("--base") { Description = "With --mandate: the branch the job starts from and pushes back to; one of the mandate's branches." };
+        var session = new Option<bool>("--session") { Description = "With --mandate: deliver the task into a live session (the mandate must allow sessions)." };
         var command = new Command("submit", "Build, sign and publish a job envelope to a machine's inbox on the bus.")
         {
-            to, project, agent, timeout, allowedTools, priority, worktree, branch, description, body, BusHost.ConfigOption, BusHost.VerboseOption,
+            to, project, agent, timeout, allowedTools, priority, worktree, branch, description, body, mandate, kind, step, reference, baseBranch, session, BusHost.ConfigOption, BusHost.VerboseOption,
         };
-        command.SetAction((parseResult, ct) => RunAsync(
+        command.SetAction((parseResult, ct) => parseResult.GetValue(mandate) is not null
+            ? MandateAsync(
+                environment,
+                io,
+                configure,
+                parseResult,
+                new MandateGiven(
+                    parseResult.GetValue(to),
+                    parseResult.GetValue(mandate),
+                    parseResult.GetValue(kind),
+                    parseResult.GetValue(step),
+                    parseResult.GetValue(reference),
+                    parseResult.GetValue(baseBranch),
+                    parseResult.GetValue(session),
+                    parseResult.GetValue(body) is not null || parseResult.GetValue(project) is not null || parseResult.GetValue(agent) is not null
+                        || parseResult.GetValue(timeout) is not null || parseResult.GetValue(allowedTools) is { Length: > 0 } || parseResult.GetValue(worktree)
+                        || parseResult.GetValue(priority) is not null || parseResult.GetValue(branch) is not null || parseResult.GetValue(description) is not null),
+                ct)
+            : RunAsync(
             environment,
             io,
             configure,
@@ -69,6 +94,19 @@ internal static class SubmitCommand
         string? positionalBody,
         CancellationToken ct)
     {
+        // Deliverable 18: an unattended run submits only under a mandate (spec 18, "Enforced on Central").
+        if (environment.HooksOff)
+        {
+            await io.Error.WriteLineAsync("zyggy: refused: an unattended run submits only under a mandate (--mandate)");
+            return ExitCodes.Configuration;
+        }
+
+        if (project is null)
+        {
+            await io.Error.WriteLineAsync("zyggy: submit: --project is required without --mandate");
+            return ExitCodes.Usage;
+        }
+
         (NodeConfiguration? configuration, int exitCode) = BusHost.LoadConfiguration(parseResult, environment, io);
         if (configuration is null)
         {
@@ -115,16 +153,92 @@ internal static class SubmitCommand
         }
 
         SubmitResult result = await services.GetRequiredService<JobSubmitter>().SubmitAsync(named!, ct);
+        return await RenderAsync(io, configuration, request!.To, result);
+    }
+
+    // Deliverable 18: Central's submit under a mandate. No body, project, tools, agent, timeout, priority or worktree may be given: the
+    // template and the mandate decide them. Every limit is checked in Core; a refusal names it and writes nothing.
+    private static async Task<int> MandateAsync(CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure, ParseResult parseResult, MandateGiven given, CancellationToken ct)
+    {
+        if (given.FreeFieldGiven)
+        {
+            await io.Error.WriteLineAsync("zyggy: refused: under a mandate the body, project, tools, agent, timeout, priority, worktree, branch and description come from the mandate and its template");
+            return ExitCodes.Configuration;
+        }
+
+        MandateJobKind kind = default;
+        EnvelopeId? reference = null;
+        if (!MachineName.TryParse(given.To, out MachineName? to)
+            || !EnvelopeId.TryParse(given.Mandate, out EnvelopeId? mandate)
+            || !EnvelopeWire.TryFromWire(given.Kind, out kind)
+            || string.IsNullOrEmpty(given.Step)
+            || (given.Reference is not null && !EnvelopeId.TryParse(given.Reference, out reference)))
+        {
+            await io.Error.WriteLineAsync("zyggy: submit: under a mandate give --to <machine>, --mandate <id>, --kind brief|build|verify|correct|merge|release|deploy and --step <label>; --ref takes an id");
+            return ExitCodes.Usage;
+        }
+
+        if (kind == MandateJobKind.Correct && reference is null)
+        {
+            await io.Error.WriteLineAsync("zyggy: submit: --kind correct needs --ref <the verify report's id>");
+            return ExitCodes.Usage;
+        }
+
+        (NodeConfiguration? configuration, int exitCode) = BusHost.LoadConfiguration(parseResult, environment, io);
+        if (configuration is null)
+        {
+            return exitCode;
+        }
+
+        if (configuration.Machine != MachineName.Central)
+        {
+            await io.Error.WriteLineAsync("zyggy: refused: only central submits under a mandate");
+            return ExitCodes.Configuration;
+        }
+
+        if (configuration.SignWith is null)
+        {
+            return BusHost.ConfigurationError(io, "signWith missing");
+        }
+
+        await using ServiceProvider services = BusHost.BuildServices(configuration, parseResult.GetValue(BusHost.VerboseOption), environment, configure);
+        int checkout = await BusHost.CheckCheckoutAsync(services, configuration, io, ct);
+        if (checkout != ExitCodes.Ok)
+        {
+            return checkout;
+        }
+
+        MandateSubmitOutcome outcome;
+        try
+        {
+            outcome = await services.GetRequiredService<MandateSubmission>().SubmitAsync(new MandateJobRequest(to, mandate, kind, given.Step, reference, given.Base, given.Session), ct);
+        }
+        catch (BusBusyException ex)
+        {
+            return BusHost.ConfigurationError(io, ex.Message);
+        }
+
+        if (outcome.Result is null)
+        {
+            await io.Error.WriteLineAsync("zyggy: refused: mandate " + MandateRules.ToWire(outcome.Verdict.Limit!.Value) + ": " + outcome.Verdict.Detail);
+            return ExitCodes.Configuration;
+        }
+
+        return await RenderAsync(io, configuration, to, outcome.Result);
+    }
+
+    private static async Task<int> RenderAsync(VerbIo io, NodeConfiguration configuration, MachineName to, SubmitResult result)
+    {
         switch (result)
         {
             case Submitted submitted:
-                await io.Out.WriteLineAsync($"submitted {submitted.Id.Value} to {request!.To.Value} ({submitted.RelativePath})");
+                await io.Out.WriteLineAsync($"submitted {submitted.Id.Value} to {to.Value} ({submitted.RelativePath})");
                 return ExitCodes.Ok;
             case SubmitDeferred deferred:
-                await io.Out.WriteLineAsync($"submitted {deferred.Id.Value} to {request!.To.Value} ({deferred.RelativePath}) (committed locally, not yet pushed: the next bus write on this machine pushes it)");
+                await io.Out.WriteLineAsync($"submitted {deferred.Id.Value} to {to.Value} ({deferred.RelativePath}) (committed locally, not yet pushed: the next bus write on this machine pushes it)");
                 return ExitCodes.PushDeferred;
             case SubmitFailed { Stage: "sign" }:
-                await io.Error.WriteLineAsync($"zyggy: signing key {configuration.SignWith} is not in the secret store; run: zyggy secret set {configuration.SignWith.SecretName} --hex");
+                await io.Error.WriteLineAsync($"zyggy: signing key {configuration.SignWith} is not in the secret store; run: zyggy secret set {configuration.SignWith?.SecretName} --hex");
                 return ExitCodes.Failed;
             case SubmitFailed { Stage: "secret-store" } unavailable:
                 await io.Error.WriteLineAsync($"zyggy: secret store unavailable: {unavailable.Detail}");
@@ -143,6 +257,8 @@ internal static class SubmitCommand
                 return ExitCodes.Failed;
         }
     }
+
+    private sealed record MandateGiven(string? To, string? Mandate, string? Kind, string? Step, string? Reference, string? Base, bool Session, bool FreeFieldGiven);
 
     /// <summary>
     /// The target machine's registry file as it stands in this machine's bus checkout (spec 53 AC-15), or <see langword="null"/> when it

@@ -37,6 +37,9 @@ All `schema: 1`, `tenant: acme`, LF line endings unless stated.
 | `job-branch` | canonical style | `acme/1` | deliverable 53: the optional job fields `branch: feature/12-cart` and `description` (plain), `worktree: true`, project `shop`; the factory output for the same fields equals this file (spec 53 AC-1) |
 | `job-branch-only` | canonical style | `acme/1` | deliverable 53: `branch` only, mixed case and every allowed character class (`Feature/Cart-Totals_v2.1`) (AC-1) |
 | `job-description-quoted` | canonical style | `acme/1` | deliverable 53: `description` only, with `: `, ` #`, a leading `-` and both quote characters; plain and single quotes are excluded (a `'` in the text), so it is double-quoted with `\"`, as `job-noncanonical`'s `x_quote` (AC-1) |
+| `mandate` | canonical style | `acme/1` | deliverable 18: `type: mandate`, `central` → `home-laptop`, every field written (`project`, `goal`, `spec` + `spec_commit`, one `branches` item, three `allowed_tools`, the three caps, `expires` three days after `created`, `grants: [accept]`, `sessions: false`), empty body (spec 18 AC-1); produced like the `item-*` cases |
+| `job-mandate` | canonical style | `acme/1` | deliverable 18: a job carrying `mandate` (the `mandate` case's id), `step` and `base`, `worktree: true`, no `deliver` (the default `run` is never written); produced like the `item-*` cases |
+| `report-mandate` | canonical style | `acme/1` | deliverable 18: a `done` report on the `job-mandate` case carrying its `mandate` and `step`, so the job still counts under its mandate once its file is gone; produced like the `item-*` cases |
 
 ## How the oracle files are produced — never by the code under test
 

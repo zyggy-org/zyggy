@@ -8,6 +8,8 @@ namespace Zyggy.Core.Jobs.Hook;
 /// pattern rule only when the command is simple, <see cref="ShellCommand.WhyNotSimple"/>); a file-tool write stays inside the run
 /// directory and out of every <c>.git/</c>, <c>.claude/settings*.json</c> and <c>.claude/hooks/</c> in it, at any depth, under any
 /// spelling; a shell command names no network program, however it is quoted, unless the part naming it matches a rule for that program.
+/// With a read root (deliverable 18) a fourth check follows the first: a file-tool read, and a shell command naming a path, stay
+/// inside the listed folders and files.
 /// </summary>
 internal sealed class JobHookPolicy
 {
@@ -18,12 +20,15 @@ internal sealed class JobHookPolicy
     private readonly bool _ignoreCase;
     private readonly StringComparison _pathComparison;
     private readonly Regex _protected;
+    private readonly IReadOnlyList<string> _readRoots;
 
     /// <param name="root">The run directory: the worktree for a worktree job, else the project folder; absolute.</param>
     /// <param name="rules">The effective <c>allowed_tools</c>.</param>
     /// <param name="ignoreCase">Whether paths compare without case (Windows, macOS).</param>
-    public JobHookPolicy(string root, IEnumerable<string> rules, bool ignoreCase)
+    /// <param name="readRoots">The read roots (deliverable 18): absolute folders or files; empty or <see langword="null"/> leaves reads unrestricted.</param>
+    public JobHookPolicy(string root, IEnumerable<string> rules, bool ignoreCase, IEnumerable<string>? readRoots = null)
     {
+        _readRoots = [.. (readRoots ?? []).Select(r => Path.TrimEndingDirectorySeparator(Path.GetFullPath(r)))];
         _root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
         _rules = [.. rules.Select(ToolRule.Parse).OfType<ToolRule>()];
         _ignoreCase = ignoreCase;
@@ -52,6 +57,11 @@ internal sealed class JobHookPolicy
         {
             var detail = !shell ? path ?? tool : notSimple is null ? command : $"not a simple command ({notSimple}): {command}";
             return HookDecision.Deny(HookDecision.NotAllowedRule, detail);
+        }
+
+        if (_readRoots.Count > 0 && ReadOutside(tool, input, shell, command, notSimple, parts, path, cwd) is { } outside)
+        {
+            return HookDecision.Deny(HookDecision.ReadOutsideRule, outside);
         }
 
         if (tool is "Write" or "Edit" or "MultiEdit" or "NotebookEdit" && !WritableInside(path, cwd))
@@ -135,6 +145,75 @@ internal sealed class JobHookPolicy
             return null;
         }
     }
+
+    // Deliverable 18, the read root: what the call would read outside every root, or null when it stays inside. A file-tool read
+    // is judged by its path (a search without one reads the run directory). A shell command is judged word by word: an argument is
+    // a path when it has no blank and holds a path separator or starts with '~' or '.', or when it exists on disk; a command that
+    // is not simple cannot be read and is refused whole. Links are not followed, as for the write rule.
+    private string? ReadOutside(string tool, JsonElement input, bool shell, string command, string? notSimple, IReadOnlyList<string> parts, string? path, string? cwd)
+    {
+        if (tool is "Read" or "Grep" or "Glob" or "NotebookRead")
+        {
+            var target = path ?? (tool == "Read" ? null : ".");
+            if (target is null || !InsideReadRoot(Full(target, cwd)))
+            {
+                return path ?? "no path";
+            }
+
+            // A search pattern is part of what is read: one that climbs out of its folder, or names another place, is refused.
+            foreach (var name in new[] { "pattern", "glob" })
+            {
+                if (tool != "Read" && !(tool == "Grep" && name == "pattern") && Text(input, name) is { } pattern && LeavesItsFolder(pattern))
+                {
+                    return pattern;
+                }
+            }
+
+            return null;
+        }
+
+        if (!shell)
+        {
+            return null;
+        }
+
+        if (notSimple is not null)
+        {
+            return $"not a simple command ({notSimple}): {command}";
+        }
+
+        foreach (var part in parts)
+        {
+            foreach (var (word, blank) in ShellCommand.Words(part).Skip(1))
+            {
+                // An option's value: --file=<path>.
+                var equals = word.StartsWith('-') ? word.IndexOf('=', StringComparison.Ordinal) : -1;
+                var candidate = equals >= 0 ? word[(equals + 1)..] : word;
+                if (candidate.Length == 0)
+                {
+                    continue;
+                }
+
+                // A quoted sentence with blanks is text, unless it exists on disk: then it is a path with blanks in it.
+                var full = candidate.StartsWith('~') ? null : Full(candidate, cwd);
+                var shaped = !blank
+                    && (candidate.Contains('/', StringComparison.Ordinal) || candidate.Contains('\\', StringComparison.Ordinal) || candidate[0] is '~' or '.');
+                if ((shaped || (full is not null && (File.Exists(full) || Directory.Exists(full)))) && !InsideReadRoot(full))
+                {
+                    return command;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static bool LeavesItsFolder(string pattern) =>
+        pattern.Split('/', '\\').Contains("..") || pattern.StartsWith('~') || Path.IsPathRooted(pattern);
+
+    private bool InsideReadRoot(string? full) =>
+        full is not null && _readRoots.Any(root =>
+            string.Equals(full, root, _pathComparison) || full.StartsWith(root + Path.DirectorySeparatorChar, _pathComparison));
 
     private bool WritableInside(string? path, string? cwd)
     {

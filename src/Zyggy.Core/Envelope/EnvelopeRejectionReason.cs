@@ -35,4 +35,10 @@ public enum EnvelopeRejectionReason
 
     /// <summary><c>wrong_recipient</c>: <c>to</c> is not the receiver's machine (§4 "Signature", deliverable 04).</summary>
     WrongRecipient,
+
+    /// <summary>
+    /// <c>mandate_invalid</c>: the job names a mandate the node cannot match in its own bus checkout, or supervision is off on this
+    /// machine (deliverable 18, "Enforced on the node"); rejected before any model call.
+    /// </summary>
+    MandateInvalid,
 }

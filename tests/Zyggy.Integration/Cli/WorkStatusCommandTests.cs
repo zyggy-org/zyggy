@@ -321,7 +321,9 @@ public sealed class WorkStatusCommandTests : IAsyncLifetime
         var ct = TestContext.Current.CancellationToken;
         await _harness.Bus.SeedTenantAsync(CliHarness.Acme, [CliHarness.Central, CliHarness.HomeLaptop, CliHarness.WorkLaptop], ct);
         await SeedStatusAsync(CliHarness.WorkLaptop, CliHarness.WorkLaptop, "dddd4444", T, ct);
-        string nodeJson = WriteNodeJson(CliHarness.Central, _harness.Bus.SenderDir, "central", "\"supervision\": { \"workMachines\": [\"work-laptop\"] }");
+        // Central names the folders a work machine is answered from, or it does not start (spec 18 slice 11).
+        string outbound = _harness.Scratch.File("outbound").Replace('\\', '/');
+        string nodeJson = WriteNodeJson(CliHarness.Central, _harness.Bus.SenderDir, "central", "\"supervision\": { \"workMachines\": [\"work-laptop\"], \"outboundPaths\": [\"" + outbound + "\"] }");
 
         // Act
         var (exit, console) = await WorkAsync(nodeJson, ct);

@@ -123,6 +123,18 @@ public static class BusPaths
     /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
     public static string Decisions(TenantId tenant, MachineName machine) => Node(tenant, machine) + "/decisions";
 
+    /// <summary>Returns the folder of the mandates in force: <c>tenants/&lt;org&gt;/mandates</c> (deliverable 18), written by Central only.</summary>
+    /// <param name="tenant">The tenant.</param>
+    /// <returns>The repository-relative path.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="tenant"/> is null.</exception>
+    public static string Mandates(TenantId tenant) => Tenant(tenant) + "/mandates";
+
+    /// <summary>Returns the folder of the revoked mandates: <c>tenants/&lt;org&gt;/mandates/revoked</c> (deliverable 18).</summary>
+    /// <param name="tenant">The tenant.</param>
+    /// <returns>The repository-relative path.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="tenant"/> is null.</exception>
+    public static string RevokedMandates(TenantId tenant) => Mandates(tenant) + "/revoked";
+
     /// <summary>Returns a month's archive folder: <c>tenants/&lt;org&gt;/archive/YYYY-MM</c> (§4 sweep).</summary>
     /// <param name="tenant">The tenant.</param>
     /// <param name="year">The year.</param>
@@ -196,8 +208,25 @@ public static class BusPaths
             "registry" => TryParseRegistry(tenant, parts, out location),
             "archive" => TryParseArchive(tenant, parts, out location),
             "nodes" => TryParseNode(tenant, parts, out location),
+            "mandates" => TryParseMandate(tenant, parts, out location),
             _ => false,
         };
+    }
+
+    // Deliverable 18: mandates/<ULID>.md, mandates/revoked and mandates/revoked/<ULID>.md; nothing else under mandates/.
+    private static bool TryParseMandate(TenantId tenant, string[] parts, out BusLocation? location)
+    {
+        location = null;
+        bool revoked = parts[3] == "revoked";
+        EnvelopeId? id = null;
+        if (parts.Length == 4 ? !revoked && !TryParseEnvelopeFile(parts[3], out id)
+            : parts.Length != 5 || !revoked || !TryParseEnvelopeFile(parts[4], out id))
+        {
+            return false;
+        }
+
+        location = new BusLocation(tenant, null, revoked ? BusFolder.RevokedMandates : BusFolder.Mandates, id);
+        return true;
     }
 
     private static string Node(TenantId tenant, MachineName machine)

@@ -216,7 +216,11 @@ public sealed partial class BusRepository
         Model envelope = result.Envelope!;
         if (envelope.Header.To != _me.Machine)
         {
-            return new RejectedJob(file, EnvelopeRejectionReason.WrongRecipient, "to", "to is not this machine", envelope.Header.From);
+            return new RejectedJob(file, EnvelopeRejectionReason.WrongRecipient, "to", "to is not this machine", envelope.Header.From)
+            {
+                Mandate = envelope.Job?.Mandate,
+                Step = envelope.Job?.Step,
+            };
         }
 
         if (envelope.Header.Id != file.Id)
@@ -336,7 +340,7 @@ public sealed partial class BusRepository
         var header = new EnvelopeHeader(_me.Tenant, reportId, _me.Machine, job.From, now, EnvelopePriority.Normal, job.File.Id);
         string body = "rejected: " + reason + (job.Field is null ? string.Empty : " (" + job.Field + ")") + "\n";
         EnvelopeResult signed = await _signer.SignAsync(
-            Model.CreateReport(header, new ReportFields(ReportStatus.Rejected, reason), Encoding.UTF8.GetBytes(body)), signWith, ct).ConfigureAwait(false);
+            Model.CreateReport(header, new ReportFields(ReportStatus.Rejected, reason, Mandate: job.Mandate, Step: job.Step), Encoding.UTF8.GetBytes(body)), signWith, ct).ConfigureAwait(false);
         if (!signed.IsAccepted)
         {
             LogWriteFailed(_me.Tenant.Value, _me.Machine.Value, "reject " + job.File.Id.Value, "sign", signed.Rejection!.Detail);
@@ -655,6 +659,80 @@ public sealed partial class BusRepository
                 return Failure("mv", await _git.MoveAsync(_checkoutRoot, from, to!, token).ConfigureAwait(false));
             },
             ct);
+    }
+
+    /// <summary>
+    /// Deliverable 18 write rule: only Central writes <c>mandates/</c>. Writes <paramref name="signedMandate"/> as
+    /// <c>mandates/&lt;id&gt;.md</c> in one commit <c>&lt;tenant&gt; mandate &lt;id&gt; central→&lt;machine&gt;</c>.
+    /// </summary>
+    /// <param name="signedMandate">The signed mandate envelope.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The write outcome.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="signedMandate"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when this machine is not Central or the envelope is not a signed mandate of this machine and tenant (a caller bug).</exception>
+    public Task<WriteOutcome> PublishMandateAsync(Model signedMandate, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(signedMandate);
+        string path = MandatePath(signedMandate, BusFolder.Mandates);
+        byte[] bytes = EnvelopeWriter.Serialize(signedMandate);
+        return WriteAsync(
+            Subject("mandate", signedMandate.Header.Id, signedMandate.Header.From.Value, signedMandate.Header.To.Value),
+            [path],
+            async token =>
+            {
+                await WriteFileAsync(path, bytes, token).ConfigureAwait(false);
+                return Failure("add", await _git.AddAsync(_checkoutRoot, [path], token).ConfigureAwait(false));
+            },
+            ct);
+    }
+
+    /// <summary>
+    /// Deliverable 18 write rule: only Central revokes. Moves <c>mandates/&lt;id&gt;.md</c> to <c>mandates/revoked/&lt;id&gt;.md</c>
+    /// in one commit <c>&lt;tenant&gt; revoke &lt;id&gt; central→&lt;machine&gt;</c>; the bytes are not touched.
+    /// </summary>
+    /// <param name="signedMandate">The mandate as it stands in <c>mandates/</c>.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The write outcome.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="signedMandate"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when this machine is not Central, the envelope is not a signed mandate of this tenant, or no such file is in <c>mandates/</c>.</exception>
+    public Task<WriteOutcome> RevokeMandateAsync(Model signedMandate, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(signedMandate);
+        string from = MandatePath(signedMandate, BusFolder.Mandates);
+        string to = MandatePath(signedMandate, BusFolder.RevokedMandates);
+        if (!File.Exists(BusPaths.Resolve(_checkoutRoot, from)))
+        {
+            throw new InvalidOperationException("write rule: '" + from + "' is not in mandates/");
+        }
+
+        return WriteAsync(
+            Subject("revoke", signedMandate.Header.Id, signedMandate.Header.From.Value, signedMandate.Header.To.Value),
+            [from, to],
+            async token =>
+            {
+                Directory.CreateDirectory(BusPaths.Resolve(_checkoutRoot, BusPaths.RevokedMandates(_me.Tenant)));
+                return Failure("mv", await _git.MoveAsync(_checkoutRoot, from, to, token).ConfigureAwait(false));
+            },
+            ct);
+    }
+
+    /// <summary>The mandate branch of the write rule: Central only, a signed mandate of Central and this tenant, a path in the folder named.</summary>
+    private string MandatePath(Model signedMandate, BusFolder folder)
+    {
+        if (_me.Machine != MachineName.Central)
+        {
+            throw new InvalidOperationException("write rule: only central writes mandates");
+        }
+
+        AssertOwnSigned(signedMandate, EnvelopeType.Mandate, "mandate");
+        string path = BusPaths.EnvelopeFile(folder == BusFolder.Mandates ? BusPaths.Mandates(_me.Tenant) : BusPaths.RevokedMandates(_me.Tenant), signedMandate.Header.Id);
+        BusLocation location = LocationOf(path);
+        if (location.Tenant != _me.Tenant || location.Folder != folder)
+        {
+            throw new InvalidOperationException("write rule: '" + path + "' is not in the " + folder + " folder");
+        }
+
+        return path;
     }
 
     /// <summary>The shared half of the write rule for an envelope this machine sends: the right type, this tenant, this machine, signed.</summary>

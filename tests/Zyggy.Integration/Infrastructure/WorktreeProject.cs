@@ -76,6 +76,39 @@ public sealed class WorktreeProject : IDisposable
     public Task AddFailingPreCommitHookAsync(CancellationToken ct) =>
         WriteHookAsync(System.IO.Path.Combine(Path, ".git", "hooks", "pre-commit"), "#!/bin/sh\necho 'pre-commit: refused by fixture' >&2\nexit 1\n", ct);
 
+    /// <summary>
+    /// Creates <paramref name="branch"/> one commit ahead of <c>main</c> (<c>src/feature.txt</c>) and pushes it to the origin; the
+    /// project checkout goes back to <c>main</c>. Returns the branch's tip.
+    /// </summary>
+    public async Task<string> AddBranchAsync(string branch, CancellationToken ct)
+    {
+        await GitAsync(["checkout", "-q", "-b", branch], ct);
+        await File.WriteAllTextAsync(System.IO.Path.Combine(Path, "src", "feature.txt"), "feature\n", ct);
+        await GitAsync(["add", "-A"], ct);
+        await GitAsync(["commit", "-q", "-m", "feature start"], ct);
+        await GitAsync(["push", "-q", "origin", branch], ct);
+        await GitAsync(["checkout", "-q", "main"], ct);
+        return (await ResolveAsync(OriginDir, "refs/heads/" + branch, ct))!;
+    }
+
+    /// <summary>
+    /// Adds a <c>post-receive</c> hook to the origin that, when a <c>zyggy/*</c> branch arrives, adds one commit (<c>moved</c>) on
+    /// <paramref name="branch"/>: the branch moves between a job's start and its push to that branch.
+    /// </summary>
+    public Task AddOriginThatMovesAsync(string branch, CancellationToken ct) =>
+        WriteHookAsync(
+            System.IO.Path.Combine(OriginDir, "hooks", "post-receive"),
+            "#!/bin/sh\n" +
+            "while read old new ref; do\n" +
+            "  case \"$ref\" in refs/heads/zyggy/*)\n" +
+            "    tip=$(git rev-parse refs/heads/" + branch + ")\n" +
+            "    tree=$(git rev-parse \"$tip^{tree}\")\n" +
+            "    moved=$(GIT_AUTHOR_NAME=fixture GIT_AUTHOR_EMAIL=fixture@example.invalid GIT_COMMITTER_NAME=fixture GIT_COMMITTER_EMAIL=fixture@example.invalid git commit-tree \"$tree\" -p \"$tip\" -m moved)\n" +
+            "    git update-ref refs/heads/" + branch + " \"$moved\" \"$tip\"\n" +
+            "  esac\n" +
+            "done\n",
+            ct);
+
     /// <summary>Adds a <c>pre-receive</c> hook to the origin that refuses every push.</summary>
     public Task AddRefusingOriginAsync(CancellationToken ct) =>
         WriteHookAsync(System.IO.Path.Combine(OriginDir, "hooks", "pre-receive"), "#!/bin/sh\necho 'pre-receive: refused by fixture' >&2\nexit 1\n", ct);

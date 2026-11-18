@@ -29,4 +29,19 @@ public sealed record SupervisionSettings(bool Enabled = true, int StatusMinutes 
     /// files carry (founding spec §8). Empty when absent.
     /// </summary>
     public IReadOnlyList<MachineName> WorkMachines { get; init; } = Array.Empty<MachineName>();
+
+    /// <summary>
+    /// Gets <c>supervision.project</c>: the registry name of Central's own project, in which a supervisor run starts.
+    /// <see langword="null"/> when absent: no supervisor run starts.
+    /// </summary>
+    public string? Project { get; init; }
+
+    /// <summary>
+    /// Gets <c>supervision.outboundPaths</c>: the absolute folders a supervisor run may read while it answers a machine of
+    /// <see cref="WorkMachines"/> (founding spec §8). Empty when absent.
+    /// </summary>
+    public IReadOnlyList<string> OutboundPaths { get; init; } = Array.Empty<string>();
+
+    /// <summary>Gets <c>supervision.runsPerHour</c>: the most supervisor runs Central starts within 60 minutes, 1–120.</summary>
+    public int RunsPerHour { get; init; } = 20;
 }

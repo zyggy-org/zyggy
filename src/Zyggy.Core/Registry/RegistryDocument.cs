@@ -32,7 +32,16 @@ public sealed record RegistryDocument(
     /// <summary>The registry file's schema version; <see cref="Parse"/> refuses any other.</summary>
     public const int Schema = 1;
 
+    /// <summary>The capability a node publishes once its version checks a job against its mandate (deliverable 18).</summary>
+    public const string SupervisionCapability = "supervision";
+
     private const string TimestampFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'";
+
+    /// <summary>
+    /// Gets what this machine's node can do beyond running a job (deliverable 18, the key <c>capabilities</c>): labels in ordinal
+    /// order; empty omits the key, as every file written before deliverable 18 does.
+    /// </summary>
+    public IReadOnlyList<string> Capabilities { get; init; } = [];
 
     /// <summary>Serialises the document in its canonical form.</summary>
     /// <returns>The UTF-8 bytes of the file.</returns>
@@ -47,6 +56,11 @@ public sealed record RegistryDocument(
             ["schema"] = Scalar(Schema.ToString(CultureInfo.InvariantCulture)),
             ["tenant"] = Scalar(Tenant.Value),
         };
+
+        if (Capabilities.Count > 0)
+        {
+            root["capabilities"] = new FrontMatterSequence(Capabilities.Order(StringComparer.Ordinal).Select(Scalar));
+        }
 
         if (Health is { } health)
         {
@@ -92,7 +106,11 @@ public sealed record RegistryDocument(
             seconds,
             health,
             configuration.WorkHours,
-            scan.Projects);
+            scan.Projects)
+        {
+            // Deliverable 18: this version checks mandates at intake; with supervision off it accepts none, so it does not offer them.
+            Capabilities = configuration.Supervision.Enabled ? [SupervisionCapability] : [],
+        };
     }
 
     /// <summary>Parses a registry file. Never throws on input: every defect is a refusal naming the field.</summary>
@@ -126,7 +144,8 @@ public sealed record RegistryDocument(
         && LastSeen == other.LastSeen
         && Health == other.Health
         && WorkHoursEqual(WorkHours, other.WorkHours)
-        && Projects.SequenceEqual(other.Projects);
+        && Projects.SequenceEqual(other.Projects)
+        && Capabilities.SequenceEqual(other.Capabilities, StringComparer.Ordinal);
 
     /// <summary>Returns a structural hash code.</summary>
     /// <returns>The hash code.</returns>
@@ -298,7 +317,18 @@ public sealed record RegistryDocument(
                 projects.Add(project!);
             }
 
-            return RegistryParse.Ok(new RegistryDocument(tenant, machine, os, lastSeen, health, workHours, projects));
+            var capabilities = new List<string>();
+            if (root.Entries.TryGetValue("capabilities", out FrontMatterNode? capabilitiesNode))
+            {
+                if (capabilitiesNode is not FrontMatterSequence sequence || sequence.Items.Any(i => i is not FrontMatterScalar s || !Label.IsValid(s.Value)))
+                {
+                    return RegistryParse.Refused("capabilities", "not a list of labels");
+                }
+
+                capabilities.AddRange(sequence.Items.Select(i => ((FrontMatterScalar)i).Value).Order(StringComparer.Ordinal));
+            }
+
+            return RegistryParse.Ok(new RegistryDocument(tenant, machine, os, lastSeen, health, workHours, projects) { Capabilities = capabilities });
         }
 
         private static RegistryParse? ReadProject(FrontMatterNode node, string field, out RegistryProject? project)

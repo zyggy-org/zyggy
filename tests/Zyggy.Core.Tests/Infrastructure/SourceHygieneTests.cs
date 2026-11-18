@@ -267,6 +267,7 @@ public sealed partial class SourceHygieneTests
     [InlineData("status/")]
     [InlineData("questions/")]
     [InlineData("decisions/")]
+    [InlineData("mandates/")]
     [InlineData("PROTOCOL.md")]
     public void Src_BusPathLiterals_OnlyInBusPaths(string literal)
     {
@@ -1157,6 +1158,40 @@ public sealed partial class SourceHygieneTests
         }.Should().BeEquivalentTo(new { Work = true, Ask = true, Decide = true, Decisions = true, CliKeys = true, NodeKeys = true, RefusedText = true, NoStatus = true, Core = true });
     }
 
+    // Spec 18 AC-35 (group B): the mandate verbs, the submit under a mandate, the guard's read root, the keys of Central's wake,
+    // and a runbook row for each failure mode the group builds.
+    [Fact]
+    public void Readmes_SupervisionMandateDocumented()
+    {
+        // Arrange
+        var cli = File.ReadAllText(Path.Combine(RepoRoot(), "src/Zyggy.Cli/README.md")).Split('\n');
+        var node = File.ReadAllText(Path.Combine(RepoRoot(), "src/Zyggy.Node/README.md"));
+        var core = File.ReadAllText(Path.Combine(RepoRoot(), "src/Zyggy.Core/README.md"));
+
+        // Act
+        string? Row(string start) => cli.SingleOrDefault(l => l.StartsWith(start, StringComparison.Ordinal));
+        bool Has(string? row, params string[] texts) => row is not null && texts.All(t => row.Contains(t, StringComparison.Ordinal));
+        string[] keys = ["supervision.project", "supervision.runsPerHour", "supervision.outboundPaths"];
+        string[] runbook =
+        [
+            "Mandate refused", "Mandate paused", "Usage limit", "Supervisor could not decide", "Supervisor does not start",
+            "Upgrade before a mandate", "Branch moved under a job",
+        ];
+
+        // Assert
+        new
+        {
+            Grant = Has(Row("| `mandate grant --to <machine> --project <name> --goal <line>"), "--expires", "attended", "3 not Central", "`mandate show`", "`mandate revoke <id>`", "`mandate resume <id>`"),
+            Submit = Has(Row("| `submit --mandate <id> --to <machine> --kind <kind> --step <label>"), "--ref <id>", "--base <branch>", "exit 3", "names the limit"),
+            Hook = Has(Row("| `hook pre-tool-use"), "--read-root <path>", "read outside the read root"),
+            CliKeys = keys.All(k => cli.Count(l => l.StartsWith("| `" + k + "` |", StringComparison.Ordinal)) == 1),
+            NodeKeys = keys.All(k => node.Contains("`" + k + "`", StringComparison.Ordinal)),
+            Runbook = runbook.Where(title => cli.Count(l => l.StartsWith("| " + title + " — ", StringComparison.Ordinal)) != 1).ToArray(),
+            Wake = node.Contains("supervisor run on", StringComparison.Ordinal),
+            Core = core.Contains("## Central supervision: mandate and supervisor (deliverable 18, group B)", StringComparison.Ordinal) && core.Contains("`SupervisorWake`", StringComparison.Ordinal),
+        }.Should().BeEquivalentTo(new { Grant = true, Submit = true, Hook = true, CliKeys = true, NodeKeys = true, Runbook = Array.Empty<string>(), Wake = true, Core = true });
+    }
+
     // Spec 15 AC-16 (slice 4): the Node README's health row, node.json row and what-to-do row for the zyggy-core commit.
     [Fact]
     public void Readmes_AgentCoreHealthRowDocumented()
@@ -1301,7 +1336,8 @@ public sealed partial class SourceHygieneTests
         var cli = File.ReadAllText(Path.Combine(RepoRoot(), "src/Zyggy.Cli/README.md")).Split('\n');
 
         // Act
-        var submit = cli.Single(l => l.StartsWith("| `submit ", StringComparison.Ordinal));
+        // The plain submit row; the submit under a mandate has a row of its own (spec 18).
+        var submit = cli.Single(l => l.StartsWith("| `submit --to <machine> --project ", StringComparison.Ordinal));
 
         // Assert
         new

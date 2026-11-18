@@ -10,11 +10,16 @@ using Microsoft.Extensions.Options;
 using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Git;
+using Zyggy.Core.Jobs;
 using Zyggy.Core.M365;
 using Zyggy.Core.M365.Graph;
 using Zyggy.Core.Memory;
+using Zyggy.Core.Models;
+using Zyggy.Core.Policy;
 using Zyggy.Core.Processes;
+using Zyggy.Core.Registry;
 using Zyggy.Core.Secrets;
+using Zyggy.Core.Supervision;
 
 namespace Zyggy.Core.Bus;
 
@@ -94,6 +99,48 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<BusRepository>(),
                 sp.GetRequiredService<EnvelopeSigner>(),
                 new SweepOptions(node.SignWith, node.Claude.DefaultTimeoutMinutes),
+                log);
+        });
+        return services;
+    }
+
+    /// <summary>
+    /// Registers Central's supervisor wake (deliverable 18, "The supervisor run") over the registered bus, <see cref="IModelRunner"/>,
+    /// <see cref="IPolicySource"/>, <see cref="IProcessRunner"/> and <see cref="NodeConfiguration"/>: after every pickup pass the
+    /// listener lets it write the decisions that need no model and start at most one supervisor run in <c>supervision.project</c>.
+    /// Only Central's node calls this.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <returns><paramref name="services"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is null.</exception>
+    public static IServiceCollection AddSupervisorWake(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        services.AddOptions<JobRunnerOptions>();
+        services.TryAddSingleton(sp =>
+        {
+            NodeConfiguration node = sp.GetRequiredService<NodeConfiguration>();
+            JobRunnerOptions runs = sp.GetRequiredService<IOptions<JobRunnerOptions>>().Value;
+            ILogger<SupervisorWake> log = sp.GetService<ILoggerFactory>()?.CreateLogger<SupervisorWake>() ?? NullLogger<SupervisorWake>.Instance;
+            return new SupervisorWake(
+                sp.GetRequiredService<BusInventory>(),
+                sp.GetRequiredService<DecisionWriter>(),
+                sp.GetRequiredService<IModelRunner>(),
+                sp.GetRequiredService<IPolicySource>(),
+                sp.GetRequiredService<IProcessRunner>(),
+                sp.GetService<RegistrySnapshot>() ?? new RegistrySnapshot(),
+                sp.GetRequiredService<BusRepository>().Me,
+                new SupervisorWakeOptions(
+                    node.Supervision.Project,
+                    node.Supervision.RunsPerHour,
+                    node.Supervision.WorkMachines,
+                    node.Supervision.OutboundPaths,
+                    sp.GetRequiredService<IOptions<GitHubBusOptions>>().Value.CheckoutRoot ?? throw Missing(nameof(GitHubBusOptions.CheckoutRoot)),
+                    runs.NodeDir ?? node.EffectiveNodeDir,
+                    runs.HookExecutable ?? TranscriptPaths.DefaultHookExecutable(),
+                    runs.ModelEnvironment,
+                    runs.TimeoutOverride),
+                sp.GetRequiredService<TimeProvider>(),
                 log);
         });
         return services;
@@ -182,7 +229,16 @@ public static class ServiceCollectionExtensions
                 sp.GetService<JobGate>(),
                 sp.GetService<BusPickup>(),
                 sp.GetService<BusSweep>(),
-                SweepInterval(sp));
+                SweepInterval(sp))
+            {
+                Mandates = new MandateIntake(
+                    sp.GetRequiredService<BusInventory>(),
+                    (options.Identity ?? throw Missing(nameof(GitHubBusOptions.Identity))).Machine,
+                    sp.GetService<NodeConfiguration>()?.Supervision.Enabled ?? true,
+                    sp.GetRequiredService<TimeProvider>(),
+                    log),
+                Wake = sp.GetService<SupervisorWake>(),
+            };
         });
         // Deliverable 08: the sender side. Resolving without a registered KeyId throws (the verb checks signWith first, as probe send does).
         services.TryAddSingleton(sp =>
@@ -243,6 +299,29 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<EnvelopeSigner>(),
                 sp.GetRequiredService<KeyId>(),
                 sp.GetRequiredService<SecretPatterns>(),
+                sp.GetRequiredService<TimeProvider>(),
+                log);
+        });
+        // Deliverable 18: the owner's grant and revoke, and Central's submit under a mandate. Resolving without a KeyId throws (the verbs check signWith first).
+        services.TryAddSingleton(sp =>
+        {
+            ILogger<MandateGranter> log = sp.GetService<ILoggerFactory>()?.CreateLogger<MandateGranter>() ?? NullLogger<MandateGranter>.Instance;
+            return new MandateGranter(
+                sp.GetRequiredService<BusRepository>(),
+                sp.GetRequiredService<BusInventory>(),
+                sp.GetRequiredService<EnvelopeSigner>(),
+                sp.GetRequiredService<KeyId>(),
+                sp.GetRequiredService<TimeProvider>(),
+                log);
+        });
+        services.TryAddSingleton(sp =>
+        {
+            ILogger<MandateSubmission> log = sp.GetService<ILoggerFactory>()?.CreateLogger<MandateSubmission>() ?? NullLogger<MandateSubmission>.Instance;
+            return new MandateSubmission(
+                sp.GetRequiredService<BusRepository>(),
+                sp.GetRequiredService<BusInventory>(),
+                sp.GetRequiredService<JobSubmitter>(),
+                sp.GetRequiredService<NodeConfiguration>().Supervision.WorkMachines,
                 sp.GetRequiredService<TimeProvider>(),
                 log);
         });

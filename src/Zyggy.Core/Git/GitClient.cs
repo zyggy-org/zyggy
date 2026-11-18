@@ -209,7 +209,7 @@ internal sealed class GitClient(IProcessRunner processes, GitClientOptions optio
 
     /// <summary>
     /// Pushes the local <paramref name="branch"/> to <paramref name="destination"/> on <c>origin</c>; never forced, so git accepts it only
-    /// when it creates <paramref name="destination"/> or fast-forwards it (spec 53).
+    /// when it creates <paramref name="destination"/> or fast-forwards it (spec 53 named branch; spec 18 "A job under a mandate" base).
     /// </summary>
     public Task<GitResult> PushBranchToAsync(string repository, string branch, string destination, CancellationToken cancellationToken) =>
         RunAsync(repository, ["push", "origin", "refs/heads/" + branch + ":refs/heads/" + destination], null, cancellationToken);

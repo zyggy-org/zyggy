@@ -59,7 +59,7 @@ public sealed class JobHookVerb(bool ignoreCase)
             }
 
             var cwd = root.TryGetProperty("cwd", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() : null;
-            var decision = new JobHookPolicy(options.Root, options.Rules, ignoreCase).Decide(tool, root.GetProperty("tool_input"), cwd);
+            var decision = new JobHookPolicy(options.Root, options.Rules, ignoreCase, options.ReadRoots).Decide(tool, root.GetProperty("tool_input"), cwd);
             return decision.Allowed ? 0 : await DenyAsync(io, blockedFile, tool, decision).ConfigureAwait(false);
         }
 #pragma warning disable CA1031 // Fail closed: every unexpected error, a cancelled read included, blocks the call.
@@ -99,7 +99,7 @@ public sealed class JobHookVerb(bool ignoreCase)
         return 2;
     }
 
-    private sealed record HookArguments(string Root, string BlockedFile, IReadOnlyList<string> Rules)
+    private sealed record HookArguments(string Root, string BlockedFile, IReadOnlyList<string> Rules, IReadOnlyList<string> ReadRoots)
     {
         public static (HookArguments? Options, string? Error) Parse(IReadOnlyList<string> args)
         {
@@ -116,9 +116,10 @@ public sealed class JobHookVerb(bool ignoreCase)
             string? root = null;
             string? blocked = null;
             var rules = new List<string>();
+            var readRoots = new List<string>();
             for (var i = 1; i < args.Count; i++)
             {
-                if (args[i] is not ("--root" or "--blocked-file" or "--allow"))
+                if (args[i] is not ("--root" or "--blocked-file" or "--allow" or "--read-root"))
                 {
                     return (null, $"unexpected argument '{args[i]}'");
                 }
@@ -136,6 +137,9 @@ public sealed class JobHookVerb(bool ignoreCase)
                         break;
                     case "--blocked-file":
                         blocked = value;
+                        break;
+                    case "--read-root":
+                        readRoots.Add(value);
                         break;
                     default:
                         rules.Add(value);
@@ -158,7 +162,13 @@ public sealed class JobHookVerb(bool ignoreCase)
                 return (null, "--root must be an absolute path");
             }
 
-            return (new HookArguments(root, blocked, rules), null);
+            // Deliverable 18: a read root that is not absolute would silently mean another folder; refused, so the call is denied.
+            if (readRoots.Exists(r => !Path.IsPathFullyQualified(r)))
+            {
+                return (null, "--read-root must be an absolute path");
+            }
+
+            return (new HookArguments(root, blocked, rules, readRoots), null);
         }
     }
 }

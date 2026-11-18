@@ -12,6 +12,9 @@ internal sealed class WorktreeGit
 
     public const string TipSha = "2222222222222222222222222222222222222222";
 
+    /// <summary>The tip of <c>refs/remotes/origin/feature/shop</c>, a job's <c>base</c> (spec 18).</summary>
+    public const string FeatureSha = "3333333333333333333333333333333333333333";
+
     public WorktreeGit(RecordingProcessRunner processes)
     {
         ArgumentNullException.ThrowIfNull(processes);
@@ -23,6 +26,12 @@ internal sealed class WorktreeGit
 
     /// <summary>Gets or sets a value indicating whether <c>refs/remotes/origin/main</c> exists.</summary>
     public bool OriginMainExists { get; set; } = true;
+
+    /// <summary>Gets or sets a value indicating whether <c>refs/remotes/origin/feature/shop</c> exists.</summary>
+    public bool OriginFeatureExists { get; set; } = true;
+
+    /// <summary>Gets or sets a value indicating whether the origin refuses the push to <c>feature/shop</c> (it moved meanwhile).</summary>
+    public bool FeaturePushRefused { get; set; }
 
     /// <summary>Gets or sets a value indicating whether the branch <c>zyggy/&lt;id&gt;</c> already exists before the run.</summary>
     public bool JobBranchExists { get; set; }
@@ -108,6 +117,11 @@ internal sealed class WorktreeGit
                     return JobBranchExists ? RecordingProcessRunner.Ok(TipSha + "\n") : RecordingProcessRunner.Fail(1, "");
                 }
 
+                if (reference == "refs/remotes/origin/feature/shop")
+                {
+                    return OriginFeatureExists ? RecordingProcessRunner.Ok(FeatureSha + "\n") : RecordingProcessRunner.Fail(1, "");
+                }
+
                 if (reference == "refs/remotes/origin/" + OriginHeadBranch)
                 {
                     return OriginMainExists ? RecordingProcessRunner.Ok(BaseSha + "\n") : RecordingProcessRunner.Fail(1, "");
@@ -118,6 +132,8 @@ internal sealed class WorktreeGit
                 return RecordingProcessRunner.Ok((Ahead > 0 ? TipSha : BaseSha) + "\n");
             case "symbolic-ref" when Has(spec, "refs/remotes/origin/HEAD"):
                 return OriginUrl is null ? RecordingProcessRunner.Fail(1, "") : RecordingProcessRunner.Ok("origin/" + OriginHeadBranch + "\n");
+            case "push" when FeaturePushRefused && args[^1].EndsWith(":refs/heads/feature/shop", StringComparison.Ordinal):
+                return RecordingProcessRunner.Fail(1, " ! [rejected]        zyggy/x -> feature/shop (fetch first)\n");
             case "status":
                 return RecordingProcessRunner.Ok(StatusAfterRun);
             case "rev-list" when args[^1].Contains("..refs/remotes/origin/", StringComparison.Ordinal):

@@ -1,0 +1,19 @@
+---
+created: 2026-11-15T10:45:00Z
+finished: 2026-11-15T10:44:30Z
+from: home-laptop
+id: 01M7F2H0HHHHHHHHHHHHHHHHHH
+in_reply_to: 01M7F1Z0GGGGGGGGGGGGGGGGGG
+key_id: acme/1
+mandate: 01M7F1M0FFFFFFFFFFFFFFFFFF
+priority: normal
+schema: 1
+sig: hmac-sha256:2196e7ee7264e1fca618d5ca68990742d033722fd347d3a207bf03a07545bff0
+status: done
+step: slice 2
+tenant: acme
+to: central
+type: report
+---
+## REPORT
+summary: Slice 2 is built on feature/12-booking-pool.

@@ -126,6 +126,62 @@ internal static class ShellCommand
     }
 
     /// <summary>
+    /// The words of one part of a simple command, quotes removed: split on blanks outside quotes. <c>Blank</c> says whether the word
+    /// held a blank inside its quotes — a sentence, not a path (deliverable 18, the read root).
+    /// </summary>
+    public static IReadOnlyList<(string Text, bool Blank)> Words(string part)
+    {
+        var words = new List<(string, bool)>();
+        var current = new StringBuilder();
+        var quote = '\0';
+        var started = false;
+        var blank = false;
+        foreach (var c in part)
+        {
+            if (quote != '\0')
+            {
+                if (c == quote)
+                {
+                    quote = '\0';
+                }
+                else
+                {
+                    blank |= c is ' ' or '\t';
+                    current.Append(c);
+                }
+            }
+            else if (c is '\'' or '"')
+            {
+                quote = c;
+                started = true;
+            }
+            else if (c is ' ' or '\t')
+            {
+                if (started)
+                {
+                    words.Add((current.ToString(), blank));
+                }
+
+                current.Clear();
+                started = false;
+                blank = false;
+            }
+            else
+            {
+                current.Append(c);
+                started = true;
+            }
+        }
+
+        if (started)
+        {
+            words.Add((current.ToString(), blank));
+        }
+
+        return words;
+    }
+
+    /// <summary>
     /// Whether <paramref name="text"/> names <paramref name="program"/> as a whole word (not next to a letter, a digit or <c>_</c>),
     /// case-insensitively, once the characters a shell drops are dropped: quotes, backticks, carets and line continuations — and
     /// again with every backslash and line break dropped, so <c>cu""rl</c>, <c>c'u'rl</c>, <c>cu\rl</c>, <c>cur`l</c>, <c>cu^rl</c>

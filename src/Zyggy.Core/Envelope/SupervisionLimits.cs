@@ -17,4 +17,19 @@ internal static class SupervisionLimits
 
     /// <summary>The most evidence items a decision names.</summary>
     internal const int EvidenceMax = 10;
+
+    /// <summary>The most branches a mandate names.</summary>
+    internal const int BranchesMax = 5;
+
+    /// <summary>The largest <c>max_jobs</c> of a mandate.</summary>
+    internal const int MaxJobsMax = 200;
+
+    /// <summary>The largest <c>max_jobs_per_hour</c> of a mandate.</summary>
+    internal const int MaxJobsPerHourMax = 60;
+
+    /// <summary>The largest <c>max_jobs_per_step</c> of a mandate.</summary>
+    internal const int MaxJobsPerStepMax = 20;
+
+    /// <summary>The longest a mandate may live after its <c>created</c>.</summary>
+    internal static readonly TimeSpan MandateLifetimeMax = TimeSpan.FromDays(7);
 }

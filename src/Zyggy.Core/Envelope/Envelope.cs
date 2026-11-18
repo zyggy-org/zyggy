@@ -9,8 +9,8 @@ namespace Zyggy.Core.Envelope;
 /// </summary>
 /// <remarks>
 /// Immutable; equality is by reference. <see cref="FrontMatter"/> holds every field, known or unknown, and is what the
-/// signature covers; <see cref="Header"/>, <see cref="Job"/>, <see cref="Report"/>, <see cref="Context"/>, <see cref="Item"/>, <see cref="Status"/>, <see cref="Question"/> and <see cref="Decision"/> are
-/// typed views built from it. Exactly one of the seven per-type views is non-null, matching <see cref="Type"/>.
+/// signature covers; <see cref="Header"/>, <see cref="Job"/>, <see cref="Report"/>, <see cref="Context"/>, <see cref="Item"/>, <see cref="Status"/>, <see cref="Question"/>, <see cref="Decision"/> and <see cref="Mandate"/> are
+/// typed views built from it. Exactly one of the eight per-type views is non-null, matching <see cref="Type"/>.
 /// </remarks>
 public sealed class Envelope
 {
@@ -29,6 +29,7 @@ public sealed class Envelope
         StatusFields? status,
         QuestionFields? question,
         DecisionFields? decision,
+        MandateFields? mandate,
         KeyId? keyId,
         string? signature,
         FrontMatterMapping frontMatter,
@@ -44,6 +45,7 @@ public sealed class Envelope
         Status = status;
         Question = question;
         Decision = decision;
+        Mandate = mandate;
         KeyId = keyId;
         Signature = signature;
         FrontMatter = frontMatter;
@@ -80,6 +82,9 @@ public sealed class Envelope
 
     /// <summary>Gets the decision fields when <see cref="Type"/> is <see cref="EnvelopeType.Decision"/>.</summary>
     public DecisionFields? Decision { get; }
+
+    /// <summary>Gets the mandate fields when <see cref="Type"/> is <see cref="EnvelopeType.Mandate"/>.</summary>
+    public MandateFields? Mandate { get; }
 
     /// <summary>Gets the <c>key_id</c> the envelope is signed with; <see langword="null"/> until signed.</summary>
     public KeyId? KeyId { get; }
@@ -123,6 +128,10 @@ public sealed class Envelope
         Add(entries, "attempt", Invariant(job.Attempt));
         AddOptional(entries, "branch", job.Branch);
         AddOptional(entries, "description", job.Description);
+        AddOptional(entries, "mandate", job.Mandate?.Value);
+        AddOptional(entries, "step", job.Step);
+        AddOptional(entries, "base", job.Base);
+        AddOptional(entries, "deliver", job.Deliver == JobDelivery.Run ? null : EnvelopeWire.ToWire(job.Deliver));
         return Create(entries, header, body);
     }
 
@@ -151,6 +160,8 @@ public sealed class Envelope
         AddOptional(entries, "model", report.Model);
         AddList(entries, "files_changed", report.FilesChanged);
         AddOptional(entries, "diff_ref", report.DiffRef);
+        AddOptional(entries, "mandate", report.Mandate?.Value);
+        AddOptional(entries, "step", report.Step);
         return Create(entries, header, body);
     }
 
@@ -295,6 +306,37 @@ public sealed class Envelope
         return Create(entries, header, body);
     }
 
+    /// <summary>Creates an unsigned mandate envelope in canonical scalar text (deliverable 18, "The mandate").</summary>
+    /// <remarks>
+    /// Same text rules as <see cref="CreateJob"/>. <see cref="EnvelopeHeader.From"/> must be Central; the body is empty. Every
+    /// field with a default is written out, so the file states the whole mandate; <c>spec</c> and <c>spec_commit</c> are written
+    /// only when given.
+    /// </remarks>
+    /// <param name="header">The common fields, from Central, addressed to the machine.</param>
+    /// <param name="mandate">The mandate fields.</param>
+    /// <returns>The unsigned envelope.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="header"/> or <paramref name="mandate"/> is null.</exception>
+    /// <exception cref="ArgumentException">Thrown when a field breaks its rule or the envelope is not from Central.</exception>
+    public static Envelope CreateMandate(EnvelopeHeader header, MandateFields mandate)
+    {
+        ArgumentNullException.ThrowIfNull(header);
+        ArgumentNullException.ThrowIfNull(mandate);
+        Dictionary<string, FrontMatterNode> entries = Common(header, EnvelopeType.Mandate);
+        Add(entries, "project", mandate.Project);
+        Add(entries, "goal", mandate.Goal);
+        AddOptional(entries, "spec", mandate.Spec);
+        AddOptional(entries, "spec_commit", mandate.SpecCommit);
+        AddList(entries, "branches", mandate.Branches);
+        AddList(entries, "allowed_tools", mandate.AllowedTools ?? []);
+        Add(entries, "max_jobs", Invariant(mandate.MaxJobs));
+        Add(entries, "max_jobs_per_hour", Invariant(mandate.MaxJobsPerHour));
+        Add(entries, "max_jobs_per_step", Invariant(mandate.MaxJobsPerStep));
+        Add(entries, "expires", Timestamp(mandate.Expires));
+        AddList(entries, "grants", [.. mandate.Grants.Select(EnvelopeWire.ToWire)]);
+        Add(entries, "sessions", mandate.Sessions ? "true" : "false");
+        return Create(entries, header, ReadOnlyMemory<byte>.Empty);
+    }
+
     /// <summary>Returns a copy with <c>key_id</c> set to <paramref name="keyId"/> and <c>sig</c> set, or removed when null.</summary>
     internal Envelope WithSignature(KeyId keyId, string? signature)
     {
@@ -311,7 +353,7 @@ public sealed class Envelope
             entries["sig"] = new FrontMatterScalar(signature);
         }
 
-        return new Envelope(Schema, Type, Header, Job, Report, Context, Item, Status, Question, Decision, keyId, signature, new FrontMatterMapping(entries), Body);
+        return new Envelope(Schema, Type, Header, Job, Report, Context, Item, Status, Question, Decision, Mandate, keyId, signature, new FrontMatterMapping(entries), Body);
     }
 
     /// <summary>

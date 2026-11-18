@@ -26,7 +26,7 @@ public sealed partial class JobRunner
     private static readonly string[] CodeDefaultAllowedTools = ["Read", "Grep", "Glob"];
 
     // The rule names of a blocked-calls line (JobHookVerb), in the order the report looks for them.
-    private static readonly string[] BlockedRules = ["not in allowed_tools", "write outside the project", "network program", "hook error"];
+    private static readonly string[] BlockedRules = ["not in allowed_tools", "write outside the project", "network program", "read outside the read root", "hook error"];
 
     private static readonly TimeSpan HookSelfTestTimeout = TimeSpan.FromSeconds(15);
 
@@ -152,7 +152,7 @@ public sealed partial class JobRunner
         if (fields.Worktree)
         {
             runDirectory = TranscriptPaths.WorktreeFor(nodeDir, job.Header.Tenant, job.Header.Id);
-            var prepared = await worktrees.PrepareAsync(project, runDirectory, id, NamedBranchOf(job, fields), ct).ConfigureAwait(false);
+            var prepared = await worktrees.PrepareAsync(project, runDirectory, id, fields.Base, NamedBranchOf(job, fields), ct).ConfigureAwait(false);
             if (prepared.FetchFailed)
             {
                 LogFetchFailed(id);
@@ -215,10 +215,10 @@ public sealed partial class JobRunner
         if (baseSha is not null)
         {
             var machine = job.Header.To.Value;
-            // Spec 53: Finish learns the run's outcome, the job's branch (an empty branch counts as absent) and its description.
+            // Spec 53: Finish learns the run's outcome, the job's branch (an empty branch counts as absent) and its description; spec 18 its base.
             var identity = new GitIdentity("zyggy (" + machine + ")", machine + "@zyggy.org");
             var named = string.IsNullOrEmpty(fields.Branch) ? null : fields.Branch;
-            var outcome = await worktrees.FinishAsync(project, runDirectory, id, baseSha, identity, reply.Status, named, description, defaultBranch, ct)
+            var outcome = await worktrees.FinishAsync(project, runDirectory, id, baseSha, identity, reply.Status, named, description, defaultBranch, fields.Base, ct)
                 .ConfigureAwait(false);
             reply = WithWorktree(id, reply, outcome);
             hasResultLines = outcome.ResultLines is not null;
@@ -281,7 +281,11 @@ public sealed partial class JobRunner
 
     // Spec 15 (review of 2026-11-14): the hook's self-test. `zyggy hook pre-tool-use` with no rules and no input must answer exit 2
     // and writes no file; a binary that exists but allows, crashes, hangs or cannot start would let every tool call through.
-    private async Task<bool> HookRefusesAnEmptyCallAsync(string hookExecutable, CancellationToken ct)
+    private Task<bool> HookRefusesAnEmptyCallAsync(string hookExecutable, CancellationToken ct) =>
+        HookRefusesAnEmptyCallAsync(_processes, hookExecutable, ct);
+
+    /// <summary>The hook's self-test for every run that relies on it: a job run, and Central's supervisor run (deliverable 18).</summary>
+    internal static async Task<bool> HookRefusesAnEmptyCallAsync(IProcessRunner processes, string hookExecutable, CancellationToken ct)
     {
         try
         {
@@ -289,7 +293,7 @@ public sealed partial class JobRunner
             {
                 Timeout = HookSelfTestTimeout,
             };
-            var result = await _processes.RunAsync(spec, ct).ConfigureAwait(false);
+            var result = await processes.RunAsync(spec, ct).ConfigureAwait(false);
             return result.ExitCode == 2;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)

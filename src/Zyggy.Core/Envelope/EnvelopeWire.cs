@@ -7,7 +7,7 @@ public static class EnvelopeWire
 {
     /// <summary>Returns the wire string of an envelope type.</summary>
     /// <param name="value">The member.</param>
-    /// <returns><c>job</c>, <c>report</c>, <c>context</c>, <c>item</c>, <c>status</c>, <c>question</c> or <c>decision</c>.</returns>
+    /// <returns><c>job</c>, <c>report</c>, <c>context</c>, <c>item</c>, <c>status</c>, <c>question</c>, <c>decision</c> or <c>mandate</c>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown for an undefined member.</exception>
     public static string ToWire(EnvelopeType value) => value switch
     {
@@ -18,8 +18,67 @@ public static class EnvelopeWire
         EnvelopeType.Status => "status",
         EnvelopeType.Question => "question",
         EnvelopeType.Decision => "decision",
+        EnvelopeType.Mandate => "mandate",
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
+
+    /// <summary>Returns the wire string of a mandate grant (deliverable 18).</summary>
+    /// <param name="value">The member.</param>
+    /// <returns><c>accept</c>, <c>merge</c>, <c>release</c> or <c>deploy</c>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown for an undefined member.</exception>
+    public static string ToWire(MandateGrant value) => value switch
+    {
+        MandateGrant.Accept => "accept",
+        MandateGrant.Merge => "merge",
+        MandateGrant.Release => "release",
+        MandateGrant.Deploy => "deploy",
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    /// <summary>Returns the wire string of a job's delivery (deliverable 18).</summary>
+    /// <param name="value">The member.</param>
+    /// <returns><c>run</c> or <c>session</c>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown for an undefined member.</exception>
+    public static string ToWire(JobDelivery value) => value switch
+    {
+        JobDelivery.Run => "run",
+        JobDelivery.Session => "session",
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    /// <summary>Returns the wire string of a mandate job kind (deliverable 18).</summary>
+    /// <param name="value">The member.</param>
+    /// <returns><c>brief</c>, <c>build</c>, <c>verify</c>, <c>correct</c>, <c>merge</c>, <c>release</c> or <c>deploy</c>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown for an undefined member.</exception>
+    public static string ToWire(MandateJobKind value) => value switch
+    {
+        MandateJobKind.Brief => "brief",
+        MandateJobKind.Build => "build",
+        MandateJobKind.Verify => "verify",
+        MandateJobKind.Correct => "correct",
+        MandateJobKind.Merge => "merge",
+        MandateJobKind.Release => "release",
+        MandateJobKind.Deploy => "deploy",
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    /// <summary>Maps a wire string to a mandate grant.</summary>
+    /// <param name="wire">The wire string.</param>
+    /// <param name="value">The member when recognised.</param>
+    /// <returns><see langword="true"/> when <paramref name="wire"/> is an exact wire string.</returns>
+    public static bool TryFromWire(string? wire, out MandateGrant value) => TryMatch(wire, Enum.GetValues<MandateGrant>(), ToWire, out value);
+
+    /// <summary>Maps a wire string to a job's delivery.</summary>
+    /// <param name="wire">The wire string.</param>
+    /// <param name="value">The member when recognised.</param>
+    /// <returns><see langword="true"/> when <paramref name="wire"/> is an exact wire string.</returns>
+    public static bool TryFromWire(string? wire, out JobDelivery value) => TryMatch(wire, Enum.GetValues<JobDelivery>(), ToWire, out value);
+
+    /// <summary>Maps a wire string to a mandate job kind.</summary>
+    /// <param name="wire">The wire string.</param>
+    /// <param name="value">The member when recognised.</param>
+    /// <returns><see langword="true"/> when <paramref name="wire"/> is an exact wire string.</returns>
+    public static bool TryFromWire(string? wire, out MandateJobKind value) => TryMatch(wire, Enum.GetValues<MandateJobKind>(), ToWire, out value);
 
     /// <summary>Returns the wire string of a decision kind (deliverable 18).</summary>
     /// <param name="value">The member.</param>
@@ -125,6 +184,7 @@ public static class EnvelopeWire
         EnvelopeRejectionReason.UnknownKey => "unknown_key",
         EnvelopeRejectionReason.InvalidSignature => "invalid_signature",
         EnvelopeRejectionReason.WrongRecipient => "wrong_recipient",
+        EnvelopeRejectionReason.MandateInvalid => "mandate_invalid",
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 

@@ -18,6 +18,9 @@ public sealed partial class JobSubmitter
     [
         "schema", "id", "tenant", "type", "from", "to", "created", "in_reply_to", "priority", "project", "agent", "worktree",
         "allowed_tools", "report_back", "timeout_minutes", "deadline", "attempt", "branch", "description", "key_id", "sig",
+
+        // Deliverable 18: the job fields of a job under a mandate.
+        "mandate", "step", "base", "deliver",
     ];
 
     private readonly BusRepository _bus;
@@ -60,7 +63,21 @@ public sealed partial class JobSubmitter
         BusIdentity me = _bus.Me;
         DateTimeOffset now = _clock.GetUtcNow();
         var header = new EnvelopeHeader(me.Tenant, EnvelopeId.New(now), me.Machine, request.To, now, request.Priority);
-        var fields = new JobFields(request.Project.Value, request.Agent, request.Worktree, request.AllowedTools, ReportBack: null, request.TimeoutMinutes, Deadline: null, Attempt: 1, request.Branch, request.Description);
+        var fields = new JobFields(
+            request.Project.Value,
+            request.Agent,
+            request.Worktree,
+            request.AllowedTools,
+            ReportBack: null,
+            request.TimeoutMinutes,
+            Deadline: null,
+            Attempt: 1,
+            request.Branch,
+            request.Description,
+            request.Mandate,
+            request.Step,
+            request.Base,
+            request.Deliver);
         Model job;
         try
         {
@@ -234,6 +251,26 @@ public sealed partial class JobSubmitter
         if (!string.Equals(j.Description, request.Description, StringComparison.Ordinal))
         {
             return "description";
+        }
+
+        if (j.Mandate != request.Mandate)
+        {
+            return "mandate";
+        }
+
+        if (!string.Equals(j.Step, request.Step, StringComparison.Ordinal))
+        {
+            return "step";
+        }
+
+        if (!string.Equals(j.Base, request.Base, StringComparison.Ordinal))
+        {
+            return "base";
+        }
+
+        if (j.Deliver != request.Deliver)
+        {
+            return "deliver";
         }
 
         if (!parsed.Body.Span.SequenceEqual(request.Body.Span))
