@@ -301,7 +301,10 @@ public static partial class NodeConfigurationReader
 
     /// <summary>
     /// The <c>discovery</c> section (spec 14, A14-5): absent or <c>null</c> means the defaults; <c>intervalMinutes</c> an integer 1–1440,
-    /// <c>lastSeenHours</c> an integer 1–168, <c>detail</c> <c>full</c> or <c>names</c>. Unknown keys inside the section are ignored.
+    /// <c>lastSeenHours</c> an integer 1–168, <c>detail</c> <c>full</c> or <c>names</c>, <c>depth</c> an integer 1–6 (spec 45, default 2),
+    /// <c>exclude</c> an array of non-empty folder-name globs (spec 45, default empty), <c>naming</c> <c>leaf</c> or <c>path</c> (spec 45,
+    /// default <c>leaf</c>).
+    /// Unknown keys inside the section are ignored.
     /// </summary>
     private static bool TryDiscovery(JsonElement root, out DiscoverySettings discovery, out NodeConfigurationResult failure)
     {
@@ -319,7 +322,8 @@ public static partial class NodeConfigurationReader
         }
 
         if (!TryRangedInt(section, "discovery", "intervalMinutes", 1, 1440, discovery.IntervalMinutes, out int interval, out failure)
-            || !TryRangedInt(section, "discovery", "lastSeenHours", 1, 168, discovery.LastSeenHours, out int lastSeen, out failure))
+            || !TryRangedInt(section, "discovery", "lastSeenHours", 1, 168, discovery.LastSeenHours, out int lastSeen, out failure)
+            || !TryRangedInt(section, "discovery", "depth", 1, 6, discovery.Depth, out int depth, out failure))
         {
             return false;
         }
@@ -341,7 +345,37 @@ public static partial class NodeConfigurationReader
             }
         }
 
-        discovery = new DiscoverySettings(interval, lastSeen, detail);
+        IReadOnlyList<string> exclude = discovery.Exclude;
+        if (section.TryGetProperty("exclude", out JsonElement excludeElement) && excludeElement.ValueKind != JsonValueKind.Null)
+        {
+            if (excludeElement.ValueKind != JsonValueKind.Array
+                || excludeElement.EnumerateArray().Any(e => e.ValueKind != JsonValueKind.String || string.IsNullOrEmpty(e.GetString())))
+            {
+                failure = Invalid("discovery.exclude", "must be an array of non-empty strings");
+                return false;
+            }
+
+            exclude = [.. excludeElement.EnumerateArray().Select(e => e.GetString()!)];
+        }
+
+        DiscoveryNaming naming = discovery.Naming;
+        if (section.TryGetProperty("naming", out JsonElement namingElement) && namingElement.ValueKind != JsonValueKind.Null)
+        {
+            (bool ok, naming) = namingElement.ValueKind == JsonValueKind.String ? namingElement.GetString() switch
+            {
+                "leaf" => (true, DiscoveryNaming.Leaf),
+                "path" => (true, DiscoveryNaming.Path),
+                _ => (false, naming),
+            }
+            : (false, naming);
+            if (!ok)
+            {
+                failure = Invalid("discovery.naming", "must be leaf or path");
+                return false;
+            }
+        }
+
+        discovery = new DiscoverySettings(interval, lastSeen, detail, depth) { Exclude = exclude, Naming = naming };
         return true;
     }
 

@@ -205,14 +205,14 @@ internal sealed class GitClient(IProcessRunner processes, GitClientOptions optio
 
     /// <summary>Pushes the local <paramref name="branch"/> to the same name on <c>origin</c>; never forced.</summary>
     public Task<GitResult> PushBranchAsync(string repository, string branch, CancellationToken cancellationToken) =>
-        RunAsync(repository, ["push", "origin", "refs/heads/" + branch + ":refs/heads/" + branch], null, cancellationToken);
+        PushBranchToAsync(repository, branch, branch, cancellationToken);
 
     /// <summary>
-    /// Pushes the local <paramref name="localBranch"/> to <paramref name="remoteBranch"/> on <c>origin</c>; never forced, so git refuses
-    /// anything but a fast-forward (spec 18 "A job under a mandate").
+    /// Pushes the local <paramref name="branch"/> to <paramref name="destination"/> on <c>origin</c>; never forced, so git accepts it only
+    /// when it creates <paramref name="destination"/> or fast-forwards it (spec 53 named branch; spec 18 "A job under a mandate" base).
     /// </summary>
-    public Task<GitResult> PushBranchToAsync(string repository, string localBranch, string remoteBranch, CancellationToken cancellationToken) =>
-        RunAsync(repository, ["push", "origin", "refs/heads/" + localBranch + ":refs/heads/" + remoteBranch], null, cancellationToken);
+    public Task<GitResult> PushBranchToAsync(string repository, string branch, string destination, CancellationToken cancellationToken) =>
+        RunAsync(repository, ["push", "origin", "refs/heads/" + branch + ":refs/heads/" + destination], null, cancellationToken);
 
     /// <summary>Deletes a local branch whether or not it is merged (<c>branch -D</c>).</summary>
     public Task<GitResult> DeleteBranchAsync(string repository, string branch, CancellationToken cancellationToken) =>

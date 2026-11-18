@@ -30,7 +30,7 @@ public sealed class JobSubmitterBuildTests : IAsyncLifetime
     private static readonly string[] Section4Keys =
     [
         "schema", "id", "tenant", "type", "from", "to", "created", "in_reply_to", "priority", "project", "agent", "worktree",
-        "allowed_tools", "report_back", "timeout_minutes", "deadline", "attempt", "key_id", "sig",
+        "allowed_tools", "report_back", "timeout_minutes", "deadline", "attempt", "branch", "description", "key_id", "sig",
     ];
 
     private readonly TempCheckout _checkout = new(Acme, Central);
@@ -104,6 +104,63 @@ public sealed class JobSubmitterBuildTests : IAsyncLifetime
         var built = result.Should().BeOfType<Built>().Subject;
         EnvelopeResult check = await new EnvelopeSigner(_store).ParseAndVerifyAsync(built.Bytes, Acme, ct);
         new { check.IsAccepted, Worktree = check.Envelope?.Job?.Worktree }.Should().BeEquivalentTo(new { IsAccepted = true, Worktree = (bool?)true });
+    }
+
+    // AC-1 (spec 53): a named job with a description that needs YAML quoting passes the submitter's read-back with both fields.
+    [Fact]
+    public async Task BuildAsync_BranchAndQuotedDescription_SignedJobReadsBackWithBothFields()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        const string Description = "- Cart: totals #2 for \"v2\" isn't final";
+        JobRequest request = Request("calizr") with { Worktree = true, Branch = "Feature/12-Cart", Description = Description };
+
+        // Act
+        BuildResult result = await Submitter().BuildAsync(request, ct);
+
+        // Assert
+        var built = result.Should().BeOfType<Built>().Subject;
+        EnvelopeResult check = await new EnvelopeSigner(_store).ParseAndVerifyAsync(built.Bytes, Acme, ct);
+        new { check.IsAccepted, check.Envelope?.Job?.Branch, check.Envelope?.Job?.Description }
+            .Should().BeEquivalentTo(new { IsAccepted = true, Branch = "Feature/12-Cart", Description });
+    }
+
+    // AC-1 (spec 53): a job without the two fields carries neither key.
+    [Fact]
+    public async Task BuildAsync_WithoutBranchFields_NoBranchOrDescriptionKey()
+    {
+        // Act
+        BuildResult result = await Submitter().BuildAsync(Request("calizr") with { Worktree = true }, TestContext.Current.CancellationToken);
+
+        // Assert
+        result.Should().BeOfType<Built>().Subject.Envelope.FrontMatter.Entries.Keys.Should().NotContain(["branch", "description"]);
+    }
+
+    // AC-1 (spec 53): the read-back compares both fields — the text `null` is written, but §4 reads it back as absent, so it is refused.
+    [Theory]
+    [InlineData("null", null, "branch")]
+    [InlineData(null, "null", "description")]
+    public async Task BuildAsync_FieldThatReadsBackAsAbsent_RefusedNamingIt(string? branch, string? description, string field)
+    {
+        // Act
+        BuildResult result = await Submitter().BuildAsync(
+            Request("calizr") with { Worktree = true, Branch = branch, Description = description }, TestContext.Current.CancellationToken);
+
+        // Assert
+        result.Should().BeOfType<BuildRefused>().Which.Field.Should().Be(field);
+    }
+
+    // AC-2 (spec 53): a branch the parser refuses is refused before anything is signed.
+    [Theory]
+    [InlineData("zyggy/x", true, "branch")]
+    [InlineData("feature/x", false, "branch")]
+    public async Task BuildAsync_BranchBreakingTheShapeRule_RefusedNamingBranch(string branch, bool worktree, string field)
+    {
+        // Act
+        BuildResult result = await Submitter().BuildAsync(Request("calizr") with { Worktree = worktree, Branch = branch }, TestContext.Current.CancellationToken);
+
+        // Assert
+        result.Should().BeOfType<BuildRefused>().Which.Field.Should().Be(field);
     }
 
     [Fact]

@@ -17,7 +17,7 @@ public sealed partial class JobSubmitter
     private static readonly HashSet<string> Section4Keys =
     [
         "schema", "id", "tenant", "type", "from", "to", "created", "in_reply_to", "priority", "project", "agent", "worktree",
-        "allowed_tools", "report_back", "timeout_minutes", "deadline", "attempt", "key_id", "sig",
+        "allowed_tools", "report_back", "timeout_minutes", "deadline", "attempt", "branch", "description", "key_id", "sig",
 
         // Deliverable 18: the job fields of a job under a mandate.
         "mandate", "step", "base", "deliver",
@@ -72,6 +72,8 @@ public sealed partial class JobSubmitter
             request.TimeoutMinutes,
             Deadline: null,
             Attempt: 1,
+            request.Branch,
+            request.Description,
             request.Mandate,
             request.Step,
             request.Base,
@@ -239,6 +241,16 @@ public sealed partial class JobSubmitter
         if (j.Attempt != 1)
         {
             return "attempt";
+        }
+
+        if (!string.Equals(j.Branch, request.Branch, StringComparison.Ordinal))
+        {
+            return "branch";
+        }
+
+        if (!string.Equals(j.Description, request.Description, StringComparison.Ordinal))
+        {
+            return "description";
         }
 
         if (j.Mandate != request.Mandate)

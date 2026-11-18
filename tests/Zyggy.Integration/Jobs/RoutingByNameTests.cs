@@ -46,6 +46,51 @@ public sealed class RoutingByNameTests : IAsyncLifetime
         SweepSecrets();
     }
 
+    // Spec 45 AC-16: with the default depth (2) the node publishes a project inside a grouping folder, and a job by its name runs there.
+    [Fact]
+    public async Task JobByName_LevelTwoProject_PublishedAndRunsThere()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        ScratchProject deep = await _harness.ProjectAsync(ct, "deep", group: "Common");
+        await _harness.SeedJobAsync(deep, ct, projectField: "deep");
+
+        // Act
+        int exit = await _harness.RunUntilAsync(
+            async () => (await _harness.ReportsOnMainAsync(ct)).Count == 1
+                && (await _harness.RegistryOnMainAsync(NodeHostHarness.HomeLaptop, ct))?.Projects.Any(p => p.Name == "deep") == true,
+            TimeSpan.FromSeconds(60),
+            ct);
+
+        // Assert
+        exit.Should().Be(0);
+        Model report = await SingleReportAsync(ct);
+        report.Report!.Status.Should().Be(ReportStatus.Done, Encoding.UTF8.GetString(report.Body.Span));
+        File.Exists(Path.Combine(deep.Path, Capture)).Should().BeTrue("the fake claude ran in the level-2 folder");
+        SweepSecrets();
+    }
+
+    // Spec 45 AC-16: with a nested root (`devRoots` holds the projects folder and its sub-folder), a job by a path under the nested root runs.
+    [Fact]
+    public async Task JobByPath_UnderNestedRoot_Done()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        ScratchProject devops = await _harness.ProjectAsync(ct, "devops", group: "Common");
+        _harness.WriteNodeJson(devRoots: [_harness.ProjectsRoot, Path.Combine(_harness.ProjectsRoot, "Common")]);
+        await _harness.SeedJobAsync(devops, ct);
+
+        // Act
+        int exit = await _harness.RunUntilAsync(async () => (await _harness.ReportsOnMainAsync(ct)).Count == 1, TimeSpan.FromSeconds(60), ct);
+
+        // Assert
+        exit.Should().Be(0);
+        Model report = await SingleReportAsync(ct);
+        report.Report!.Status.Should().Be(ReportStatus.Done, Encoding.UTF8.GetString(report.Body.Span));
+        File.Exists(Path.Combine(devops.Path, Capture)).Should().BeTrue("the fake claude ran under the nested root");
+        SweepSecrets();
+    }
+
     [Fact]
     public async Task JobByUnknownName_RejectedUnknownProject_ModelNeverStarted()
     {

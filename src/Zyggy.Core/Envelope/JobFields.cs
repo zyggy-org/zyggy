@@ -9,6 +9,13 @@ namespace Zyggy.Core.Envelope;
 /// <param name="TimeoutMinutes">The <c>timeout_minutes</c>; <see langword="null"/> when absent (the node default applies).</param>
 /// <param name="Deadline">The optional <c>deadline</c>, in UTC.</param>
 /// <param name="Attempt">The <c>attempt</c> counter; 1 when absent.</param>
+/// <param name="Branch">
+/// The optional <c>branch</c> the job runs on and pushes (spec 53): a git branch name of the §4 shape (1–100 characters of <c>[A-Za-z0-9._/-]</c>, see spec 53)
+/// checks, only with <c>worktree: true</c>; <see langword="null"/> runs on <c>zyggy/&lt;id&gt;</c> as before.
+/// </param>
+/// <param name="Description">
+/// The optional one-line <c>description</c> of what the branch holds after this job (spec 53); data, never shown to the model.
+/// </param>
 /// <param name="Mandate">The <c>mandate</c> the job runs under (deliverable 18); <see langword="null"/> for a job the owner gave a go for.</param>
 /// <param name="Step">The <c>step</c> the job belongs to: 1–60 characters of <c>[a-z0-9 -]</c>.</param>
 /// <param name="Base">The <c>base</c> branch a worktree job starts from and pushes back to.</param>
@@ -22,6 +29,8 @@ public sealed record JobFields(
     int? TimeoutMinutes = null,
     DateTimeOffset? Deadline = null,
     int Attempt = 1,
+    string? Branch = null,
+    string? Description = null,
     EnvelopeId? Mandate = null,
     string? Step = null,
     string? Base = null,

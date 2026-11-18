@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Zyggy.Core.Bus;
 using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
+using Zyggy.Core.Registry;
 using Zyggy.Core.Tenancy;
 using Zyggy.Core.Verbs;
 
@@ -26,6 +27,8 @@ internal static class SubmitCommand
         var allowedTools = new Option<string[]>("--allowed-tools") { Description = "Tool approval rules, comma-separated; may be repeated.", AllowMultipleArgumentsPerToken = false, Arity = ArgumentArity.ZeroOrMore };
         var priority = new Option<string?>("--priority") { Description = "low, normal or high (normal when absent)." };
         var worktree = new Option<bool>("--worktree") { Description = "Run in a git worktree on branch zyggy/<id> and push the result to the project's origin (the project needs a default branch)." };
+        var branch = new Option<string?>("--branch") { Description = "With --worktree: start from this branch on the project's origin when it exists and push a successful run to it (never the default branch)." };
+        var description = new Option<string?>("--description") { Description = "One line saying what the branch holds after the job: the node's commit subject and a report line." };
         var body = new Argument<string?>("body") { Description = "The job's instructions; read from standard input when absent.", Arity = ArgumentArity.ZeroOrOne };
         var mandate = new Option<string?>("--mandate") { Description = "Central: submit under this mandate; the body is the kind's shipped template, the project and tools are the mandate's." };
         var kind = new Option<string?>("--kind") { Description = "With --mandate: brief, build, verify, correct, merge, release or deploy." };
@@ -35,7 +38,7 @@ internal static class SubmitCommand
         var session = new Option<bool>("--session") { Description = "With --mandate: deliver the task into a live session (the mandate must allow sessions)." };
         var command = new Command("submit", "Build, sign and publish a job envelope to a machine's inbox on the bus.")
         {
-            to, project, agent, timeout, allowedTools, priority, worktree, body, mandate, kind, step, reference, baseBranch, session, BusHost.ConfigOption, BusHost.VerboseOption,
+            to, project, agent, timeout, allowedTools, priority, worktree, branch, description, body, mandate, kind, step, reference, baseBranch, session, BusHost.ConfigOption, BusHost.VerboseOption,
         };
         command.SetAction((parseResult, ct) => parseResult.GetValue(mandate) is not null
             ? MandateAsync(
@@ -53,7 +56,7 @@ internal static class SubmitCommand
                     parseResult.GetValue(session),
                     parseResult.GetValue(body) is not null || parseResult.GetValue(project) is not null || parseResult.GetValue(agent) is not null
                         || parseResult.GetValue(timeout) is not null || parseResult.GetValue(allowedTools) is { Length: > 0 } || parseResult.GetValue(worktree)
-                        || parseResult.GetValue(priority) is not null),
+                        || parseResult.GetValue(priority) is not null || parseResult.GetValue(branch) is not null || parseResult.GetValue(description) is not null),
                 ct)
             : RunAsync(
             environment,
@@ -67,6 +70,8 @@ internal static class SubmitCommand
             parseResult.GetValue(allowedTools),
             parseResult.GetValue(priority),
             parseResult.GetValue(worktree),
+            parseResult.GetValue(branch),
+            parseResult.GetValue(description),
             parseResult.GetValue(body),
             ct));
         return command;
@@ -84,6 +89,8 @@ internal static class SubmitCommand
         string[]? allowedTools,
         string? priority,
         bool worktree,
+        string? branch,
+        string? description,
         string? positionalBody,
         CancellationToken ct)
     {
@@ -137,7 +144,15 @@ internal static class SubmitCommand
             return ExitCodes.Usage;
         }
 
-        SubmitResult result = await services.GetRequiredService<JobSubmitter>().SubmitAsync(request! with { Worktree = worktree }, ct);
+        RegistryDocument? targetRegistry = branch is null ? null : await ReadRegistryAsync(configuration, request!.To, ct);
+        error = request!.TryWithBranch(worktree, branch, description, targetRegistry, out JobRequest? named);
+        if (error is not null)
+        {
+            await io.Error.WriteLineAsync($"zyggy: {error.Field}: {error.Detail}");
+            return ExitCodes.Usage;
+        }
+
+        SubmitResult result = await services.GetRequiredService<JobSubmitter>().SubmitAsync(named!, ct);
         return await RenderAsync(io, configuration, request!.To, result);
     }
 
@@ -147,7 +162,7 @@ internal static class SubmitCommand
     {
         if (given.FreeFieldGiven)
         {
-            await io.Error.WriteLineAsync("zyggy: refused: under a mandate the body, project, tools, agent, timeout, priority and worktree come from the mandate and its template");
+            await io.Error.WriteLineAsync("zyggy: refused: under a mandate the body, project, tools, agent, timeout, priority, worktree, branch and description come from the mandate and its template");
             return ExitCodes.Configuration;
         }
 
@@ -244,4 +259,20 @@ internal static class SubmitCommand
     }
 
     private sealed record MandateGiven(string? To, string? Mandate, string? Kind, string? Step, string? Reference, string? Base, bool Session, bool FreeFieldGiven);
+
+    /// <summary>
+    /// The target machine's registry file as it stands in this machine's bus checkout (spec 53 AC-15), or <see langword="null"/> when it
+    /// is absent or unreadable: the check is then skipped and the node decides. Registry text is data; only the default branch is used.
+    /// </summary>
+    private static async Task<RegistryDocument?> ReadRegistryAsync(NodeConfiguration configuration, MachineName machine, CancellationToken ct)
+    {
+        string path = BusPaths.Resolve(configuration.Bus.LocalPath, BusPaths.Registry(configuration.Tenant, machine));
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        RegistryDocument? document = RegistryDocument.Parse(await File.ReadAllBytesAsync(path, ct)).Document;
+        return document is not null && document.Tenant == configuration.Tenant ? document : null;
+    }
 }

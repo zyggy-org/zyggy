@@ -1274,6 +1274,44 @@ public sealed partial class SourceHygieneTests
         missing.Should().BeEmpty();
     }
 
+    // AC-17 (spec 53, slice 8): each new Failure-modes entry of the named-branch job has its row in the Core README's jobs runbook, and
+    // that row's "What to do" cell names its fix; the Cli README's `submit` verb row documents --branch and --description.
+    [Theory]
+    [InlineData("Jobs: branch name refused", "`zyggy submit`")]
+    [InlineData("Jobs: branch on a mandate job", "without `--branch`")]
+    [InlineData("Jobs: named branch not changed", "`zyggy/<id>`")]
+    [InlineData("Jobs: report names zyggy/<id> although --branch was given", "upgrade")]
+    public void Readmes_NamedBranchRunbookRowNamesItsFix(string entry, string remedy)
+    {
+        // Arrange
+        var core = File.ReadAllText(Path.Combine(RepoRoot(), "src/Zyggy.Core/README.md")).Split('\n');
+
+        // Act
+        var row = core.SingleOrDefault(l => l.StartsWith("| " + entry + " |", StringComparison.Ordinal));
+        var whatToDo = row?.TrimEnd('\r', ' ', '|').Split(" | ")[^1];
+
+        // Assert
+        whatToDo.Should().NotBeNull().And.Contain(remedy);
+    }
+
+    // AC-17 (spec 53, slice 8): the Cli README's `submit` verb row names both new options.
+    [Fact]
+    public void Readmes_SubmitRowDocumentsBranchAndDescription()
+    {
+        // Arrange
+        var cli = File.ReadAllText(Path.Combine(RepoRoot(), "src/Zyggy.Cli/README.md")).Split('\n');
+
+        // Act
+        var submit = cli.Single(l => l.StartsWith("| `submit ", StringComparison.Ordinal));
+
+        // Assert
+        new
+        {
+            Branch = submit.Contains("--branch <name>", StringComparison.Ordinal),
+            Description = submit.Contains("--description <text>", StringComparison.Ordinal),
+        }.Should().BeEquivalentTo(new { Branch = true, Description = true });
+    }
+
     // Spec 17 AC-20: the four sweep runbook rows in the Node README, which also names the sweep and its node.json key; the Cli README
     // names the verb with --dry-run and the key; the Core README names the pass; the Integration README names gate part 3.
     [Fact]

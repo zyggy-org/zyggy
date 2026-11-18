@@ -235,6 +235,18 @@ public sealed partial class BusListener : IDisposable
         }
 
         await Task.WhenAll(pending).ContinueWith(_ => { }, ct, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default).WaitAsync(ct).ConfigureAwait(false);
+
+        // A run is complete before its untracking continuation (Track) has run on the completing thread; untrack the
+        // drained runs here too so Status never counts a run DrainAsync has already waited for.
+        foreach (KeyValuePair<string, Task> run in _runs)
+        {
+            if (run.Value.IsCompleted)
+            {
+                _runs.TryRemove(run.Key, out _);
+            }
+        }
+
+        Publish();
     }
 
     /// <summary>Releases the one-listener-per-checkout lock (patch 0.8.1).</summary>

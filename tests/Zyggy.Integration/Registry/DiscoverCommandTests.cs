@@ -1,5 +1,7 @@
 using System.Text;
 
+using Microsoft.Extensions.DependencyInjection;
+
 using Zyggy.Core.Bus;
 using Zyggy.Core.Registry;
 using Zyggy.Core.Tests.Infrastructure;
@@ -88,7 +90,7 @@ public sealed class DiscoverCommandTests : IAsyncLifetime
         document.Projects.Select(p => p.Name).Should().Equal("client-portal");
         string expected = string.Join("; ", new[] { Path.Combine(_root, "calizr"), Path.Combine(second, "Calizr") }
             .Select(p => p.Replace('\\', '/')).Order(StringComparer.Ordinal));
-        console.Stderr.Should().Be($"discover: duplicate name calizr: {expected}\n");
+        console.Stderr.Should().Be($"discover: duplicate name calizr: {expected} - set discovery.naming to path or rename one\n"); // spec 45 AC-4
         SecretSweep.AssertAbsent([console.Stdout, console.Stderr]);
     }
 
@@ -323,5 +325,185 @@ public sealed class DiscoverCommandTests : IAsyncLifetime
         exit.Should().Be(3);
         console.Stdout.Should().BeEmpty();
         console.Stderr.Should().StartWith("zyggy: configuration error: ");
+    }
+
+    // Spec 45 AC-5: with the default depth (2), a project inside a grouping folder is published.
+    [Fact]
+    public async Task DryRun_ProjectInGroupFolder_DefaultDepthLists()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await SeedTwoProjectsAsync(ct);
+        string group = Path.Combine(_root, "group");
+        Directory.CreateDirectory(group);
+        await ScratchProject.CreateInAsync(_harness.Bus, group, "deep", ct);
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["discover", "--dry-run"], NodeJsonFor([_root]), ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        RegistryDocument.Parse(Encoding.UTF8.GetBytes(console.Stdout)).Document!.Projects.Select(p => p.Name)
+            .Should().Equal("calizr", "client-portal", "deep");
+    }
+
+    // Spec 45 AC-1: `discovery.depth: 1` in node.json reaches the scanner — the 0.20.0 behaviour.
+    [Fact]
+    public async Task DryRun_ProjectInGroupFolder_DepthOneLeavesOut()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await SeedTwoProjectsAsync(ct);
+        string group = Path.Combine(_root, "group");
+        Directory.CreateDirectory(group);
+        await ScratchProject.CreateInAsync(_harness.Bus, group, "deep", ct);
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["discover", "--dry-run"], NodeJsonFor([_root], "{ \"depth\": 1 }"), ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        RegistryDocument.Parse(Encoding.UTF8.GetBytes(console.Stdout)).Document!.Projects.Select(p => p.Name)
+            .Should().Equal("calizr", "client-portal");
+    }
+
+    // Spec 45 AC-6: a root inside another root is scanned too, with a `root nested` line on stderr.
+    [Fact]
+    public async Task DryRun_NestedRoot_StderrNoticeBothListed()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await ScratchProject.CreateInAsync(_harness.Bus, _root, "q", ct);
+        string group = Path.Combine(_root, "g");
+        Directory.CreateDirectory(group);
+        await ScratchProject.CreateInAsync(_harness.Bus, group, "p", ct);
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["discover", "--dry-run"], NodeJsonFor([_root, group], "{ \"depth\": 1 }"), ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        RegistryDocument.Parse(Encoding.UTF8.GetBytes(console.Stdout)).Document!.Projects.Select(p => p.Name).Should().Equal("p", "q");
+        console.Stderr.Should().Be($"discover: root nested {group.Replace('\\', '/')} under {_root.Replace('\\', '/')}\n");
+    }
+
+    // Spec 45 AC-9: a project inside `node_modules` is never published; `discovery.exclude` from node.json reaches the scanner.
+    [Fact]
+    public async Task DryRun_ProjectsInNodeModulesAndExcluded_NotListed()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await ScratchProject.CreateInAsync(_harness.Bus, _root, "q", ct);
+        foreach (string folder in new[] { "node_modules", "archive-2024" })
+        {
+            string parent = Path.Combine(_root, folder);
+            Directory.CreateDirectory(parent);
+            await ScratchProject.CreateInAsync(_harness.Bus, parent, "x-" + folder, ct);
+        }
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["discover", "--dry-run"], NodeJsonFor([_root], "{ \"exclude\": [\"archive*\"] }"), ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        RegistryDocument.Parse(Encoding.UTF8.GetBytes(console.Stdout)).Document!.Projects.Select(p => p.Name).Should().Equal("q");
+    }
+
+    // Spec 45 AC-10: a wrong `discovery.exclude` is a configuration error naming the key.
+    [Fact]
+    public async Task DryRun_ExcludeNotArray_ExitThreeKeyNamed()
+    {
+        // Act
+        var ct = TestContext.Current.CancellationToken;
+        var (exit, console) = await _harness.RunAsync(["discover", "--dry-run"], NodeJsonFor([_root], "{ \"exclude\": \"archive*\" }"), ct: ct);
+
+        // Assert
+        exit.Should().Be(3);
+        console.Stderr.Should().Be("zyggy: configuration error: discovery.exclude: must be an array of non-empty strings\n");
+    }
+
+    // Spec 45 AC-13: with the folder cap reached, the projects found so far are printed, a stderr line says so, and the verb exits 0.
+    [Fact]
+    public async Task DryRun_FolderCapReached_PartialListExitZero()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await SeedTwoProjectsAsync(ct);
+        await ScratchProject.CreateInAsync(_harness.Bus, _root, "third", ct);
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(
+            ["discover", "--dry-run"], NodeJsonFor([_root]), more: s => s.PostConfigure<DiscoveryOptions>(o => o.MaxFolders = 2), ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        console.Stderr.Should().Be("discover: folder cap reached (2)\n");
+        RegistryDocument.Parse(Encoding.UTF8.GetBytes(console.Stdout)).Document!.Projects.Select(p => p.Name).Should().Equal("calizr", "client-portal");
+    }
+
+    // Spec 45 AC-14: `--verbose` shows the folders visited and the depth. The console logger writes to the process's own stderr, so
+    // this runs the compiled `zyggy` as a child process.
+    [Fact]
+    public async Task DryRunVerbose_Default_FoldersVisitedAndDepthTwo()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await SeedTwoProjectsAsync(ct);
+        var env = new Dictionary<string, string?>
+        {
+            ["ZYGGY_NODE_JSON"] = NodeJsonFor([_root]),
+            ["ZYGGY_SECRET_PATTERNS"] = CliHarness.PatternsPath,
+        };
+
+        // Act
+        ZyggyRun run = await ZyggyCli.RunAsync(["discover", "--dry-run", "--verbose"], env, null, _root, ct);
+
+        // Assert
+        run.Stderr.Should().Contain("discover: scanned 2 projects, 0 notices, 2 folders visited, depth 2", "exit code {0}", run.ExitCode);
+    }
+
+    // Spec 45 AC-3: an out-of-range `discovery.depth` is a configuration error naming the key.
+    [Fact]
+    public async Task DryRun_DepthSeven_ExitThreeKeyNamed()
+    {
+        // Act
+        var ct = TestContext.Current.CancellationToken;
+        var (exit, console) = await _harness.RunAsync(["discover", "--dry-run"], NodeJsonFor([_root], "{ \"depth\": 7 }"), ct: ct);
+
+        // Assert
+        exit.Should().Be(3);
+        console.Stderr.Should().Be("zyggy: configuration error: discovery.depth: must be an integer from 1 to 6\n");
+    }
+
+    // Spec 45 AC-15: `discovery.naming: path` in node.json reaches the scanner — `G/q` is listed as `g-q` next to `q`.
+    [Fact]
+    public async Task DryRun_NamingPath_GroupedProjectPrefixed()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await ScratchProject.CreateInAsync(_harness.Bus, _root, "q", ct);
+        string group = Path.Combine(_root, "G");
+        Directory.CreateDirectory(group);
+        await ScratchProject.CreateInAsync(_harness.Bus, group, "q", ct);
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["discover", "--dry-run"], NodeJsonFor([_root], "{ \"naming\": \"path\" }"), ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        RegistryDocument.Parse(Encoding.UTF8.GetBytes(console.Stdout)).Document!.Projects.Select(p => p.Name).Should().Equal("g-q", "q");
+    }
+
+    // Spec 45 AC-15: a wrong `discovery.naming` is a configuration error naming the key.
+    [Fact]
+    public async Task DryRun_NamingFull_ExitThreeKeyNamed()
+    {
+        // Act
+        var ct = TestContext.Current.CancellationToken;
+        var (exit, console) = await _harness.RunAsync(["discover", "--dry-run"], NodeJsonFor([_root], "{ \"naming\": \"full\" }"), ct: ct);
+
+        // Assert
+        exit.Should().Be(3);
+        console.Stderr.Should().Be("zyggy: configuration error: discovery.naming: must be leaf or path\n");
     }
 }

@@ -126,6 +126,8 @@ public sealed class Envelope
         AddOptional(entries, "timeout_minutes", Invariant(job.TimeoutMinutes));
         AddOptional(entries, "deadline", Timestamp(job.Deadline));
         Add(entries, "attempt", Invariant(job.Attempt));
+        AddOptional(entries, "branch", job.Branch);
+        AddOptional(entries, "description", job.Description);
         AddOptional(entries, "mandate", job.Mandate?.Value);
         AddOptional(entries, "step", job.Step);
         AddOptional(entries, "base", job.Base);
