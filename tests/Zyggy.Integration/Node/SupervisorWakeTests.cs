@@ -1,7 +1,5 @@
-using System.Globalization;
 using System.Net;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -9,7 +7,6 @@ using Microsoft.Extensions.Hosting;
 using Zyggy.Core.Bus;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Jobs;
-using Zyggy.Core.Models;
 using Zyggy.Core.Registry;
 using Zyggy.Core.Tenancy;
 using Zyggy.Core.Tests.Infrastructure;
@@ -17,6 +14,8 @@ using Zyggy.Integration.Infrastructure;
 using Zyggy.Node;
 
 using Model = Zyggy.Core.Envelope.Envelope;
+using Run = Zyggy.Integration.Infrastructure.SupervisorRunRecord;
+using Step = Zyggy.Integration.Infrastructure.SupervisorStepScript;
 
 namespace Zyggy.Integration.Node;
 
@@ -26,7 +25,7 @@ namespace Zyggy.Integration.Node;
 /// guard and runs the real <c>zyggy decide</c> and <c>zyggy submit --mandate</c>; a mandate that pauses or closes gets its decision from
 /// the node itself, without a model.
 /// </summary>
-public sealed partial class SupervisorWakeTests : IAsyncLifetime
+public sealed class SupervisorWakeTests : IAsyncLifetime
 {
     private const string Project = "shop";
 
@@ -46,16 +45,17 @@ public sealed partial class SupervisorWakeTests : IAsyncLifetime
 
     private PickupMemory _memory = null!;
 
-    private ScriptedModel? _model;
+    private SupervisorScript _model = null!;
 
     private int _sequence;
 
-    private string ToolLog => _harness.Scratch.File("tool-log.txt");
+    private string ToolLog => _model.ToolLog;
 
     public async ValueTask InitializeAsync()
     {
         CancellationToken ct = CancellationToken.None;
         _harness = await NodeHostHarness.CreateAsync(ct);
+        _model = new SupervisorScript(_harness);
         _memory = new PickupMemory();
         _harness.Environment = _memory.Env();
         await _harness.ProjectAsync(ct, name: Desk);
@@ -102,7 +102,7 @@ public sealed partial class SupervisorWakeTests : IAsyncLifetime
             decision.Header.To,
             JobMandate = job.Job!.Mandate,
             JobStep = job.Job.Step,
-            Runs = _model!.Calls,
+            Runs = _model.Calls,
         }.Should().BeEquivalentTo(new
         {
             Kind = DecisionKind.Accept,
@@ -127,11 +127,11 @@ public sealed partial class SupervisorWakeTests : IAsyncLifetime
         Script((call, id) => new Step([Decide(id, mandate, "accept")], DelayMs: call == 0 ? 2000 : null));
 
         // Act
-        int exit = await _harness.RunUntilAsync(async () => (await DecisionsAsync(ct)).Count == 2 && _model!.Runs.Count == 2, Limit, ct, Services);
+        int exit = await _harness.RunUntilAsync(async () => (await DecisionsAsync(ct)).Count == 2 && _model.Runs.Count == 2, Limit, ct, Services);
 
         // Assert
         exit.Should().Be(0, Log());
-        IReadOnlyList<Run> runs = _model!.Runs;
+        IReadOnlyList<Run> runs = _model.Runs;
         new { First = runs[0].Event, Second = runs[1].Event, Overlap = runs[1].Started < runs[0].Ended }
             .Should().BeEquivalentTo(new { First = older.Value, Second = newer.Value, Overlap = false }, Log());
     }
@@ -157,7 +157,7 @@ public sealed partial class SupervisorWakeTests : IAsyncLifetime
 
         // Assert
         exit.Should().Be(0, Log());
-        new { Runs = _model!.Calls, Decided = (await DecisionsAsync(ct)).Select(d => d.Header.InReplyTo!.Value).ToArray() }
+        new { Runs = _model.Calls, Decided = (await DecisionsAsync(ct)).Select(d => d.Header.InReplyTo!.Value).ToArray() }
             .Should().BeEquivalentTo(new { Runs = 1, Decided = new[] { older.Value } }, Log());
     }
 
@@ -204,7 +204,7 @@ public sealed partial class SupervisorWakeTests : IAsyncLifetime
         // Assert: the escalate names what the guard blocked in the last run
         exit.Should().Be(0, Log());
         Model decision = (await DecisionsAsync(ct)).Single();
-        new { decision.Decision!.Kind, decision.Decision.Basis, decision.Header.InReplyTo, Text = decision.BodyText, Runs = _model!.Calls }
+        new { decision.Decision!.Kind, decision.Decision.Basis, decision.Header.InReplyTo, Text = decision.BodyText, Runs = _model.Calls }
             .Should().BeEquivalentTo(new
             {
                 Kind = DecisionKind.Escalate,
@@ -231,7 +231,7 @@ public sealed partial class SupervisorWakeTests : IAsyncLifetime
         using IHost host = _harness.Build(Services);
         await host.StartAsync(ct);
         HealthServer server = host.Services.GetRequiredService<HealthServer>();
-        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(server.IsListening && _model!.Calls >= 1), Limit, ct);
+        await NodeHostHarness.WaitUntilAsync(() => Task.FromResult(server.IsListening && _model.Calls >= 1), Limit, ct);
 
         // Act
         using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{server.BoundPort}/") };
@@ -263,7 +263,7 @@ public sealed partial class SupervisorWakeTests : IAsyncLifetime
         // Assert
         exit.Should().Be(0, Log());
         Model decision = (await DecisionsAsync(ct)).Should().ContainSingle(Log()).Subject;
-        new { decision.Decision!.Kind, decision.Header.InReplyTo, decision.Decision.Mandate, decision.Header.To, Runs = _model!.Calls }
+        new { decision.Decision!.Kind, decision.Header.InReplyTo, decision.Decision.Mandate, decision.Header.To, Runs = _model.Calls }
             .Should().BeEquivalentTo(new { Kind = DecisionKind.Escalate, InReplyTo = (EnvelopeId?)third, Mandate = (EnvelopeId?)mandate, To = HomeLaptop, Runs = 0 }, Log());
     }
 
@@ -293,7 +293,7 @@ public sealed partial class SupervisorWakeTests : IAsyncLifetime
         // Assert
         exit.Should().Be(0, Log());
         Model decision = (await DecisionsAsync(ct)).Should().ContainSingle(Log()).Subject;
-        new { decision.Decision!.Kind, decision.Header.InReplyTo, decision.Decision.Mandate, decision.Header.To, Named = decision.BodyText.StartsWith("mandate " + state, StringComparison.Ordinal), Runs = _model!.Calls }
+        new { decision.Decision!.Kind, decision.Header.InReplyTo, decision.Decision.Mandate, decision.Header.To, Named = decision.BodyText.StartsWith("mandate " + state, StringComparison.Ordinal), Runs = _model.Calls }
             .Should().BeEquivalentTo(new { Kind = DecisionKind.Stop, InReplyTo = (EnvelopeId?)mandate, Mandate = (EnvelopeId?)mandate, To = HomeLaptop, Named = true, Runs = 0 }, decision.BodyText + Log());
     }
 
@@ -316,78 +316,13 @@ public sealed partial class SupervisorWakeTests : IAsyncLifetime
         File.WriteAllText(path, json.ToJsonString());
     }
 
-    /// <summary>Wraps the production model runner: every supervisor run gets its script for <c>tools/fake-claude</c>.</summary>
-    private void Script(Func<int, string, Step> script) => _script = script;
+    private void Script(Func<int, string, Step> script) => _model.Script = script;
 
-    private Func<int, string, Step> _script = (_, _) => new Step([]);
+    private void Services(IServiceCollection services) => _model.Register(services);
 
-    private void Services(IServiceCollection services)
-    {
-        ServiceDescriptor production = services.Last(d => d.ServiceType == typeof(IModelRunner));
-        _model ??= new ScriptedModel();
-        ScriptedModel model = _model;
-        services.AddSingleton<IModelRunner>(sp =>
-        {
-            model.Inner = (IModelRunner)production.ImplementationFactory!(sp);
-            model.Script = (call, id) => Environment(_script(call, id));
-            return model;
-        });
-    }
+    private static string Call(string tool, JsonObject input) => SupervisorScript.Call(tool, input);
 
-    private Dictionary<string, string> Environment(Step step)
-    {
-        var environment = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["ZYGGY_FAKE_CLAUDE_SCENARIO"] = step.Scenario,
-            ["ZYGGY_FAKE_CLAUDE_ZYGGY"] = ZyggyCli.ExecutablePath,
-            ["ZYGGY_FAKE_CLAUDE_TOOL_LOG"] = ToolLog,
-            ["ZYGGY_NODE_JSON"] = _harness.NodeJsonPath,
-            ["ZYGGY_SECRET_PATTERNS"] = PickupMemory.PatternsPath,
-        };
-        foreach ((string name, string? value) in _harness.Bus.GitEnvironment)
-        {
-            if (value is not null)
-            {
-                environment[name] = value;
-            }
-        }
-
-        if (step.ToolCalls.Count > 0)
-        {
-            environment["ZYGGY_FAKE_CLAUDE_TOOL_CALLS"] = string.Join('\n', step.ToolCalls);
-        }
-
-        if (step.DelayMs is { } delay)
-        {
-            environment["ZYGGY_FAKE_CLAUDE_DELAY_MS"] = delay.ToString(CultureInfo.InvariantCulture);
-        }
-
-        if (step.Throws)
-        {
-            environment[ScriptedModel.ThrowKey] = "1";
-        }
-
-        if (step.Exit is { } exit)
-        {
-            environment["ZYGGY_FAKE_CLAUDE_EXIT"] = exit.ToString(CultureInfo.InvariantCulture);
-        }
-
-        return environment;
-    }
-
-    private static string Call(string tool, JsonObject input, string[]? run = null)
-    {
-        var call = new JsonObject { ["tool_name"] = tool, ["tool_input"] = input };
-        if (run is not null)
-        {
-            call["run"] = new JsonArray([.. run.Select(a => (JsonNode)a)]);
-        }
-
-        return call.ToJsonString();
-    }
-
-    private static string Zyggy(params string[] args) =>
-        Call("Bash", new JsonObject { ["command"] = "zyggy " + string.Join(' ', args.Select(a => a.Contains(' ', StringComparison.Ordinal) ? "\"" + a + "\"" : a)) }, args);
+    private static string Zyggy(params string[] args) => SupervisorScript.Zyggy(args);
 
     private static string Decide(string inReplyTo, EnvelopeId mandate, string kind) =>
         Zyggy("decide", "--reply-to", inReplyTo, "--kind", kind, "--basis", "verified", "--mandate", mandate.Value, "--step", "slice 1", "--evidence", inReplyTo, "--undo", "nothing to undo", "Every criterion of the step is met.");
@@ -458,75 +393,4 @@ public sealed partial class SupervisorWakeTests : IAsyncLifetime
             .Where(p => p.EndsWith(".md", StringComparison.Ordinal) && string.Equals(p[..p.LastIndexOf('/')], folder, StringComparison.Ordinal))];
     }
 
-    [GeneratedRegex("on event ([0-9A-Z]{26})", RegexOptions.CultureInvariant)]
-    private static partial Regex EventId();
-
-    /// <summary>What <c>tools/fake-claude</c> does in one supervisor run.</summary>
-    private sealed record Step(IReadOnlyList<string> ToolCalls, int? DelayMs = null, string Scenario = "done", int? Exit = null, bool Throws = false);
-
-    private sealed record Run(string Event, DateTimeOffset Started, DateTimeOffset Ended);
-
-    /// <summary>The production runner with a per-run environment for the fake; runs that are not a supervisor step pass through.</summary>
-    private sealed class ScriptedModel : IModelRunner
-    {
-        /// <summary>A script entry that makes the runner itself throw instead of starting the fake.</summary>
-        public const string ThrowKey = "TEST_RUNNER_THROWS";
-
-        private readonly List<Run> _runs = [];
-        private int _calls;
-
-        public IModelRunner Inner { get; set; } = null!;
-
-        public Func<int, string, Dictionary<string, string>> Script { get; set; } = null!;
-
-        public int Calls => Volatile.Read(ref _calls);
-
-        public IReadOnlyList<Run> Runs
-        {
-            get
-            {
-                lock (_runs)
-                {
-                    return [.. _runs];
-                }
-            }
-        }
-
-        public Task<bool?> CheckAuthAsync(CancellationToken cancellationToken) => Inner.CheckAuthAsync(cancellationToken);
-
-        public async Task<ModelRunResult> RunAsync(ModelRunRequest request, CancellationToken cancellationToken)
-        {
-            Match match = EventId().Match(request.Prompt);
-            if (!request.Prompt.StartsWith("You are Central's supervisor.", StringComparison.Ordinal) || !match.Success)
-            {
-                return await Inner.RunAsync(request, cancellationToken);
-            }
-
-            int call = Interlocked.Increment(ref _calls) - 1;
-            string id = match.Groups[1].Value;
-            var environment = new Dictionary<string, string>(request.Environment, StringComparer.Ordinal);
-            foreach ((string name, string value) in Script(call, id))
-            {
-                environment[name] = value;
-            }
-
-            if (environment.ContainsKey(ThrowKey))
-            {
-                throw new InvalidOperationException("the runner broke");
-            }
-
-            DateTimeOffset started = DateTimeOffset.UtcNow;
-            try
-            {
-                return await Inner.RunAsync(request with { Environment = environment }, cancellationToken);
-            }
-            finally
-            {
-                lock (_runs)
-                {
-                    _runs.Add(new Run(id, started, DateTimeOffset.UtcNow));
-                }
-            }
-        }
-    }
 }

@@ -75,6 +75,10 @@ if (!string.IsNullOrEmpty(toolCallsText))
 {
     var toolLog = Environment.GetEnvironmentVariable("ZYGGY_FAKE_CLAUDE_TOOL_LOG");
     var hooks = PreToolUseHooks(args);
+
+    // Spec 18: what the allowed Read calls of this run returned, so a later `run` argument can carry it ("{read}") — the model
+    // passing on what it read. A blocked Read adds nothing.
+    var readTexts = new List<string>();
     foreach (var call in toolCallsText.Split('\n', StringSplitOptions.RemoveEmptyEntries))
     {
         JsonNode? node;
@@ -111,6 +115,13 @@ if (!string.IsNullOrEmpty(toolCallsText))
             File.WriteAllText(target, toolInput["content"]?.GetValue<string>() ?? string.Empty, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         }
 
+        if (!blocked && toolName == "Read"
+            && toolInput["file_path"]?.GetValue<string>() is { } readPath
+            && File.Exists(Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, readPath))))
+        {
+            readTexts.Add(File.ReadAllText(Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, readPath))).ReplaceLineEndings(" ").Trim());
+        }
+
         // Spec 18: an allowed call that carries "run" starts the zyggy binary of ZYGGY_FAKE_CLAUDE_ZYGGY with those arguments and
         // waits for it — the model running a `zyggy` verb through its shell tool. The verb's exit code is not the fake's concern.
         if (!blocked && node["run"] is JsonArray run)
@@ -122,7 +133,7 @@ if (!string.IsNullOrEmpty(toolCallsText))
                 return 5;
             }
 
-            RunZyggy(zyggy, [.. run.Select(a => a!.GetValue<string>())]);
+            RunZyggy(zyggy, [.. run.Select(a => a!.GetValue<string>().Replace("{read}", string.Join(" ", readTexts), StringComparison.Ordinal))]);
         }
 
         if (!string.IsNullOrEmpty(toolLog))

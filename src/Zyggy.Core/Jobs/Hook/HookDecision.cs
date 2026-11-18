@@ -14,6 +14,9 @@ internal sealed record HookDecision(bool Allowed, string Rule, string Detail)
 
     public const string NetworkRule = "network program";
 
+    /// <summary>The rule of a read a read root refuses (deliverable 18): a file-tool read, or a shell command naming a path, outside every root.</summary>
+    public const string ReadOutsideRule = "read outside the read root";
+
     public const string HookErrorRule = "hook error";
 
     public const int MaxDetail = 120;

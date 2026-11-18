@@ -35,6 +35,15 @@ The shared class library. Every other project (`Zyggy.Node`, `Zyggy.Cli`, `Zyggy
 - **Job runs**: `JobRunner` adds `ZYGGY_JOB`, `ZYGGY_JOB_PROJECT` and `ZYGGY_JOB_ENDS` to the model's environment beside `ZYGGY_HOOKS=off`, so `zyggy ask` in a job names the job and stops waiting before its timeout.
 - **Configuration**: `SupervisionSettings` (`node.json` `supervision.enabled`, `detail`, `statusMinutes`, `workMachines`, validated by `NodeConfigurationReader`). The remedies are the Cli README's "Troubleshooting — Work, ask and decide".
 
+## Central supervision: mandate and supervisor (deliverable 18, group B)
+
+- **Wire**: `EnvelopeType.Mandate` with `MandateFields` (`MandateGrant`), the job fields `mandate`, `step` and `base`, the report fields `mandate` and `step` (copied from the job by whoever writes the report), the rejection reason `mandate_invalid`; goldens `tests/golden/mandate.*`, `job-mandate.*`, `report-mandate.*`. `BusPaths.Mandates` and `RevokedMandates` are `mandates/` and `mandates/revoked/` at tenant level. The registry document carries `capabilities` (`supervision`).
+- **One check, both ends**: `MandateLedger` (what a checkout says about one mandate: the file, the open jobs, the reports, the newest resume) from `BusInventory.MandateLedgerAsync`, and the pure `MandateRules.CheckSubmit` / `CheckIntake`, each refusal naming one `MandateLimit`.
+- **Central side**: `MandateGranter` (grant, revoke, resume), `MandateSubmission` with `MandateJobTemplates` (a job under a mandate is a template kind, a step label and at most one reference id), and `SupervisorWake`: after every pickup pass it writes the decisions that need no model (`SupervisorSummary`) and starts at most one supervisor run on `SupervisorStep.Next`, with the fixed prompt, a fixed tool list, the tool guard and `SupervisorRunBudget`. Registered by `AddSupervisorWake`, on Central only.
+- **Node side**: `MandateIntake` rejects a job outside its mandate before any model call; `WorktreeRun` starts a mandate job from `base` and pushes that branch only as a fast-forward, never the default branch.
+- **Tool guard**: `JobHookPolicy` takes read roots (`zyggy hook pre-tool-use --read-root`); a supervisor run that answers a machine of `supervision.workMachines` gets `supervision.outboundPaths` and the one question as its roots and no Hub tool.
+- **Configuration**: `SupervisionSettings.Project`, `RunsPerHour` and `OutboundPaths`. The remedies are the Cli README's "Troubleshooting — Mandate and supervisor".
+
 ## The five seams
 
 The library defines the interfaces behind which every external system hides. Each has exactly one implementation in v1 and nothing outside the implementation may reference the external system directly.

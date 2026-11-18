@@ -67,10 +67,61 @@ public sealed class SupervisorWakeConfigurationTests : IDisposable
         result.ToString().Should().Be(message);
     }
 
-    private NodeConfigurationResult Read(string extra)
+    // Slice 11: the folders a work-machine answer may read.
+    [Fact]
+    public void Read_OutboundPaths_ReadAsGiven()
+    {
+        // Arrange
+        string outbound = Path.Combine(_dir, "memory", "outbound").Replace('\\', '/');
+
+        // Act
+        NodeConfigurationResult result = Read($"\"supervision\": {{ \"workMachines\": [\"work-laptop\"], \"outboundPaths\": [\"{outbound}\"] }},");
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        result.Configuration!.Supervision.OutboundPaths.Should().Equal(outbound);
+    }
+
+    [Theory]
+    [InlineData("\"memory/outbound\"")]
+    [InlineData("[\"memory/outbound\"]")]
+    [InlineData("[5]")]
+    public void Read_OutboundPathsNotAListOfAbsoluteFolders_StartRefused(string value)
+    {
+        // Act
+        NodeConfigurationResult result = Read("\"supervision\": { \"outboundPaths\": " + value + " },");
+
+        // Assert
+        result.ToString().Should().Be("supervision.outboundPaths: must be a list of absolute folders");
+    }
+
+    // On Central a work machine cannot be answered without a folder to answer from.
+    [Fact]
+    public void Read_Central_WorkMachinesWithoutOutboundPaths_StartRefused()
+    {
+        // Act
+        NodeConfigurationResult result = Read("\"supervision\": { \"workMachines\": [\"work-laptop\"] },");
+
+        // Assert
+        result.ToString().Should().Be("supervision.outboundPaths: must name at least one folder when supervision.workMachines is set");
+    }
+
+    // A laptop lists work machines only for its own `zyggy work` view.
+    [Fact]
+    public void Read_Laptop_WorkMachinesWithoutOutboundPaths_Accepted()
+    {
+        // Act
+        NodeConfigurationResult result = Read("\"supervision\": { \"workMachines\": [\"work-laptop\"] },", machine: "home-laptop");
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+    }
+
+    private NodeConfigurationResult Read(string extra, string machine = "central")
     {
         string path = Path.Combine(_dir, "node.json");
-        File.WriteAllText(path, Minimal.Replace("{extra}", extra, StringComparison.Ordinal).Replace("{root}", _dir.Replace('\\', '/'), StringComparison.Ordinal));
+        extra = "\"machine\": \"" + machine + "\", " + extra;
+        File.WriteAllText(path, Minimal.Replace("\"machine\": \"central\",", string.Empty, StringComparison.Ordinal).Replace("{extra}", extra, StringComparison.Ordinal).Replace("{root}", _dir.Replace('\\', '/'), StringComparison.Ordinal));
         return NodeConfigurationReader.Read(path);
     }
 }

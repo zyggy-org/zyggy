@@ -134,6 +134,8 @@ public static class ServiceCollectionExtensions
                     node.Supervision.Project,
                     node.Supervision.RunsPerHour,
                     node.Supervision.WorkMachines,
+                    node.Supervision.OutboundPaths,
+                    sp.GetRequiredService<IOptions<GitHubBusOptions>>().Value.CheckoutRoot ?? throw Missing(nameof(GitHubBusOptions.CheckoutRoot)),
                     runs.NodeDir ?? node.EffectiveNodeDir,
                     runs.HookExecutable ?? TranscriptPaths.DefaultHookExecutable(),
                     runs.ModelEnvironment,

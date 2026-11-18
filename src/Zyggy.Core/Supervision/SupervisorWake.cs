@@ -16,7 +16,9 @@ namespace Zyggy.Core.Supervision;
 /// <summary>What the wake needs beside its services (deliverable 18, Configuration): <c>node.json</c>'s <c>supervision</c> keys and the run's edges.</summary>
 /// <param name="Project">The registry name of Central's own project (<c>supervision.project</c>); <see langword="null"/>: no run starts.</param>
 /// <param name="RunsPerHour">The most runs started within 60 minutes (<c>supervision.runsPerHour</c>).</param>
-/// <param name="WorkMachines">The machines whose events wait for the read root (<c>supervision.workMachines</c>, slice 11).</param>
+/// <param name="WorkMachines">The machines answered under a read root and without the Hub tool (<c>supervision.workMachines</c>).</param>
+/// <param name="OutboundPaths">The folders a run may read while it answers a work machine (<c>supervision.outboundPaths</c>).</param>
+/// <param name="BusRoot">The bus checkout: the one question a work-machine run answers is read from it.</param>
 /// <param name="NodeDir">The node directory: transcripts and blocked-calls files go under it, beside those of job runs.</param>
 /// <param name="HookExecutable">The <c>zyggy</c> binary that is the run's tool guard.</param>
 /// <param name="ModelEnvironment">Environment additions for the model process.</param>
@@ -25,6 +27,8 @@ internal sealed record SupervisorWakeOptions(
     string? Project,
     int RunsPerHour,
     IReadOnlyList<MachineName> WorkMachines,
+    IReadOnlyList<string> OutboundPaths,
+    string BusRoot,
     string NodeDir,
     string HookExecutable,
     IReadOnlyDictionary<string, string> ModelEnvironment,
@@ -60,8 +64,14 @@ internal sealed partial class SupervisorWake : IDisposable
         "Bash(zyggy decisions *)",
         "Bash(zyggy decide *)",
         "Bash(zyggy submit *--mandate *)",
-        "mcp__hub__get_context",
+        HubTool,
     ];
+
+    /// <summary>The Hub's context tool: part of the fixed list, never given to a run that answers a work machine (founding spec §8).</summary>
+    internal const string HubTool = "mcp__hub__get_context";
+
+    /// <summary>The rule that keeps every Hub tool from a run that answers a work machine.</summary>
+    internal const string HubDeny = "mcp__hub__*";
 
     private readonly BusInventory _inventory;
     private readonly DecisionWriter _decisions;
@@ -198,7 +208,7 @@ internal sealed partial class SupervisorWake : IDisposable
         }
 
         IReadOnlyList<SupervisorEvent> events = [.. (await _inventory.SupervisorEventsAsync(now, ct).ConfigureAwait(false))
-            .Where(e => !e.Handled && !_options.WorkMachines.Contains(e.Machine))];
+            .Where(e => !e.Handled && (!IsWorkMachine(e) || _options.OutboundPaths.Count > 0))];
 
         // An event two runs left without a decision: the node escalates it itself, and no third run starts on it.
         foreach (SupervisorEvent undecided in events.Where(e => Attempts(e) >= MaxAttempts))
@@ -236,6 +246,20 @@ internal sealed partial class SupervisorWake : IDisposable
     }
 
     private int Attempts(SupervisorEvent supervisorEvent) => _attempts.GetValueOrDefault(supervisorEvent.Id.Value);
+
+    private bool IsWorkMachine(SupervisorEvent supervisorEvent) => _options.WorkMachines.Contains(supervisorEvent.Machine);
+
+    // What a run that answers a work machine may read (founding spec §8): the outbound folders, and the one question it answers.
+    private List<string> ReadRoots(SupervisorEvent supervisorEvent)
+    {
+        List<string> roots = [.. _options.OutboundPaths];
+        if (supervisorEvent.Kind == SupervisorEventKind.Question)
+        {
+            roots.Add(BusPaths.Resolve(_options.BusRoot, BusPaths.EnvelopeFile(BusPaths.Questions(_me.Tenant, supervisorEvent.Machine), supervisorEvent.Id)));
+        }
+
+        return roots;
+    }
 
     // The decisions that need no model: escalate on the report that paused a mandate, one stop on a mandate that closed.
     private async Task CloseMandatesAsync(DateTimeOffset now, CancellationToken ct)
@@ -399,15 +423,26 @@ internal sealed partial class SupervisorWake : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(blockedFile)!);
         File.Delete(blockedFile);
         List<string> hookArgs = ["hook", "pre-tool-use", "--root", directory, "--blocked-file", blockedFile];
-        foreach (string rule in Tools)
+        bool workMachine = IsWorkMachine(supervisorEvent);
+        IReadOnlyList<string> tools = workMachine ? [.. Tools.Where(t => t != HubTool)] : Tools;
+        foreach (string rule in tools)
         {
             hookArgs.AddRange(["--allow", rule]);
+        }
+
+        if (workMachine)
+        {
+            foreach (string root in ReadRoots(supervisorEvent))
+            {
+                hookArgs.AddRange(["--read-root", root]);
+            }
         }
 
         var request = new ModelRunRequest(SupervisorStep.Prompt(supervisorEvent), directory, _options.TimeoutOverride ?? TimeSpan.FromMinutes(policy.DefaultTimeoutMinutes))
         {
             MaxTurns = policy.MaxTurns,
-            AllowedTools = Tools,
+            AllowedTools = tools,
+            DisallowedTools = workMachine ? [HubDeny] : [],
             MaxBudgetUsd = policy.MaxBudgetUsd,
             Isolation = ModelSessionIsolation.None,
             PreToolUseHook = new ModelHookCommand(hook, hookArgs),

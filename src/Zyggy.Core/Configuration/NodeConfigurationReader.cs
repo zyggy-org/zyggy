@@ -236,7 +236,7 @@ public static partial class NodeConfigurationReader
         if (!TryArchive(root, out ArchiveSettings archive, out failure)
             || !TryDiscovery(root, out DiscoverySettings discovery, out failure)
             || !TrySweep(root, machine, out SweepSettings sweep, out failure)
-            || !TrySupervision(root, discovery, out SupervisionSettings supervision, out failure)
+            || !TrySupervision(root, machine, discovery, out SupervisionSettings supervision, out failure)
             || !TryAgentCore(root, out AgentCoreSettings agentCore, out failure))
         {
             return failure;
@@ -385,7 +385,7 @@ public static partial class NodeConfigurationReader
     /// whose <c>discovery.detail</c> is <c>names</c> (the work laptop, §8), so such a machine never publishes more by omission.
     /// Unknown keys inside the section are ignored.
     /// </summary>
-    private static bool TrySupervision(JsonElement root, DiscoverySettings discovery, out SupervisionSettings supervision, out NodeConfigurationResult failure)
+    private static bool TrySupervision(JsonElement root, MachineName machine, DiscoverySettings discovery, out SupervisionSettings supervision, out NodeConfigurationResult failure)
     {
         SupervisionDetail detail = discovery.Detail == DiscoveryDetail.Names ? SupervisionDetail.Fixed : SupervisionDetail.Full;
         supervision = new SupervisionSettings(Detail: detail);
@@ -472,10 +472,35 @@ public static partial class NodeConfigurationReader
             return false;
         }
 
+        // Slice 11: the folders a supervisor run may read while it answers a work machine; Central cannot answer one without them.
+        var outboundPaths = new List<string>();
+        if (section.TryGetProperty("outboundPaths", out JsonElement outboundElement) && outboundElement.ValueKind != JsonValueKind.Null)
+        {
+            if (outboundElement.ValueKind != JsonValueKind.Array
+                || outboundElement.EnumerateArray().Any(item => item.ValueKind != JsonValueKind.String || !Path.IsPathFullyQualified(item.GetString()!)))
+            {
+                failure = Invalid("supervision.outboundPaths", "must be a list of absolute folders");
+                return false;
+            }
+
+            outboundPaths.AddRange(outboundElement.EnumerateArray().Select(item => item.GetString()!));
+        }
+
+        if (machine == MachineName.Central && workMachines.Count > 0 && outboundPaths.Count == 0)
+        {
+            failure = Invalid("supervision.outboundPaths", "must name at least one folder when supervision.workMachines is set");
+            return false;
+        }
+
         supervision = new SupervisionSettings(enabled, statusMinutes, detail) { Project = project, RunsPerHour = runsPerHour };
         if (workMachines.Count > 0)
         {
             supervision = supervision with { WorkMachines = workMachines };
+        }
+
+        if (outboundPaths.Count > 0)
+        {
+            supervision = supervision with { OutboundPaths = outboundPaths };
         }
 
         return true;

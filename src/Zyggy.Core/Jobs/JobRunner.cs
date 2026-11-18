@@ -26,7 +26,7 @@ public sealed partial class JobRunner
     private static readonly string[] CodeDefaultAllowedTools = ["Read", "Grep", "Glob"];
 
     // The rule names of a blocked-calls line (JobHookVerb), in the order the report looks for them.
-    private static readonly string[] BlockedRules = ["not in allowed_tools", "write outside the project", "network program", "hook error"];
+    private static readonly string[] BlockedRules = ["not in allowed_tools", "write outside the project", "network program", "read outside the read root", "hook error"];
 
     private static readonly TimeSpan HookSelfTestTimeout = TimeSpan.FromSeconds(15);
 
