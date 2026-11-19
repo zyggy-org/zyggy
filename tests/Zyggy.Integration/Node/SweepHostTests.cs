@@ -36,6 +36,12 @@ public sealed class SweepHostTests
 
     private static readonly TimeSpan Interval = TimeSpan.FromSeconds(3);
 
+    // The run limit of the three-pass test, a safety stop and not an asserted bound (the test asserts the order of the passes, not
+    // their speed; the interval is a real timer, so no fake-clock bound is left). It pays the start-up (11 s seen under the suite's
+    // load) and three rounds of a sender seed (fetch, rebase, commit, push: each a git process, slow under load) plus an interval and a
+    // pass; 60 s is what one round trip gets elsewhere, so three get the 120 s the longest host tests allow.
+    private static readonly TimeSpan ThreePassesLimit = TimeSpan.FromSeconds(120);
+
     // AC-15: a pass after the start-up pickup, and one after every interval (three claims, seeded one after the other).
     [Fact]
     public async Task Central_StaleClaims_RequeuedAfterStartupPickupAndAfterEveryInterval()
@@ -77,7 +83,7 @@ public sealed class SweepHostTests
 
                 return await RequeuedAsync(harness, third, ct);
             },
-            TimeSpan.FromSeconds(60),
+            ThreePassesLimit,
             ct,
             CentralTestServices);
 

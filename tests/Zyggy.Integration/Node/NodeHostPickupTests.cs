@@ -34,7 +34,9 @@ public sealed class NodeHostPickupTests
 
     // Spec 13 AC-1/O2: a context pushed while Central runs is picked up by the 1 s poll that sees it (production jitter), not by a slower
     // path. The safety fetch (the only other trigger while running) is set out of the run's reach, and a change it had to find would log
-    // its warning; so a pickup within the run is the poll's. This replaces a 10 s wall-clock bound that failed under load.
+    // its warning; so a pickup within the run is the poll's. This replaces a 10 s wall-clock bound that failed under load; the speed
+    // bound is counted in polls instead: the doorbell probes the inbox at every head request, and from the second request after the
+    // push on the inbox file is there (one poll to see the push, one more when a push of the node's own had rebased onto it).
     [Fact]
     public async Task Central_ContextPushedWhileRunning_InboxFileAndArchiveOnMain_PickedUpByTheNextPoll_ProductionJitterAtOneSecond()
     {
@@ -47,7 +49,9 @@ public sealed class NodeHostPickupTests
         var before = memory.FingerprintOutsideInbox();
         SeededJob? context = null;
         string? archived = null;
+        int pushedAtRequest = 0;
         var started = DateTimeOffset.UtcNow;
+        harness.Head.Probe = () => memory.InboxFiles().Count == 1;
 
         // Act
         int exit = await harness.RunUntilAsync(
@@ -61,6 +65,7 @@ public sealed class NodeHostPickupTests
                     }
 
                     context = await harness.Bus.SeedSignedContextAsync(HomeLaptop, Central, TestKeys.Acme1, harness.Store, Fact, created: Created, ct: ct);
+                    pushedAtRequest = harness.Head.RequestCount;
                     archived = BusPaths.EnvelopeFile(BusPaths.Archive(Acme, 2026, 10), context.Id);
                     return false;
                 }
@@ -76,6 +81,9 @@ public sealed class NodeHostPickupTests
         // Assert
         exit.Should().Be(0, string.Join('\n', harness.LogLines));
         harness.LogLines.Should().NotContain(l => l.Contains("safety fetch", StringComparison.Ordinal), "the poll, not the safety fetch, saw the push");
+        harness.Head.ProbedSince(pushedAtRequest).Skip(2).Should().NotContain(
+            false,
+            "the first poll after the push sees it (the second when a push of the node's own rebased onto it), so the inbox file is there by the poll after");
         memory.InboxFiles().Should().Equal($"bus-context-home-laptop-{context!.Id}-2026-10-29.md");
         harness.LogLines.Count(l => l.Contains("picked up 1 file(s)", StringComparison.Ordinal)).Should().Be(1);
         harness.LogLines.Should().NotContain(l => l.Contains("staging database", StringComparison.Ordinal));
@@ -220,7 +228,8 @@ public sealed class NodeHostPickupTests
 
     // Plan 41: an item pushed while Central runs is filed by the 1 s poll that sees it, not by a slower path. The safety fetch (the
     // only other trigger while running) is set out of the run's reach, and a change it had to find would log its warning; so a
-    // filing within the run is the poll's. This replaces a 10 s wall-clock bound that failed under load (12.3 s, correctly filed).
+    // filing within the run is the poll's. This replaces a 10 s wall-clock bound that failed under load (12.3 s, correctly filed);
+    // the speed bound is counted in polls instead, by the doorbell's probe of the filed file in the memory clone (see the context test).
     [Fact]
     public async Task Central_WithInstanceDir_BusItemPushedWhileRunning_FiledByTheNextPoll()
     {
@@ -232,7 +241,9 @@ public sealed class NodeHostPickupTests
         harness.WriteNodeJson(machine: Central, activeSeconds: 1, idleSeconds: 60, safetyFetchMinutes: 60);
         harness.Environment = memory.Env();
         SeededJob? item = null;
+        int pushedAtRequest = 0;
         var started = DateTimeOffset.UtcNow;
+        harness.Head.Probe = () => memory.Exists("archive/calizr/staging-restore-notes.txt");
 
         // Act
         int exit = await harness.RunUntilAsync(
@@ -246,6 +257,7 @@ public sealed class NodeHostPickupTests
                     }
 
                     item = await harness.Bus.SeedSignedItemAsync(HomeLaptop, Central, TestKeys.Acme1, harness.Store, ItemFieldsFor(Notes), Notes, Created, ct: ct);
+                    pushedAtRequest = harness.Head.RequestCount;
                     return false;
                 }
 
@@ -259,6 +271,9 @@ public sealed class NodeHostPickupTests
         // Assert
         exit.Should().Be(0, string.Join('\n', harness.LogLines));
         harness.LogLines.Should().NotContain(l => l.Contains("safety fetch", StringComparison.Ordinal), "the poll, not the safety fetch, saw the push");
+        harness.Head.ProbedSince(pushedAtRequest).Skip(2).Should().NotContain(
+            false,
+            "the first poll after the push sees it (the second when a push of the node's own rebased onto it), so the file is filed by the poll after");
         (await memory.Repo.ShowBytesAsync("acme/alice/archive/calizr/staging-restore-notes.txt", ct)).Should().Equal(Notes);
         harness.LogLines.Should().NotContain(l => l.Contains("Sunday's snapshot", StringComparison.Ordinal));
         SecretSweep.AssertAbsent(harness.LogLines);
