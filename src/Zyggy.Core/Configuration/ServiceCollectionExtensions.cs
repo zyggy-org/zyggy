@@ -104,7 +104,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(sp => new SettingsInUse(
             sp.GetRequiredService<NodeConfiguration>(),
             configPath,
-            sp.GetService<TimeProvider>() ?? TimeProvider.System,
+            sp.GetRequiredService<TimeProvider>(),
             sp.GetService<ILoggerFactory>()?.CreateLogger<SettingsInUse>() ?? NullLogger<SettingsInUse>.Instance));
         return services;
     }

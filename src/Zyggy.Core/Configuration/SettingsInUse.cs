@@ -85,7 +85,7 @@ public sealed partial class SettingsInUse
     private static readonly string[] FiveKeys = [DevRootsKey, ExcludeKey, ProjectKey, WorkMachinesKey, OutboundKey];
     private static readonly JsonDocumentOptions DocumentOptions = new() { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true };
 
-    private readonly TimeProvider _clock;
+    private readonly TimeProvider? _clock;
     private readonly ILogger<SettingsInUse> _log;
     private readonly Dictionary<string, JsonNode?>? _startedOthers;
     private volatile SettingsValues _current;
@@ -95,8 +95,10 @@ public sealed partial class SettingsInUse
 
     /// <summary>A holder that never looks at a file: the values of <paramref name="started"/> for the life of the process (the CLI, tests).</summary>
     internal SettingsInUse(NodeConfiguration started)
-        : this(started, null, TimeProvider.System, Microsoft.Extensions.Logging.Abstractions.NullLogger<SettingsInUse>.Instance)
     {
+        ArgumentNullException.ThrowIfNull(started);
+        _current = SettingsValues.Of(started);
+        _log = Microsoft.Extensions.Logging.Abstractions.NullLogger<SettingsInUse>.Instance;
     }
 
     /// <summary>A holder that looks at the file at <paramref name="path"/>, which <paramref name="started"/> was read from.</summary>
@@ -131,7 +133,7 @@ public sealed partial class SettingsInUse
     /// <returns>A task that completes when the loop stops.</returns>
     public async Task RunAsync(CancellationToken ct)
     {
-        if (Path is null)
+        if (Path is null || _clock is null)
         {
             return;
         }
@@ -168,7 +170,7 @@ public sealed partial class SettingsInUse
         NodeConfigurationResult read = NodeConfigurationReader.Read(Path);
         if (!read.IsOk)
         {
-            if (_refused || !_refused)
+            if (!_refused)
             {
                 _refused = true;
                 LogRefused(read.ToString());
@@ -280,7 +282,7 @@ public sealed partial class SettingsInUse
         }
 
         _restartWarned = differing;
-        if (differing.Length < 0)
+        if (differing.Length > 0)
         {
             LogRestartNeeded(differing);
         }

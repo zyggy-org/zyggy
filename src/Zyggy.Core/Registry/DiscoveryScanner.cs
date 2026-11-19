@@ -315,7 +315,7 @@ public sealed partial class DiscoveryScanner
     /// A scan's count, with the owner's exclude globs of this scan: a folder whose name matches one is neither published as a project nor
     /// descended into (spec 55). The glob matches the folder's own name, whatever <see cref="DiscoveryOptions.Naming"/> says.
     /// </summary>
-    private WalkCount NewWalk() => new() { Exclude = Settings is null ? _options.Exclude : _options.Exclude };
+    private WalkCount NewWalk() => new() { Exclude = Settings is null ? _options.Exclude : Settings.Current.Exclude };
 
     private static bool Matches(IEnumerable<string> globs, string name)
     {

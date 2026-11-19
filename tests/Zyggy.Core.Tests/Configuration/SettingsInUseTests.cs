@@ -4,13 +4,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-using NSubstitute;
-
 using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Git;
 using Zyggy.Core.Jobs;
-using Zyggy.Core.Models;
 using Zyggy.Core.Policy;
 using Zyggy.Core.Registry;
 using Zyggy.Core.Tenancy;
