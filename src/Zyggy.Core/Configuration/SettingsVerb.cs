@@ -388,7 +388,14 @@ public sealed class SettingsVerb
                 return written.ToString();
             }
 
-            File.WriteAllBytes(SetupPaths.Backup(path, stamp), original);
+            // A backup is never overwritten: a second change within the same second gets a numbered name beside the first.
+            string backup = SetupPaths.Backup(path, stamp);
+            for (int n = 2; File.Exists(backup); n++)
+            {
+                backup = SetupPaths.Backup(path, stamp) + "-" + n.ToString(CultureInfo.InvariantCulture);
+            }
+
+            File.WriteAllBytes(backup, original);
             File.Move(temp, path, overwrite: true);
             return null;
         }

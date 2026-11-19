@@ -1473,6 +1473,35 @@ public sealed partial class SourceHygieneTests
         deploy.Should().Contain("-CorePath").And.Contain("zyggy setup").And.Contain("the laptop runbook is one command: `zyggy-core/runbooks/install-node.md` \"Laptop\"");
     }
 
+    // AC-10 (spec 55, slice 4): the Cli README documents `zyggy settings` with its forms and exit codes and has the runbook rows of the
+    // spec's Failure-modes table; the Node README names the verb beside its node.json keys; the Core README names the class and its exits.
+    [Fact]
+    public void Readmes_SettingsVerbDocumented()
+    {
+        // Arrange
+        static string Read(string relative) => File.ReadAllText(Path.Combine(RepoRoot(), relative));
+        var cli = Read("src/Zyggy.Cli/README.md");
+        var node = Read("src/Zyggy.Node/README.md");
+        var core = Read("src/Zyggy.Core/README.md");
+        string[] cliNeedles =
+        [
+            "| `settings show", "settings add devRoots <path> --exclude <glob>", "Exit 0 changed or unchanged · 2", "· 3 not Central", "· 5 an unattended run",
+            "## Troubleshooting — Settings", "| Settings: value refused", "| Settings: refused", "| Settings: node.json refused while running",
+            "| Settings: restart needed", "| Settings: reverse a change",
+        ];
+        string[] nodeNeedles = ["`zyggy settings`", "only on Central"];
+        string[] coreNeedles = ["`SettingsVerb`", "exit 0 done or unchanged, 2", "5 an unattended run"];
+
+        // Act
+        var missing = cliNeedles.Where(n => !cli.Contains(n, StringComparison.Ordinal)).Select(n => "cli: " + n)
+            .Concat(nodeNeedles.Where(n => !node.Contains(n, StringComparison.Ordinal)).Select(n => "node: " + n))
+            .Concat(coreNeedles.Where(n => !core.Contains(n, StringComparison.Ordinal)).Select(n => "core: " + n))
+            .ToList();
+
+        // Assert
+        missing.Should().BeEmpty();
+    }
+
     // Spec 15 slice 6: the setup row names the two new skill lines and what a checkout without them gives.
     [Fact]
     public void Readmes_SetupBusAndDiscoverSkillsDocumented()

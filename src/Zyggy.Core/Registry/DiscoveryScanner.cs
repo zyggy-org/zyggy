@@ -68,8 +68,47 @@ public sealed partial class DiscoveryScanner
             notices.Add(new ScanNotice(ScanNoticeKind.PatternsUnavailable, "ZYGGY_SECRET_PATTERNS", "descriptions and summaries not published"));
         }
 
-        var found = new List<Candidate>();
         var walk = new WalkCount();
+        List<(string Name, string Path)> unique = Find(devRoots, notices, walk, cancellationToken);
+
+        var projects = new List<RegistryProject>(unique.Count);
+        foreach ((string name, string path) in unique)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            projects.Add(await ProjectAsync(name, path, effective, notices, cancellationToken).ConfigureAwait(false));
+        }
+
+        TimeSpan elapsed = _clock.GetElapsedTime(started);
+        if (elapsed > _options.SlowScanThreshold)
+        {
+            notices.Add(new ScanNotice(
+                ScanNoticeKind.SlowScan,
+                devRoots.Count.ToString(CultureInfo.InvariantCulture) + " roots",
+                ((int)elapsed.TotalSeconds).ToString(CultureInfo.InvariantCulture) + " s"));
+        }
+
+        LogScanned(_log, projects.Count, notices.Count, walk.Visited, _options.Depth);
+        return new ScanResult(projects, notices, elapsed, effective);
+    }
+
+    /// <summary>
+    /// The names and folders of the projects a scan of <paramref name="devRoots"/> publishes, by the same walk, naming and duplicate rules as
+    /// <see cref="ScanAsync"/>, with nothing read inside a project and no notice kept (spec 55: what <c>zyggy settings</c> checks and reports).
+    /// </summary>
+    /// <param name="devRoots">The roots to scan.</param>
+    /// <param name="cancellationToken">Cancels the scan.</param>
+    /// <returns>The projects, ordered by name (ordinal).</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="devRoots"/> is null.</exception>
+    public IReadOnlyList<Configuration.SettingsProject> FindProjects(IReadOnlyList<string> devRoots, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(devRoots);
+        return [.. Find(devRoots, [], new WalkCount(), cancellationToken).Select(p => new Configuration.SettingsProject(p.Name, p.Path))];
+    }
+
+    /// <summary>The walk over every root, merged and de-duplicated by name, capped at <see cref="DiscoveryOptions.MaxProjects"/>.</summary>
+    private List<(string Name, string Path)> Find(IReadOnlyList<string> devRoots, List<ScanNotice> notices, WalkCount walk, CancellationToken cancellationToken)
+    {
+        var found = new List<Candidate>();
         foreach (string root in NormaliseRoots(devRoots, notices))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -118,24 +157,7 @@ public sealed partial class DiscoveryScanner
             unique = unique.Take(_options.MaxProjects).ToList();
         }
 
-        var projects = new List<RegistryProject>(unique.Count);
-        foreach ((string name, string path) in unique)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            projects.Add(await ProjectAsync(name, path, effective, notices, cancellationToken).ConfigureAwait(false));
-        }
-
-        TimeSpan elapsed = _clock.GetElapsedTime(started);
-        if (elapsed > _options.SlowScanThreshold)
-        {
-            notices.Add(new ScanNotice(
-                ScanNoticeKind.SlowScan,
-                devRoots.Count.ToString(CultureInfo.InvariantCulture) + " roots",
-                ((int)elapsed.TotalSeconds).ToString(CultureInfo.InvariantCulture) + " s"));
-        }
-
-        LogScanned(_log, projects.Count, notices.Count, walk.Visited, _options.Depth);
-        return new ScanResult(projects, notices, elapsed, effective);
+        return unique;
     }
 
     /// <summary>The path as a registry file writes it: full, <c>/</c> separators.</summary>

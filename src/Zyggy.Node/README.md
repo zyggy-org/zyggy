@@ -55,6 +55,8 @@ The single configuration file (§10). Path: `--config`, else `ZYGGY_NODE_JSON`, 
 
 Secrets are never in it; any key named like a credential is refused.
 
+On Central, `devRoots`, `discovery.exclude`, `supervision.project`, `supervision.workMachines` and `supervision.outboundPaths` are changed with `zyggy settings` (deliverable 55), never by a hand or model edit: only on Central, only in an attended session, one checked value at a time, backup first. `zyggy settings show` prints the five on any machine. Exit 0 changed or unchanged, 2 a refused value, 3 not Central or a file the reader refuses, 5 an unattended run; the runbook rows are the Cli README's "Troubleshooting — Settings".
+
 ## Exit codes
 
 | Code | Meaning | Where it is said |
