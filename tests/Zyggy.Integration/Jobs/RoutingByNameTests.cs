@@ -70,6 +70,49 @@ public sealed class RoutingByNameTests : IAsyncLifetime
         SweepSecrets();
     }
 
+    // Spec 56 AC-1, AC-2: a names-only node (the work laptop's mode) runs a job sent by registry name in the nested mixed-case folder it
+    // discovered, and no commit of its registry file ever carries a path, agents, skills or a summary.
+    [Fact]
+    public async Task JobByName_NamesOnlyNode_RunsInDiscoveredFolder_NoPathPublished()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        _harness.WriteNodeJson(discoveryJson: "{ \"detail\": \"names\", \"depth\": 2 }");
+        ScratchProject portal = await _harness.ProjectAsync(ct, "AcmePortal", group: "Clients");
+        SeededJob job = await _harness.SeedJobAsync(portal, ct, projectField: "acmeportal");
+
+        // Act
+        int exit = await _harness.RunUntilAsync(
+            async () => (await _harness.ReportsOnMainAsync(ct)).Count == 1
+                && (await _harness.RegistryOnMainAsync(NodeHostHarness.HomeLaptop, ct))?.Projects.Any(p => p.Name == "acmeportal") == true,
+            TimeSpan.FromSeconds(60),
+            ct);
+
+        // Assert
+        exit.Should().Be(0);
+        Model report = await SingleReportAsync(ct);
+        report.Header.InReplyTo.Should().Be(job.Id);
+        report.Report!.Status.Should().Be(ReportStatus.Done, Encoding.UTF8.GetString(report.Body.Span));
+        File.Exists(Path.Combine(portal.Path, Capture)).Should().BeTrue("the fake claude ran in the discovered folder");
+        string registryPath = BusPaths.Registry(NodeHostHarness.Acme, NodeHostHarness.HomeLaptop);
+        string[] commits = (await _harness.Bus.RunGitAsync(_harness.Bus.BareDir, ["log", "--format=%H", "main", "--", registryPath], ct))
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        commits.Should().NotBeEmpty();
+        foreach (string commit in commits)
+        {
+            string published = await _harness.Bus.RunGitAsync(_harness.Bus.BareDir, ["show", commit + ":" + registryPath], ct);
+            published.Should().NotContain("path:", "a names-only node never publishes a folder (commit {0})", commit);
+            published.Should().NotContain("AcmePortal").And.NotContain("Clients");
+            RegistryProject entry = RegistryDocument.Parse(Encoding.UTF8.GetBytes(published)).Document!.Projects.Single(p => p.Name == "acmeportal");
+            entry.Path.Should().BeNull();
+            entry.Agents.Should().BeEmpty();
+            entry.Skills.Should().BeEmpty();
+            entry.Summary.Should().BeNull();
+        }
+
+        SweepSecrets();
+    }
+
     // Spec 45 AC-16: with a nested root (`devRoots` holds the projects folder and its sub-folder), a job by a path under the nested root runs.
     [Fact]
     public async Task JobByPath_UnderNestedRoot_Done()

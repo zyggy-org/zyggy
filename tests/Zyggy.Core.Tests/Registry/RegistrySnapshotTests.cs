@@ -89,14 +89,53 @@ public sealed class RegistrySnapshotTests
         path.Should().BeNull();
     }
 
+    // AC-3 (spec 56): changed on purpose — a `detail: names` scan publishes no path, but the node keeps the folder beside the document.
     [Fact]
-    public void TryResolve_NamesEntryWithoutPath_False()
+    public void TryResolve_NamesEntryWithoutPath_FolderKeptInMemory()
     {
-        // Arrange: a `detail: names` scan publishes no path, so it can never route
-        RegistrySnapshot snapshot = With(new RegistryProject("calizr", null, null, [], [], null));
+        // Arrange
+        string folder = Path.Combine(Path.GetTempPath(), "zyggy-unit", "Clients", "AcmePortal");
+        RegistrySnapshot snapshot = NamesOnly(("acmeportal", folder));
 
-        // Act + Assert
-        snapshot.TryResolve("calizr", out _).Should().BeFalse();
+        // Act
+        bool found = snapshot.TryResolve("acmeportal", out string? path);
+
+        // Assert
+        found.Should().BeTrue();
+        path.Should().Be(Path.GetFullPath(folder));
+    }
+
+    // AC-3 (spec 56): the published document stays path-less; the folder is beside it.
+    [Fact]
+    public void Replace_WithFolders_CurrentCarriesNoPath()
+    {
+        // Arrange
+        string folder = Path.Combine(Path.GetTempPath(), "zyggy-unit", "Clients", "AcmePortal");
+
+        // Act
+        RegistrySnapshot snapshot = NamesOnly(("acmeportal", folder));
+
+        // Assert
+        snapshot.Current!.Projects.Should().OnlyContain(p => p.Path == null);
+    }
+
+    // AC-3 (spec 56): on a names-only snapshot an unknown name, a non-label and an empty value still do not resolve.
+    [Theory]
+    [InlineData("AcmePortal")]
+    [InlineData("acmeportal/x")]
+    [InlineData("")]
+    [InlineData("unknown")]
+    public void TryResolve_NamesOnlyNotALabelOrUnknown_False(string name)
+    {
+        // Arrange
+        RegistrySnapshot snapshot = NamesOnly(("acmeportal", Path.Combine(Path.GetTempPath(), "zyggy-unit", "Clients", "AcmePortal")));
+
+        // Act
+        bool found = snapshot.TryResolve(name, out string? path);
+
+        // Assert
+        found.Should().BeFalse();
+        path.Should().BeNull();
     }
 
     [Fact]
@@ -110,6 +149,16 @@ public sealed class RegistrySnapshotTests
     {
         var snapshot = new RegistrySnapshot();
         snapshot.Replace(RegistryDocumentTests.Central() with { Projects = projects });
+        return snapshot;
+    }
+
+    /// <summary>A snapshot as a <c>detail: names</c> scan leaves it: path-less entries, the folders kept beside the document.</summary>
+    internal static RegistrySnapshot NamesOnly(params (string Name, string Folder)[] projects)
+    {
+        var snapshot = new RegistrySnapshot();
+        snapshot.Replace(
+            RegistryDocumentTests.Central() with { Projects = [.. projects.Select(p => new RegistryProject(p.Name, null, "main", [], [], null))] },
+            projects.ToDictionary(p => p.Name, p => p.Folder, StringComparer.Ordinal));
         return snapshot;
     }
 }

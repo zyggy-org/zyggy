@@ -78,10 +78,14 @@ public sealed partial class DiscoveryScanner
         List<(string Name, string Path)> unique = Find(devRoots, notices, walk, cancellationToken);
 
         var projects = new List<RegistryProject>(unique.Count);
+
+        // The folder of every kept project, whatever the detail, for the node's snapshot only (spec 56): never in a project entry here.
+        var folders = new Dictionary<string, string>(unique.Count, StringComparer.Ordinal);
         foreach ((string name, string path) in unique)
         {
             cancellationToken.ThrowIfCancellationRequested();
             projects.Add(await ProjectAsync(name, path, effective, notices, cancellationToken).ConfigureAwait(false));
+            folders[name] = path;
         }
 
         TimeSpan elapsed = _clock.GetElapsedTime(started);
@@ -94,7 +98,7 @@ public sealed partial class DiscoveryScanner
         }
 
         LogScanned(_log, projects.Count, notices.Count, walk.Visited, _options.Depth);
-        return new ScanResult(projects, notices, elapsed, effective);
+        return new ScanResult(projects, notices, elapsed, effective) { Folders = folders };
     }
 
     /// <summary>
