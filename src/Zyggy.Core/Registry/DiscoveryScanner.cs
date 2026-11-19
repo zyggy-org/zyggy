@@ -11,7 +11,8 @@ namespace Zyggy.Core.Registry;
 /// <summary>
 /// Scans every <c>devRoots</c> entry to <see cref="DiscoveryOptions.Depth"/> levels for Claude Code projects (a folder holding
 /// <c>.claude/</c>) and builds the registry's project list (founding spec §4 "Registry file", specs 14 and 45). Links are never followed,
-/// hidden, built-in or excluded folders and folders inside a project are not listed, and one scan looks into at most
+/// hidden, built-in or excluded folders and folders inside a project are not listed (a folder the owner excludes is not published either,
+/// spec 55), and one scan looks into at most
 /// <see cref="DiscoveryOptions.MaxFolders"/> folders; a root inside another root is scanned too, with a notice, and a folder
 /// reached from both counts, and with <see cref="DiscoveryNaming.Path"/> is named, from the innermost root; of folders deriving one name the shallowest keeps it, and a tie at that level
 /// publishes none. Never throws for a file-system or git failure: every such failure becomes a <see cref="ScanNotice"/>.
@@ -49,6 +50,12 @@ public sealed partial class DiscoveryScanner
         _listChildren = listChildren ?? (root => new DirectoryInfo(root).EnumerateDirectories());
     }
 
+    /// <summary>
+    /// Gets the settings in use: when set, a scan takes the owner's exclude globs from it, once at the scan's start (spec 55); otherwise
+    /// from <see cref="DiscoveryOptions.Exclude"/>.
+    /// </summary>
+    internal Configuration.SettingsInUse? Settings { get; init; }
+
     /// <summary>Scans the roots.</summary>
     /// <param name="devRoots">The <c>devRoots</c> entries of <c>node.json</c>.</param>
     /// <param name="detail">The requested detail; <see cref="DiscoveryDetail.Full"/> runs as <see cref="DiscoveryDetail.Names"/> without secret patterns.</param>
@@ -67,8 +74,47 @@ public sealed partial class DiscoveryScanner
             notices.Add(new ScanNotice(ScanNoticeKind.PatternsUnavailable, "ZYGGY_SECRET_PATTERNS", "descriptions and summaries not published"));
         }
 
+        var walk = NewWalk();
+        List<(string Name, string Path)> unique = Find(devRoots, notices, walk, cancellationToken);
+
+        var projects = new List<RegistryProject>(unique.Count);
+        foreach ((string name, string path) in unique)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            projects.Add(await ProjectAsync(name, path, effective, notices, cancellationToken).ConfigureAwait(false));
+        }
+
+        TimeSpan elapsed = _clock.GetElapsedTime(started);
+        if (elapsed > _options.SlowScanThreshold)
+        {
+            notices.Add(new ScanNotice(
+                ScanNoticeKind.SlowScan,
+                devRoots.Count.ToString(CultureInfo.InvariantCulture) + " roots",
+                ((int)elapsed.TotalSeconds).ToString(CultureInfo.InvariantCulture) + " s"));
+        }
+
+        LogScanned(_log, projects.Count, notices.Count, walk.Visited, _options.Depth);
+        return new ScanResult(projects, notices, elapsed, effective);
+    }
+
+    /// <summary>
+    /// The names and folders of the projects a scan of <paramref name="devRoots"/> publishes, by the same walk, naming and duplicate rules as
+    /// <see cref="ScanAsync"/>, with nothing read inside a project and no notice kept (spec 55: what <c>zyggy settings</c> checks and reports).
+    /// </summary>
+    /// <param name="devRoots">The roots to scan.</param>
+    /// <param name="cancellationToken">Cancels the scan.</param>
+    /// <returns>The projects, ordered by name (ordinal).</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="devRoots"/> is null.</exception>
+    public IReadOnlyList<Configuration.SettingsProject> FindProjects(IReadOnlyList<string> devRoots, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(devRoots);
+        return [.. Find(devRoots, [], NewWalk(), cancellationToken).Select(p => new Configuration.SettingsProject(p.Name, p.Path))];
+    }
+
+    /// <summary>The walk over every root, merged and de-duplicated by name, capped at <see cref="DiscoveryOptions.MaxProjects"/>.</summary>
+    private List<(string Name, string Path)> Find(IReadOnlyList<string> devRoots, List<ScanNotice> notices, WalkCount walk, CancellationToken cancellationToken)
+    {
         var found = new List<Candidate>();
-        var walk = new WalkCount();
         foreach (string root in NormaliseRoots(devRoots, notices))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -117,24 +163,7 @@ public sealed partial class DiscoveryScanner
             unique = unique.Take(_options.MaxProjects).ToList();
         }
 
-        var projects = new List<RegistryProject>(unique.Count);
-        foreach ((string name, string path) in unique)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            projects.Add(await ProjectAsync(name, path, effective, notices, cancellationToken).ConfigureAwait(false));
-        }
-
-        TimeSpan elapsed = _clock.GetElapsedTime(started);
-        if (elapsed > _options.SlowScanThreshold)
-        {
-            notices.Add(new ScanNotice(
-                ScanNoticeKind.SlowScan,
-                devRoots.Count.ToString(CultureInfo.InvariantCulture) + " roots",
-                ((int)elapsed.TotalSeconds).ToString(CultureInfo.InvariantCulture) + " s"));
-        }
-
-        LogScanned(_log, projects.Count, notices.Count, walk.Visited, _options.Depth);
-        return new ScanResult(projects, notices, elapsed, effective);
+        return unique;
     }
 
     /// <summary>The path as a registry file writes it: full, <c>/</c> separators.</summary>
@@ -222,7 +251,8 @@ public sealed partial class DiscoveryScanner
             {
                 try
                 {
-                    if (child.Name.StartsWith('.') || IsReparsePoint(child))
+                    // The owner's globs leave a folder out entirely: not published, not descended into (spec 55).
+                    if (child.Name.StartsWith('.') || IsReparsePoint(child) || Matches(walk.Exclude, child.Name))
                     {
                         continue;
                     }
@@ -242,7 +272,7 @@ public sealed partial class DiscoveryScanner
                     var claude = new DirectoryInfo(Path.Join(child.FullName, ".claude"));
                     if (!claude.Exists)
                     {
-                        if (next.Level < _options.Depth && !IsSkipped(child.Name))
+                        if (next.Level < _options.Depth && !IsBuiltInSkip(child.Name))
                         {
                             queue.Enqueue((child.FullName, next.Level + 1));
                         }
@@ -276,22 +306,32 @@ public sealed partial class DiscoveryScanner
     }
 
     /// <summary>
-    /// Whether the walk never descends into a folder of this name: the built-in list or a <see cref="DiscoveryOptions.Exclude"/> glob
-    /// (spec 45). Checked only before descending, never for a project's own name. Case is ignored on Windows only.
+    /// Whether the walk never descends into a folder of this name because of the built-in list (spec 45). Checked only before descending,
+    /// never for a project's own name. Case is ignored on Windows only.
     /// </summary>
-    private bool IsSkipped(string name)
+    private static bool IsBuiltInSkip(string name) => Matches(BuiltInSkips, name);
+
+    /// <summary>
+    /// A scan's count, with the owner's exclude globs of this scan: a folder whose name matches one is neither published as a project nor
+    /// descended into (spec 55). The glob matches the folder's own name, whatever <see cref="DiscoveryOptions.Naming"/> says.
+    /// </summary>
+    private WalkCount NewWalk() => new() { Exclude = Settings is null ? _options.Exclude : Settings.Current.Exclude };
+
+    private static bool Matches(IEnumerable<string> globs, string name)
     {
         bool ignoreCase = OperatingSystem.IsWindows();
-        return BuiltInSkips.Concat(_options.Exclude).Any(glob => FileSystemName.MatchesSimpleExpression(glob, name, ignoreCase));
+        return globs.Any(glob => FileSystemName.MatchesSimpleExpression(glob, name, ignoreCase));
     }
 
     /// <summary>Folders the walk never descends into, whatever <c>discovery.exclude</c> says (spec 45 Q3).</summary>
     private static readonly string[] BuiltInSkips =
         ["node_modules", "bin", "obj", "dist", "out", "target", "packages", "TestResults", "__pycache__", "*.worktrees"];
 
-    /// <summary>The folder count of one scan, shared by its roots.</summary>
+    /// <summary>The folder count of one scan, shared by its roots, and the owner's exclude globs the scan started with.</summary>
     private sealed class WalkCount
     {
+        public IReadOnlyList<string> Exclude { get; init; } = [];
+
         public int Visited { get; set; }
 
         public bool CapReached { get; set; }

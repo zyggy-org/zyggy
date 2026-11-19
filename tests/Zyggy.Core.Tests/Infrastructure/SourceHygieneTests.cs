@@ -1473,6 +1473,62 @@ public sealed partial class SourceHygieneTests
         deploy.Should().Contain("-CorePath").And.Contain("zyggy setup").And.Contain("the laptop runbook is one command: `zyggy-core/runbooks/install-node.md` \"Laptop\"");
     }
 
+    // AC-10 (spec 55, slice 4): the Cli README documents `zyggy settings` with its forms and exit codes and has the runbook rows of the
+    // spec's Failure-modes table; the Node README names the verb beside its node.json keys; the Core README names the class and its exits.
+    [Fact]
+    public void Readmes_SettingsVerbDocumented()
+    {
+        // Arrange
+        static string Read(string relative) => File.ReadAllText(Path.Combine(RepoRoot(), relative));
+        var cli = Read("src/Zyggy.Cli/README.md");
+        var node = Read("src/Zyggy.Node/README.md");
+        var core = Read("src/Zyggy.Core/README.md");
+        string[] cliNeedles =
+        [
+            "| `settings show", "settings add devRoots <path> --exclude <glob>", "Exit 0 changed or unchanged · 2", "· 3 not Central", "· 5 an unattended run",
+            "## Troubleshooting — Settings", "| Settings: value refused", "| Settings: refused", "| Settings: node.json refused while running",
+            "| Settings: restart needed", "| Settings: reverse a change",
+        ];
+        string[] nodeNeedles = ["`zyggy settings`", "only on Central"];
+        string[] coreNeedles = ["`SettingsVerb`", "exit 0 done or unchanged, 2", "5 an unattended run"];
+
+        // Act
+        var missing = cliNeedles.Where(n => !cli.Contains(n, StringComparison.Ordinal)).Select(n => "cli: " + n)
+            .Concat(nodeNeedles.Where(n => !node.Contains(n, StringComparison.Ordinal)).Select(n => "node: " + n))
+            .Concat(coreNeedles.Where(n => !core.Contains(n, StringComparison.Ordinal)).Select(n => "core: " + n))
+            .ToList();
+
+        // Assert
+        missing.Should().BeEmpty();
+    }
+
+    // AC-17 (spec 55, slice 6): the Node and Core READMEs document the changed `discovery.exclude` rule (an excluded folder is not published)
+    // and the five keys a running node applies; the Cli README's "Supervisor does not start" row needs no restart any more.
+    [Fact]
+    public void Readmes_SettingsAppliedWhileRunningDocumented()
+    {
+        // Arrange
+        static string Read(string relative) => File.ReadAllText(Path.Combine(RepoRoot(), relative));
+        var cli = Read("src/Zyggy.Cli/README.md");
+        var node = Read("src/Zyggy.Node/README.md");
+        var core = Read("src/Zyggy.Core/README.md");
+        string[] nodeNeedles = ["never published as a project", "## Settings applied while running", "`settings: applied <keys>`", "need a restart of the node"];
+        string[] coreNeedles = ["`SettingsInUse`", "never published as a project", "applied while running"];
+        string[] cliNeedles = ["never published as a project", "the `settings` skill: `zyggy settings set supervision.project <name>`"];
+        string supervisorRow = cli.Split('\n').Single(l => l.StartsWith("| Supervisor does not start", StringComparison.Ordinal));
+
+        // Act
+        var missing = nodeNeedles.Where(n => !node.Contains(n, StringComparison.Ordinal)).Select(n => "node: " + n)
+            .Concat(coreNeedles.Where(n => !core.Contains(n, StringComparison.Ordinal)).Select(n => "core: " + n))
+            .Concat(cliNeedles.Where(n => !cli.Contains(n, StringComparison.Ordinal)).Select(n => "cli: " + n))
+            .Concat(supervisorRow.Contains("restart the node", StringComparison.Ordinal) ? ["cli: Supervisor does not start still says restart the node"] : [])
+            .Concat(cli.Contains("a project's own name is never checked", StringComparison.Ordinal) ? ["cli: the old exclude rule is still there"] : [])
+            .ToList();
+
+        // Assert
+        missing.Should().BeEmpty();
+    }
+
     // Spec 15 slice 6: the setup row names the two new skill lines and what a checkout without them gives.
     [Fact]
     public void Readmes_SetupBusAndDiscoverSkillsDocumented()

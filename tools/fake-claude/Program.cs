@@ -122,6 +122,13 @@ if (!string.IsNullOrEmpty(toolCallsText))
             readTexts.Add(File.ReadAllText(Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, readPath))).ReplaceLineEndings(" ").Trim());
         }
 
+        // The hook's verdict is logged before a verb runs: the verb's own effect (a decision on the bus) is what a test waits for,
+        // and the host it then stops kills this run; a line written after the verb could be lost in that gap, which load widens.
+        if (!string.IsNullOrEmpty(toolLog))
+        {
+            File.AppendAllText(toolLog, (blocked ? "blocked " : "allowed ") + toolName + "\n");
+        }
+
         // Spec 18: an allowed call that carries "run" starts the zyggy binary of ZYGGY_FAKE_CLAUDE_ZYGGY with those arguments and
         // waits for it — the model running a `zyggy` verb through its shell tool. The verb's exit code is not the fake's concern.
         if (!blocked && node["run"] is JsonArray run)
@@ -134,11 +141,6 @@ if (!string.IsNullOrEmpty(toolCallsText))
             }
 
             RunZyggy(zyggy, [.. run.Select(a => a!.GetValue<string>().Replace("{read}", string.Join(" ", readTexts), StringComparison.Ordinal))]);
-        }
-
-        if (!string.IsNullOrEmpty(toolLog))
-        {
-            File.AppendAllText(toolLog, (blocked ? "blocked " : "allowed ") + toolName + "\n");
         }
     }
 }

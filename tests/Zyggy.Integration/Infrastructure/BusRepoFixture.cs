@@ -51,6 +51,12 @@ public class BusRepoFixture : IAsyncLifetime
     /// <summary>The sender's clone — jobs and foreign commits are pushed from here, never from <see cref="CloneDir"/>.</summary>
     public string SenderDir { get; }
 
+    /// <summary>
+    /// Runs before each push of the sender with the attempt number (1-based); a harness test uses it to move <c>main</c> between the
+    /// sender's fetch and its push, the window a running node's own push falls into under load.
+    /// </summary>
+    public Func<int, Task>? BeforeSenderPush { get; set; }
+
     /// <summary>The environment that isolates git from the machine's configuration; the production <c>GitClient</c> gets it through its options in tests.</summary>
     public IReadOnlyDictionary<string, string?> GitEnvironment => new Dictionary<string, string?>
     {
@@ -447,11 +453,34 @@ public class BusRepoFixture : IAsyncLifetime
         }
     }
 
+    /// <summary>
+    /// Commits the sender's changes and pushes them. A running node pushes to the same bare repository, so a push can be
+    /// rejected because <c>main</c> moved between the sender's fetch and its push (wider under load); the sender then does what
+    /// every bus writer does (founding spec §5, push retry): fetch, rebase onto <c>origin/main</c>, push again. The attempts are
+    /// bounded by count, not by time.
+    /// </summary>
     private async Task CommitAndPushFromSenderAsync(string subject, CancellationToken ct)
     {
+        const int Attempts = 10;
         await RunGitAsync(SenderDir, ["add", "--all"], ct);
         await RunGitAsync(SenderDir, ["commit", "-q", "-m", subject], ct);
-        await RunGitAsync(SenderDir, ["push", "-q", "origin", "HEAD:main"], ct);
+        for (var attempt = 1; ; attempt++)
+        {
+            if (BeforeSenderPush is { } beforePush)
+            {
+                await beforePush(attempt);
+            }
+
+            try
+            {
+                await RunGitAsync(SenderDir, ["push", "-q", "origin", "HEAD:main"], ct);
+                return;
+            }
+            catch (InvalidOperationException) when (attempt < Attempts)
+            {
+                await SyncSenderAsync(ct);
+            }
+        }
     }
 }
 

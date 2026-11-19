@@ -8,8 +8,9 @@ namespace Zyggy.Core.Policy;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the singleton <see cref="IPolicySource"/> read from <c>node.json</c>. Requires a registered
-    /// <see cref="NodeConfiguration"/> (the host registers what it read); without one, resolving throws — there is no hidden default.
+    /// Registers the singleton <see cref="IPolicySource"/> read from <c>node.json</c>, its <c>devRoots</c> taken from the registered
+    /// <see cref="SettingsInUse"/> (spec 55). Requires a registered <see cref="NodeConfiguration"/> (the host registers what it read);
+    /// without one, resolving throws — there is no hidden default.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <returns><paramref name="services"/>.</returns>
@@ -17,7 +18,8 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddNodeJsonPolicy(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
-        services.AddSingleton<IPolicySource>(sp => new NodeJsonPolicySource(sp.GetRequiredService<NodeConfiguration>()));
+        services.TryAddSettingsInUse();
+        services.AddSingleton<IPolicySource>(sp => new NodeJsonPolicySource(sp.GetRequiredService<NodeConfiguration>(), sp.GetRequiredService<SettingsInUse>()));
         return services;
     }
 }

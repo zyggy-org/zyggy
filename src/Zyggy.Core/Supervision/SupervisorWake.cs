@@ -3,6 +3,7 @@ using System.Globalization;
 using Microsoft.Extensions.Logging;
 
 using Zyggy.Core.Bus;
+using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Jobs;
 using Zyggy.Core.Models;
@@ -12,6 +13,9 @@ using Zyggy.Core.Registry;
 using Zyggy.Core.Tenancy;
 
 namespace Zyggy.Core.Supervision;
+
+/// <summary>The supervision keys of one pass, taken once so a run keeps the values it started with (spec 55).</summary>
+internal sealed record SupervisorKeys(string? Project, IReadOnlyList<MachineName> WorkMachines, IReadOnlyList<string> OutboundPaths);
 
 /// <summary>What the wake needs beside its services (deliverable 18, Configuration): <c>node.json</c>'s <c>supervision</c> keys and the run's edges.</summary>
 /// <param name="Project">The registry name of Central's own project (<c>supervision.project</c>); <see langword="null"/>: no run starts.</param>
@@ -92,7 +96,8 @@ internal sealed partial class SupervisorWake : IDisposable
     private bool _running;
     private bool _announced;
     private bool _capLogged;
-    private bool _projectLogged;
+    private readonly SettingsInUse? _settings;
+    private string? _unknownLogged;
     private string? _lastFailure;
 
     public SupervisorWake(
@@ -105,8 +110,10 @@ internal sealed partial class SupervisorWake : IDisposable
         BusIdentity me,
         SupervisorWakeOptions options,
         TimeProvider clock,
-        ILogger<SupervisorWake> log)
+        ILogger<SupervisorWake> log,
+        SettingsInUse? settings = null)
     {
+        _settings = settings;
         _inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
         _decisions = decisions ?? throw new ArgumentNullException(nameof(decisions));
         _model = model ?? throw new ArgumentNullException(nameof(model));
@@ -174,7 +181,7 @@ internal sealed partial class SupervisorWake : IDisposable
             if (!_announced)
             {
                 _announced = true;
-                if (_options.Project is null)
+                if (Keys().Project is null)
                 {
                     LogNoProject();
                 }
@@ -207,8 +214,10 @@ internal sealed partial class SupervisorWake : IDisposable
             return;
         }
 
+        // Spec 55: the keys in use when the pass starts; a run started now keeps them, whatever the file says later.
+        SupervisorKeys keys = Keys();
         IReadOnlyList<SupervisorEvent> events = [.. (await _inventory.SupervisorEventsAsync(now, ct).ConfigureAwait(false))
-            .Where(e => !e.Handled && (!IsWorkMachine(e) || _options.OutboundPaths.Count > 0))];
+            .Where(e => !e.Handled && (!IsWorkMachine(e, keys) || keys.OutboundPaths.Count > 0))];
 
         // An event two runs left without a decision: the node escalates it itself, and no third run starts on it.
         foreach (SupervisorEvent undecided in events.Where(e => Attempts(e) >= MaxAttempts))
@@ -221,7 +230,7 @@ internal sealed partial class SupervisorWake : IDisposable
                 ct).ConfigureAwait(false);
         }
 
-        if (SupervisorStep.Next([.. events.Where(e => Attempts(e) < MaxAttempts)]) is not { } next || ProjectDirectory() is not { } directory)
+        if (SupervisorStep.Next([.. events.Where(e => Attempts(e) < MaxAttempts)]) is not { } next || ProjectDirectory(keys.Project) is not { } directory)
         {
             return;
         }
@@ -242,17 +251,29 @@ internal sealed partial class SupervisorWake : IDisposable
         _attempts[next.Id.Value] = attempt;
         _running = true;
         CancellationToken stop = _stop.Token;
-        _run = Task.Run(() => StepAsync(next, directory, attempt, stop), CancellationToken.None);
+        _run = Task.Run(() => StepAsync(next, directory, attempt, keys, stop), CancellationToken.None);
     }
+
+    private static bool IsWorkMachine(SupervisorEvent supervisorEvent, SupervisorKeys keys) => keys.WorkMachines.Contains(supervisorEvent.Machine);
 
     private int Attempts(SupervisorEvent supervisorEvent) => _attempts.GetValueOrDefault(supervisorEvent.Id.Value);
 
-    private bool IsWorkMachine(SupervisorEvent supervisorEvent) => _options.WorkMachines.Contains(supervisorEvent.Machine);
+    // The three supervision keys of the five a running node applies (spec 55): from the settings in use, or the options without them.
+    private SupervisorKeys Keys()
+    {
+        if (_settings is null)
+        {
+            return new SupervisorKeys(_options.Project, _options.WorkMachines, _options.OutboundPaths);
+        }
+
+        SettingsValues current = _settings.Current;
+        return new SupervisorKeys(current.Project, current.WorkMachines, current.OutboundPaths);
+    }
 
     // What a run that answers a work machine may read (founding spec §8): the outbound folders, and the one question it answers.
-    private List<string> ReadRoots(SupervisorEvent supervisorEvent)
+    private List<string> ReadRoots(SupervisorEvent supervisorEvent, SupervisorKeys keys)
     {
-        List<string> roots = [.. _options.OutboundPaths];
+        List<string> roots = [.. keys.OutboundPaths];
         if (QuestionFile(supervisorEvent) is { } question)
         {
             roots.Add(question);
@@ -355,22 +376,22 @@ internal sealed partial class SupervisorWake : IDisposable
         }
     }
 
-    private string? ProjectDirectory()
+    private string? ProjectDirectory(string? project)
     {
-        if (_options.Project is not { } project)
+        if (project is null)
         {
             return null;
         }
 
         if (_registry.TryResolve(project, out string? path))
         {
-            _projectLogged = false;
+            _unknownLogged = null;
             return path;
         }
 
-        if (!_projectLogged)
+        if (!string.Equals(_unknownLogged, project, StringComparison.Ordinal))
         {
-            _projectLogged = true;
+            _unknownLogged = project;
             LogUnknownProject(project);
         }
 
@@ -378,14 +399,14 @@ internal sealed partial class SupervisorWake : IDisposable
     }
 
     // One bounded run on one event; whatever happens it ends in the run line and the next pass.
-    private async Task StepAsync(SupervisorEvent supervisorEvent, string directory, int attempt, CancellationToken ct)
+    private async Task StepAsync(SupervisorEvent supervisorEvent, string directory, int attempt, SupervisorKeys keys, CancellationToken ct)
     {
         string id = supervisorEvent.Id.Value;
         var blocked = 0;
         string outcome;
         try
         {
-            outcome = await RunModelAsync(supervisorEvent, directory, attempt, count => blocked = count, ct).ConfigureAwait(false);
+            outcome = await RunModelAsync(supervisorEvent, directory, attempt, keys, count => blocked = count, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -415,7 +436,7 @@ internal sealed partial class SupervisorWake : IDisposable
         }
     }
 
-    private async Task<string> RunModelAsync(SupervisorEvent supervisorEvent, string directory, int attempt, Action<int> blocked, CancellationToken ct)
+    private async Task<string> RunModelAsync(SupervisorEvent supervisorEvent, string directory, int attempt, SupervisorKeys keys, Action<int> blocked, CancellationToken ct)
     {
         string hook = _options.HookExecutable;
         if (!File.Exists(hook) || !await JobRunner.HookRefusesAnEmptyCallAsync(_processes, hook, ct).ConfigureAwait(false))
@@ -429,7 +450,7 @@ internal sealed partial class SupervisorWake : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(blockedFile)!);
         File.Delete(blockedFile);
         List<string> hookArgs = ["hook", "pre-tool-use", "--root", directory, "--blocked-file", blockedFile];
-        bool workMachine = IsWorkMachine(supervisorEvent);
+        bool workMachine = IsWorkMachine(supervisorEvent, keys);
         IReadOnlyList<string> tools = workMachine ? [.. Tools.Where(t => t != HubTool)] : Tools;
         foreach (string rule in tools)
         {
@@ -438,7 +459,7 @@ internal sealed partial class SupervisorWake : IDisposable
 
         if (workMachine)
         {
-            foreach (string root in ReadRoots(supervisorEvent))
+            foreach (string root in ReadRoots(supervisorEvent, keys))
             {
                 hookArgs.AddRange(["--read-root", root]);
             }

@@ -13,6 +13,12 @@ internal sealed record DreamCheckResult(DreamCheck Check, string Detail);
 /// </summary>
 internal static partial class DreamChecks
 {
+    /// <summary>The one memory file every inbox line that starts with <see cref="RoutingPrefix"/> is filed into (spec 55).</summary>
+    internal const string RoutingFile = "business/topics/agent-routing.md";
+
+    /// <summary>The word a routing sentence starts with (spec 55, Routing knowledge).</summary>
+    internal const string RoutingPrefix = "Routing:";
+
     private static readonly string[] IdentityFiles = ["profile.md", "preferences.md"];
 
     /// <summary>
@@ -216,6 +222,13 @@ internal static partial class DreamChecks
                 return Fail(DreamCheck.FactNotFound, $"{disposition.Line} {disposition.Outcome} into archive {Safe(disposition.Target)}");
             }
 
+            // Spec 55 AC-15: a routing inbox line lands in the one routing file, never anywhere else.
+            if (IsRoutingLine(batch.Find(disposition.Line))
+                && paths.TryResolve(disposition.Target) is not { Succeeded: true, RelativePath: RoutingFile })
+            {
+                return Fail(DreamCheck.FactNotFound, $"{disposition.Line} routing line {disposition.Outcome} into {Safe(disposition.Target)}, not {RoutingFile}");
+            }
+
             if (paths.TryResolve(disposition.Target) is not { Succeeded: true } target || after.Text(target.RelativePath!) is not { } text)
             {
                 return Fail(DreamCheck.FactNotFound, $"{disposition.Line} {disposition.Outcome} into missing {Safe(disposition.Target)}");
@@ -242,6 +255,12 @@ internal static partial class DreamChecks
     }
 
     private static DreamCheckResult Fail(DreamCheck check, string detail) => new(check, detail);
+
+    // An inbox line (stated or observed) whose fact starts with the routing word; a daily line is never a routing sentence.
+    private static bool IsRoutingLine(DreamBatchLine? line) =>
+        line is { Class: DreamLineClass.StatedInbox or DreamLineClass.ObservedInbox }
+        && MemoryLine.Parse(line.Text).Fact is { } fact
+        && fact.StartsWith(RoutingPrefix, StringComparison.Ordinal);
 
     private static string Ids(List<string> ids) => ids.Count == 0 ? "none" : string.Join(',', ids.Take(10)) + (ids.Count > 10 ? ",…" : string.Empty);
 

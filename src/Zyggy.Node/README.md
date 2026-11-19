@@ -47,13 +47,23 @@ The single configuration file (§10). Path: `--config`, else `ZYGGY_NODE_JSON`, 
 | `secrets.root` | the file secret store's root | the per-OS default |
 | `devRoots` | the folders scanned for projects to `discovery.depth` levels; a root inside another root is scanned too, with a notice; a job path must lie under one | `[]` (nothing found, every path refused) |
 | `discovery.intervalMinutes`, `discovery.lastSeenHours`, `discovery.detail` | rescan period, the liveness stamp's maximum age, `full` or `names` | 60, 6, `full` |
-| `discovery.depth`, `discovery.exclude`, `discovery.naming` | folder levels searched below each root (1–6; `1` = the roots' own children only), extra folder-name globs never descended into (added to the built-in list), `leaf` or `path` names (Cli README, "node.json") | 2, `[]`, `leaf` |
+| `discovery.depth`, `discovery.exclude`, `discovery.naming` | folder levels searched below each root (1–6; `1` = the roots' own children only), extra folder-name globs never descended into and never published as a project (deliverable 55; the built-in list only skips descending, so a project named `out` is still found), `leaf` or `path` names (Cli README, "node.json") | 2, `[]`, `leaf` |
 | `sweep.intervalMinutes` | read only on Central: minutes between two sweep passes of the node service, 1–1440 (out of range: exit 3); ignored on every other machine | 60 |
 | `supervision.enabled`, `supervision.detail`, `supervision.statusMinutes`, `supervision.workMachines` | deliverable 18: whether sessions publish a status and may ask Central, `full` or `fixed` status fields, the refresh period in minutes, the machines `zyggy work` shows with fixed fields only (Cli README, "node.json") | `true`, `fixed` when `discovery.detail` is `names` else `full`, 10, `[]` |
 | `supervision.project`, `supervision.runsPerHour`, `supervision.outboundPaths` | read on Central (deliverable 18, the supervisor wake below): the registry name of Central's own project in which a supervisor run starts, the most runs started within 60 minutes (1–120), and the absolute folders a run may read while it answers a machine of `supervision.workMachines` (on Central, work machines without them refuse the start, exit 3) | none (no run starts), 20, `[]` |
 | `agentCore.path` | absolute path of this machine's `zyggy-core` checkout, whose commit `/health` reports as `agentCoreSha` | the checkout `zyggy setup` makes: `C:/agents/zyggy-core` on Windows, `~/agents/zyggy-core` elsewhere (Central: set it to its working directory) |
 
 Secrets are never in it; any key named like a credential is refused.
+
+On Central, `devRoots`, `discovery.exclude`, `supervision.project`, `supervision.workMachines` and `supervision.outboundPaths` are changed with `zyggy settings` (deliverable 55), never by a hand or model edit: only on Central, only in an attended session, one checked value at a time, backup first. `zyggy settings show` prints the five on any machine. Exit 0 changed or unchanged, 2 a refused value, 3 not Central or a file the reader refuses, 5 an unattended run; the runbook rows are the Cli README's "Troubleshooting — Settings".
+
+## Settings applied while running
+
+Deliverable 55. Every node — laptops too — looks at its `node.json` (size and time of last change) at most twice a minute and, when it changed, reads it with the same reader as at start:
+
+- **Valid**: `devRoots`, `discovery.exclude`, `supervision.project`, `supervision.workMachines` and `supervision.outboundPaths` replace the values in use together, without a restart. One Information line `settings: applied <keys>` names the keys that changed, never a value. A change of `devRoots` or `discovery.exclude` runs a discovery scan right away, which publishes as usual. Job pre-flight checks a job against the roots in use when it checks it (a path under a removed root: `unknown_project: outside devRoots`). A supervisor run already started keeps the project and the read root it started with; the next run uses the new ones.
+- **Another key changed too**: one Warning `settings: <keys> changed and need a restart of the node; they keep their old value`.
+- **Refused by the reader**: one Warning `settings: node.json refused while running, the values in use stay: <reason>` for the streak, and one Information line `settings: node.json valid again` when a later change is valid. The node never stops because of a file changed while it runs; an invalid file at start still refuses the start (exit 3).
 
 ## Exit codes
 
@@ -98,7 +108,7 @@ One rolling file per machine, `<nodeDir>/logs/zyggy-<yyyyMMdd>.log`, a new file 
 
 Deliverable 14. The node tells the bus what it can run and routes jobs by project name:
 
-- **First scan before any job.** At start the node scans every `devRoots` entry to `discovery.depth` levels (default 2) for Claude Code projects (a `.claude/` folder), not descending into projects, hidden or excluded folders, or links, **before** its listener admits a single job, so a job by name that was already waiting resolves against a real scan.
+- **First scan before any job.** At start the node scans every `devRoots` entry to `discovery.depth` levels (default 2) for Claude Code projects (a `.claude/` folder), not descending into projects, hidden or excluded folders, or links (a folder matching `discovery.exclude` is never published as a project either), **before** its listener admits a single job, so a job by name that was already waiting resolves against a real scan.
 - **First publish after the first poll.** The registry file `tenants/<tenant>/registry/<machine>.yaml` is committed once the listener is up and has polled (at most 60 s), so its `health` is not the "never polled" `red`. A refused start-up (exit 6) publishes nothing.
 - **Then every `discovery.intervalMinutes`** (60): a rescan replaces the in-memory snapshot; a commit happens only when the content changed or `last_seen` is older than `discovery.lastSeenHours` (6). Scans never overlap; a failing scan keeps the previous snapshot.
 - **Routing.** A job's `project` that is a name resolves only through this node's own snapshot — never through the registry file on the bus, which anyone with push access could rewrite. A path must lie under a `devRoots` entry. Anything else is `rejected` with `unknown_project: unknown name` or `outside devRoots`.

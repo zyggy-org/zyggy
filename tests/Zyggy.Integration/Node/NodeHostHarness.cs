@@ -227,7 +227,18 @@ internal sealed class NodeHostHarness : IAsyncDisposable
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         Task<int> run = NodeHost.RunAsync(["--config", NodeJsonPath], cts.Token, s => Configure(s, more), HostEnvironment);
-        await WaitUntilAsync(until, timeout, ct, run);
+        try
+        {
+            await WaitUntilAsync(until, timeout, ct, run);
+        }
+        catch (TimeoutException ex)
+        {
+            // The node's log says where the run stood; a timeout without it cannot tell load from a fault.
+            await cts.CancelAsync();
+            await Task.WhenAny(run);
+            throw new TimeoutException(ex.Message + "; node log:\n" + string.Join('\n', LogLines), ex);
+        }
+
         await cts.CancelAsync();
         return await run;
     }
