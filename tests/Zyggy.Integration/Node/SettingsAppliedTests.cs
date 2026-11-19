@@ -167,7 +167,10 @@ public sealed class SettingsAppliedTests : IAsyncLifetime
     }
 
     // AC-14: home-laptop is a work machine; the first run is in flight when the verb adds an outbound folder. That run keeps the read
-    // root it started with; the run for the next question has the new folder too.
+    // root it started with; the run for the next question has the new folder too. The verb runs once the first run's decision is on
+    // the bus (the run then holds 8 s before it ends): run at the run's start, the verb's replace of node.json could refuse the
+    // run's own `zyggy decide` its read of that file on Windows, and the question was answered by a second run. That the change landed
+    // while the first run was in flight is asserted, not assumed.
     [Fact]
     public async Task OutboundAdded_DuringARun_ThatRunKeepsItsReadRoot_NextRunUsesTheNewOne()
     {
@@ -186,6 +189,7 @@ public sealed class SettingsAppliedTests : IAsyncLifetime
         EnvelopeId first = await SeedQuestionAsync(ct);
         EnvelopeId? second = null;
         var verbExit = -1;
+        DateTimeOffset verbDone = DateTimeOffset.MaxValue;
         var stage = 0;
         _model.Script = (call, id) => new Step(
             [SupervisorScript.Zyggy("decide", "--reply-to", id, "--kind", "answer", "--basis", "reported", "--undo", "nothing to undo", "Anna is the contact.")],
@@ -195,10 +199,11 @@ public sealed class SettingsAppliedTests : IAsyncLifetime
         int exit = await _harness.RunUntilAsync(
             async () =>
             {
-                if (stage == 0 && _model.Calls == 1)
+                if (stage == 0 && _model.Calls == 1 && (await DecisionsAsync(ct)).Count == 1)
                 {
                     stage = 1;
                     verbExit = await VerbAsync(ct, "add", "supervision.outboundPaths", Clients);
+                    verbDone = DateTimeOffset.UtcNow;
                 }
                 else if (stage == 1 && Applied("supervision.outboundPaths"))
                 {
@@ -214,14 +219,17 @@ public sealed class SettingsAppliedTests : IAsyncLifetime
 
         // Assert
         exit.Should().Be(0, Log());
+        SupervisorRunRecord firstRun = _model.Runs.Single(r => r.Event == first.Value);
         new
         {
             verbExit,
-            First = MemoryRoots(_model.Runs.Single(r => r.Event == first.Value).Request),
+            ChangedDuringTheFirstRun = verbDone < firstRun.Ended,
+            First = MemoryRoots(firstRun.Request),
             Next = MemoryRoots(_model.Runs.Single(r => r.Event == second!.Value).Request),
         }.Should().BeEquivalentTo(new
         {
             verbExit = 0,
+            ChangedDuringTheFirstRun = true,
             First = new[] { Normal(Business) },
             Next = new[] { Normal(Business), Normal(Clients) },
         }, Log());

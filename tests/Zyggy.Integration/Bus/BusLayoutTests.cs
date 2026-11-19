@@ -137,6 +137,40 @@ public sealed class BusLayoutTests : IAsyncLifetime
         (await _bus.LastCommitSubjectAsync(ct)).Should().Be("acme raw");
     }
 
+    // The seeding a running node races (spec 55 release prep): main moves between the sender's fetch and its push, as a node's own
+    // push does under load; the seed still lands, on top of the other commit, which stays.
+    [Fact]
+    public async Task SeedRawFileAsync_MainMovedBeforeThePush_RebasesAndLandsBesideTheOtherCommit()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await _bus.SeedTenantAsync(Acme, [Central, HomeLaptop], ct);
+        byte[] raw = Encoding.UTF8.GetBytes("seeded while the node pushes\n");
+        string path = BusPaths.Jobs(Acme, HomeLaptop) + "/" + EnvelopeId.New(DateTimeOffset.UnixEpoch).Value + ".md";
+        string nodeFile = BusPaths.Reports(Acme, HomeLaptop) + "/node-push.txt";
+        _bus.BeforeSenderPush = async attempt =>
+        {
+            if (attempt == 1)
+            {
+                await File.WriteAllTextAsync(BusPaths.Resolve(_bus.CloneDir, nodeFile), "the node's own push\n", ct);
+                await _bus.RunGitAsync(_bus.CloneDir, ["add", "--all"], ct);
+                await _bus.RunGitAsync(_bus.CloneDir, ["commit", "-q", "-m", "node push"], ct);
+                await _bus.RunGitAsync(_bus.CloneDir, ["push", "-q", "origin", "HEAD:main"], ct);
+            }
+        };
+
+        // Act
+        await _bus.SeedRawFileAsync(path, raw, "acme raw", ct);
+
+        // Assert
+        new
+        {
+            Seeded = await _bus.ShowBytesAsync(path, ct),
+            NodeFileKept = await _bus.ExistsOnMainAsync(nodeFile, ct),
+            Last = await _bus.LastCommitSubjectAsync(ct),
+        }.Should().BeEquivalentTo(new { Seeded = raw, NodeFileKept = true, Last = "acme raw" });
+    }
+
     [Fact]
     public async Task AdvanceMainFromSenderAsync_MovesHeadSha()
     {
