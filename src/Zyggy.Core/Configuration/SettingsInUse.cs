@@ -88,6 +88,7 @@ public sealed partial class SettingsInUse
     private readonly TimeProvider? _clock;
     private readonly ILogger<SettingsInUse> _log;
     private readonly Dictionary<string, JsonNode?>? _startedOthers;
+    private readonly TimeSpan _period = CheckPeriod;
     private volatile SettingsValues _current;
     private (long Length, DateTime Changed)? _seen;
     private bool _refused;
@@ -101,11 +102,12 @@ public sealed partial class SettingsInUse
         _log = Microsoft.Extensions.Logging.Abstractions.NullLogger<SettingsInUse>.Instance;
     }
 
-    /// <summary>A holder that looks at the file at <paramref name="path"/>, which <paramref name="started"/> was read from.</summary>
-    internal SettingsInUse(NodeConfiguration started, string? path, TimeProvider clock, ILogger<SettingsInUse> log)
+    /// <summary>A holder that looks at the file at <paramref name="path"/>, which <paramref name="started"/> was read from, every <paramref name="checkPeriod"/> (default <see cref="CheckPeriod"/>).</summary>
+    internal SettingsInUse(NodeConfiguration started, string? path, TimeProvider clock, ILogger<SettingsInUse> log, TimeSpan? checkPeriod = null)
     {
         ArgumentNullException.ThrowIfNull(started);
         _current = SettingsValues.Of(started);
+        _period = checkPeriod ?? CheckPeriod;
         Path = path;
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _log = log ?? throw new ArgumentNullException(nameof(log));
@@ -138,7 +140,7 @@ public sealed partial class SettingsInUse
             return;
         }
 
-        using var timer = new PeriodicTimer(CheckPeriod, _clock);
+        using var timer = new PeriodicTimer(_period, _clock);
         try
         {
             while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))

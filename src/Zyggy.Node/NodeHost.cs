@@ -148,6 +148,9 @@ public static class NodeHost
         // (the scanner publishes names only and warns once).
         _ = builder.Services.AddSecretPatterns(environment);
         builder.Services.AddNodeServices(configuration);
+
+        // Spec 55: the node looks at its own node.json while it runs and applies the five keys it may change without a restart.
+        builder.Services.AddSettingsInUse(path);
         if (pickup is not null)
         {
             builder.Services.AddBusPickup(pickup);
@@ -206,6 +209,7 @@ public static class NodeHost
         builder.Services.AddSingleton<IHostedService>(sp => new DiscoveryTimer(
             sp.GetRequiredService<DiscoveryLoop>(),
             sp.GetRequiredService<AgentCoreCommit>(),
+            sp.GetRequiredService<SettingsInUse>(),
             sp.GetRequiredService<NodeStatus>(),
             sp.GetRequiredService<HealthServer>(),
             sp.GetRequiredService<PollOptions>(),

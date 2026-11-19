@@ -228,6 +228,39 @@ public sealed class DiscoveryLoopTests : IDisposable
         await run;
     }
 
+    // Spec 55 (AC-13): a rescan asked for while a cycle runs (a changed devRoots or discovery.exclude) is not skipped: one more cycle
+    // follows the running one, so the new roots are published right away rather than at the next interval.
+    [Fact]
+    public async Task RescanAsync_WhileCycleRuns_RunsOneMoreCycleAfterIt()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        var block = new ManualResetEventSlim(false);
+        int calls = 0;
+        DiscoveryLoop loop = Loop(root =>
+        {
+            if (Interlocked.Increment(ref calls) == 1)
+            {
+                block.Wait(TimeSpan.FromSeconds(30));
+            }
+
+            return new DirectoryInfo(root).EnumerateDirectories();
+        });
+        Task running = Task.Run(() => loop.RunCycleAsync(ct), ct);
+        await UntilAsync(() => _scans == 1, ct);
+
+        // Act
+        Task rescan = loop.RescanAsync(ct);
+        await SettleAsync(ct);
+        bool waited = !rescan.IsCompleted;
+        block.Set();
+        await rescan.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        await running;
+
+        // Assert
+        (waited, _scans).Should().Be((true, 2));
+    }
+
     [Fact]
     public async Task RunCycleAsync_HealthFunc_UsedOnPublish()
     {

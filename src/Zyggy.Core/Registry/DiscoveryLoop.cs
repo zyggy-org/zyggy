@@ -27,6 +27,7 @@ public sealed partial class DiscoveryLoop
     private readonly TaskCompletionSource _firstScan = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Dictionary<ScanNoticeKind, HashSet<string>> _noticed = [];
     private int _running;
+    private Task _cycle = Task.CompletedTask;
     private bool _published;
     private bool _scanFailedWarned;
 
@@ -100,43 +101,82 @@ public sealed partial class DiscoveryLoop
     /// <returns>A task that completes when the cycle ends.</returns>
     public async Task RunCycleAsync(CancellationToken ct)
     {
-        if (Interlocked.Exchange(ref _running, 1) == 1)
+        if (!await TryRunCycleAsync(ct).ConfigureAwait(false))
         {
             LogSkipped(_log);
-            return;
         }
+    }
 
-        try
+    /// <summary>
+    /// Runs one cycle now, or — when a cycle is running — one more right after it (spec 55: a changed <c>devRoots</c> or
+    /// <c>discovery.exclude</c> is published at once, never left to the next interval because a cycle happened to be running).
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes when a cycle that started after this call has ended.</returns>
+    public async Task RescanAsync(CancellationToken ct)
+    {
+        while (true)
         {
-            using IDisposable? scope = _log.BeginScope(new Dictionary<string, object>(StringComparer.Ordinal)
+            Task running = Volatile.Read(ref _cycle);
+            if (await TryRunCycleAsync(ct).ConfigureAwait(false))
             {
-                ["tenant"] = _configuration.Tenant.Value,
-                ["machine"] = _configuration.Machine.Value,
-                ["phase"] = "discover",
-            });
-            ScanResult? scan = await ScanAsync(ct).ConfigureAwait(false);
-            if (scan is null)
-            {
-                _firstScan.TrySetResult();
                 return;
             }
 
-            LogNotices(scan.Notices);
-            RegistryDocument document = RegistryDocument.FromScan(_configuration, scan, _clock.GetUtcNow(), health: null);
-            _snapshot.Replace(document);
-            _firstScan.TrySetResult();
-            if (!_published)
-            {
-                await BeforeFirstPublish(ct).ConfigureAwait(false);
-                _published = true;
-            }
+            // The running cycle's own outcome is its business (it logs and keeps the snapshot); only its end matters here.
+            await Task.WhenAny(running).WaitAsync(ct).ConfigureAwait(false);
+            await Task.Yield();
+        }
+    }
 
-            await _publisher.PublishAsync(document, Health(), ct).ConfigureAwait(false);
+    // One cycle unless one is running (false).
+    private async Task<bool> TryRunCycleAsync(CancellationToken ct)
+    {
+        if (Interlocked.Exchange(ref _running, 1) == 1)
+        {
+            return false;
+        }
+
+        var ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Volatile.Write(ref _cycle, ended.Task);
+        try
+        {
+            await CycleAsync(ct).ConfigureAwait(false);
+            return true;
         }
         finally
         {
             Volatile.Write(ref _running, 0);
+            ended.TrySetResult();
         }
+    }
+
+    private async Task CycleAsync(CancellationToken ct)
+    {
+        using IDisposable? scope = _log.BeginScope(new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            ["tenant"] = _configuration.Tenant.Value,
+            ["machine"] = _configuration.Machine.Value,
+            ["phase"] = "discover",
+        });
+        ScanResult? scan = await ScanAsync(ct).ConfigureAwait(false);
+        if (scan is null)
+        {
+            _firstScan.TrySetResult();
+            return;
+        }
+
+        LogNotices(scan.Notices);
+        RegistryDocument document = RegistryDocument.FromScan(_configuration, scan, _clock.GetUtcNow(), health: null);
+        _snapshot.Replace(document);
+        _firstScan.TrySetResult();
+        if (!_published)
+        {
+            await BeforeFirstPublish(ct).ConfigureAwait(false);
+            _published = true;
+        }
+
+        await _publisher.PublishAsync(document, Health(), ct).ConfigureAwait(false);
     }
 
     private async Task<ScanResult?> ScanAsync(CancellationToken ct)

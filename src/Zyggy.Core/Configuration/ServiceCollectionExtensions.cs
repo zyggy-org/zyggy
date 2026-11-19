@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 using Zyggy.Core.Bus;
 using Zyggy.Core.Envelope;
@@ -105,7 +106,8 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<NodeConfiguration>(),
             configPath,
             sp.GetRequiredService<TimeProvider>(),
-            sp.GetService<ILoggerFactory>()?.CreateLogger<SettingsInUse>() ?? NullLogger<SettingsInUse>.Instance));
+            sp.GetService<ILoggerFactory>()?.CreateLogger<SettingsInUse>() ?? NullLogger<SettingsInUse>.Instance,
+            sp.GetService<IOptions<SettingsInUseOptions>>()?.Value.CheckPeriodOverride));
         return services;
     }
 
