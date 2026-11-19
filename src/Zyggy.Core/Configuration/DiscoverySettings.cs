@@ -13,7 +13,7 @@ namespace Zyggy.Core.Configuration;
 public sealed record DiscoverySettings(int IntervalMinutes = 60, int LastSeenHours = 6, DiscoveryDetail Detail = DiscoveryDetail.Full, int Depth = 2)
 {
     /// <summary>
-    /// Gets the folder-name globs (<c>*</c>, <c>?</c>) never descended into, added to the built-in list (spec 45, <c>discovery.exclude</c>);
+    /// Gets the folder-name globs (<c>*</c>, <c>?</c>) never descended into and never published as a project, added to the built-in list (specs 45 and 55, <c>discovery.exclude</c>);
     /// empty when absent.
     /// </summary>
     public IReadOnlyList<string> Exclude { get; init; } = [];

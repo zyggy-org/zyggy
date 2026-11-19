@@ -11,7 +11,8 @@ namespace Zyggy.Core.Registry;
 /// <summary>
 /// Scans every <c>devRoots</c> entry to <see cref="DiscoveryOptions.Depth"/> levels for Claude Code projects (a folder holding
 /// <c>.claude/</c>) and builds the registry's project list (founding spec §4 "Registry file", specs 14 and 45). Links are never followed,
-/// hidden, built-in or excluded folders and folders inside a project are not listed, and one scan looks into at most
+/// hidden, built-in or excluded folders and folders inside a project are not listed (a folder the owner excludes is not published either,
+/// spec 55), and one scan looks into at most
 /// <see cref="DiscoveryOptions.MaxFolders"/> folders; a root inside another root is scanned too, with a notice, and a folder
 /// reached from both counts, and with <see cref="DiscoveryNaming.Path"/> is named, from the innermost root; of folders deriving one name the shallowest keeps it, and a tie at that level
 /// publishes none. Never throws for a file-system or git failure: every such failure becomes a <see cref="ScanNotice"/>.
@@ -222,7 +223,8 @@ public sealed partial class DiscoveryScanner
             {
                 try
                 {
-                    if (child.Name.StartsWith('.') || IsReparsePoint(child))
+                    // The owner's globs leave a folder out entirely: not published, not descended into (spec 55).
+                    if (child.Name.StartsWith('.') || IsReparsePoint(child) || IsOwnerExcluded(child.Name))
                     {
                         continue;
                     }
@@ -242,7 +244,7 @@ public sealed partial class DiscoveryScanner
                     var claude = new DirectoryInfo(Path.Join(child.FullName, ".claude"));
                     if (!claude.Exists)
                     {
-                        if (next.Level < _options.Depth && !IsSkipped(child.Name))
+                        if (next.Level < _options.Depth && !IsBuiltInSkip(child.Name))
                         {
                             queue.Enqueue((child.FullName, next.Level + 1));
                         }
@@ -276,13 +278,21 @@ public sealed partial class DiscoveryScanner
     }
 
     /// <summary>
-    /// Whether the walk never descends into a folder of this name: the built-in list or a <see cref="DiscoveryOptions.Exclude"/> glob
-    /// (spec 45). Checked only before descending, never for a project's own name. Case is ignored on Windows only.
+    /// Whether the walk never descends into a folder of this name because of the built-in list (spec 45). Checked only before descending,
+    /// never for a project's own name. Case is ignored on Windows only.
     /// </summary>
-    private bool IsSkipped(string name)
+    private static bool IsBuiltInSkip(string name) => Matches(BuiltInSkips, name);
+
+    /// <summary>
+    /// Whether a folder of this name matches a <see cref="DiscoveryOptions.Exclude"/> glob: such a folder is neither published as a project
+    /// nor descended into (spec 55). The glob matches the folder's own name, whatever <see cref="DiscoveryOptions.Naming"/> says.
+    /// </summary>
+    private bool IsOwnerExcluded(string name) => Matches(_options.Exclude, name);
+
+    private static bool Matches(IEnumerable<string> globs, string name)
     {
         bool ignoreCase = OperatingSystem.IsWindows();
-        return BuiltInSkips.Concat(_options.Exclude).Any(glob => FileSystemName.MatchesSimpleExpression(glob, name, ignoreCase));
+        return globs.Any(glob => FileSystemName.MatchesSimpleExpression(glob, name, ignoreCase));
     }
 
     /// <summary>Folders the walk never descends into, whatever <c>discovery.exclude</c> says (spec 45 Q3).</summary>

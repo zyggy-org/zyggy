@@ -4,6 +4,7 @@
 
 - 2026-11-18: spec written. Not approved.
 - 2026-11-19: approved by the owner, including the three decisions beyond the interview (the scan's exclude list is a fifth settable key; every node applies the five keys while running; outbound folders lie in the `business/` part of memory).
+- 2026-11-19: slice 1 done. The scanner skips a folder whose own name matches a `discovery.exclude` glob before its `.claude/` check (not published, not descended, not counted against the folder cap); the built-in list stays descend-only. 3 new scanner tests (AC-1, red before the change); AC-2's existing `out` test seen failing with the built-in list applied to projects. Verification Commands green: unit 7249 passed / 60 skipped, integration 1083 passed / 58 skipped (one locking test, `RoutingByNameTests`, failed once while another build ran at the same time, passed alone and in the clean re-run), format clean. Slice verifier: pass. README rows wait for slice 6 (AC-17).
 
 ## Goal
 

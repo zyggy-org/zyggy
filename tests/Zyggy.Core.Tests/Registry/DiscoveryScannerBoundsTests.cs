@@ -86,7 +86,56 @@ public sealed class DiscoveryScannerBoundsTests : IDisposable
         result.Projects.Should().BeEmpty();
     }
 
-    // AC-9: a project's own name is never checked against the list.
+    // Spec 55 AC-1: a project folder matching the owner's `discovery.exclude` is not published.
+    [Fact]
+    public async Task ScanAsync_ProjectFolderMatchingExclude_NotPublished()
+    {
+        // Arrange
+        string a = _tree.Root("a");
+        _tree.Project(a, "home", git: false);
+        _tree.Project(a, "instance", git: false);
+
+        // Act
+        ScanResult result = await ScanAsync(Scanner(new DiscoveryOptions { Exclude = ["home"] }), a);
+
+        // Assert
+        Names(result).Should().Equal("instance");
+    }
+
+    // Spec 55 AC-1: without the exclude the same project folder is published.
+    [Fact]
+    public async Task ScanAsync_ProjectFolderNoExclude_Published()
+    {
+        // Arrange
+        string a = _tree.Root("a");
+        _tree.Project(a, "home", git: false);
+        _tree.Project(a, "instance", git: false);
+
+        // Act
+        ScanResult result = await ScanAsync(Scanner(), a);
+
+        // Assert
+        Names(result).Should().Equal("home", "instance");
+    }
+
+    // Spec 55 AC-1 (edge case): with `naming: path` the glob still matches the folder's own name, not the joined project name.
+    [Fact]
+    public async Task ScanAsync_ExcludeGlobWithPathNaming_MatchesOwnName()
+    {
+        // Arrange
+        string a = _tree.Root("a");
+        string group = _tree.Folder(a, "group");
+        _tree.Project(group, "home", git: false);
+        _tree.Project(group, "instance", git: false);
+
+        // Act
+        ScanResult result = await ScanAsync(Scanner(new DiscoveryOptions { Exclude = ["ho*"], Naming = DiscoveryNaming.Path }), a);
+
+        // Assert
+        result.Projects.Select(p => p.Path).Should().Equal(ScanTree.Published(Path.Combine(group, "instance")));
+    }
+
+    // Spec 45 AC-9, kept by spec 55 AC-2: a project's own name is never checked against the built-in list.
     [Fact]
     public async Task ScanAsync_ProjectNamedOutAtLevelOne_Found()
     {

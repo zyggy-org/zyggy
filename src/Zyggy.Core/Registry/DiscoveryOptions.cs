@@ -18,8 +18,8 @@ public sealed class DiscoveryOptions
     public int Depth { get; set; } = 2;
 
     /// <summary>
-    /// Gets or sets the folder-name globs (<c>*</c>, <c>?</c>) never descended into, added to the built-in list; a project's own name is
-    /// never checked against them (spec 45).
+    /// Gets or sets the folder-name globs (<c>*</c>, <c>?</c>) never descended into, added to the built-in list (spec 45); a project folder
+    /// whose own name matches one is not published either (spec 55). The built-in list never leaves a project out.
     /// </summary>
     public IReadOnlyList<string> Exclude { get; set; } = [];
 
