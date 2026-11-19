@@ -98,6 +98,23 @@ internal sealed class SettingsTree : IDisposable
               "supervision": { "project": "instance"{{(supervisionExtra is null ? string.Empty : ", " + supervisionExtra)}} }
             """);
 
+    /// <summary>
+    /// Creates a directory link at <paramref name="link"/> to <paramref name="target"/>: a symbolic link, or on Windows without the right
+    /// to create one, a directory junction (no privilege needed; .NET reports it through <c>LinkTarget</c> as well). False when neither works.
+    /// </summary>
+    public static bool TryCreateDirectoryLink(string link, string target)
+    {
+        try
+        {
+            Directory.CreateSymbolicLink(link, target);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            return OperatingSystem.IsWindows() && TryCreateJunction(link, target);
+        }
+    }
+
     public SettingsVerb Verb() => new(Environment, Clock, ScanAsync);
 
     public async Task<(int Exit, string Out, string Error)> RunAsync(params string[] args)
@@ -136,6 +153,32 @@ internal sealed class SettingsTree : IDisposable
         }
 
         return Task.FromResult<IReadOnlyList<SettingsProject>>(found);
+    }
+
+    private static bool TryCreateJunction(string link, string target)
+    {
+        var start = new System.Diagnostics.ProcessStartInfo("cmd.exe")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+        foreach (string arg in new[] { "/c", "mklink", "/J", link, target })
+        {
+            start.ArgumentList.Add(arg);
+        }
+
+        using var process = System.Diagnostics.Process.Start(start);
+        if (process is null)
+        {
+            return false;
+        }
+
+        process.StandardOutput.ReadToEnd();
+        process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        return process.ExitCode == 0 && new DirectoryInfo(link).LinkTarget is not null;
     }
 
     private void Registry(string machine)

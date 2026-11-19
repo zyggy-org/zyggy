@@ -59,17 +59,17 @@ public sealed class SettingsVerbRuleTests : IDisposable
     }
 
     [Fact]
-    public async Task Add_DevRoots_RelativePath_Exit2NoSuchFolder()
+    public async Task Add_DevRoots_RelativePathOfAnExistingFolder_Exit2NoSuchFolder()
     {
-        // Arrange
+        // Arrange: "." always exists relative to the working directory, so only the absolute-path rule refuses it.
         _tree.WriteCentralShaped();
 
         // Act
-        var (exit, _, error) = await _tree.RunAsync("add", "devRoots", "repos");
+        var (exit, _, error) = await _tree.RunAsync("add", "devRoots", ".");
 
         // Assert
         exit.Should().Be(SettingsVerb.Refused);
-        error.Should().Be("zyggy: no such folder: repos\n");
+        error.Should().Be("zyggy: no such folder: .\n");
     }
 
     [Fact]
@@ -272,14 +272,9 @@ public sealed class SettingsVerbRuleTests : IDisposable
         // Arrange
         _tree.WriteCentralShaped();
         string link = Path.Combine(_tree.Business, "shortcut");
-        try
-        {
-            Directory.CreateSymbolicLink(link, Path.Combine(_tree.Principal, "private"));
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
-        {
-            Assert.Skip("the OS refused to create a directory link here");
-        }
+        Assert.SkipUnless(
+            SettingsTree.TryCreateDirectoryLink(link, Path.Combine(_tree.Principal, "private")),
+            "the OS refused to create a directory link or junction here");
 
         // Act
         var (exit, _, error) = await _tree.RunAsync("add", "supervision.outboundPaths", link);
