@@ -87,7 +87,7 @@ public sealed class DreamPromptsTests
         var prompts = new DreamPrompts();
 
         // Assert
-        prompts.FilingPrompt.Should().StartWith("prompt-version: 2\n", "spec 37 added the archive rule");
+        prompts.FilingPrompt.Should().StartWith("prompt-version: 3\n", "spec 37 added the archive rule, spec 55 the routing rule");
         foreach (var prompt in new[] { prompts.CompressionPrompt, prompts.MigrationPrompt })
         {
             prompt.Should().StartWith("prompt-version: 1\n");
