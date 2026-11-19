@@ -154,6 +154,34 @@ public sealed class RoutingByNameTests : IAsyncLifetime
         SweepSecrets();
     }
 
+    // Spec 56 AC-6: on a names-only node two folders deriving one name at the same level publish nothing for it, and a job by that name
+    // is refused `ambiguous name` — the node never picks one of them.
+    [Fact]
+    public async Task JobByTiedName_NamesOnlyNode_RejectedAmbiguousName_ModelNeverStarted()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        _harness.WriteNodeJson(discoveryJson: "{ \"detail\": \"names\", \"depth\": 2 }");
+        ScratchProject first = await _harness.ProjectAsync(ct, "devops", group: "Clients");
+        await _harness.ProjectAsync(ct, "DevOps", group: "Common");
+        await _harness.ProjectAsync(ct, "other", group: "Common");
+        await _harness.SeedJobAsync(first, ct, projectField: "devops");
+
+        // Act
+        int exit = await _harness.RunUntilAsync(
+            async () => (await _harness.ReportsOnMainAsync(ct)).Count == 1
+                && (await _harness.RegistryOnMainAsync(NodeHostHarness.HomeLaptop, ct))?.Projects.Any(p => p.Name == "other") == true,
+            TimeSpan.FromSeconds(60),
+            ct);
+
+        // Assert
+        exit.Should().Be(0);
+        await AssertRejectedAsync("unknown_project: ambiguous name\n", ct);
+        Directory.EnumerateFiles(_harness.ProjectsRoot, Capture, SearchOption.AllDirectories).Should().BeEmpty("the model never started");
+        (await _harness.RegistryOnMainAsync(NodeHostHarness.HomeLaptop, ct))!.Projects.Select(p => p.Name).Should().NotContain("devops");
+        SweepSecrets();
+    }
+
     [Fact]
     public async Task JobByPathOutsideDevRoots_RejectedOutsideDevRoots()
     {

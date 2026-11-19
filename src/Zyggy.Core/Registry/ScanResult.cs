@@ -17,4 +17,10 @@ public sealed record ScanResult(
     /// <see cref="DiscoveryDetail.Names"/> node routes jobs by name while its registry file carries no path.
     /// </summary>
     public IReadOnlyDictionary<string, string> Folders { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Gets the names two or more folders derive at the same (shallowest) level: none of them is published or kept in <see cref="Folders"/>,
+    /// and the node's snapshot refuses a job by such a name as <c>ambiguous name</c> instead of guessing (spec 56). Names only, no folder.
+    /// </summary>
+    public IReadOnlySet<string> Ambiguous { get; init; } = new HashSet<string>(StringComparer.Ordinal);
 }

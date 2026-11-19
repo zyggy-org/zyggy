@@ -169,7 +169,7 @@ public sealed partial class DiscoveryLoop
         LogNotices(scan.Notices);
         RegistryDocument document = RegistryDocument.FromScan(_configuration, scan, _clock.GetUtcNow(), health: null);
         // The folders stay beside the document in memory (spec 56): the publisher only ever sees the document.
-        _snapshot.Replace(document, scan.Folders);
+        _snapshot.Replace(document, scan.Folders, scan.Ambiguous);
         _firstScan.TrySetResult();
         if (!_published)
         {

@@ -299,6 +299,46 @@ public sealed class PreFlightTests : IDisposable
 
     private static RegistrySnapshot NamesSnapshot(string folder) => RegistrySnapshotTests.NamesOnly(("calizr", folder));
 
+    // AC-6 (spec 56): on a names-only node a name two folders derive at the same level is refused as ambiguous, never guessed.
+    [Fact]
+    public async Task CheckAsync_NamesOnlySnapshot_TiedName_AmbiguousName()
+    {
+        // Act
+        var result = await CheckAsync(new JobFields("devops"), RegistrySnapshotTests.Ambiguous("devops"), [ScratchProject.ParentRoot]);
+
+        // Assert
+        result.Should().Be(new PreFlightResult.Rejected(RunFailureReason.UnknownProject, "ambiguous name"));
+    }
+
+    // AC-6 (spec 56): the same on a `detail: full` node, whose document carries paths for the other projects.
+    [Fact]
+    public async Task CheckAsync_FullSnapshot_TiedName_AmbiguousName()
+    {
+        // Arrange
+        var snapshot = new RegistrySnapshot();
+        snapshot.Replace(
+            RegistryDocumentTests.Central() with { Projects = [new RegistryProject("calizr", _project.Root.Replace('\\', '/'), "main", [], [], null)] },
+            new Dictionary<string, string>(StringComparer.Ordinal),
+            new HashSet<string>(StringComparer.Ordinal) { "devops" });
+
+        // Act
+        var result = await CheckAsync(new JobFields("devops"), snapshot, [ScratchProject.ParentRoot]);
+
+        // Assert
+        result.Should().Be(new PreFlightResult.Rejected(RunFailureReason.UnknownProject, "ambiguous name"));
+    }
+
+    // AC-6 (spec 56): a name that is neither kept nor tied is still `unknown name` on a snapshot that holds a tie.
+    [Fact]
+    public async Task CheckAsync_SnapshotWithTie_OtherUnknownName_UnknownName()
+    {
+        // Act
+        var result = await CheckAsync(new JobFields("billing"), RegistrySnapshotTests.Ambiguous("devops"), [ScratchProject.ParentRoot]);
+
+        // Assert
+        result.Should().Be(new PreFlightResult.Rejected(RunFailureReason.UnknownProject, "unknown name"));
+    }
+
     [Fact]
     public async Task CheckAsync_PathExactlyADevRoot_Accepted()
     {

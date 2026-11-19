@@ -145,6 +145,67 @@ public sealed class RegistrySnapshotTests
         new RegistrySnapshot().TryResolve("calizr", out _).Should().BeFalse();
     }
 
+    // AC-6 (spec 56): a name two folders derive at the same level never resolves — the node never picks one.
+    [Fact]
+    public void TryResolve_AmbiguousName_False()
+    {
+        // Arrange
+        RegistrySnapshot snapshot = Ambiguous("devops");
+
+        // Act
+        bool found = snapshot.TryResolve("devops", out string? path);
+
+        // Assert
+        found.Should().BeFalse();
+        path.Should().BeNull();
+    }
+
+    // AC-6 (spec 56): the snapshot remembers the tie, so pre-flight can say why.
+    [Fact]
+    public void IsAmbiguous_TiedName_True()
+    {
+        // Act + Assert
+        Ambiguous("devops").IsAmbiguous("devops").Should().BeTrue();
+    }
+
+    // AC-6 (spec 56): a unique name, an unknown name, a non-label and a lookup before the first scan are not ambiguous.
+    [Theory]
+    [InlineData("acmeportal")]
+    [InlineData("unknown")]
+    [InlineData("DevOps")]
+    [InlineData("")]
+    public void IsAmbiguous_NotATiedName_False(string name)
+    {
+        // Act + Assert
+        Ambiguous("devops").IsAmbiguous(name).Should().BeFalse();
+    }
+
+    // AC-6 (spec 56)
+    [Fact]
+    public void IsAmbiguous_BeforeFirstScan_False()
+    {
+        // Act + Assert
+        new RegistrySnapshot().IsAmbiguous("devops").Should().BeFalse();
+    }
+
+    // AC-6 (spec 56): a tie in one scan and a unique name in the next resolves after the next scan.
+    [Fact]
+    public void Replace_TieThenUnique_ResolvesAndNoLongerAmbiguous()
+    {
+        // Arrange
+        string folder = Path.Combine(Path.GetTempPath(), "zyggy-unit", "devops");
+        RegistrySnapshot snapshot = Ambiguous("devops");
+
+        // Act
+        snapshot.Replace(
+            RegistryDocumentTests.Central() with { Projects = [new RegistryProject("devops", null, "main", [], [], null)] },
+            new Dictionary<string, string>(StringComparer.Ordinal) { ["devops"] = folder });
+
+        // Assert
+        (snapshot.TryResolve("devops", out string? path), path, snapshot.IsAmbiguous("devops"))
+            .Should().Be((true, Path.GetFullPath(folder), false));
+    }
+
     internal static RegistrySnapshot With(params RegistryProject[] projects)
     {
         var snapshot = new RegistrySnapshot();
@@ -159,6 +220,21 @@ public sealed class RegistrySnapshotTests
         snapshot.Replace(
             RegistryDocumentTests.Central() with { Projects = [.. projects.Select(p => new RegistryProject(p.Name, null, "main", [], [], null))] },
             projects.ToDictionary(p => p.Name, p => p.Folder, StringComparer.Ordinal));
+        return snapshot;
+    }
+
+    /// <summary>
+    /// A snapshot as a scan with a same-level tie leaves it: the tied names neither published nor kept with a folder, but remembered as
+    /// ambiguous; one unique project <c>acmeportal</c> beside them.
+    /// </summary>
+    internal static RegistrySnapshot Ambiguous(params string[] tied)
+    {
+        string folder = Path.Combine(Path.GetTempPath(), "zyggy-unit", "Clients", "AcmePortal");
+        var snapshot = new RegistrySnapshot();
+        snapshot.Replace(
+            RegistryDocumentTests.Central() with { Projects = [new RegistryProject("acmeportal", null, "main", [], [], null)] },
+            new Dictionary<string, string>(StringComparer.Ordinal) { ["acmeportal"] = folder },
+            tied.ToHashSet(StringComparer.Ordinal));
         return snapshot;
     }
 }
