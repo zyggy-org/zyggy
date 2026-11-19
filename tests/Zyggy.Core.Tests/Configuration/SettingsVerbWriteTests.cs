@@ -14,17 +14,18 @@ public sealed class SettingsVerbWriteTests : IDisposable
 
     public void Dispose() => _tree.Dispose();
 
+    // Absolute paths under the temp tree: a "C:/..." literal is not fully qualified on Linux, where the reader refuses nodeDir and agentCore.path.
     private string EverySection => $$"""
-        "claude": { "path": "C:/tools/claude.exe", "maxTurns": 40, "defaultAllowedTools": ["Read", "Grep"] },
+        "claude": { "path": "{{SettingsTree.J(Path.Combine(_tree.Root, "tools", "claude.exe"))}}", "maxTurns": 40, "defaultAllowedTools": ["Read", "Grep"] },
           "poll": { "activeSeconds": 15, "idleSeconds": 120, "safetyFetchMinutes": 30 },
-          "secrets": { "store": "file", "root": "C:/secrets" },
+          "secrets": { "store": "file", "root": "{{SettingsTree.J(Path.Combine(_tree.Root, "secrets"))}}" },
           "workHours": { "timezone": "Europe/Brussels", "days": ["Mon", "Tue"], "from": "08:00", "to": "18:00" },
           "maxConcurrentJobs": 3,
           "log": { "level": "Debug" },
           "archive": { "itemMaxBytes": 1048576 },
           "sweep": { "intervalMinutes": 30 },
-          "agentCore": { "path": "C:/agents/zyggy-core" },
-          "nodeDir": "C:/zyggy",
+          "agentCore": { "path": "{{SettingsTree.J(Path.Combine(_tree.Root, "agents", "zyggy-core"))}}" },
+          "nodeDir": "{{SettingsTree.J(Path.Combine(_tree.Root, "zyggy"))}}",
           "role": "central",
           "devRoots": ["{{SettingsTree.J(_tree.Parent)}}"],
           "discovery": { "intervalMinutes": 30, "depth": 3, "detail": "full", "exclude": ["home"], "naming": "leaf" },
