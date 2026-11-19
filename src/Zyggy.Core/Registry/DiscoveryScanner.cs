@@ -75,13 +75,18 @@ public sealed partial class DiscoveryScanner
         }
 
         var walk = NewWalk();
-        List<(string Name, string Path)> unique = Find(devRoots, notices, walk, cancellationToken);
+        var ambiguous = new HashSet<string>(StringComparer.Ordinal);
+        List<(string Name, string Path)> unique = Find(devRoots, notices, walk, cancellationToken, ambiguous);
 
         var projects = new List<RegistryProject>(unique.Count);
+
+        // The folder of every kept project, whatever the detail, for the node's snapshot only (spec 56): never in a project entry here.
+        var folders = new Dictionary<string, string>(unique.Count, StringComparer.Ordinal);
         foreach ((string name, string path) in unique)
         {
             cancellationToken.ThrowIfCancellationRequested();
             projects.Add(await ProjectAsync(name, path, effective, notices, cancellationToken).ConfigureAwait(false));
+            folders[name] = path;
         }
 
         TimeSpan elapsed = _clock.GetElapsedTime(started);
@@ -94,7 +99,7 @@ public sealed partial class DiscoveryScanner
         }
 
         LogScanned(_log, projects.Count, notices.Count, walk.Visited, _options.Depth);
-        return new ScanResult(projects, notices, elapsed, effective);
+        return new ScanResult(projects, notices, elapsed, effective) { Folders = folders, Ambiguous = ambiguous };
     }
 
     /// <summary>
@@ -111,8 +116,16 @@ public sealed partial class DiscoveryScanner
         return [.. Find(devRoots, [], NewWalk(), cancellationToken).Select(p => new Configuration.SettingsProject(p.Name, p.Path))];
     }
 
-    /// <summary>The walk over every root, merged and de-duplicated by name, capped at <see cref="DiscoveryOptions.MaxProjects"/>.</summary>
-    private List<(string Name, string Path)> Find(IReadOnlyList<string> devRoots, List<ScanNotice> notices, WalkCount walk, CancellationToken cancellationToken)
+    /// <summary>
+    /// The walk over every root, merged and de-duplicated by name, capped at <see cref="DiscoveryOptions.MaxProjects"/>; a name tied at its
+    /// shallowest level goes to <paramref name="ambiguous"/> when given (spec 56).
+    /// </summary>
+    private List<(string Name, string Path)> Find(
+        IReadOnlyList<string> devRoots,
+        List<ScanNotice> notices,
+        WalkCount walk,
+        CancellationToken cancellationToken,
+        HashSet<string>? ambiguous = null)
     {
         var found = new List<Candidate>();
         foreach (string root in NormaliseRoots(devRoots, notices))
@@ -151,6 +164,10 @@ public sealed partial class DiscoveryScanner
             if (winner is not null)
             {
                 unique.Add((winner.Name, winner.Path));
+            }
+            else
+            {
+                ambiguous?.Add(group.Key);
             }
         }
 

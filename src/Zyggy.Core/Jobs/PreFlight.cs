@@ -86,7 +86,8 @@ internal static class PreFlight
                 return true;
             }
 
-            refusal = "unknown name";
+            // Two folders derive this name at the same level (spec 56): refused with a clear word, never guessed.
+            refusal = registry.IsAmbiguous(project) ? "ambiguous name" : "unknown name";
             return false;
         }
 

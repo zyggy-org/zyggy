@@ -4,40 +4,82 @@ namespace Zyggy.Core.Registry;
 
 /// <summary>
 /// The node's own latest scan, held in memory (founding spec §6 step 1 as amended by A14-3): the only source pre-flight and the
-/// dispatcher resolve a project name from — never the bus copy of the registry file. Thread-safe; empty until the first scan.
+/// dispatcher resolve a project name from — never the bus copy of the registry file. Beside the scanned document it keeps the folder of
+/// each project (spec 56), so a <c>detail: names</c> node, whose document carries no path, still resolves a name; the folders are never
+/// part of <see cref="Current"/> and so never reach the published file. Thread-safe; empty until the first scan.
 /// </summary>
 public sealed class RegistrySnapshot
 {
-    private volatile RegistryDocument? _current;
+    private static readonly IReadOnlyDictionary<string, string> NoFolders = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    private static readonly IReadOnlySet<string> NoNames = new HashSet<string>(StringComparer.Ordinal);
+
+    private volatile State? _state;
 
     /// <summary>Gets the latest scanned document, or <see langword="null"/> before the first scan.</summary>
-    public RegistryDocument? Current => _current;
+    public RegistryDocument? Current => _state?.Document;
 
-    /// <summary>Replaces the snapshot with a newer scan.</summary>
+    /// <summary>Replaces the snapshot with a newer scan whose projects carry their own paths (a <c>detail: full</c> document).</summary>
     /// <param name="document">The scanned document.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="document"/> is null.</exception>
-    public void Replace(RegistryDocument document)
+    public void Replace(RegistryDocument document) => Replace(document, NoFolders);
+
+    /// <summary>
+    /// Replaces the snapshot with a newer scan and the folder the scan found for each project (<see cref="ScanResult.Folders"/>), kept
+    /// beside the document and never inside it (spec 56, founding spec §8).
+    /// </summary>
+    /// <param name="document">The scanned document, as published.</param>
+    /// <param name="folders">The folder of each project, by registry name, in the operating system's form.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="document"/> or <paramref name="folders"/> is null.</exception>
+    public void Replace(RegistryDocument document, IReadOnlyDictionary<string, string> folders) => Replace(document, folders, NoNames);
+
+    /// <summary>
+    /// Replaces the snapshot with a newer scan, the folder the scan found for each project (<see cref="ScanResult.Folders"/>) and the names
+    /// two folders derive at the same level (<see cref="ScanResult.Ambiguous"/>), all kept beside the document and never inside it (spec 56).
+    /// </summary>
+    /// <param name="document">The scanned document, as published.</param>
+    /// <param name="folders">The folder of each project, by registry name, in the operating system's form.</param>
+    /// <param name="ambiguous">The names this scan left out because two folders derive them at the same level.</param>
+    /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
+    public void Replace(RegistryDocument document, IReadOnlyDictionary<string, string> folders, IReadOnlySet<string> ambiguous)
     {
         ArgumentNullException.ThrowIfNull(document);
-        _current = document;
+        ArgumentNullException.ThrowIfNull(folders);
+        ArgumentNullException.ThrowIfNull(ambiguous);
+        _state = new State(document, folders, ambiguous);
     }
 
     /// <summary>
+    /// Tells whether the latest scan left <paramref name="name"/> out because two folders derive it at the same level (spec 56): a job by
+    /// that name is refused <c>ambiguous name</c>, never routed to one of them. Same lookup rules as <see cref="TryResolve"/>.
+    /// </summary>
+    /// <param name="name">The job's <c>project</c> value.</param>
+    /// <returns><see langword="true"/> when the latest scan holds <paramref name="name"/> as ambiguous.</returns>
+    public bool IsAmbiguous(string name) =>
+        !string.IsNullOrEmpty(name) && ProjectName.IsLabel(name) && _state is { } state && state.Ambiguous.Contains(name);
+
+    /// <summary>
     /// Resolves a registry name to the folder this node discovered for it. Only a routable label (<c>[a-z0-9-]</c>) can resolve; the
-    /// lookup is ordinal; an entry without a path (a <c>detail: names</c> scan) never resolves; nothing resolves before the first scan.
+    /// lookup is ordinal; the folder kept beside the document comes first, then the entry's own path; nothing resolves before the first scan.
     /// </summary>
     /// <param name="name">The job's <c>project</c> value.</param>
     /// <param name="path">The project folder in the operating system's form, when found.</param>
-    /// <returns><see langword="true"/> when <paramref name="name"/> names a project of the latest scan that carries a path.</returns>
+    /// <returns><see langword="true"/> when <paramref name="name"/> names a project of the latest scan whose folder is known.</returns>
     public bool TryResolve(string name, [NotNullWhen(true)] out string? path)
     {
         path = null;
-        if (string.IsNullOrEmpty(name) || !ProjectName.IsLabel(name) || _current is not { } current)
+        if (string.IsNullOrEmpty(name) || !ProjectName.IsLabel(name) || _state is not { } state)
         {
             return false;
         }
 
-        foreach (RegistryProject project in current.Projects)
+        if (state.Folders.TryGetValue(name, out string? folder))
+        {
+            path = Path.GetFullPath(folder);
+            return true;
+        }
+
+        foreach (RegistryProject project in state.Document.Projects)
         {
             if (string.Equals(project.Name, name, StringComparison.Ordinal) && project.Path is { } found)
             {
@@ -48,4 +90,7 @@ public sealed class RegistrySnapshot
 
         return false;
     }
+
+    /// <summary>One scan, swapped as a whole so a reader never sees a document with another scan's folders.</summary>
+    private sealed record State(RegistryDocument Document, IReadOnlyDictionary<string, string> Folders, IReadOnlySet<string> Ambiguous);
 }

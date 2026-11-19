@@ -90,7 +90,7 @@ Every bus verb reads `node.json`: `--config <path>`, else `ZYGGY_NODE_JSON`, els
 | `discovery.naming` | `leaf` or `path`; `leaf` names a project after its folder, `path` after the folders below its (innermost) root joined with `-` (`Common/devops` → `common-devops`). With `discovery.detail: names` a `path` name carries the folder segments below the root. Changing it renames projects: jobs queued by the old name are rejected `unknown_project: unknown name` | `leaf` |
 | `sweep.intervalMinutes` | integer 1 … 1440, read only on Central (deliverable 17); minutes between two sweep passes of the node service | 60 |
 | `discovery.lastSeenHours` | integer 1 … 168; republish an unchanged registry when `last_seen` is older than this | 6 |
-| `discovery.detail` | `full` or `names`; `names` publishes project names and default branches only (the work laptop, deliverable 20) | `full` |
+| `discovery.detail` | `full` or `names`; `names` publishes project names and default branches only (the work laptop, deliverable 20). A `names` node still routes jobs by registry name: it keeps each project's folder in memory, never in the published file (spec 56) | `full` |
 | `supervision.enabled` | `true` or `false`; `false`: no status is published and `zyggy ask` writes nothing (deliverable 18) | `true` |
 | `supervision.detail` | `full` or `fixed`; `fixed` publishes only project, session, start and last activity (no branch, head, dirty count, spec or step) | `fixed` when `discovery.detail` is `names`, else `full` |
 | `supervision.statusMinutes` | integer 1 … 120; a session's status is refreshed at a turn end at most once per this many minutes | 10 |

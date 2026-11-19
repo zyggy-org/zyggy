@@ -212,14 +212,128 @@ public sealed class PreFlightTests : IDisposable
         absent.Should().Be(new PreFlightResult.Rejected(RunFailureReason.UnknownAgent, "unknown agent"));
     }
 
+    // AC-5 (spec 56): changed on purpose — a `detail: names` scan publishes no path, but the node keeps the folder in memory and resolves.
     [Fact]
-    public async Task CheckAsync_NamesOnlySnapshot_UnknownName()
+    public async Task CheckAsync_NamesOnlySnapshot_AcceptedInDiscoveredFolder()
     {
-        // Arrange: a `detail: names` scan carries no path
-        var snapshot = RegistrySnapshotTests.With(new RegistryProject("calizr", null, null, [], [], null));
+        // Arrange
+        RegistrySnapshot snapshot = NamesSnapshot(_project.Root);
 
         // Act
         var result = await CheckAsync(new JobFields("calizr"), snapshot, [ScratchProject.ParentRoot]);
+
+        // Assert
+        result.Should().Be(new PreFlightResult.Ok(_project.Root, null));
+    }
+
+    // AC-5 (spec 56): every later refusal is unchanged on a names-only node.
+    [Fact]
+    public async Task CheckAsync_NamesOnlySnapshot_FolderRemovedAfterScan_Missing()
+    {
+        // Arrange
+        RegistrySnapshot snapshot = NamesSnapshot(Path.Combine(ScratchProject.ParentRoot, Guid.NewGuid().ToString("N")));
+
+        // Act
+        var result = await CheckAsync(new JobFields("calizr"), snapshot, [ScratchProject.ParentRoot]);
+
+        // Assert
+        result.Should().Be(new PreFlightResult.Rejected(RunFailureReason.UnknownProject, "missing"));
+    }
+
+    // AC-5 (spec 56)
+    [Fact]
+    public async Task CheckAsync_NamesOnlySnapshot_NotGit_NotAGitRepository()
+    {
+        // Arrange
+        using var noGit = ScratchProject.WithoutGit();
+        _processes.On("rev-parse", RecordingProcessRunner.Fail(128, "fatal: not a git repository"));
+
+        // Act
+        var result = await CheckAsync(new JobFields("calizr"), NamesSnapshot(noGit.Root), [ScratchProject.ParentRoot]);
+
+        // Assert
+        result.Should().Be(new PreFlightResult.Rejected(RunFailureReason.UnknownProject, "not a git repository"));
+    }
+
+    // AC-5 (spec 56)
+    [Fact]
+    public async Task CheckAsync_NamesOnlySnapshot_NoClaude_NoClaude()
+    {
+        // Arrange
+        using var noClaude = ScratchProject.WithoutClaude();
+
+        // Act
+        var result = await CheckAsync(new JobFields("calizr"), NamesSnapshot(noClaude.Root), [ScratchProject.ParentRoot]);
+
+        // Assert
+        result.Should().Be(new PreFlightResult.Rejected(RunFailureReason.UnknownProject, "no .claude"));
+    }
+
+    // AC-5 (spec 56)
+    [Fact]
+    public async Task CheckAsync_NamesOnlySnapshot_AbsentAgent_UnknownAgent()
+    {
+        // Arrange
+        _project.WithAgent("env-debugger");
+
+        // Act
+        var result = await CheckAsync(new JobFields("calizr", Agent: "db-migrator"), NamesSnapshot(_project.Root), [ScratchProject.ParentRoot]);
+
+        // Assert
+        result.Should().Be(new PreFlightResult.Rejected(RunFailureReason.UnknownAgent, "unknown agent"));
+    }
+
+    // AC-5 (spec 56): a path-named job is still checked against devRoots, whatever the snapshot holds.
+    [Fact]
+    public async Task CheckAsync_NamesOnlySnapshot_PathOutsideDevRoots_OutsideDevRoots()
+    {
+        // Arrange
+        string elsewhere = Path.Combine(Path.GetTempPath(), "zyggy-elsewhere-" + Guid.NewGuid().ToString("N"));
+
+        // Act
+        var result = await CheckAsync(new JobFields(_project.Root), NamesSnapshot(_project.Root), [elsewhere]);
+
+        // Assert
+        result.Should().Be(new PreFlightResult.Rejected(RunFailureReason.UnknownProject, "outside devRoots"));
+    }
+
+    private static RegistrySnapshot NamesSnapshot(string folder) => RegistrySnapshotTests.NamesOnly(("calizr", folder));
+
+    // AC-6 (spec 56): on a names-only node a name two folders derive at the same level is refused as ambiguous, never guessed.
+    [Fact]
+    public async Task CheckAsync_NamesOnlySnapshot_TiedName_AmbiguousName()
+    {
+        // Act
+        var result = await CheckAsync(new JobFields("devops"), RegistrySnapshotTests.Ambiguous("devops"), [ScratchProject.ParentRoot]);
+
+        // Assert
+        result.Should().Be(new PreFlightResult.Rejected(RunFailureReason.UnknownProject, "ambiguous name"));
+    }
+
+    // AC-6 (spec 56): the same on a `detail: full` node, whose document carries paths for the other projects.
+    [Fact]
+    public async Task CheckAsync_FullSnapshot_TiedName_AmbiguousName()
+    {
+        // Arrange
+        var snapshot = new RegistrySnapshot();
+        snapshot.Replace(
+            RegistryDocumentTests.Central() with { Projects = [new RegistryProject("calizr", _project.Root.Replace('\\', '/'), "main", [], [], null)] },
+            new Dictionary<string, string>(StringComparer.Ordinal),
+            new HashSet<string>(StringComparer.Ordinal) { "devops" });
+
+        // Act
+        var result = await CheckAsync(new JobFields("devops"), snapshot, [ScratchProject.ParentRoot]);
+
+        // Assert
+        result.Should().Be(new PreFlightResult.Rejected(RunFailureReason.UnknownProject, "ambiguous name"));
+    }
+
+    // AC-6 (spec 56): a name that is neither kept nor tied is still `unknown name` on a snapshot that holds a tie.
+    [Fact]
+    public async Task CheckAsync_SnapshotWithTie_OtherUnknownName_UnknownName()
+    {
+        // Act
+        var result = await CheckAsync(new JobFields("billing"), RegistrySnapshotTests.Ambiguous("devops"), [ScratchProject.ParentRoot]);
 
         // Assert
         result.Should().Be(new PreFlightResult.Rejected(RunFailureReason.UnknownProject, "unknown name"));
