@@ -141,8 +141,10 @@ public static class ServiceCollectionExtensions
                     runs.ModelEnvironment,
                     runs.TimeoutOverride),
                 sp.GetRequiredService<TimeProvider>(),
-                log);
+                log,
+                sp.GetRequiredService<SettingsInUse>());
         });
+        services.TryAddSettingsInUse();
         return services;
     }
 

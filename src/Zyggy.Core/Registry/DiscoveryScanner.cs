@@ -50,6 +50,12 @@ public sealed partial class DiscoveryScanner
         _listChildren = listChildren ?? (root => new DirectoryInfo(root).EnumerateDirectories());
     }
 
+    /// <summary>
+    /// Gets the settings in use: when set, a scan takes the owner's exclude globs from it, once at the scan's start (spec 55); otherwise
+    /// from <see cref="DiscoveryOptions.Exclude"/>.
+    /// </summary>
+    internal Configuration.SettingsInUse? Settings { get; init; }
+
     /// <summary>Scans the roots.</summary>
     /// <param name="devRoots">The <c>devRoots</c> entries of <c>node.json</c>.</param>
     /// <param name="detail">The requested detail; <see cref="DiscoveryDetail.Full"/> runs as <see cref="DiscoveryDetail.Names"/> without secret patterns.</param>
@@ -68,7 +74,7 @@ public sealed partial class DiscoveryScanner
             notices.Add(new ScanNotice(ScanNoticeKind.PatternsUnavailable, "ZYGGY_SECRET_PATTERNS", "descriptions and summaries not published"));
         }
 
-        var walk = new WalkCount();
+        var walk = NewWalk();
         List<(string Name, string Path)> unique = Find(devRoots, notices, walk, cancellationToken);
 
         var projects = new List<RegistryProject>(unique.Count);
@@ -102,7 +108,7 @@ public sealed partial class DiscoveryScanner
     public IReadOnlyList<Configuration.SettingsProject> FindProjects(IReadOnlyList<string> devRoots, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(devRoots);
-        return [.. Find(devRoots, [], new WalkCount(), cancellationToken).Select(p => new Configuration.SettingsProject(p.Name, p.Path))];
+        return [.. Find(devRoots, [], NewWalk(), cancellationToken).Select(p => new Configuration.SettingsProject(p.Name, p.Path))];
     }
 
     /// <summary>The walk over every root, merged and de-duplicated by name, capped at <see cref="DiscoveryOptions.MaxProjects"/>.</summary>
@@ -246,7 +252,7 @@ public sealed partial class DiscoveryScanner
                 try
                 {
                     // The owner's globs leave a folder out entirely: not published, not descended into (spec 55).
-                    if (child.Name.StartsWith('.') || IsReparsePoint(child) || IsOwnerExcluded(child.Name))
+                    if (child.Name.StartsWith('.') || IsReparsePoint(child) || Matches(walk.Exclude, child.Name))
                     {
                         continue;
                     }
@@ -306,10 +312,10 @@ public sealed partial class DiscoveryScanner
     private static bool IsBuiltInSkip(string name) => Matches(BuiltInSkips, name);
 
     /// <summary>
-    /// Whether a folder of this name matches a <see cref="DiscoveryOptions.Exclude"/> glob: such a folder is neither published as a project
-    /// nor descended into (spec 55). The glob matches the folder's own name, whatever <see cref="DiscoveryOptions.Naming"/> says.
+    /// A scan's count, with the owner's exclude globs of this scan: a folder whose name matches one is neither published as a project nor
+    /// descended into (spec 55). The glob matches the folder's own name, whatever <see cref="DiscoveryOptions.Naming"/> says.
     /// </summary>
-    private bool IsOwnerExcluded(string name) => Matches(_options.Exclude, name);
+    private WalkCount NewWalk() => new() { Exclude = Settings is null ? _options.Exclude : _options.Exclude };
 
     private static bool Matches(IEnumerable<string> globs, string name)
     {
@@ -321,9 +327,11 @@ public sealed partial class DiscoveryScanner
     private static readonly string[] BuiltInSkips =
         ["node_modules", "bin", "obj", "dist", "out", "target", "packages", "TestResults", "__pycache__", "*.worktrees"];
 
-    /// <summary>The folder count of one scan, shared by its roots.</summary>
+    /// <summary>The folder count of one scan, shared by its roots, and the owner's exclude globs the scan started with.</summary>
     private sealed class WalkCount
     {
+        public IReadOnlyList<string> Exclude { get; init; } = [];
+
         public int Visited { get; set; }
 
         public bool CapReached { get; set; }

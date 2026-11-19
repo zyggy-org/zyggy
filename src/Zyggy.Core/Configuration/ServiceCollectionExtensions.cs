@@ -86,6 +86,36 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// Registers the <see cref="SettingsInUse"/> that looks at the node's own <c>node.json</c> at <paramref name="configPath"/> (spec 55), in
+    /// place of the one that only carries the values read at start. Only the Node host calls this; it runs <see cref="SettingsInUse.RunAsync"/>.
+    /// Requires a registered <see cref="NodeConfiguration"/> read from that file.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configPath">The file the node read at start.</param>
+    /// <returns><paramref name="services"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="services"/> is null.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="configPath"/> is null or empty.</exception>
+    public static IServiceCollection AddSettingsInUse(this IServiceCollection services, string configPath)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentException.ThrowIfNullOrEmpty(configPath);
+        services.RemoveAll<SettingsInUse>();
+        services.AddSingleton(sp => new SettingsInUse(
+            sp.GetRequiredService<NodeConfiguration>(),
+            configPath,
+            sp.GetService<TimeProvider>() ?? TimeProvider.System,
+            sp.GetService<ILoggerFactory>()?.CreateLogger<SettingsInUse>() ?? NullLogger<SettingsInUse>.Instance));
+        return services;
+    }
+
+    /// <summary>The holder of the values read at start, unless the host registered the watching one (spec 55).</summary>
+    internal static IServiceCollection TryAddSettingsInUse(this IServiceCollection services)
+    {
+        services.TryAddSingleton(sp => new SettingsInUse(sp.GetRequiredService<NodeConfiguration>()));
+        return services;
+    }
+
     /// <summary>The remote description from <c>node.json</c>: the configured URL as the HTTPS form when it is one (or a file URL in tests), as the SSH form when it is one; the provider fills in its host's defaults for the other.</summary>
     internal static BusRemote BusRemoteFrom(BusSettings bus)
     {

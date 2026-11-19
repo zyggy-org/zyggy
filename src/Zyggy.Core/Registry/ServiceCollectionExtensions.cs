@@ -50,8 +50,13 @@ public static class ServiceCollectionExtensions
                 sp.GetService<SecretPatterns>(),
                 sp.GetRequiredService<IOptions<DiscoveryOptions>>().Value,
                 clock,
-                sp.GetService<ILogger<DiscoveryScanner>>() ?? NullLogger<DiscoveryScanner>.Instance);
+                sp.GetService<ILogger<DiscoveryScanner>>() ?? NullLogger<DiscoveryScanner>.Instance)
+            {
+                // Spec 55: a node's scans take the owner's excludes from the settings in use; without a node.json, from the options.
+                Settings = sp.GetService<NodeConfiguration>() is null ? null : sp.GetRequiredService<SettingsInUse>(),
+            };
         });
+        services.TryAddSettingsInUse();
 
         // The publisher writes through the host's one BusRepository (registered by the bus provider); resolved only by hosts that have one.
         services.TryAddSingleton(sp => new RegistryPublisher(
