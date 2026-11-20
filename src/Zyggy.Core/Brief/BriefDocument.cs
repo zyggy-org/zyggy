@@ -12,6 +12,9 @@ internal sealed record YouItem(string Action, string SenderName, string Subject,
 /// <summary>One "For the long run" line (spec 35 AC-35): the kept suggestion, its first basis and what Zyggy could prepare (null = "you").</summary>
 internal sealed record IdeaLine(int N, string Id, string Area, string Text, string WhyNow, string? Prepare, string BasisFile, string BasisLine);
 
+/// <summary>One "Decided for you" line (deliverable 18): a decision Central made since the previous brief, by kind, machine, project and id; never its text.</summary>
+internal sealed record DecidedLine(string Time, string Kind, string Machine, string? Project, string Id);
+
 /// <summary>The brief's counts, printed in the header and kept in the sidecar.</summary>
 internal sealed record BriefCounts(int Urgent, int Important, int Other, int Files, int FilesOther)
 {
@@ -43,6 +46,9 @@ internal sealed record BriefDocument(
 
     /// <summary>Gets why the ideas run gave nothing today (AC-37), or <see langword="null"/>.</summary>
     public string? IdeasNote { get; init; }
+
+    /// <summary>Gets the decisions Central made since the previous brief; the section "Decided for you" is rendered only when this is not empty.</summary>
+    public IReadOnlyList<DecidedLine> Decided { get; init; } = [];
 
     /// <summary>Gets a value indicating whether the ideas run is off (<c>ideas_cap</c> 0): the section is omitted.</summary>
     public bool IdeasOff { get; init; }

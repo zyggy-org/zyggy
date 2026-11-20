@@ -120,6 +120,16 @@ internal static class BriefRenderer
             Fixed("- none");
         }
 
+        if (d.Decided.Count > 0)
+        {
+            Fixed(string.Empty);
+            Fixed("## Decided for you");
+            foreach (var decided in d.Decided)
+            {
+                Fixed($"- {decided.Time} {decided.Kind} — {decided.Machine}{(decided.Project is { } project ? ", " + project : string.Empty)} — {decided.Id}");
+            }
+        }
+
         if (!d.IdeasOff)
         {
             Fixed(string.Empty);
