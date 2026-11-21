@@ -5,6 +5,7 @@
 - 2026-11-21: spec written by an unattended job from `main` at v0.25.0 (`0286488`), after Central coordinated about fifteen jobs on 2026-11-21. Not approved. Placed in the roadmap after 18 group C (in progress) and before every Not started deliverable, 58 included (owner decision of 2026-11-21).
 - 2026-11-21: answers to Q1–Q9 written in (owner: Q1, Q4, Q8; Central, following the spec's recommendation: Q2, Q3, Q5, Q6, Q7, Q9) and moved to Decisions; Constraints, Behavior, Acceptance criteria, Slices, Out of scope and the zyggy-core rule wording brought in line. New open question Q10 (path patterns for a fetch on a work machine). **Not approved** — the owner still reads it.
 - 2026-11-21: owner's further answer on Q4, "2c => no restrictions": a work machine is treated like the owner's other machines for `fetch` and `command` jobs (same confinement, same allow-list, same go rule, so Q1's standing go applies there too); the work-machine-only limits (per-job go, business-side filing) removed. Q10 answered no: `jobs.fetchAllowedPaths` dropped. New open question Q11 (standing go for read-only commands). **Not approved.**
+- 2026-11-21: **approved by the owner** in his conversation with Central, with the decisions recorded here and both proposed `zyggy-core` rule wordings (standing go for read-only jobs; fetch and command jobs on a work machine). Q11 stays open: until the owner answers it, every `command` job needs his go. Build order: slices 1–7 and 9 now; slice 8 held if 18 group C slice 14 starts first; slices 10 and 11 after 18 group C.
 
 ## Goal
 
