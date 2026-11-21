@@ -42,7 +42,7 @@ public sealed class OwnerViewTests
     private MandateReportEntry Failed()
     {
         EnvelopeId report = NextId();
-        return new MandateReportEntry(report, EnvelopeId.New(report.Timestamp.AddSeconds(-30)), report.Timestamp, ReportStatus.Failed, "claude_error", "slice 1", false);
+        return new MandateReportEntry(report, EnvelopeId.New(report.Timestamp.AddSeconds(-30)), report.Timestamp, ReportStatus.Failed, "claude_error", "slice 1", false, ModelStarted: true);
     }
 
     // AC-26

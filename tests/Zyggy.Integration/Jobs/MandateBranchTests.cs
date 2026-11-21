@@ -142,8 +142,9 @@ public sealed class MandateBranchTests : IAsyncLifetime
         (await CheckoutAsync(ct)).Should().BeEquivalentTo(before);
     }
 
+    // Spec 59 AC-6: Central does not hold the project, so grant and submit send the job; the node's report carries git's own message.
     [Fact]
-    public async Task Run_BaseAbsentOnOrigin_FailedGitErrorBase_ModelNeverStarted()
+    public async Task Run_BaseAbsentOnOrigin_FailedGitErrorBase_WithGitsMessage_ModelNeverStarted()
     {
         // Arrange
         var ct = TestContext.Current.CancellationToken;
@@ -161,7 +162,35 @@ public sealed class MandateBranchTests : IAsyncLifetime
             report.Report.Reason,
             report.BodyText,
             Started = File.Exists(CapturePath),
-        }.Should().BeEquivalentTo(new { Status = ReportStatus.Failed, Reason = "git_error", BodyText = "git_error: base\n", Started = false });
+        }.Should().BeEquivalentTo(new { Status = ReportStatus.Failed, Reason = "git_error", BodyText = "git_error: base: origin/feature/shop not found (fatal: Needed a single revision)\n", Started = false });
+    }
+
+    // Spec 59 AC-6 (slice 3 repair): a base fetched earlier and then deleted on the origin must not resolve from the node's stale
+    // remote-tracking ref; the fetch before the base check prunes.
+    [Fact]
+    public async Task Run_BaseDeletedOnOriginAfterAnEarlierFetch_FailedGitErrorBase_ModelNeverStarted()
+    {
+        // Arrange: the branch exists, the project checkout has fetched it, then it is deleted on the origin
+        var ct = TestContext.Current.CancellationToken;
+        await _project.AddBranchAsync(Feature, ct);
+        await _project.GitAsync(["fetch", "-q", "origin"], ct);
+        await _project.OriginGitAsync(["update-ref", "-d", "refs/heads/" + Feature], ct);
+        (await _project.ResolveAsync(_project.Path, "refs/remotes/origin/" + Feature, ct)).Should().NotBeNull("the stale remote-tracking ref is the trap");
+        await using ServiceProvider laptop = await LaptopAsync(ct);
+        await SubmitAsync(await GrantAsync(ct), Feature, ct);
+
+        // Act
+        await ProcessAsync(laptop, ct);
+
+        // Assert
+        Model report = await SingleReportAsync(ct);
+        new
+        {
+            report.Report!.Status,
+            report.Report.Reason,
+            report.BodyText,
+            Started = File.Exists(CapturePath),
+        }.Should().BeEquivalentTo(new { Status = ReportStatus.Failed, Reason = "git_error", BodyText = "git_error: base: origin/feature/shop not found (fatal: Needed a single revision)\n", Started = false });
     }
 
     [Fact]
@@ -187,6 +216,36 @@ public sealed class MandateBranchTests : IAsyncLifetime
         }.Should().BeEquivalentTo(new { Status = ReportStatus.Done, Main = main, Pushed = true, SaysSo = true });
     }
 
+    // Spec 59 AC-8 (slice 5): a run that ends at the turn limit, or at the node's timeout, pushes zyggy/<id> and leaves base where it was.
+    [Theory]
+    [InlineData("max-turns", ReportStatus.Failed, "claude_error")]
+    [InlineData("timeout", ReportStatus.Timeout, "timeout")]
+    public async Task Run_WithBase_RunNotDone_ItsBranchPushed_BaseLeftWhereItWas_ReportSaysSo(string ending, ReportStatus status, string reason)
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        string start = await _project.AddBranchAsync(Feature, ct);
+        await using ServiceProvider laptop = await LaptopAsync(ct, ending);
+        string job = await SubmitAsync(await GrantAsync(ct), Feature, ct);
+
+        // Act
+        await ProcessAsync(laptop, ct);
+
+        // Assert
+        Model report = await SingleReportAsync(ct);
+        string? tip = await _project.ResolveAsync(_project.OriginDir, "refs/heads/zyggy/" + job, ct);
+        new
+        {
+            report.Report!.Status,
+            report.Report.Reason,
+            report.Report.DiffRef,
+            Pushed = tip is not null && tip != start,
+            Base = await _project.ResolveAsync(_project.OriginDir, "refs/heads/" + Feature, ct),
+            SaysSo = report.BodyText.Contains("branch " + Feature + " not updated: run " + EnvelopeWire.ToWire(status), StringComparison.Ordinal),
+            NoFastForward = !report.BodyText.Contains("fast-forwarded", StringComparison.Ordinal),
+        }.Should().BeEquivalentTo(new { Status = status, Reason = reason, DiffRef = tip, Pushed = true, Base = start, SaysSo = true, NoFastForward = true });
+    }
+
     private async Task<object> CheckoutAsync(CancellationToken ct) => new
     {
         Head = await _project.GitAsync(["rev-parse", "HEAD"], ct),
@@ -196,19 +255,30 @@ public sealed class MandateBranchTests : IAsyncLifetime
         Config = await File.ReadAllTextAsync(Path.Combine(_project.Path, ".git", "config"), ct),
     };
 
-    private async Task<ServiceProvider> LaptopAsync(CancellationToken ct)
+    // "done" and "max-turns" are fake-claude scenarios; "timeout" streams no result and lingers past a short node timeout.
+    private async Task<ServiceProvider> LaptopAsync(CancellationToken ct, string ending = "done")
     {
         var environment = new Dictionary<string, string>
         {
-            ["ZYGGY_FAKE_CLAUDE_SCENARIO"] = "done",
+            ["ZYGGY_FAKE_CLAUDE_SCENARIO"] = ending == "timeout" ? "no-result" : ending,
             ["ZYGGY_FAKE_CLAUDE_CAPTURE"] = CapturePath,
             ["ZYGGY_FAKE_CLAUDE_EDITS"] = "+src/new.txt\tnew",
         };
+        if (ending == "max-turns")
+        {
+            environment["ZYGGY_FAKE_CLAUDE_EXIT"] = "1";
+        }
+
+        if (ending == "timeout")
+        {
+            environment["ZYGGY_FAKE_CLAUDE_LINGER_MS"] = "30000";
+        }
+
         NodeConfiguration configuration = TestHost.NodeConfigurationFor(_harness.Bus, CliHarness.HomeLaptop);
         ServiceProvider services = TestHost.BuildRunnerListener(_harness.Bus, CliHarness.HomeLaptop, _harness.Store, FakeClaude.ExecutablePath, configuration, o =>
         {
             o.NodeDir = _project.NodeDir;
-            o.TimeoutOverride = TimeSpan.FromSeconds(30);
+            o.TimeoutOverride = ending == "timeout" ? TimeSpan.FromSeconds(2) : TimeSpan.FromSeconds(30);
             o.ModelEnvironment = environment;
         });
         services.GetRequiredService<RegistrySnapshot>().Replace(new RegistryDocument(

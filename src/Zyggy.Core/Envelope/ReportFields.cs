@@ -15,6 +15,11 @@ namespace Zyggy.Core.Envelope;
 /// <param name="DiffRef">The optional <c>diff_ref</c>.</param>
 /// <param name="Mandate">The <c>mandate</c> of the job this report answers, copied from the job (deliverable 18), so the job still counts under its mandate once its file is gone.</param>
 /// <param name="Step">The <c>step</c> of that job, copied from it.</param>
+/// <param name="FileName">
+/// The <c>file_name</c> of the file attached beside the report (spec 59, Q2: <c>reports/&lt;id&gt;.att</c>): one path segment; present
+/// exactly when <paramref name="FileSha256"/> is.
+/// </param>
+/// <param name="FileSha256">The <c>file_sha256</c> of the attached file, 64 lowercase hexadecimal characters; signed with the report, so the signature covers the file.</param>
 public sealed record ReportFields(
     ReportStatus Status,
     string? Reason = null,
@@ -29,4 +34,6 @@ public sealed record ReportFields(
     IReadOnlyList<string>? FilesChanged = null,
     string? DiffRef = null,
     EnvelopeId? Mandate = null,
-    string? Step = null);
+    string? Step = null,
+    string? FileName = null,
+    string? FileSha256 = null);

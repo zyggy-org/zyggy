@@ -29,6 +29,13 @@ public sealed record ProcessSpec(string FileName, IReadOnlyList<string> Argument
     /// <summary>Capture cap for standard output in bytes; lines beyond it are streamed but not retained.</summary>
     public int MaxStdoutBytes { get; init; } = 2 * 1024 * 1024;
 
+    /// <summary>
+    /// Gets the file that receives standard output byte for byte (spec 59: a fetched file, never re-encoded or split into lines);
+    /// <see langword="null"/> captures it as text. When set, <see cref="ProcessResult.Stdout"/> is empty, <see cref="OnStdoutLine"/> and
+    /// <see cref="MaxStdoutBytes"/> do not apply, and the file is created or overwritten.
+    /// </summary>
+    public string? StandardOutputPath { get; init; }
+
     /// <summary>Capture cap for standard error in bytes.</summary>
     public int MaxStderrBytes { get; init; } = 64 * 1024;
 }

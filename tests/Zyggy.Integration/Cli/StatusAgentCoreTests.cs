@@ -30,7 +30,7 @@ public sealed class StatusAgentCoreTests
     public void RenderOverview_AgentCoreSha_NodeLineNamesTwelveCharacters()
     {
         // Act
-        string first = StatusCommand.RenderOverview(Configuration, Health("89abcdef0123456789abcdef0123456789abcdef"), Green, Empty, Now).Split('\n')[0];
+        string first = StatusCommand.RenderOverview(Configuration, Health("89abcdef0123456789abcdef0123456789abcdef"), Green, Empty, Now, []).Split('\n')[0];
 
         // Assert
         first.Should().Be("node    home-laptop (acme) · zyggy-node 0.18.0 · zyggy-core 89abcdef0123 · health: green");
@@ -40,7 +40,7 @@ public sealed class StatusAgentCoreTests
     public void RenderOverview_AgentCoreShaNull_NodeLineSaysUnknown()
     {
         // Act
-        string first = StatusCommand.RenderOverview(Configuration, Health(null), Green, Empty, Now).Split('\n')[0];
+        string first = StatusCommand.RenderOverview(Configuration, Health(null), Green, Empty, Now, []).Split('\n')[0];
 
         // Assert
         first.Should().Be("node    home-laptop (acme) · zyggy-node 0.18.0 · zyggy-core unknown · health: green");
@@ -53,7 +53,7 @@ public sealed class StatusAgentCoreTests
         var down = new HealthVerdict(HealthLevel.Down, ["no node service answering on http://localhost:4711/health"], []);
 
         // Act
-        string first = StatusCommand.RenderOverview(Configuration, null, down, Empty, Now).Split('\n')[0];
+        string first = StatusCommand.RenderOverview(Configuration, null, down, Empty, Now, []).Split('\n')[0];
 
         // Assert
         first.Should().Be("node    home-laptop (acme) · health: down — no node service answering on http://localhost:4711/health");

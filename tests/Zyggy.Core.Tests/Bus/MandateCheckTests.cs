@@ -474,6 +474,54 @@ public sealed class MandateCheckTests : IAsyncLifetime
         MandateRules.CheckSubmit(ledger, Submit, Now).Limit.Should().Be(expected == MandateState.Paused ? MandateLimit.Paused : null);
     }
 
+    // Spec 59 AC-7 (Q5): a report without model and num_turns means the model never started; it does not count toward the pause.
+    // A trailing "?" marks such a report. The first row is 2026-11-21: two "git_error: base" failures and one real failure.
+    [Theory]
+    [InlineData("failed?,failed?,failed", MandateState.Active)]
+    [InlineData("failed,failed?,failed,failed", MandateState.Paused)]
+    [InlineData("done,failed?,failed?,failed?", MandateState.Active)]
+    [InlineData("failed?,failed?,failed?,failed?", MandateState.Active)]
+    [InlineData("failed,failed,done?,failed", MandateState.Paused)]
+    public async Task StateAt_ReportsWithoutModelAndTurns_DoNotCountTowardThePause(string statusesOldestFirst, MandateState expected)
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields with { MaxJobs = 20 }, ct);
+        string[] statuses = statusesOldestFirst.Split(',');
+        for (int i = 0; i < statuses.Length; i++)
+        {
+            bool modelStarted = !statuses[i].EndsWith('?');
+            ReportStatus status = statuses[i].TrimEnd('?') == "done" ? ReportStatus.Done : ReportStatus.Failed;
+            await DropReportAsync(status, Now.AddMinutes(-60 + i), ct, reason: status == ReportStatus.Done ? null : "git_error", modelStarted: modelStarted);
+        }
+
+        // Act
+        MandateLedger ledger = await LedgerAsync(ct);
+
+        // Assert
+        ledger.StateAt(Now).Should().Be(expected);
+        MandateRules.CheckSubmit(ledger, Submit, Now).Limit.Should().Be(expected == MandateState.Paused ? MandateLimit.Paused : null);
+    }
+
+    // Spec 59 AC-7: a report with only num_turns (a run cut before the model line) still counts as a model run.
+    [Fact]
+    public async Task StateAt_ThreeFailuresWithTurnsButNoModel_Paused()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields with { MaxJobs = 20 }, ct);
+        for (int i = 0; i < 3; i++)
+        {
+            await DropReportAsync(ReportStatus.Timeout, Now.AddMinutes(-20 + i), ct, reason: "timeout", modelStarted: false, numTurns: 200);
+        }
+
+        // Act
+        MandateState state = (await LedgerAsync(ct)).StateAt(Now);
+
+        // Assert
+        state.Should().Be(MandateState.Paused);
+    }
+
     [Fact]
     public async Task StateAt_ResumeDecisionAfterThreeFailures_ActiveAgain_EarlierReportsNoLongerCountTowardsAPause()
     {
@@ -567,7 +615,108 @@ public sealed class MandateCheckTests : IAsyncLifetime
 
         // Assert
         wires.Should().OnlyHaveUniqueItems().And.OnlyContain(w => w.Length > 0 && w.All(c => char.IsAsciiLetterLower(c) || c == '_'));
-        wires.Should().HaveCount(18);
+        wires.Should().HaveCount(19);
+    }
+
+    // Spec 59 slice 6 tightening (Central, 2026-11-21): under a mandate a job continues only from a job that ran under the same mandate
+    // and the same step. "same-step-report": the earlier job reported (its file is gone); "same-step-open": it is still in jobs/claimed/.
+    [Theory]
+    [InlineData("same-step-report", null)]
+    [InlineData("same-step-open", null)]
+    [InlineData("other-step", MandateLimit.Continue)]
+    [InlineData("no-mandate", MandateLimit.Continue)]
+    [InlineData("other-mandate", MandateLimit.Continue)]
+    [InlineData("unknown", MandateLimit.Continue)]
+    [InlineData("rejected", MandateLimit.Continue)]
+    public async Task CheckSubmit_Continue_OnlyFromAJobOfTheSameMandateAndStep(string what, MandateLimit? expected)
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields with { MaxJobs = 20 }, ct);
+        EnvelopeId earlier = await DropEarlierAsync(what, ct);
+
+        // Act
+        MandateVerdict verdict = MandateRules.CheckSubmit(await LedgerAsync(ct), Submit with { Continue = earlier }, Now);
+
+        // Assert
+        verdict.Limit.Should().Be(expected, verdict.Detail);
+    }
+
+    [Theory]
+    [InlineData("same-step-report", null)]
+    [InlineData("same-step-open", null)]
+    [InlineData("other-step", MandateLimit.Continue)]
+    [InlineData("no-mandate", MandateLimit.Continue)]
+    [InlineData("other-mandate", MandateLimit.Continue)]
+    [InlineData("unknown", MandateLimit.Continue)]
+    [InlineData("rejected", MandateLimit.Continue)]
+    [InlineData("self", MandateLimit.Continue)]
+    public async Task CheckIntake_Continue_OnlyFromAJobOfTheSameMandateAndStep(string what, MandateLimit? expected)
+    {
+        // Arrange: "self" — the job under intake names itself, and is already a counted job of the step (it sits in jobs/claimed/)
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields with { MaxJobs = 20 }, ct);
+        EnvelopeId self = NextId(Now.AddMinutes(-1));
+        EnvelopeId earlier = await DropEarlierAsync(what, ct, self);
+        Model job = await SignedJobAsync(JobOf("slice 2") with { Continue = earlier }, Now.AddMinutes(-1), ct, self);
+
+        // Act
+        MandateVerdict verdict = MandateRules.CheckIntake(await LedgerAsync(ct), job, HomeLaptop, Now);
+
+        // Assert
+        verdict.Limit.Should().Be(expected, verdict.Detail);
+    }
+
+    [Fact]
+    public async Task CheckSubmit_ContinueFromAnotherStep_DetailNamesTheLimitInOneLine()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields with { MaxJobs = 20 }, ct);
+        EnvelopeId earlier = await DropEarlierAsync("other-step", ct);
+
+        // Act
+        MandateVerdict verdict = MandateRules.CheckSubmit(await LedgerAsync(ct), Submit with { Continue = earlier }, Now);
+
+        // Assert
+        verdict.Detail.Should().Be("continue: " + earlier.Value + " is not a job of this mandate's step 'slice 2'").And.NotContain("\n");
+    }
+
+    /// <summary>
+    /// The job a continue names, in the shape <paramref name="what"/> asks for; "unknown" drops nothing; "self" drops the job under
+    /// check itself (id <paramref name="self"/>, continuing from its own id) in jobs/claimed/.
+    /// </summary>
+    private async Task<EnvelopeId> DropEarlierAsync(string what, CancellationToken ct, EnvelopeId? self = null)
+    {
+        if (what == "self")
+        {
+            return (await DropJobAsync(BusFolder.Claimed, Now.AddMinutes(-1), ct, id: self, continueFrom: self)).Header.Id;
+        }
+
+        EnvelopeId other = EnvelopeId.New(Granted.AddMinutes(1));
+        EnvelopeId earlier = NextId(Now.AddMinutes(-40));
+        switch (what)
+        {
+            case "same-step-report":
+                await DropReportAsync(ReportStatus.Failed, Now.AddMinutes(-30), ct, reason: "timeout", job: earlier);
+                break;
+            case "same-step-open":
+                return (await DropJobAsync(BusFolder.Claimed, Now.AddMinutes(-30), ct)).Header.Id;
+            case "other-step":
+                await DropReportAsync(ReportStatus.Failed, Now.AddMinutes(-30), ct, reason: "timeout", step: "slice 1", job: earlier);
+                break;
+            case "no-mandate":
+                return (await DropJobAsync(BusFolder.Claimed, Now.AddMinutes(-30), ct, noMandate: true)).Header.Id;
+            case "other-mandate":
+                return (await DropJobAsync(BusFolder.Claimed, Now.AddMinutes(-30), ct, mandate: other)).Header.Id;
+            case "rejected":
+                await DropReportAsync(ReportStatus.Rejected, Now.AddMinutes(-30), ct, reason: "branch_refused", job: earlier, modelStarted: false);
+                break;
+            default:
+                break;
+        }
+
+        return earlier;
     }
 
     private static JobFields JobOf(string step, EnvelopeId? mandate = null) =>
@@ -589,17 +738,18 @@ public sealed class MandateCheckTests : IAsyncLifetime
         return path;
     }
 
-    private async Task<Model> SignedJobAsync(JobFields fields, DateTimeOffset created, CancellationToken ct)
+    private async Task<Model> SignedJobAsync(JobFields fields, DateTimeOffset created, CancellationToken ct, EnvelopeId? id = null)
     {
-        Model job = Model.CreateJob(new EnvelopeHeader(Acme, NextId(created), Central, HomeLaptop, created), fields, "Build the step.\n"u8.ToArray());
+        Model job = Model.CreateJob(new EnvelopeHeader(Acme, id ?? NextId(created), Central, HomeLaptop, created), fields, "Build the step.\n"u8.ToArray());
         return (await new EnvelopeSigner(_store).SignAsync(job, TestKeys.Acme1, ct)).Envelope!;
     }
 
     /// <summary>A signed job under the mandate dropped in home-laptop's jobs/, jobs/claimed/ or jobs/rejected/.</summary>
-    private async Task<Model> DropJobAsync(BusFolder folder, DateTimeOffset created, CancellationToken ct, string step = "slice 2", EnvelopeId? mandate = null, bool noMandate = false)
+    private async Task<Model> DropJobAsync(
+        BusFolder folder, DateTimeOffset created, CancellationToken ct, string step = "slice 2", EnvelopeId? mandate = null, bool noMandate = false, EnvelopeId? id = null, EnvelopeId? continueFrom = null)
     {
-        JobFields fields = JobOf(step, mandate);
-        Model job = await SignedJobAsync(noMandate ? fields with { Mandate = null } : fields, created, ct);
+        JobFields fields = JobOf(step, mandate) with { Continue = continueFrom };
+        Model job = await SignedJobAsync(noMandate ? fields with { Mandate = null } : fields, created, ct, id);
         string directory = folder switch
         {
             BusFolder.Claimed => BusPaths.Claimed(Acme, HomeLaptop),
@@ -620,12 +770,15 @@ public sealed class MandateCheckTests : IAsyncLifetime
         string body = "## REPORT\nsummary: ok\n",
         bool archived = false,
         EnvelopeId? mandate = null,
-        EnvelopeId? job = null)
+        EnvelopeId? job = null,
+        bool modelStarted = true,
+        int? numTurns = null)
     {
+        // Spec 59 Q5: a report of a run where the model started carries model and num_turns; a pre-model failure carries neither.
         EnvelopeId id = NextId(created);
         Model report = Model.CreateReport(
             new EnvelopeHeader(Acme, id, HomeLaptop, Central, created, EnvelopePriority.Normal, job ?? NextId(created.AddMinutes(-2))),
-            new ReportFields(status, reason, Mandate: mandate ?? MandateId, Step: step),
+            new ReportFields(status, reason, NumTurns: numTurns ?? (modelStarted ? 7 : null), Model: modelStarted ? "claude-test" : null, Mandate: mandate ?? MandateId, Step: step),
             Encoding.UTF8.GetBytes(body));
         string folder = archived ? BusPaths.Archive(Acme, created.Year, created.Month) : BusPaths.Reports(Acme, HomeLaptop);
         _checkout.Drop(BusPaths.EnvelopeFile(folder, id), await SignedAsync(report, ct));

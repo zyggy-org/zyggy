@@ -25,6 +25,8 @@ public sealed class MandateGrantTests : IAsyncLifetime
 
     private static readonly DateTimeOffset T = new(2026, 11, 16, 10, 0, 0, TimeSpan.Zero);
 
+    private static readonly string[] AskedForTheBranch = ["ls-remote --exit-code origin refs/heads/feature/12-booking-pool"];
+
     private readonly TempCheckout _checkout = new(Acme, Central);
 
     private readonly RecordingProcessRunner _processes = new();
@@ -223,10 +225,67 @@ public sealed class MandateGrantTests : IAsyncLifetime
     private BusInventory Inventory(MachineName me) =>
         new(Repository(me), _checkout.Root, new EnvelopeSigner(_store), _clock, new RecordingLogger<BusInventory>());
 
-    private MandateGranter Granter(MachineName me)
+    // Spec 59 AC-6: a branch the origin does not have is refused when Central holds a checkout of the project.
+    [Fact]
+    public async Task GrantAsync_BranchAbsentOnTheOriginOfALocalCheckout_RefusedBranches_NothingWritten()
+    {
+        // Arrange
+        _processes.On("ls-remote", RecordingProcessRunner.Fail(2, ""));
+
+        // Act
+        AskDecideResult result = await Granter(Central, LocalCalizr).GrantAsync(HomeLaptop, Fields(), TestContext.Current.CancellationToken);
+
+        // Assert
+        new { Result = result, Commits = _processes.CallsOf("commit").Count() }.Should().BeEquivalentTo(new
+        {
+            Result = new AskDecideRefused("branches", "'feature/12-booking-pool' does not exist on the origin of calizr"),
+            Commits = 0,
+        });
+    }
+
+    // Spec 59 AC-6: the check asks the origin of the local checkout for exactly the branch.
+    [Fact]
+    public async Task GrantAsync_LocalCheckout_AsksItsOriginForTheBranch_AndPublishesWhenPresent()
+    {
+        // Arrange
+        _processes.On("ls-remote", RecordingProcessRunner.Ok("abc\trefs/heads/feature/12-booking-pool\n"));
+
+        // Act
+        AskDecideResult result = await Granter(Central, LocalCalizr).GrantAsync(HomeLaptop, Fields(), TestContext.Current.CancellationToken);
+
+        // Assert
+        new { Published = result is AskDecidePublished, Asked = _processes.CallsOf("ls-remote").Select(c => string.Join(' ', c.Arguments)).ToList() }
+            .Should().BeEquivalentTo(new { Published = true, Asked = AskedForTheBranch });
+    }
+
+    // Spec 59 AC-6 (Q5): Central without the project sends; the node's report is the safety net.
+    [Fact]
+    public async Task GrantAsync_NoLocalCheckout_NoOriginAsked_Published()
+    {
+        // Arrange
+        _processes.On("ls-remote", RecordingProcessRunner.Fail(2, ""));
+
+        // Act
+        AskDecideResult result = await Granter(Central, _ => null).GrantAsync(HomeLaptop, Fields(), TestContext.Current.CancellationToken);
+
+        // Assert
+        new { Published = result is AskDecidePublished, Asked = _processes.CallsOf("ls-remote").Count() }.Should().BeEquivalentTo(new { Published = true, Asked = 0 });
+    }
+
+    private string? LocalCalizr(string project) => project == "calizr" ? Path.Combine(_checkout.Root, "calizr") : null;
+
+    private MandateGranter Granter(MachineName me, Func<string, string?>? localProject = null)
     {
         BusRepository bus = Repository(me);
         var signer = new EnvelopeSigner(_store);
-        return new MandateGranter(bus, new BusInventory(bus, _checkout.Root, signer, _clock, new RecordingLogger<BusInventory>()), signer, TestKeys.Acme1, _clock, new RecordingLogger<MandateGranter>());
+        var git = new GitClient(_processes, new GitClientOptions { Identity = new GitIdentity("zyggy (" + me.Value + ")", me.Value + "@zyggy.org") }, _clock);
+        return new MandateGranter(
+            bus,
+            new BusInventory(bus, _checkout.Root, signer, _clock, new RecordingLogger<BusInventory>()),
+            signer,
+            TestKeys.Acme1,
+            _clock,
+            new RecordingLogger<MandateGranter>(),
+            localProject is null ? null : new OriginBranchCheck(git, (name, _) => localProject(name)));
     }
 }

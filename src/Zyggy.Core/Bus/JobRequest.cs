@@ -58,6 +58,24 @@ public sealed partial record JobRequest(
     /// <summary>Gets how the job reaches its machine (deliverable 18); <see cref="JobDelivery.Run"/> by default.</summary>
     public JobDelivery Deliver { get; init; }
 
+    /// <summary>Gets what the node runs (spec 59, job field <c>kind</c>); <see cref="JobKind.Model"/> by default. Set by <see cref="TryWithFetch"/>.</summary>
+    public JobKind Kind { get; init; }
+
+    /// <summary>Gets the repository-relative file a <see cref="JobKind.Fetch"/> job reads (spec 59, job field <c>fetch_path</c>).</summary>
+    public string? FetchPath { get; init; }
+
+    /// <summary>Gets the branch a fetch reads as <c>origin/&lt;ref&gt;</c> (spec 59, job field <c>fetch_ref</c>); <see langword="null"/> for the default branch.</summary>
+    public string? FetchRef { get; init; }
+
+    /// <summary>Gets the name a <see cref="JobKind.Command"/> job runs (spec 59 slice 2, job field <c>command</c>). Set by <see cref="TryWithCommand"/>.</summary>
+    public string? Command { get; init; }
+
+    /// <summary>Gets the run's own turn limit (spec 59 slice 6, job field <c>max_turns</c>); <see langword="null"/> runs with the node's. Set by <see cref="TryWithContinue"/>.</summary>
+    public int? MaxTurns { get; init; }
+
+    /// <summary>Gets the earlier job whose branch <c>zyggy/&lt;id&gt;</c> the run starts from (spec 59 slice 6, job field <c>continue</c>); only with <see cref="Worktree"/>.</summary>
+    public EnvelopeId? Continue { get; init; }
+
     /// <summary>The body cap in UTF-8 bytes (a sanity check against a pasted document, not a protocol rule).</summary>
     public const int MaxBodyBytes = 65_536;
 
@@ -208,6 +226,107 @@ public sealed partial record JobRequest(
         }
 
         named = this with { Worktree = worktree, Branch = branch, Description = description };
+        return null;
+    }
+
+    /// <summary>
+    /// Checks the <c>--continue</c> and <c>--max-turns</c> options of <c>zyggy submit</c> (spec 59 slice 6, AC-9) before anything is
+    /// signed: <paramref name="continueId"/> needs <see cref="Worktree"/> (set first, by <see cref="TryWithBranch"/>) and is a job id;
+    /// <paramref name="maxTurns"/> is at least 1. The node's ceiling is the node's check: a higher value is lowered there and reported.
+    /// </summary>
+    /// <param name="continueId">The <c>--continue</c> value, or <see langword="null"/>.</param>
+    /// <param name="maxTurns">The <c>--max-turns</c> value, or <see langword="null"/>.</param>
+    /// <param name="continued">This request with both values set, when every check passes.</param>
+    /// <returns>The first refusal (field <c>continue</c> or <c>max_turns</c>), or <see langword="null"/>.</returns>
+    public JobRequestError? TryWithContinue(string? continueId, int? maxTurns, out JobRequest? continued)
+    {
+        continued = null;
+        EnvelopeId? earlier = null;
+        if (continueId is not null)
+        {
+            if (!Worktree)
+            {
+                return new JobRequestError("continue", "--continue requires --worktree");
+            }
+
+            if (!EnvelopeId.TryParse(continueId, out earlier))
+            {
+                return new JobRequestError("continue", "continue must be a job id (ULID)");
+            }
+        }
+
+        if (maxTurns is < 1)
+        {
+            return new JobRequestError("max_turns", "max_turns must be at least 1");
+        }
+
+        continued = this with { Continue = earlier, MaxTurns = maxTurns };
+        return null;
+    }
+
+    /// <summary>
+    /// Makes this request a <c>fetch</c> job (spec 59, <c>zyggy submit --fetch &lt;path&gt; [--ref &lt;branch&gt;]</c>): <paramref name="path"/> is a
+    /// repository-relative path with <c>/</c> separators, no <c>.</c> or <c>..</c> segment, at most 200 characters; <paramref name="reference"/>
+    /// a branch name. A fetch carries no worktree, branch or description. The node checks the path again (§6, <c>schema_unsupported</c>).
+    /// </summary>
+    /// <param name="path">The <c>--fetch</c> value.</param>
+    /// <param name="reference">The <c>--ref</c> value, or <see langword="null"/> for the project's default branch.</param>
+    /// <param name="fetch">This request as a fetch job, when both values pass.</param>
+    /// <returns>The first refusal (field <c>fetch_path</c>, <c>fetch_ref</c> or <c>worktree</c>), or <see langword="null"/>.</returns>
+    public JobRequestError? TryWithFetch(string path, string? reference, out JobRequest? fetch)
+    {
+        fetch = null;
+        if (!FetchPaths.IsSafe(path))
+        {
+            return new JobRequestError("fetch_path", "fetch_path must be a repository-relative path with / separators, without . or .. segments, at most 200 characters");
+        }
+
+        if (reference is not null && !FetchPaths.IsBranch(reference))
+        {
+            return new JobRequestError("fetch_ref", "fetch_ref must be a branch name");
+        }
+
+        if (Worktree || Branch is not null || Description is not null)
+        {
+            return new JobRequestError("worktree", "a fetch job runs no worktree, branch or description");
+        }
+
+        if (MaxTurns is not null || Continue is not null)
+        {
+            return new JobRequestError("max_turns", "a fetch job runs no model: no max_turns or continue");
+        }
+
+        fetch = this with { Kind = JobKind.Fetch, FetchPath = path, FetchRef = reference };
+        return null;
+    }
+
+    /// <summary>
+    /// Makes this request a <c>command</c> job (spec 59 slice 2, <c>zyggy submit --command &lt;name&gt;</c>): <paramref name="name"/> is a
+    /// name of <c>a-z</c>, <c>0-9</c> and <c>-</c>, looked up by the node in its own <c>node.json</c> <c>commands</c>; no envelope text
+    /// reaches the argv. A command job carries no worktree, branch or description.
+    /// </summary>
+    /// <param name="name">The <c>--command</c> value.</param>
+    /// <param name="command">This request as a command job, when the name passes.</param>
+    /// <returns>The first refusal (field <c>command</c> or <c>worktree</c>), or <see langword="null"/>.</returns>
+    public JobRequestError? TryWithCommand(string name, out JobRequest? command)
+    {
+        command = null;
+        if (!Envelope.JobCommands.IsName(name))
+        {
+            return new JobRequestError("command", "command must be a name of a-z, 0-9 and -");
+        }
+
+        if (Worktree || Branch is not null || Description is not null)
+        {
+            return new JobRequestError("worktree", "a command job runs no worktree, branch or description");
+        }
+
+        if (MaxTurns is not null || Continue is not null)
+        {
+            return new JobRequestError("max_turns", "a command job runs no model: no max_turns or continue");
+        }
+
+        command = this with { Kind = JobKind.Command, Command = name };
         return null;
     }
 

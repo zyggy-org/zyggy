@@ -169,6 +169,26 @@ public static class BusPaths
         return folder + "/" + id.Value + EnvelopeExtension;
     }
 
+    /// <summary>The file attached to a report (spec 59, Q2): <c>&lt;folder&gt;/&lt;ULID&gt;.att</c> beside the report's own file.</summary>
+    /// <param name="report">The report's file: its path as returned by <see cref="EnvelopeFile"/> and its id.</param>
+    /// <returns>The repository-relative path of the attachment.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="report"/> is null.</exception>
+    /// <exception cref="ArgumentException">Thrown when the report's path is not the envelope file of its id.</exception>
+    public static string AttachmentFile(BusFile report)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        string fileName = "/" + report.Id.Value + EnvelopeExtension;
+        if (!report.RelativePath.EndsWith(fileName, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("An attachment sits beside the envelope file of its report.", nameof(report));
+        }
+
+        return report.RelativePath[..^EnvelopeExtension.Length] + AttachmentExtension;
+    }
+
+    /// <summary>The extension of a report's attached file (spec 59).</summary>
+    public const string AttachmentExtension = ".att";
+
     /// <summary>Joins a repository-relative path onto a checkout directory using the OS separator.</summary>
     /// <param name="checkoutRoot">The local checkout's root directory.</param>
     /// <param name="relative">A path returned by this class.</param>

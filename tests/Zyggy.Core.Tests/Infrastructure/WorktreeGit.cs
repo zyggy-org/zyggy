@@ -119,7 +119,10 @@ internal sealed class WorktreeGit
 
                 if (reference == "refs/remotes/origin/feature/shop")
                 {
-                    return OriginFeatureExists ? RecordingProcessRunner.Ok(FeatureSha + "\n") : RecordingProcessRunner.Fail(1, "");
+                    // Without -q git names the missing revision on stderr (spec 59 AC-6); with -q it is silent.
+                    return OriginFeatureExists
+                        ? RecordingProcessRunner.Ok(FeatureSha + "\n")
+                        : RecordingProcessRunner.Fail(128, Has(spec, "-q") ? "" : "fatal: Needed a single revision\n");
                 }
 
                 if (reference == "refs/remotes/origin/" + OriginHeadBranch)

@@ -219,7 +219,8 @@ internal sealed class GitClient(IProcessRunner processes, GitClientOptions optio
         RunAsync(repository, ["branch", "-D", branch], null, cancellationToken);
 
     public Task<GitResult> FetchAsync(string repository, CancellationToken cancellationToken) =>
-        RunAsync(repository, ["fetch", "origin"], null, cancellationToken);
+        // Spec 59 slice 3 repair: prune, so a branch deleted on the origin cannot still resolve from a stale remote-tracking ref.
+        RunAsync(repository, ["fetch", "--prune", "origin"], null, cancellationToken);
 
     public Task<GitResult> RebaseAsync(string repository, string branch, CancellationToken cancellationToken) =>
         RunAsync(repository, ["-c", "rebase.autoStash=true", "rebase", "origin/" + branch], null, cancellationToken);
@@ -319,7 +320,19 @@ internal sealed class GitClient(IProcessRunner processes, GitClientOptions optio
             ? ["-c", "user.name=" + identity.Name, "-c", "user.email=" + identity.Email]
             : [];
 
-    private async Task<GitResult> RunOnceAsync(string repository, IReadOnlyList<string> arguments, string? standardInput, IReadOnlyDictionary<string, string?>? extra, CancellationToken cancellationToken)
+    /// <summary>The size in bytes of the blob <c>&lt;revision&gt;:&lt;path&gt;</c> (<c>cat-file -s</c>; spec 59 fetch), and git's result.</summary>
+    public async Task<(long? Size, GitResult Result)> BlobSizeAsync(string repository, string revision, string path, CancellationToken cancellationToken)
+    {
+        var result = await RunAsync(repository, ["cat-file", "-s", revision + ":" + path], null, cancellationToken).ConfigureAwait(false);
+        return (result.Succeeded && long.TryParse(result.Stdout.Trim(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var size) ? size : null, result);
+    }
+
+    /// <summary>Writes the blob <c>&lt;revision&gt;:&lt;path&gt;</c> byte for byte to <paramref name="destination"/> (<c>cat-file blob</c>; spec 59 fetch).</summary>
+    public Task<GitResult> ReadBlobToFileAsync(string repository, string revision, string path, string destination, CancellationToken cancellationToken) =>
+        RunOnceAsync(repository, ["cat-file", "blob", revision + ":" + path], null, null, cancellationToken, destination);
+
+    private async Task<GitResult> RunOnceAsync(
+        string repository, IReadOnlyList<string> arguments, string? standardInput, IReadOnlyDictionary<string, string?>? extra, CancellationToken cancellationToken, string? standardOutputPath = null)
     {
         var environment = new Dictionary<string, string?>(options.Environment);
         foreach (var entry in extra ?? ReadOnlyDictionary<string, string?>.Empty)
@@ -333,6 +346,7 @@ internal sealed class GitClient(IProcessRunner processes, GitClientOptions optio
             Environment = environment,
             StandardInput = standardInput,
             Timeout = options.Timeout,
+            StandardOutputPath = standardOutputPath,
         };
         var result = await processes.RunAsync(spec, cancellationToken).ConfigureAwait(false);
         return new GitResult(result.StartFailed || result.TimedOut ? null : result.ExitCode, result.Stdout, result.Stderr);

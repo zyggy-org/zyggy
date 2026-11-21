@@ -10,7 +10,8 @@ namespace Zyggy.Core.Registry;
 
 /// <summary>
 /// Publishes this machine's registry file (founding spec §4 "Registry file" as amended by A14-1): reads the bus copy, commits only when
-/// the content differs or <c>last_seen</c> is older than <see cref="DiscoveryOptions.LastSeenHours"/> (a future stamp counts as fresh, an
+/// the content differs or <c>last_seen</c> is older than half of <see cref="DiscoveryOptions.LastSeenHours"/> (spec 59 slice 7: a healthy
+/// machine is refreshed before a reader calls it stale; a future stamp counts as fresh, an
 /// unreadable copy as absent), and refreshes <c>last_seen</c> and <c>health</c> on every commit. Logs once per state change, never content.
 /// Holds only its own streak flags; one instance per host.
 /// </summary>
@@ -53,7 +54,8 @@ public sealed partial class RegistryPublisher
 
         RegistryDocument? copy = await ReadCopyAsync(ct).ConfigureAwait(false);
         DateTimeOffset now = _clock.GetUtcNow();
-        bool fresh = copy?.LastSeen is { } seen && (seen > now || now - seen < TimeSpan.FromHours(_options.LastSeenHours));
+        // Spec 59 slice 7: refresh at half the stale threshold, so a healthy machine never crosses it between two cycles.
+        bool fresh = copy?.LastSeen is { } seen && (seen > now || now - seen < TimeSpan.FromHours(_options.LastSeenHours) / 2);
         if (copy is not null && fresh && copy.ContentEquals(content))
         {
             LogUnchanged(_log);

@@ -122,6 +122,18 @@ public sealed partial class JobRunner
             return Reply(ReportStatus.Rejected, reason, $"{reason}: {rejected.Check}\n", started);
         }
 
+        // Spec 59: a fetch job reads one file through git; no model, so no hook either.
+        if (fields.Kind == JobKind.Fetch)
+        {
+            return await FetchAsync(job, fields, ((PreFlightResult.Ok)preFlight).ProjectPath, policy.FetchMaxBytes, started, ct).ConfigureAwait(false);
+        }
+
+        // Spec 59 slice 2: a command job runs one allow-listed argv of this node's own node.json; no model, so no hook either.
+        if (fields.Kind == JobKind.Command)
+        {
+            return await CommandAsync(job, fields, ((PreFlightResult.Ok)preFlight).ProjectPath, policy, started, ct).ConfigureAwait(false);
+        }
+
         // Spec 15: a hook that cannot start lets every tool call through (Claude Code treats it as a non-blocking error), so a job
         // whose hook binary is missing, or does not refuse an empty call, never starts — checked before the lock and the worktree, so
         // nothing is left behind.
@@ -152,7 +164,7 @@ public sealed partial class JobRunner
         if (fields.Worktree)
         {
             runDirectory = TranscriptPaths.WorktreeFor(nodeDir, job.Header.Tenant, job.Header.Id);
-            var prepared = await worktrees.PrepareAsync(project, runDirectory, id, fields.Base, NamedBranchOf(job, fields), ct).ConfigureAwait(false);
+            var prepared = await worktrees.PrepareAsync(project, runDirectory, id, fields.Base, NamedBranchOf(job, fields), fields.Continue?.Value, ct).ConfigureAwait(false);
             if (prepared.FetchFailed)
             {
                 LogFetchFailed(id);
@@ -170,7 +182,8 @@ public sealed partial class JobRunner
             {
                 var gitError = RunFailureReasonWire.ToWire(RunFailureReason.GitError);
                 LogWorktreeFailed(id, failed.Step);
-                return Reply(ReportStatus.Failed, gitError, $"{gitError}: {failed.Step}\n", started);
+                var detail = failed.Detail is null ? string.Empty : ": " + failed.Detail;
+                return Reply(ReportStatus.Failed, gitError, $"{gitError}: {failed.Step}{detail}\n", started);
             }
 
             baseSha = ((PrepareResult.Prepared)prepared).BaseSha;
@@ -193,9 +206,13 @@ public sealed partial class JobRunner
         // Spec 06 "ModelRunRequest for a job": no tool set, extra directory, schema, model or system prompt; the project's own
         // hooks, skills, MCP servers and memory apply (Isolation.None, ex-Q7).
         var timeout = _options.TimeoutOverride ?? TimeSpan.FromMinutes(minutes);
+
+        // Spec 59 slice 6 (AC-9): the job's own turn limit, never above the node's; a lowered value is said in the report body.
+        var maxTurns = Math.Min(fields.MaxTurns ?? policy.MaxTurns, policy.MaxTurns);
+        var loweredLine = fields.MaxTurns > policy.MaxTurns ? string.Create(CultureInfo.InvariantCulture, $"max_turns lowered to {maxTurns}") : null;
         var request = new ModelRunRequest(_prompt.Render(job, runDirectory, allowedTools), runDirectory, timeout)
         {
-            MaxTurns = policy.MaxTurns,
+            MaxTurns = maxTurns,
             AllowedTools = allowedTools,
             MaxBudgetUsd = policy.MaxBudgetUsd,
             Isolation = ModelSessionIsolation.None,
@@ -225,8 +242,9 @@ public sealed partial class JobRunner
             behindLine = outcome.BehindLine;
         }
 
-        // Spec 53 Report body lines: after the branch lines, "description: <text>" when the job has one, then the "behind" line.
-        string[] trailing = [.. new[] { description is null ? null : "description: " + description, behindLine }.OfType<string>()];
+        // Spec 53 Report body lines: after the branch lines, "description: <text>" when the job has one, then the "behind" line; spec 59
+        // slice 6 adds "max_turns lowered to <n>" last.
+        string[] trailing = [.. new[] { description is null ? null : "description: " + description, behindLine, loweredLine }.OfType<string>()];
         if (trailing.Length > 0)
         {
             reply = reply with { Body = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(reply.Body.Span) + string.Join('\n', trailing) + "\n") };
@@ -237,6 +255,155 @@ public sealed partial class JobRunner
         LogFinished(id, reply, result);
         return reply;
     }
+
+    // Spec 59 Failure modes: the path's shape first (schema_unsupported: fetch_path), then fetch origin, the blob's size against
+    // jobs.fetchMaxBytes (schema_unsupported: too large), then its bytes; git's first error line on a missing file (git_error: fetch).
+    private async Task<JobReply> FetchAsync(Envelope.Envelope job, JobFields fields, string project, int maxBytes, DateTimeOffset started, CancellationToken ct)
+    {
+        var id = job.Header.Id.Value;
+        var schema = RunFailureReasonWire.ToWire(RunFailureReason.SchemaUnsupported);
+        var gitError = RunFailureReasonWire.ToWire(RunFailureReason.GitError);
+        var path = fields.FetchPath;
+        if (!FetchPaths.IsSafe(path))
+        {
+            LogRejected(id, schema, "fetch_path");
+            return Reply(ReportStatus.Rejected, schema, $"{schema}: fetch_path\n", started);
+        }
+
+        using var projectLock = ProjectLock.TryAcquire(project, job.Header.Id, ProjectLock.CurrentProcessId, _clock.GetUtcNow());
+        if (projectLock is null)
+        {
+            var lockPath = ProjectLock.PathOf(project);
+            LogLocked(id, lockPath);
+            return Reply(ReportStatus.Failed, RunFailureReasonWire.ToWire(RunFailureReason.Locked), $"locked: {lockPath}\n", started);
+        }
+
+        var branch = fields.FetchRef
+            ?? _registry.Current?.Projects.FirstOrDefault(p => string.Equals(p.Name, fields.Project, StringComparison.Ordinal))?.DefaultBranch
+            ?? await _git.DefaultBranchAsync(project, ct).ConfigureAwait(false)
+            ?? "main";
+        var revision = "origin/" + branch;
+        if (!(await _git.FetchAsync(project, ct).ConfigureAwait(false)).Succeeded)
+        {
+            LogFetchFailed(id);
+        }
+
+        var (size, sizeResult) = await _git.BlobSizeAsync(project, revision, path!, ct).ConfigureAwait(false);
+        if (size is null)
+        {
+            var line = FirstLine(sizeResult.Stderr) ?? "cat-file failed";
+            LogWorktreeFailed(id, "fetch");
+            return Reply(ReportStatus.Failed, gitError, $"{gitError}: fetch: {line}\n", started);
+        }
+
+        if (size > maxBytes)
+        {
+            LogRejected(id, schema, "too large");
+            return Reply(ReportStatus.Rejected, schema, $"{schema}: too large\n", started);
+        }
+
+        var temporary = Path.Combine(Path.GetTempPath(), "zyggy-fetch-" + id + ".bin");
+        byte[] bytes;
+        try
+        {
+            var read = await _git.ReadBlobToFileAsync(project, revision, path!, temporary, ct).ConfigureAwait(false);
+            if (!read.Succeeded)
+            {
+                LogWorktreeFailed(id, "fetch");
+                return Reply(ReportStatus.Failed, gitError, $"{gitError}: fetch: {FirstLine(read.Stderr) ?? "cat-file failed"}\n", started);
+            }
+
+            bytes = await File.ReadAllBytesAsync(temporary, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            File.Delete(temporary);
+        }
+
+        var text = Encoding.UTF8.GetString(bytes).Replace("\r\n", "\n", StringComparison.Ordinal);
+        var summary = ReportSummary.Truncate(text);
+        var body = $"fetched {path} at {revision} ({bytes.Length.ToString(CultureInfo.InvariantCulture)} bytes)\n\n{summary}{(summary.EndsWith('\n') ? string.Empty : "\n")}";
+        var name = Path.GetFileName(path!);
+        LogFetched(id, path!, revision, bytes.Length);
+        return Reply(ReportStatus.Done, null, body, started) with { Attachment = new ReportAttachment(name, bytes) };
+    }
+
+    // Spec 59 slice 2 Failure modes: a name this node's node.json does not list is schema_unsupported before any process starts; the
+    // argv is the entry's, never text of the envelope, run in the project folder without a shell; exit 0 is done, a non-zero exit
+    // command_failed with the exit code and the output's tail in the body; the full output (capped at jobs.fetchMaxBytes) attached.
+    private async Task<JobReply> CommandAsync(Envelope.Envelope job, JobFields fields, string project, NodePolicy policy, DateTimeOffset started, CancellationToken ct)
+    {
+        var id = job.Header.Id.Value;
+        var name = fields.Command ?? string.Empty;
+        if (!policy.Commands.TryGetValue(name, out NodeCommand? entry) || entry.Argv.Count == 0)
+        {
+            var schema = RunFailureReasonWire.ToWire(RunFailureReason.SchemaUnsupported);
+            LogRejected(id, schema, "unknown command");
+            return Reply(ReportStatus.Rejected, schema, $"{schema}: unknown command {name}\n", started);
+        }
+
+        using var projectLock = ProjectLock.TryAcquire(project, job.Header.Id, ProjectLock.CurrentProcessId, _clock.GetUtcNow());
+        if (projectLock is null)
+        {
+            var lockPath = ProjectLock.PathOf(project);
+            LogLocked(id, lockPath);
+            return Reply(ReportStatus.Failed, RunFailureReasonWire.ToWire(RunFailureReason.Locked), $"locked: {lockPath}\n", started);
+        }
+
+        var minutes = entry.TimeoutMinutes ?? Math.Min(policy.DefaultTimeoutMinutes, 30);
+        var spec = new ProcessSpec(entry.Argv[0], [.. entry.Argv.Skip(1)], project) { Timeout = TimeSpan.FromMinutes(minutes) };
+        LogCommandStarted(id, name, minutes);
+        // IProcessRunner never throws for a program that cannot start; it returns StartFailed (decided by Central on 2026-11-21).
+        var result = await _processes.RunAsync(spec, ct).ConfigureAwait(false);
+        if (result.StartFailed)
+        {
+            var failed = RunFailureReasonWire.ToWire(RunFailureReason.CommandFailed);
+            var error = result.Stderr.Trim();
+            var why = error.Length > 0 ? error : $"program {entry.Argv[0]} not found or not executable";
+            LogCommandFinished(id, name, "not started");
+            return Reply(ReportStatus.Failed, failed, $"{failed}: command {name} did not start: {why}\n", started);
+        }
+
+        var output = (result.Stdout + result.Stderr).Replace("\r\n", "\n", StringComparison.Ordinal);
+        var bytes = Encoding.UTF8.GetBytes(output);
+        if (bytes.Length > policy.FetchMaxBytes)
+        {
+            bytes = bytes[..policy.FetchMaxBytes];
+        }
+
+        var tail = output.Length > ReportSummary.MaxCharacters ? "…" + output[^ReportSummary.MaxCharacters..] : output;
+        var text = tail.Length == 0 || tail.EndsWith('\n') ? tail : tail + "\n";
+        var attachment = new ReportAttachment("output.txt", bytes);
+        if (result.TimedOut)
+        {
+            var timeout = RunFailureReasonWire.ToWire(RunFailureReason.Timeout);
+            LogCommandFinished(id, name, timeout);
+            return Reply(ReportStatus.Timeout, timeout, $"timeout after {minutes} min: command {name}\n\n{text}", started) with { Attachment = attachment };
+        }
+
+        var code = result.ExitCode?.ToString(CultureInfo.InvariantCulture) ?? "unknown";
+        if (result.ExitCode != 0)
+        {
+            var failed = RunFailureReasonWire.ToWire(RunFailureReason.CommandFailed);
+            LogCommandFinished(id, name, "exit " + code);
+            return Reply(ReportStatus.Failed, failed, $"{failed}: command {name} exited {code}\n\n{text}", started) with { Attachment = attachment };
+        }
+
+        LogCommandFinished(id, name, "exit 0");
+        return Reply(ReportStatus.Done, null, $"command {name} exited 0\n\n{text}", started) with { Attachment = attachment };
+    }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "job {Id}: command {Name} started (timeout {Minutes} min)")]
+    private partial void LogCommandStarted(string id, string name, int minutes);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "job {Id}: command {Name} finished: {Outcome}")]
+    private partial void LogCommandFinished(string id, string name, string outcome);
+
+    private static string? FirstLine(string text) =>
+        text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "job {Id}: fetched {Path} at {Revision} ({Bytes} bytes)")]
+    private partial void LogFetched(string id, string path, string revision, int bytes);
 
     // Spec 53 Prepare steps 0–1: the job's branch, whether it also carries spec 18's base or mandate (read as front-matter keys, so the
     // rule holds before and after spec 18's parser knows them), and its project's default_branch in this node's own registry snapshot
@@ -371,8 +538,12 @@ public sealed partial class JobRunner
             reply = Reply(ReportStatus.Failed, RunFailureReasonWire.ToWire(RunFailureReason.ClaudeError), $"claude_error: {result.FailureDetail ?? "unknown"}\n\n{summary}\n", started);
         }
 
+        // Spec 59 (AC-3): a REPORT longer than the summary travels whole as report.md.
+        var whole = ReportSummary.ExtractWhole(result);
+        var attachment = whole.Length > ReportSummary.MaxCharacters ? new ReportAttachment("report.md", Encoding.UTF8.GetBytes(whole)) : null;
         return reply with
         {
+            Attachment = attachment,
             CostUsd = result.CostUsd,
             NumTurns = result.NumTurns,
             Model = result.Model,

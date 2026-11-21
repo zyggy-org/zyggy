@@ -73,6 +73,25 @@ public sealed class RegistryDocumentNamesScanTests : IDisposable
         file.Should().Contain("path:").And.Contain(ScanTree.Published(portal));
     }
 
+    // Spec 59 slice 2 regression: the capabilities a scan builds equal those parsed back from the published file, so an unchanged
+    // scan is not republished (the file sorts them; the scan once built them as fetch, command).
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void FromScan_SerializedAndParsedBack_ContentEquals(bool supervision)
+    {
+        // Arrange
+        NodeConfiguration configuration = Configuration() with { Supervision = new SupervisionSettings(Enabled: supervision) };
+        RegistryDocument built = RegistryDocument.FromScan(configuration, new ScanResult([], [], TimeSpan.Zero, DiscoveryDetail.Full), T, health: null);
+        RegistryDocument parsed = RegistryDocument.Parse(built.Serialize()).Document!;
+
+        // Act
+        bool equal = built.ContentEquals(parsed);
+
+        // Assert
+        equal.Should().BeTrue();
+    }
+
     private Task<ScanResult> ScanAsync(string root, DiscoveryDetail detail) =>
         new DiscoveryScanner(new GitClient(_processes, new GitClientOptions(), _clock), DiscoveryScannerTests.Patterns, new DiscoveryOptions(), _clock, _log, null)
             .ScanAsync([root], detail, TestContext.Current.CancellationToken);

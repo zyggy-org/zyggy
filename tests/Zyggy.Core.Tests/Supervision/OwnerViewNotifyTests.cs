@@ -163,7 +163,7 @@ public sealed class OwnerViewNotifyTests : IDisposable
         {
             new DecisionRecord(EnvelopeId.New(Start.AddMinutes(-40)), HomeLaptop, Start.AddMinutes(-40), report, new DecisionFields(DecisionKind.Escalate, DecisionBasis.Reported, "none", Project: "calizr", Step: "slice 1"), Marker, false),
         };
-        var ledger = new MandateLedger(EnvelopeId.New(Start.AddDays(-1)), null, false, false, [], [new MandateReportEntry(report, EnvelopeId.New(Start.AddMinutes(-55)), Start.AddMinutes(-50), ReportStatus.Failed, Marker, Marker, false)], null);
+        var ledger = new MandateLedger(EnvelopeId.New(Start.AddDays(-1)), null, false, false, [], [new MandateReportEntry(report, EnvelopeId.New(Start.AddMinutes(-55)), Start.AddMinutes(-50), ReportStatus.Failed, Marker, Marker, false, ModelStarted: true)], null);
         IReadOnlyList<OwnerItem> items = OwnerView.Items(decisions, [ledger], new HashSet<EnvelopeId> { report }, _ => false);
 
         // Act

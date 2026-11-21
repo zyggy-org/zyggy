@@ -38,6 +38,12 @@ public sealed class DiscoveryOptions
     /// <summary>Gets or sets the scan duration above which a <see cref="ScanNoticeKind.SlowScan"/> is noticed.</summary>
     public TimeSpan SlowScanThreshold { get; set; } = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// Gets or sets the <c>version</c> the published registry file carries (spec 59 slice 7): the running <c>zyggy</c>'s informational
+    /// version, filled by <c>AddDiscovery</c>; <see langword="null"/> omits the key.
+    /// </summary>
+    public string? Version { get; set; }
+
     /// <summary>Gets or sets an interval that replaces <see cref="IntervalMinutes"/>. Tests only; production leaves it <see langword="null"/>.</summary>
     public TimeSpan? IntervalOverride { get; set; }
 

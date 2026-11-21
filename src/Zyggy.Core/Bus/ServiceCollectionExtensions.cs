@@ -363,7 +363,8 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<EnvelopeSigner>(),
                 sp.GetRequiredService<KeyId>(),
                 sp.GetRequiredService<TimeProvider>(),
-                log);
+                log,
+                OriginBranchCheckOf(sp));
         });
         services.TryAddSingleton(sp =>
         {
@@ -374,7 +375,8 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<JobSubmitter>(),
                 sp.GetRequiredService<NodeConfiguration>().Supervision.WorkMachines,
                 sp.GetRequiredService<TimeProvider>(),
-                log);
+                log,
+                OriginBranchCheckOf(sp));
         });
         // Deliverable 41: the item sender. Resolving without a KeyId, the secret patterns or ItemSubmitterOptions throws (the verb registers them first — fail closed).
         services.TryAddSingleton(sp =>
@@ -455,6 +457,24 @@ public static class ServiceCollectionExtensions
     private static TimeSpan? SweepInterval(IServiceProvider sp) =>
         sp.GetService<IOptions<SweepScheduleOptions>>()?.Value.IntervalOverride
         ?? (sp.GetService<NodeConfiguration>() is { } node ? TimeSpan.FromMinutes(node.Sweep.IntervalMinutes) : null);
+
+    /// <summary>
+    /// Spec 59 slice 3 (Q5): the sender's base check, which looks a project up in this machine's own scan of its <c>devRoots</c> (never
+    /// the bus registry) and asks that checkout's origin with a git client of its own (the user's credentials, not the bus's).
+    /// <see langword="null"/> when the host registers no discovery scanner.
+    /// </summary>
+    private static OriginBranchCheck? OriginBranchCheckOf(IServiceProvider sp)
+    {
+        if (sp.GetService<DiscoveryScanner>() is not { } scanner || sp.GetService<NodeConfiguration>() is not { } node)
+        {
+            return null;
+        }
+
+        var git = new GitClient(sp.GetRequiredService<IProcessRunner>(), new GitClientOptions(), sp.GetRequiredService<TimeProvider>());
+        return new OriginBranchCheck(
+            git,
+            (name, ct) => scanner.FindProjects(node.DevRoots, ct).FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.Ordinal))?.Path);
+    }
 
     private static InvalidOperationException Missing(string option) =>
         new($"GitHubBusOptions.{option} is not set: the bus has no default remote, identity or checkout (configure it from node.json).");

@@ -21,6 +21,12 @@ public sealed partial class JobSubmitter
 
         // Deliverable 18: the job fields of a job under a mandate.
         "mandate", "step", "base", "deliver",
+
+        // Spec 59: the kind of a model-free job and its fields.
+        "kind", "fetch_path", "fetch_ref", "command",
+
+        // Spec 59 slice 6: a model job's own turn limit and the job it continues.
+        "max_turns", "continue",
     ];
 
     private readonly BusRepository _bus;
@@ -77,7 +83,13 @@ public sealed partial class JobSubmitter
             request.Mandate,
             request.Step,
             request.Base,
-            request.Deliver);
+            request.Deliver,
+            request.Kind,
+            request.FetchPath,
+            request.FetchRef,
+            request.Command,
+            request.MaxTurns,
+            request.Continue);
         Model job;
         try
         {
@@ -122,6 +134,21 @@ public sealed partial class JobSubmitter
     public async Task<SubmitResult> SubmitAsync(JobRequest request, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        // Spec 59 (AC-5): an older node would run a fetch as a model job; send it only to a machine whose registry advertises it.
+        if (request.Kind == JobKind.Fetch && !await AdvertisesAsync(request.To, Registry.RegistryDocument.FetchCapability, ct).ConfigureAwait(false))
+        {
+            LogRefusing("kind");
+            return new SubmitRefused("kind", $"kind fetch: machine {request.To.Value} does not advertise the fetch capability in its registry file");
+        }
+
+        // Spec 59 slice 2 (AC-5): the same rule for a command job.
+        if (request.Kind == JobKind.Command && !await AdvertisesAsync(request.To, Registry.RegistryDocument.CommandCapability, ct).ConfigureAwait(false))
+        {
+            LogRefusing("kind");
+            return new SubmitRefused("kind", $"kind command: machine {request.To.Value} does not advertise the command capability in its registry file");
+        }
+
         BuildResult built;
         try
         {
@@ -273,12 +300,55 @@ public sealed partial class JobSubmitter
             return "deliver";
         }
 
+        if (j.Kind != request.Kind)
+        {
+            return "kind";
+        }
+
+        if (!string.Equals(j.FetchPath, request.FetchPath, StringComparison.Ordinal))
+        {
+            return "fetch_path";
+        }
+
+        if (!string.Equals(j.FetchRef, request.FetchRef, StringComparison.Ordinal))
+        {
+            return "fetch_ref";
+        }
+
+        if (!string.Equals(j.Command, request.Command, StringComparison.Ordinal))
+        {
+            return "command";
+        }
+
+        if (j.MaxTurns != request.MaxTurns)
+        {
+            return "max_turns";
+        }
+
+        if (j.Continue != request.Continue)
+        {
+            return "continue";
+        }
+
         if (!parsed.Body.Span.SequenceEqual(request.Body.Span))
         {
             return "body";
         }
 
         return parsed.FrontMatter.Entries.Keys.FirstOrDefault(k => !Section4Keys.Contains(k));
+    }
+
+    private async Task<bool> AdvertisesAsync(Tenancy.MachineName machine, string capability, CancellationToken ct)
+    {
+        string path = BusPaths.Resolve(_bus.CheckoutRoot, BusPaths.Registry(_bus.Me.Tenant, machine));
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+
+        Registry.RegistryParse parsed = Registry.RegistryDocument.Parse(await File.ReadAllBytesAsync(path, ct).ConfigureAwait(false));
+        return parsed.Document is { } document && document.Machine == machine && document.Tenant == _bus.Me.Tenant
+            && document.Capabilities.Contains(capability, StringComparer.Ordinal);
     }
 
     private static bool SameList(IReadOnlyList<string>? left, IReadOnlyList<string>? right) =>

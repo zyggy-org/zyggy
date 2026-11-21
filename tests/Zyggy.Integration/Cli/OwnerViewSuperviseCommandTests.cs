@@ -199,7 +199,7 @@ public sealed class OwnerViewSuperviseCommandTests : IAsyncLifetime
             _harness.Store,
             "claude_error: " + Marker + "\n",
             created: created,
-            fields: new ReportFields(ReportStatus.Failed, "claude_error", Mandate: EnvelopeId.Parse(mandate), Step: "slice 1"),
+            fields: new ReportFields(ReportStatus.Failed, "claude_error", NumTurns: 3, Model: "claude-test", Mandate: EnvelopeId.Parse(mandate), Step: "slice 1"), // spec 59: only a run where the model started counts toward the pause
             ct: ct);
 
     private async Task<IReadOnlyList<string>> FilesOnMainAsync(string folder, CancellationToken ct)

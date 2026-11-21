@@ -84,6 +84,12 @@ public enum MandateLimit
 
     /// <summary>The job has neither <c>worktree: true</c> nor <c>deliver: session</c>.</summary>
     Worktree,
+
+    /// <summary>
+    /// The job's <c>continue</c> names a job that did not run under this mandate and the same step (spec 59 slice 6 tightening,
+    /// Central 2026-11-21): a mandate job continues only a branch of its own mandate's step.
+    /// </summary>
+    Continue,
 }
 
 /// <summary>A job under a mandate that sits in a machine's <c>jobs/</c> or <c>jobs/claimed/</c>, or was reported.</summary>
@@ -100,7 +106,11 @@ public sealed record MandateJobEntry(EnvelopeId Id, DateTimeOffset Created, stri
 /// <param name="Reason">Its reason, when not <c>done</c>.</param>
 /// <param name="Step">The step copied from its job.</param>
 /// <param name="UsageLimit"><see langword="true"/> when it is a <c>failed</c> / <c>claude_error</c> report whose body starts with <c>claude_error: rate_limit</c>.</param>
-public sealed record MandateReportEntry(EnvelopeId Id, EnvelopeId Job, DateTimeOffset Created, ReportStatus Status, string? Reason, string? Step, bool UsageLimit);
+/// <param name="ModelStarted">
+/// <see langword="true"/> when the report carries <c>model</c> or <c>num_turns</c> (spec 59, Q5): the model ran. A report with neither
+/// is a failure before the model started (a missing base, a refused branch, an unknown project) and does not count toward the pause.
+/// </param>
+public sealed record MandateReportEntry(EnvelopeId Id, EnvelopeId Job, DateTimeOffset Created, ReportStatus Status, string? Reason, string? Step, bool UsageLimit, bool ModelStarted);
 
 /// <summary>
 /// Everything a bus checkout says about one mandate (deliverable 18): the file, the open jobs and the reports that carry its id, and
@@ -137,12 +147,16 @@ public sealed record MandateLedger(
             .OrderBy(j => j.Id.Value, StringComparer.Ordinal),
     ];
 
-    /// <summary>Gets a value indicating whether the three newest reports since the last resume all have a status other than <c>done</c>.</summary>
+    /// <summary>
+    /// Gets a value indicating whether the three newest reports of runs where the model started, since the last resume, all have a
+    /// status other than <c>done</c>. A report without <c>model</c> and <c>num_turns</c> (spec 59, Q5) is a failure before the model
+    /// started and does not count.
+    /// </summary>
     public bool Paused
     {
         get
         {
-            MandateReportEntry[] newest = [.. Reports.Where(r => Resumed is null || r.Created > Resumed).OrderByDescending(r => r.Id.Value, StringComparer.Ordinal).Take(PauseAfter)];
+            MandateReportEntry[] newest = [.. Reports.Where(r => r.ModelStarted && (Resumed is null || r.Created > Resumed)).OrderByDescending(r => r.Id.Value, StringComparer.Ordinal).Take(PauseAfter)];
             return newest.Length == PauseAfter && newest.All(r => r.Status != ReportStatus.Done);
         }
     }
@@ -170,6 +184,7 @@ public sealed record MandateLedger(
 /// <param name="Session"><see langword="true"/> for a task delivered into a live session.</param>
 /// <param name="TargetIsWorkMachine"><see langword="true"/> when the target is listed in <c>supervision.workMachines</c>.</param>
 /// <param name="TargetHasCapability"><see langword="true"/> when the target's registry file lists the capability <c>supervision</c>.</param>
+/// <param name="Continue">The earlier job whose branch the run starts from (spec 59 slice 6), when the job names one.</param>
 public sealed record MandateSubmit(
     MachineName To,
     string Project,
@@ -179,7 +194,8 @@ public sealed record MandateSubmit(
     string? Base = null,
     bool Session = false,
     bool TargetIsWorkMachine = false,
-    bool TargetHasCapability = true);
+    bool TargetHasCapability = true,
+    EnvelopeId? Continue = null);
 
 /// <summary>The answer of a mandate check: allowed, or refused naming one limit.</summary>
 /// <param name="Limit">The limit that refuses; <see langword="null"/> when allowed.</param>
@@ -227,6 +243,7 @@ public static class MandateRules
         MandateLimit.WorkMachine => "work_machine",
         MandateLimit.Capability => "capability",
         MandateLimit.Worktree => "worktree",
+        MandateLimit.Continue => "continue",
         _ => throw new ArgumentOutOfRangeException(nameof(limit)),
     };
 
@@ -247,7 +264,7 @@ public static class MandateRules
 
         Envelope.Envelope mandate = ledger.Mandate!;
         MandateFields fields = mandate.Mandate!;
-        if (Scope(mandate, submit.To, submit.Project, submit.Tools, submit.Base) is { } scope)
+        if (Scope(ledger, submit.To, submit.Project, submit.Tools, submit.Base, submit.Step, submit.Continue, self: null) is { } scope)
         {
             return scope;
         }
@@ -306,7 +323,7 @@ public static class MandateRules
             return standing;
         }
 
-        if (Scope(ledger.Mandate!, me, fields.Project, fields.AllowedTools ?? [], fields.Base) is { } scope)
+        if (Scope(ledger, me, fields.Project, fields.AllowedTools ?? [], fields.Base, fields.Step, fields.Continue, job.Header.Id) is { } scope)
         {
             return scope;
         }
@@ -335,8 +352,19 @@ public static class MandateRules
         _ => null,
     };
 
-    private static MandateVerdict? Scope(Envelope.Envelope mandate, MachineName machine, string project, IReadOnlyList<string> tools, string? baseBranch)
+    // The mandate's scope: machine, project, tools, base, and (spec 59 slice 6 tightening, Central 2026-11-21) the job a continue names,
+    // which must be a counted job of this mandate with the same step — never the job itself, another step's, another mandate's or none's.
+    private static MandateVerdict? Scope(
+        MandateLedger ledger,
+        MachineName machine,
+        string project,
+        IReadOnlyList<string> tools,
+        string? baseBranch,
+        string? step,
+        EnvelopeId? continueFrom,
+        EnvelopeId? self)
     {
+        Envelope.Envelope mandate = ledger.Mandate!;
         MandateFields fields = mandate.Mandate!;
         if (mandate.Header.To != machine)
         {
@@ -358,9 +386,15 @@ public static class MandateRules
             return Refused(MandateLimit.Tool, "'" + outside + "' is not in the mandate's allowed_tools");
         }
 
-        return baseBranch is null || fields.Branches.Contains(baseBranch, StringComparer.Ordinal)
+        if (baseBranch is not null && !fields.Branches.Contains(baseBranch, StringComparer.Ordinal))
+        {
+            return Refused(MandateLimit.Base, "'" + baseBranch + "' is not one of the mandate's branches");
+        }
+
+        return continueFrom is null
+            || (continueFrom != self && ledger.Counted.Any(j => j.Id == continueFrom && string.Equals(j.Step, step, StringComparison.Ordinal)))
             ? null
-            : Refused(MandateLimit.Base, "'" + baseBranch + "' is not one of the mandate's branches");
+            : Refused(MandateLimit.Continue, "continue: " + continueFrom.Value + " is not a job of this mandate's step '" + step + "'");
     }
 
     private static MandateGrant? GrantFor(MandateJobKind kind) => kind switch

@@ -20,9 +20,11 @@ public sealed partial class MandateGranter
     private readonly KeyId _signWith;
     private readonly TimeProvider _clock;
     private readonly ILogger<MandateGranter> _log;
+    private readonly OriginBranchCheck? _originCheck;
 
-    internal MandateGranter(BusRepository bus, BusInventory inventory, EnvelopeSigner signer, KeyId signWith, TimeProvider clock, ILogger<MandateGranter> log)
+    internal MandateGranter(BusRepository bus, BusInventory inventory, EnvelopeSigner signer, KeyId signWith, TimeProvider clock, ILogger<MandateGranter> log, OriginBranchCheck? originCheck = null)
     {
+        _originCheck = originCheck;
         _bus = bus ?? throw new ArgumentNullException(nameof(bus));
         _inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
         _signer = signer ?? throw new ArgumentNullException(nameof(signer));
@@ -45,6 +47,12 @@ public sealed partial class MandateGranter
         if (me.Machine != MachineName.Central)
         {
             return new AskDecideRefused("machine", "only central grants a mandate");
+        }
+
+        // Spec 59 slice 3 (AC-6, Q5): a branch the origin does not have is refused before anything is signed, when Central holds the project.
+        if (_originCheck is not null && await _originCheck.MissingAsync(fields.Project, fields.Branches, ct).ConfigureAwait(false) is { } missing)
+        {
+            return new AskDecideRefused("branches", missing);
         }
 
         DateTimeOffset now = _clock.GetUtcNow();
@@ -183,6 +191,8 @@ public sealed partial class MandateGranter
 /// <param name="Reference">The reference id the template names (<c>--ref</c>).</param>
 /// <param name="Base">The branch the job starts from and pushes back to.</param>
 /// <param name="Session"><see langword="true"/> for a task delivered into a live session.</param>
+/// <param name="Continue">The earlier job of the same step whose branch <c>zyggy/&lt;id&gt;</c> the run starts from (spec 59 slice 6, Q6): the same step name, a new job of the mandate.</param>
+/// <param name="MaxTurns">The run's own turn limit (spec 59 slice 6); <see langword="null"/> runs with the node's.</param>
 public sealed record MandateJobRequest(
     MachineName To,
     EnvelopeId Mandate,
@@ -190,7 +200,9 @@ public sealed record MandateJobRequest(
     string Step,
     EnvelopeId? Reference = null,
     string? Base = null,
-    bool Session = false);
+    bool Session = false,
+    EnvelopeId? Continue = null,
+    int? MaxTurns = null);
 
 /// <summary>What <see cref="MandateSubmission"/> did: refused with the limit named and nothing written, or the submit's own result.</summary>
 /// <param name="Verdict">The mandate check's verdict.</param>
@@ -216,9 +228,18 @@ public sealed partial class MandateSubmission
     private readonly IReadOnlyList<MachineName> _workMachines;
     private readonly TimeProvider _clock;
     private readonly ILogger<MandateSubmission> _log;
+    private readonly OriginBranchCheck? _originCheck;
 
-    internal MandateSubmission(BusRepository bus, BusInventory inventory, JobSubmitter submitter, IReadOnlyList<MachineName> workMachines, TimeProvider clock, ILogger<MandateSubmission> log)
+    internal MandateSubmission(
+        BusRepository bus,
+        BusInventory inventory,
+        JobSubmitter submitter,
+        IReadOnlyList<MachineName> workMachines,
+        TimeProvider clock,
+        ILogger<MandateSubmission> log,
+        OriginBranchCheck? originCheck = null)
     {
+        _originCheck = originCheck;
         _bus = bus ?? throw new ArgumentNullException(nameof(bus));
         _inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
         _submitter = submitter ?? throw new ArgumentNullException(nameof(submitter));
@@ -251,7 +272,8 @@ public sealed partial class MandateSubmission
             request.Base,
             request.Session,
             _workMachines.Contains(request.To),
-            capabilities.Contains(Registry.RegistryDocument.SupervisionCapability, StringComparer.Ordinal));
+            capabilities.Contains(Registry.RegistryDocument.SupervisionCapability, StringComparer.Ordinal),
+            request.Session ? null : request.Continue);
         MandateVerdict verdict = MandateRules.CheckSubmit(ledger, check, _clock.GetUtcNow());
         if (!verdict.Allowed)
         {
@@ -264,6 +286,15 @@ public sealed partial class MandateSubmission
             return new MandateSubmitOutcome(new MandateVerdict(MandateLimit.Project, detail), null);
         }
 
+        // Spec 59 slice 3 (AC-6, Q5): a base the origin does not have is refused before anything is signed, when Central holds the project.
+        if (request.Base is { } baseBranch && _originCheck is not null
+            && await _originCheck.MissingAsync(fields.Project, [baseBranch], ct).ConfigureAwait(false) is { } missing)
+        {
+            var refused = new MandateVerdict(MandateLimit.Base, missing);
+            LogRefused(request.Mandate.Value, MandateRules.ToWire(MandateLimit.Base), missing);
+            return new MandateSubmitOutcome(refused, null);
+        }
+
         string body = MandateJobTemplates.Render(request.Kind, fields.Spec, fields.SpecCommit, request.Step, request.Reference);
         var job = new JobRequest(request.To, project, null, request.Session ? SessionTimeoutMinutes : null, fields.AllowedTools, EnvelopePriority.Normal, Utf8.GetBytes(body))
         {
@@ -272,6 +303,10 @@ public sealed partial class MandateSubmission
             Step = request.Step,
             Base = request.Base,
             Deliver = request.Session ? JobDelivery.Session : JobDelivery.Run,
+
+            // Spec 59 slice 6 (Q6): a step may continue its earlier job's branch; the step cap counts it as one more job of that step.
+            Continue = request.Session ? null : request.Continue,
+            MaxTurns = request.MaxTurns,
         };
         return new MandateSubmitOutcome(verdict, await _submitter.SubmitAsync(job, ct).ConfigureAwait(false));
     }

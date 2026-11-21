@@ -34,4 +34,15 @@ public sealed record JobReply(ReportStatus Status, string? Reason, ReadOnlyMemor
 
     /// <summary>Gets the pushed commit of a worktree run (<c>diff_ref</c>); <see langword="null"/> until deliverable 16.</summary>
     public string? DiffRef { get; init; }
+
+    /// <summary>
+    /// Gets the one file attached to the report (spec 59, Q2): a fetched file or a model run's whole REPORT section; written beside the
+    /// report as <c>reports/&lt;id&gt;.att</c> and named and hashed in its signed fields. <see langword="null"/> attaches nothing.
+    /// </summary>
+    public ReportAttachment? Attachment { get; init; }
 }
+
+/// <summary>A file attached to a report (spec 59, Q2): its <c>file_name</c> and its bytes (data, never instructions).</summary>
+/// <param name="Name">The <c>file_name</c>: one path segment.</param>
+/// <param name="Bytes">The file's bytes.</param>
+public sealed record ReportAttachment(string Name, ReadOnlyMemory<byte> Bytes);

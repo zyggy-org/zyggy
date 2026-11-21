@@ -111,6 +111,26 @@ public sealed class JobHookReadRootTests : IDisposable
         { "Bash", "cat $(ls)", ReadOutside },
         { "PowerShell", "Get-Content '{other}/a.md'", ReadOutside },
         { "PowerShell", "Get-Content '{outbound}/people/anna.md'", Allowed },
+
+        // Spec 59 slice 8: a double-quoted path and a harmless redirect; the read root still holds (backslashes: the Fact below).
+        { "Bash", "cat \"{outbound}/people/anna.md\"", Allowed },
+        { "Bash", "cat \"{other}/a.md\"", ReadOutside },
+        { "Bash", "cat \"{outbound}/people/anna.md\" 2>&1", Allowed },
+        { "Bash", "cat '{outbound}/people/anna.md' 2>/dev/null", Allowed },
+        { "Bash", "cat \"{other}/a.md\" 2>&1", ReadOutside },
+        { "Bash", "cat \"{project}/notes.md\" 2>/dev/null", ReadOutside },
+        { "PowerShell", "Get-Content \"{outbound}/people/anna.md\" 2>$null", Allowed },
+        { "PowerShell", "Get-Content \"{other}/a.md\" 2>$null", ReadOutside },
+
+        // Spec 59 slice 9 repair: only an unquoted redirect word reads nothing; a quoted one is an ordinary argument, judged as a path.
+        // Two look-alikes stay refused: a redirect followed by a path, and a UNC path (another machine's share) under a read root.
+        { "Bash", "cat \"2>/dev/null\"", ReadOutside },
+        { "Bash", "cat '>/dev/null'", ReadOutside },
+        { "Bash", "cat \"{outbound}/people/anna.md\" \"2>/dev/null\"", ReadOutside },
+        { "Bash", "cat >/dev/null/../x", ReadOutside },
+        { "Bash", "cat '\\\\server\\share\\file'", ReadOutside },
+        { "Bash", "cat \"\\\\\\\\server\\\\share\\\\file\"", ReadOutside },
+        { "PowerShell", "Get-Content '\\\\server\\share\\file'", ReadOutside },
     };
 
     [Theory]
@@ -145,6 +165,22 @@ public sealed class JobHookReadRootTests : IDisposable
 
         // Act
         HookDecision decision = Decide(tool, JsonSerializer.Serialize(input), [Outbound]);
+
+        // Assert
+        decision.Rule.Should().Be(rule);
+    }
+
+    // Spec 59 slice 8: a double-quoted path with the system's own separators (backslashes on Windows) is read as a path under the read root.
+    [Theory]
+    [InlineData("people", "anna.md", Allowed)]
+    [InlineData("..", "outbound-private", ReadOutside)]
+    public void Decide_DoubleQuotedNativePathInBash_JudgedByTheReadRoot(string folder, string name, string rule)
+    {
+        // Arrange
+        string json = JsonSerializer.Serialize(new { command = "cat \"" + Path.Combine(Outbound, folder, name) + "\" 2>&1" });
+
+        // Act
+        HookDecision decision = Decide("Bash", json, [Outbound]);
 
         // Assert
         decision.Rule.Should().Be(rule);

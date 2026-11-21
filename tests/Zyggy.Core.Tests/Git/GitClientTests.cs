@@ -281,7 +281,7 @@ public sealed class GitClientTests
 
         // Assert
         _processes.Calls.Select(c => string.Join(' ', c.Arguments)).Should().Equal(
-            "fetch origin", "-c rebase.autoStash=true rebase origin/main", "rebase --abort");
+            "fetch --prune origin", "-c rebase.autoStash=true rebase origin/main", "rebase --abort");
     }
 
     [Fact]

@@ -30,7 +30,10 @@ public sealed class RegistryDocumentTests
                 ],
                 [new RegistryEntry("deploy-staging", "Builds, tags and deploys the current branch to staging")],
                 "Multi-tenant booking SaaS, .NET/Blazor"),
-        ]);
+        ])
+    {
+        Version = "0.26.0",
+    };
 
     internal static RegistryDocument Central() => new(
         TenantId.Parse("acme"),
@@ -90,7 +93,7 @@ public sealed class RegistryDocumentTests
             .Select(l => l[..l.IndexOf(':', StringComparison.Ordinal)])];
 
         // Assert
-        keys.Should().Equal("health", "last_seen", "machine", "os", "projects", "schema", "tenant", "work_hours");
+        keys.Should().Equal("health", "last_seen", "machine", "os", "projects", "schema", "tenant", "version", "work_hours");
     }
 
     [Fact]
@@ -122,7 +125,7 @@ public sealed class RegistryDocumentTests
 
         // Assert
         text.Should().NotContain("path:").And.NotContain("default_branch:").And.NotContain("summary:");
-        text.Should().NotContain("health:").And.NotContain("work_hours:");
+        text.Should().NotContain("health:").And.NotContain("work_hours:").And.NotContain("version:");
         text.Should().Contain("agents: []");
         text.Should().Contain("description: ''");
     }

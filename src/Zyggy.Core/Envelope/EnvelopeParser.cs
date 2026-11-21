@@ -306,8 +306,113 @@ public static class EnvelopeParser
                 return Reject(FieldReader.Invalid("deliver", "must be run or session"));
             }
 
-            job = new JobFields(project!, agent, worktree ?? false, allowedTools, reportBack, timeout, deadline, attempt ?? 1, branch, description, mandate, step, baseBranch, deliver);
+            if (!ReadKind(out JobKind kind, out string? fetchPath, out string? fetchRef) || !ReadCommand(kind, out string? command))
+            {
+                return false;
+            }
+
+            if (!ReadContinue(kind, worktree == true, out int? maxTurns, out EnvelopeId? continueFrom))
+            {
+                return false;
+            }
+
+            job = new JobFields(project!, agent, worktree ?? false, allowedTools, reportBack, timeout, deadline, attempt ?? 1, branch, description, mandate, step, baseBranch, deliver, kind, fetchPath, fetchRef, command, maxTurns, continueFrom);
             return true;
+        }
+
+        // Spec 59 slice 6: `max_turns` (at least 1) and `continue` (a job id, only with `worktree: true`) belong to a model job alone;
+        // the node's ceiling on `max_turns` is the node's own check, reported, not a parse rule.
+        private bool ReadContinue(JobKind kind, bool worktree, out int? maxTurns, out EnvelopeId? continueFrom)
+        {
+            continueFrom = null;
+            if (!Int("max_turns", 1, out maxTurns) || !Text("continue", false, out string? continueText))
+            {
+                return false;
+            }
+
+            if (maxTurns is not null && kind != JobKind.Model)
+            {
+                return Reject(FieldReader.Invalid("max_turns", "requires kind: model"));
+            }
+
+            if (continueText is null)
+            {
+                return true;
+            }
+
+            if (kind != JobKind.Model)
+            {
+                return Reject(FieldReader.Invalid("continue", "requires kind: model"));
+            }
+
+            if (!worktree)
+            {
+                return Reject(FieldReader.Invalid("continue", "requires worktree: true"));
+            }
+
+            return EnvelopeId.TryParse(continueText, out continueFrom) || Reject(FieldReader.Invalid("continue", "must be a job id (ULID)"));
+        }
+
+        // Spec 59 slice 2: `command` is a name ([a-z0-9-]), mandatory on a command job and refused on any other kind. Whether the node
+        // lists it is the node's check (schema_unsupported: unknown command), so that refusal is reported, not dropped.
+        private bool ReadCommand(JobKind kind, out string? command)
+        {
+            if (!Text("command", false, out command))
+            {
+                return false;
+            }
+
+            if (kind == JobKind.Command && command is null)
+            {
+                return Reject(new EnvelopeRejection(EnvelopeRejectionReason.MissingField, "command", "command is missing"));
+            }
+
+            if (kind != JobKind.Command && command is not null)
+            {
+                return Reject(FieldReader.Invalid("command", "requires kind: command"));
+            }
+
+            return command is null || JobCommands.IsName(command) || Reject(FieldReader.Invalid("command", "must be a name of a-z, 0-9 and -"));
+        }
+
+        // Spec 59: `kind` (model when absent); `fetch_path` is mandatory on a fetch and refused on any other kind, `fetch_ref` a branch
+        // name on a fetch only. The path's safety is the node's check (schema_unsupported), so a refusal there is reported, not dropped.
+        private bool ReadKind(out JobKind kind, out string? fetchPath, out string? fetchRef)
+        {
+            kind = JobKind.Model;
+            fetchPath = null;
+            fetchRef = null;
+            if (!Text("kind", false, out string? kindText))
+            {
+                return false;
+            }
+
+            if (kindText is not null && !EnvelopeWire.TryFromWire(kindText, out kind))
+            {
+                return Reject(FieldReader.Invalid("kind", "must be model, fetch or command"));
+            }
+
+            if (!Text("fetch_path", false, out fetchPath) || !Text("fetch_ref", false, out fetchRef))
+            {
+                return false;
+            }
+
+            if (kind == JobKind.Fetch && fetchPath is null)
+            {
+                return Reject(new EnvelopeRejection(EnvelopeRejectionReason.MissingField, "fetch_path", "fetch_path is missing"));
+            }
+
+            if (kind != JobKind.Fetch && fetchPath is not null)
+            {
+                return Reject(FieldReader.Invalid("fetch_path", "requires kind: fetch"));
+            }
+
+            if (fetchRef is not null && kind != JobKind.Fetch)
+            {
+                return Reject(FieldReader.Invalid("fetch_ref", "requires kind: fetch"));
+            }
+
+            return fetchRef is null || IsBranch(fetchRef) || Reject(FieldReader.Invalid("fetch_ref", "must be a branch name"));
         }
 
         // Deliverable 18: the optional `mandate` and `step` a job carries and its report copies.
@@ -455,14 +560,7 @@ public static class EnvelopeParser
         }
 
         /// <summary>A branch name a mandate or a job may carry: a cautious subset of git's ref-name rules.</summary>
-        private static bool IsBranch(string text) =>
-            text.Length is > 0 and <= 200
-            && text[0] is not ('-' or '/' or '.')
-            && text[^1] is not ('/' or '.')
-            && !text.Contains("..", StringComparison.Ordinal)
-            && !text.Contains("//", StringComparison.Ordinal)
-            && !text.Contains("@{", StringComparison.Ordinal)
-            && !text.Any(c => char.IsControl(c) || c is ' ' or '~' or '^' or ':' or '?' or '*' or '[' or '\\');
+        private static bool IsBranch(string text) => FetchPaths.IsBranch(text);
 
         private bool ReadReport(out ReportFields? report)
         {
@@ -507,7 +605,28 @@ public static class EnvelopeParser
                 return false;
             }
 
-            report = new ReportFields(status, reason, started, finished, duration, cost, inputTokens, outputTokens, numTurns, model, filesChanged, diffRef, mandate, step);
+            // Spec 59 (Q2): the attached file's name and hash come together.
+            if (!Text("file_name", false, out string? fileName) || !Text("file_sha256", false, out string? fileSha256))
+            {
+                return false;
+            }
+
+            if (fileName is not null && !FetchPaths.IsFileName(fileName))
+            {
+                return Reject(FieldReader.Invalid("file_name", "must be one path segment of at most 200 characters"));
+            }
+
+            if (fileSha256 is not null && (fileSha256.Length != 64 || !fileSha256.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f'))))
+            {
+                return Reject(FieldReader.Invalid("file_sha256", "must be 64 lowercase hexadecimal characters"));
+            }
+
+            if (fileName is null != fileSha256 is null)
+            {
+                return Reject(FieldReader.Invalid(fileName is null ? "file_name" : "file_sha256", "file_name and file_sha256 come together"));
+            }
+
+            report = new ReportFields(status, reason, started, finished, duration, cost, inputTokens, outputTokens, numTurns, model, filesChanged, diffRef, mandate, step, fileName, fileSha256);
             return true;
         }
 
