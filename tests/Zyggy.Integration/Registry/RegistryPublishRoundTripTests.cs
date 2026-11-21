@@ -53,8 +53,10 @@ public sealed class RegistryPublishRoundTripTests
         verify.Stdout.Split('\n').Where(l => l.StartsWith("SKIP ", StringComparison.Ordinal) && l.EndsWith("registry file (unsigned in v1)", StringComparison.Ordinal))
             .Should().HaveCount(2);
         statusAfterExit.Should().Be(statusBeforeExit);
-        static string BusBlock(string stdout) => string.Join('\n', stdout.Split('\n').Skip(2).TakeWhile(l => !l.StartsWith("recent reports", StringComparison.Ordinal)));
+        // The counts are untouched by a registry publish; the registry lines themselves are new after it (spec 59 slice 7).
+        static string BusBlock(string stdout) => string.Join('\n', stdout.Split('\n').Skip(2).TakeWhile(l => !l.StartsWith("recent reports", StringComparison.Ordinal)).Where(l => !l.StartsWith("registry ", StringComparison.Ordinal)));
         BusBlock(statusAfter.Stdout).Should().Be(BusBlock(statusBefore.Stdout));
+        statusAfter.Stdout.Split('\n').Count(l => l.StartsWith("registry ", StringComparison.Ordinal)).Should().Be(2);
         RegistryDocument central = RegistryDocument.Parse(await harness.Bus.ShowBytesAsync(BusPaths.Registry(Acme, CliHarness.Central), ct)).Document!;
         central.Projects.Should().BeEmpty("Central publishes projects: [] without devRoots");
     }

@@ -272,7 +272,8 @@ public sealed partial class MandateSubmission
             request.Base,
             request.Session,
             _workMachines.Contains(request.To),
-            capabilities.Contains(Registry.RegistryDocument.SupervisionCapability, StringComparer.Ordinal));
+            capabilities.Contains(Registry.RegistryDocument.SupervisionCapability, StringComparer.Ordinal),
+            request.Session ? null : request.Continue);
         MandateVerdict verdict = MandateRules.CheckSubmit(ledger, check, _clock.GetUtcNow());
         if (!verdict.Allowed)
         {

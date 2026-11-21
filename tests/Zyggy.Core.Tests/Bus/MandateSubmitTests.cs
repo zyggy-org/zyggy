@@ -110,6 +110,34 @@ public sealed class MandateSubmitTests : IAsyncLifetime
             .Should().BeEquivalentTo(new { Continue = earlier, MaxTurns = 120, Step = "slice 2", Base = Branch, Counted = 2 });
     }
 
+    // Spec 59 slice 6 tightening (Central, 2026-11-21): under a mandate, continue only from a job of the same mandate and step — refused
+    // at submit with the limit named, nothing written.
+    [Fact]
+    public async Task SubmitAsync_ContinueFromAJobOfAnotherStep_RefusedContinue_NothingWritten()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields(), HomeLaptop, ct);
+        DropRegistry(HomeLaptop, supervision: true);
+        MandateSubmitOutcome first = await Submission().SubmitAsync(new MandateJobRequest(HomeLaptop, MandateId, MandateJobKind.Build, "slice 1", Base: Branch), ct);
+        EnvelopeId earlier = first.Result.Should().BeOfType<Submitted>().Subject.Id;
+        int commits = _processes.CallsOf("commit").Count();
+
+        // Act
+        MandateSubmitOutcome outcome = await Submission().SubmitAsync(
+            new MandateJobRequest(HomeLaptop, MandateId, MandateJobKind.Build, "slice 2", Base: Branch, Continue: earlier), ct);
+
+        // Assert
+        new { outcome.Verdict.Limit, outcome.Verdict.Detail, outcome.Result, Commits = _processes.CallsOf("commit").Count() }
+            .Should().BeEquivalentTo(new
+            {
+                Limit = MandateLimit.Continue,
+                Detail = "continue: " + earlier.Value + " is not a job of this mandate's step 'slice 2'",
+                Result = (SubmitResult?)null,
+                Commits = commits,
+            });
+    }
+
     [Fact]
     public async Task SubmitAsync_SessionTask_DeliverSessionNoWorktreeSixtyMinutes()
     {

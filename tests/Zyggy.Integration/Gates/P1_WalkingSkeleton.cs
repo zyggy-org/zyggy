@@ -220,8 +220,11 @@ public sealed partial class P1_WalkingSkeleton : IAsyncLifetime
         lines[3].Should().Be("        machine       queued  claimed  rejected  reports  context");
         lines[4].Should().Be("        central            0        0         0        0        0");
         lines[5].Should().Be("        home-laptop        0        0         0        1        0");
-        lines[6].Should().Be("recent reports (1 of 1)");
-        lines[7].Should().StartWith($"        {report.Header.Id.Value}  home-laptop→central  done  in_reply_to {id}  cost_usd ");
+
+        // Spec 59 slice 7: the host published its registry file, so the read-out shows the machine's liveness and version, not stale.
+        lines[6].Should().MatchRegex(@"^registry home-laptop   last_seen \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ \(.+ ago\) · version \S+ · health green$");
+        lines[7].Should().Be("recent reports (1 of 1)");
+        lines[8].Should().StartWith($"        {report.Header.Id.Value}  home-laptop→central  done  in_reply_to {id}  cost_usd ");
 
         // Act (d): one job traced
         var (traceExit, trace) = await CliAsync(["status", "--id", id], _harness.NodeJsonPath, healthUrl, ct);
@@ -272,7 +275,8 @@ public sealed partial class P1_WalkingSkeleton : IAsyncLifetime
         lines[0].Should().Be($"node    home-laptop (acme) · health: down — no node service answering on {healthUrl}");
         lines[1].Should().MatchRegex(@"^bus     head [0-9a-f]{12} · 1 tenant directory$");
         lines[4].Should().MatchRegex(@"^        home-laptop +0 +0 +0 +1 +\d+$");
-        lines[5].Should().Be("recent reports (1 of 1)");
+        // A registry line sits between the table and the reports once the host has published its file (spec 59 slice 7).
+        lines.Should().Contain("recent reports (1 of 1)");
         SecretSweep.AssertAbsent([console.Stdout, console.Stderr]);
     }
 

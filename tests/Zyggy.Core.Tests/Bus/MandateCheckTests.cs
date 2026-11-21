@@ -615,7 +615,98 @@ public sealed class MandateCheckTests : IAsyncLifetime
 
         // Assert
         wires.Should().OnlyHaveUniqueItems().And.OnlyContain(w => w.Length > 0 && w.All(c => char.IsAsciiLetterLower(c) || c == '_'));
-        wires.Should().HaveCount(18);
+        wires.Should().HaveCount(19);
+    }
+
+    // Spec 59 slice 6 tightening (Central, 2026-11-21): under a mandate a job continues only from a job that ran under the same mandate
+    // and the same step. "same-step-report": the earlier job reported (its file is gone); "same-step-open": it is still in jobs/claimed/.
+    [Theory]
+    [InlineData("same-step-report", null)]
+    [InlineData("same-step-open", null)]
+    [InlineData("other-step", MandateLimit.Continue)]
+    [InlineData("no-mandate", MandateLimit.Continue)]
+    [InlineData("other-mandate", MandateLimit.Continue)]
+    [InlineData("unknown", MandateLimit.Continue)]
+    [InlineData("rejected", MandateLimit.Continue)]
+    public async Task CheckSubmit_Continue_OnlyFromAJobOfTheSameMandateAndStep(string what, MandateLimit? expected)
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields with { MaxJobs = 20 }, ct);
+        EnvelopeId earlier = await DropEarlierAsync(what, ct);
+
+        // Act
+        MandateVerdict verdict = MandateRules.CheckSubmit(await LedgerAsync(ct), Submit with { Continue = earlier }, Now);
+
+        // Assert
+        verdict.Limit.Should().Be(expected, verdict.Detail);
+    }
+
+    [Theory]
+    [InlineData("same-step-report", null)]
+    [InlineData("same-step-open", null)]
+    [InlineData("other-step", MandateLimit.Continue)]
+    [InlineData("no-mandate", MandateLimit.Continue)]
+    [InlineData("other-mandate", MandateLimit.Continue)]
+    [InlineData("unknown", MandateLimit.Continue)]
+    [InlineData("rejected", MandateLimit.Continue)]
+    public async Task CheckIntake_Continue_OnlyFromAJobOfTheSameMandateAndStep(string what, MandateLimit? expected)
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields with { MaxJobs = 20 }, ct);
+        EnvelopeId earlier = await DropEarlierAsync(what, ct);
+        Model job = await SignedJobAsync(JobOf("slice 2") with { Continue = earlier }, Now.AddMinutes(-1), ct);
+
+        // Act
+        MandateVerdict verdict = MandateRules.CheckIntake(await LedgerAsync(ct), job, HomeLaptop, Now);
+
+        // Assert
+        verdict.Limit.Should().Be(expected, verdict.Detail);
+    }
+
+    [Fact]
+    public async Task CheckSubmit_ContinueFromAnotherStep_DetailNamesTheLimitInOneLine()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields with { MaxJobs = 20 }, ct);
+        EnvelopeId earlier = await DropEarlierAsync("other-step", ct);
+
+        // Act
+        MandateVerdict verdict = MandateRules.CheckSubmit(await LedgerAsync(ct), Submit with { Continue = earlier }, Now);
+
+        // Assert
+        verdict.Detail.Should().Be("continue: " + earlier.Value + " is not a job of this mandate's step 'slice 2'").And.NotContain("\n");
+    }
+
+    /// <summary>The job a continue names, in the shape <paramref name="what"/> asks for; "unknown" drops nothing.</summary>
+    private async Task<EnvelopeId> DropEarlierAsync(string what, CancellationToken ct)
+    {
+        EnvelopeId other = EnvelopeId.New(Granted.AddMinutes(1));
+        EnvelopeId earlier = NextId(Now.AddMinutes(-40));
+        switch (what)
+        {
+            case "same-step-report":
+                await DropReportAsync(ReportStatus.Failed, Now.AddMinutes(-30), ct, reason: "timeout", job: earlier);
+                break;
+            case "same-step-open":
+                return (await DropJobAsync(BusFolder.Claimed, Now.AddMinutes(-30), ct)).Header.Id;
+            case "other-step":
+                await DropReportAsync(ReportStatus.Failed, Now.AddMinutes(-30), ct, reason: "timeout", step: "slice 1", job: earlier);
+                break;
+            case "no-mandate":
+                return (await DropJobAsync(BusFolder.Claimed, Now.AddMinutes(-30), ct, noMandate: true)).Header.Id;
+            case "other-mandate":
+                return (await DropJobAsync(BusFolder.Claimed, Now.AddMinutes(-30), ct, mandate: other)).Header.Id;
+            case "rejected":
+                await DropReportAsync(ReportStatus.Rejected, Now.AddMinutes(-30), ct, reason: "branch_refused", job: earlier, modelStarted: false);
+                break;
+            default:
+                break;
+        }
+
+        return earlier;
     }
 
     private static JobFields JobOf(string step, EnvelopeId? mandate = null) =>

@@ -108,6 +108,39 @@ public sealed class RegistryPublisherTests : IDisposable
         Commits.Should().Be(3);
     }
 
+    // Spec 59 AC-10: an unchanged file is re-committed once last_seen is older than half of lastSeenHours (6 h → 3 h), so a reader that
+    // calls a machine stale after 6 h never sees a healthy one cross the line.
+    [Theory]
+    [InlineData(179, PublishOutcome.Unchanged)]
+    [InlineData(181, PublishOutcome.Published)]
+    public async Task PublishAsync_UnchangedContent_RefreshedAtHalfOfLastSeenHours(int minutesLater, PublishOutcome expected)
+    {
+        // Arrange
+        await PublishAsync(Content(), HealthLevel.Green);
+        _now.Now = T.AddMinutes(minutesLater);
+
+        // Act
+        RegistryPublishResult result = await PublishAsync(Content(), HealthLevel.Green);
+
+        // Assert
+        result.Outcome.Should().Be(expected);
+    }
+
+    // Spec 59 AC-10: the file carries the version the node runs; a new version is content, published at once.
+    [Fact]
+    public async Task PublishAsync_VersionChanged_PublishedWithTheNewVersion()
+    {
+        // Arrange
+        await PublishAsync(Content() with { Version = "0.25.0" }, HealthLevel.Green);
+        _now.Now = T.AddMinutes(1);
+
+        // Act
+        RegistryPublishResult result = await PublishAsync(Content() with { Version = "0.26.0" }, HealthLevel.Green);
+
+        // Assert
+        new { result.Outcome, OnBus().Version }.Should().BeEquivalentTo(new { Outcome = PublishOutcome.Published, Version = "0.26.0" });
+    }
+
     [Fact]
     public async Task PublishAsync_HealthNull_KeepsBusCopyValue()
     {

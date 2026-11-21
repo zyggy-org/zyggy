@@ -49,6 +49,13 @@ public sealed record RegistryDocument(
     /// </summary>
     public IReadOnlyList<string> Capabilities { get; init; } = [];
 
+    /// <summary>
+    /// Gets the informational version of the <c>zyggy</c> that published the file (spec 59 slice 7, the key <c>version</c>), so Central
+    /// sees what each machine runs; <see langword="null"/> omits the key, as every file written before spec 59 does. Content, not liveness:
+    /// an upgraded node publishes at once.
+    /// </summary>
+    public string? Version { get; init; }
+
     /// <summary>Serialises the document in its canonical form.</summary>
     /// <returns>The UTF-8 bytes of the file.</returns>
     /// <exception cref="ArgumentException">Thrown when <see cref="Health"/> is <see cref="HealthLevel.Down"/> (a caller bug: a node that publishes is up).</exception>
@@ -78,6 +85,11 @@ public sealed record RegistryDocument(
             root["last_seen"] = Scalar(lastSeen.ToUniversalTime().ToString(TimestampFormat, CultureInfo.InvariantCulture));
         }
 
+        if (Version is { } version)
+        {
+            root["version"] = Scalar(version);
+        }
+
         if (WorkHours is { } workHours)
         {
             root["work_hours"] = new FrontMatterMapping(new Dictionary<string, FrontMatterNode>(StringComparer.Ordinal)
@@ -97,9 +109,10 @@ public sealed record RegistryDocument(
     /// <param name="scan">The scan.</param>
     /// <param name="lastSeen">The liveness stamp; truncated to whole seconds.</param>
     /// <param name="health">The health verdict, or <see langword="null"/> to omit it.</param>
+    /// <param name="version">The publishing <c>zyggy</c>'s informational version (spec 59 slice 7), or <see langword="null"/> to omit it.</param>
     /// <returns>The document.</returns>
     /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
-    public static RegistryDocument FromScan(NodeConfiguration configuration, ScanResult scan, DateTimeOffset lastSeen, HealthLevel? health)
+    public static RegistryDocument FromScan(NodeConfiguration configuration, ScanResult scan, DateTimeOffset lastSeen, HealthLevel? health, string? version = null)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(scan);
@@ -118,8 +131,18 @@ public sealed record RegistryDocument(
             // Spec 59: every node of this version runs fetch and command jobs. Ordinal order, the order the file is written and parsed
             // back in, so an unchanged scan compares equal to the published file.
             Capabilities = configuration.Supervision.Enabled ? [CommandCapability, FetchCapability, SupervisionCapability] : [CommandCapability, FetchCapability],
+            Version = version,
         };
     }
+
+    /// <summary>
+    /// Whether the machine has been silent for longer than <paramref name="staleAfter"/> at <paramref name="now"/> (spec 59 slice 7): the
+    /// one rule <c>zyggy status</c> and <c>zyggy registry</c> share. A file without <c>last_seen</c> is stale; a future stamp is not.
+    /// </summary>
+    /// <param name="now">The instant to judge at.</param>
+    /// <param name="staleAfter">The threshold, <c>discovery.lastSeenHours</c>.</param>
+    /// <returns><see langword="true"/> when stale.</returns>
+    public bool IsStaleAt(DateTimeOffset now, TimeSpan staleAfter) => LastSeen is not { } seen || now - seen > staleAfter;
 
     /// <summary>Parses a registry file. Never throws on input: every defect is a refusal naming the field.</summary>
     /// <param name="bytes">The file bytes.</param>
@@ -153,7 +176,8 @@ public sealed record RegistryDocument(
         && Health == other.Health
         && WorkHoursEqual(WorkHours, other.WorkHours)
         && Projects.SequenceEqual(other.Projects)
-        && Capabilities.SequenceEqual(other.Capabilities, StringComparer.Ordinal);
+        && Capabilities.SequenceEqual(other.Capabilities, StringComparer.Ordinal)
+        && string.Equals(Version, other.Version, StringComparison.Ordinal);
 
     /// <summary>Returns a structural hash code.</summary>
     /// <returns>The hash code.</returns>
@@ -165,6 +189,7 @@ public sealed record RegistryDocument(
         hash.Add(Os);
         hash.Add(LastSeen);
         hash.Add(Health);
+        hash.Add(Version, StringComparer.Ordinal);
         foreach (RegistryProject project in Projects)
         {
             hash.Add(project);
@@ -336,7 +361,13 @@ public sealed record RegistryDocument(
                 capabilities.AddRange(sequence.Items.Select(i => ((FrontMatterScalar)i).Value).Order(StringComparer.Ordinal));
             }
 
-            return RegistryParse.Ok(new RegistryDocument(tenant, machine, os, lastSeen, health, workHours, projects) { Capabilities = capabilities });
+            string? version = null;
+            if (root.Entries.ContainsKey("version") && !TryScalar(root, "version", out version))
+            {
+                return RegistryParse.Refused("version", "not a scalar");
+            }
+
+            return RegistryParse.Ok(new RegistryDocument(tenant, machine, os, lastSeen, health, workHours, projects) { Capabilities = capabilities, Version = version });
         }
 
         private static RegistryParse? ReadProject(FrontMatterNode node, string field, out RegistryProject? project)

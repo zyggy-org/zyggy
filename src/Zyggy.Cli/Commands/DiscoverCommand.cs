@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 using Zyggy.Core.Bus;
 using Zyggy.Core.Configuration;
@@ -85,7 +86,7 @@ internal static class DiscoverCommand
             }
         }
 
-        RegistryDocument document = RegistryDocument.FromScan(configuration, scan, clock.GetUtcNow(), health: null);
+        RegistryDocument document = RegistryDocument.FromScan(configuration, scan, clock.GetUtcNow(), health: null, services.GetRequiredService<IOptions<DiscoveryOptions>>().Value.Version);
         if (dryRun)
         {
             await io.Out.WriteAsync(Encoding.UTF8.GetString(document.Serialize()));
