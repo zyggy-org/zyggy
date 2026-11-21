@@ -3,6 +3,7 @@ using System.CommandLine;
 using Microsoft.Extensions.DependencyInjection;
 
 using Zyggy.Cli.Commands;
+using Zyggy.Core.Memory;
 using Zyggy.Core.Secrets;
 using Zyggy.Core.Verbs;
 
@@ -25,6 +26,12 @@ internal static class CliApplication
             return await raw;
         }
 
+        // Spec 59 slice 11: its own parser like memory remember, with the injected console (the draft text may come on stdin).
+        if (args is ["memory", "draft", .. var draft])
+        {
+            return await new DraftVerb(environment.Variables, TimeProvider.System).RunAsync(draft, io, cancellationToken);
+        }
+
         // Spec 55: its own parser (forms, repeated --exclude), the injected console and the service hook for its scan.
         if (args is ["settings", .. var settings])
         {
@@ -34,7 +41,8 @@ internal static class CliApplication
         // Listed for --help only: RawVerbs runs it with its own argument parser.
         var remember = new Command("remember", "Keep a fact the owner stated in the memory inbox (remember skill).");
         var archive = new Command("archive", "Keep, list, remove or offload to OneDrive a project's archived file beside its facts (zyggy memory archive add|list|remove|offload ...).");
-        var memory = new Command("memory", "Read the owner's memory.") { MemoryDigestCommand.Create(environment), remember, archive };
+        var draftHelp = new Command("draft", "Keep a text written for the owner (a mail, a post) as drafts/<date>-<slug>.md in the memory; never sent by Zyggy (zyggy memory draft --title <t> [--project <p>] [-- <text>], else stdin).");
+        var memory = new Command("memory", "Read the owner's memory.") { MemoryDigestCommand.Create(environment), remember, archive, draftHelp };
         var m365 = new Command("m365", "Microsoft 365 on Central: state, facts and the connector's tools (zyggy m365 <verb> ...).");
         var brief = new Command("brief", "The morning brief, shown when the owner asks for it (zyggy brief show [--full] [<date>]); zyggy brief request asks the unit for a run now.");
         var linkedin = new Command("linkedin", "LinkedIn on Central: connect (auth start|finish|status) and the publishing server (mcp-server).");
@@ -44,7 +52,7 @@ internal static class CliApplication
             memory, DreamCommand.Create(environment), m365, brief, linkedin, hub, ProbeCommand.Create(environment, configure), SecretCommand.Create(environment, io, configure),
             SubmitCommand.Create(environment, io, configure), ContextCommand.Create(environment, io, configure), ArchiveCommand.Create(environment, io, configure), StatusCommand.Create(environment, io, configure),
             ReportCommand.Create(environment, io, configure), WorkCommand.Create(environment, io, configure), AskCommand.Create(environment, io, configure), DecideCommand.Create(environment, io, configure), DecideCommand.CreateList(environment, io, configure), RegistryCommand.Create(environment, io, configure), VerifyCommand.Create(environment, io, configure), SetupCommand.Create(environment, io, configure), DiscoverCommand.Create(environment, io, configure),
-            SweepCommand.Create(environment, io, configure), MandateCommand.Create(environment, io, configure), SettingsCommand.Create(),
+            SweepCommand.Create(environment, io, configure), MandateCommand.Create(environment, io, configure), SuperviseCommand.Create(environment, io, configure), SettingsCommand.Create(),
         };
         var parseResult = root.Parse(args);
         if (parseResult.Errors.Count > 0)

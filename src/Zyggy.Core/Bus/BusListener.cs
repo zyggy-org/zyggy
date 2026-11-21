@@ -309,6 +309,9 @@ public sealed partial class BusListener : IDisposable
                     }
 
                     break;
+                case AcceptedJob { Job.Job.Deliver: JobDelivery.Session }:
+                    // Deliverable 18: a session task waits for a live session's turn end (`zyggy work --turn-end`); the node service never runs it.
+                    break;
                 case AcceptedJob accepted:
                     if (await AdmitClaimAndTrackAsync(accepted, ct).ConfigureAwait(false))
                     {
@@ -718,8 +721,10 @@ public sealed partial class BusListener : IDisposable
                 reply.FilesChanged,
                 reply.DiffRef,
                 accepted.Job.Job?.Mandate,
-                accepted.Job.Job?.Step);
-            WriteOutcome report = await _bus.ReportAsync(accepted, fields, reply.Body, _signWith, ct).ConfigureAwait(false);
+                accepted.Job.Job?.Step,
+                reply.Attachment?.Name,
+                reply.Attachment is { } file ? Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(file.Bytes.Span)) : null);
+            WriteOutcome report = await _bus.ReportAsync(accepted, fields, reply.Body, reply.Attachment?.Bytes, _signWith, ct).ConfigureAwait(false);
             if (report is WriteFailed failed)
             {
                 LogWriteFailed("report", accepted.File.Id.Value, failed.Stage, failed.Detail);

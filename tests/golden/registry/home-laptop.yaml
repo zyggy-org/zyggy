@@ -17,6 +17,7 @@ projects:
     summary: Multi-tenant booking SaaS, .NET/Blazor
 schema: 1
 tenant: acme
+version: 0.26.0
 work_hours:
   days: [Mon, Tue, Wed, Thu, Fri]
   from: 08:00

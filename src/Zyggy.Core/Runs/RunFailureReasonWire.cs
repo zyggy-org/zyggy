@@ -19,6 +19,7 @@ public static class RunFailureReasonWire
         RunFailureReason.SchemaUnsupported => "schema_unsupported",
         RunFailureReason.BudgetExceeded => "budget_exceeded",
         RunFailureReason.BranchRefused => "branch_refused",
+        RunFailureReason.CommandFailed => "command_failed",
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 

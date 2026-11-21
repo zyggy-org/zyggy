@@ -39,7 +39,7 @@ public sealed class ProbeSenderTests : IAsyncLifetime
 
     private readonly RecordingLogger<ProbeSender> _log = new();
 
-    private readonly FakeTimeProvider _clock = new(T);
+    private readonly WaitingClock _clock = new(T);
 
     private readonly string _ledgerPath = Path.Combine(Path.GetTempPath(), "zyggy-unit", Guid.NewGuid().ToString("N"), "sent.jsonl");
 
@@ -243,16 +243,83 @@ public sealed class ProbeSenderTests : IAsyncLifetime
         return new ProbeSender(_provider, repository, signer, Me, TestKeys.Acme1, PollOptions.Default, _clock, new Random(3), new ProbeLedger(_ledgerPath), _log);
     }
 
-    /// <summary>Advances the fake clock one second at a time until the sender finishes.</summary>
+    /// <summary>
+    /// Advances the fake clock one second at a time until the sender finishes, but only while the sender waits on a timer of that
+    /// clock: its real work (signing, the recorded git, the pull, verifying the report) takes no fake time, however slow the machine.
+    /// Advancing on wall-clock ticks alone let a loaded run spend more than a probe's timeout of fake seconds inside that work.
+    /// </summary>
     private async Task<ProbeRecord> DriveAsync(Task<ProbeRecord> task)
     {
-        for (int i = 0; i < 5000 && !task.IsCompleted; i++)
+        for (int advanced = 0, spins = 0; advanced < 5000 && spins < 100_000 && !task.IsCompleted; spins++)
         {
             await Task.Delay(1, TestContext.Current.CancellationToken);
-            _clock.Advance(TimeSpan.FromSeconds(1));
+            if (_clock.WaitingTimers > 0)
+            {
+                _clock.Advance(TimeSpan.FromSeconds(1));
+                advanced++;
+            }
         }
 
         return await task;
+    }
+
+    /// <summary>A fake clock that counts its one-shot timers still waiting to fire (created, not fired, not disposed).</summary>
+    private sealed class WaitingClock(DateTimeOffset start) : FakeTimeProvider(start)
+    {
+        private int _waiting;
+
+        public int WaitingTimers => Volatile.Read(ref _waiting);
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var tracked = new TrackedTimer(this, callback);
+            Interlocked.Increment(ref _waiting);
+            tracked.Inner = base.CreateTimer(tracked.Fire, state, dueTime, period);
+            return tracked;
+        }
+
+        private sealed class TrackedTimer(WaitingClock clock, TimerCallback callback) : ITimer
+        {
+            private int _done;
+
+            public ITimer Inner { get; set; } = null!;
+
+            public void Fire(object? state)
+            {
+                Settle();
+                callback(state);
+            }
+
+            public bool Change(TimeSpan dueTime, TimeSpan period)
+            {
+                if (Interlocked.Exchange(ref _done, 0) == 1)
+                {
+                    Interlocked.Increment(ref clock._waiting);
+                }
+
+                return Inner.Change(dueTime, period);
+            }
+
+            public void Dispose()
+            {
+                Settle();
+                Inner.Dispose();
+            }
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+
+            private void Settle()
+            {
+                if (Interlocked.Exchange(ref _done, 1) == 0)
+                {
+                    Interlocked.Decrement(ref clock._waiting);
+                }
+            }
+        }
     }
 
     /// <summary>The first pull is the submission's own (§5 step 1); the report can only exist once the job id is known.</summary>

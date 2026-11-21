@@ -9,6 +9,8 @@ using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Health;
 using Zyggy.Core.Memory;
+using Zyggy.Core.Supervision;
+using Zyggy.Core.Tenancy;
 using Zyggy.Core.Verbs;
 
 namespace Zyggy.Cli.Commands;
@@ -16,7 +18,7 @@ namespace Zyggy.Cli.Commands;
 /// <summary>
 /// <c>zyggy work</c> (deliverable 18, "Live work is visible"): without an option it prints what every machine is doing — live sessions
 /// and open jobs — from the bus checkout as it is. <c>--session-start</c>, <c>--turn-end</c> and <c>--session-end</c> are the laptop
-/// hooks that publish, refresh and remove a session's status; they always exit 0 and print nothing on stdout, except a decision that came after the wait of a question, once, at session start. <c>--step</c> records the
+/// hooks that publish, refresh and remove a session's status; they always exit 0 and print nothing on stdout, except a decision that came after the wait of a question, once, at session start, and at a turn end the Stop-hook answer that delivers a session task. <c>--done</c> and <c>--failed</c> finish that task. <c>--step</c> records the
 /// step a session says it is on. Ordering, option reading and rendering only — every decision is in Core
 /// (<see cref="WorkStatusHook"/>, <see cref="BusInventory.WorkAsync"/>).
 /// </summary>
@@ -31,23 +33,36 @@ internal static class WorkCommand
         var sessionEnd = new Option<bool>("--session-end") { Description = "Remove the session's status from the SessionEnd hook JSON on stdin (the laptop hook)." };
         var step = new Option<string?>("--step") { Description = "The step this session is on (1-60 lowercase letters, digits, spaces or hyphens); travels with its next status." };
         var session = new Option<string?>("--session") { Description = "The session id --step applies to." };
-        var command = new Command("work", "Show what every machine is doing: live sessions and open jobs. --session-start, --turn-end and --session-end are the laptop hooks that publish a session's status; --step records the step a session is on.")
+        var waiting = new Option<bool>("--waiting") { Description = "Print what waits for the owner: escalated questions and reports, paused mandates; ids, kinds and names only." };
+        var done = new Option<string?>("--done") { Description = "The session finished the session task with this id: write its report and remove the claim." };
+        var failed = new Option<string?>("--failed") { Description = "The session could not finish the session task with this id: write a failed report (with --why) and remove the claim." };
+        var why = new Option<string?>("--why") { Description = "With --failed: one line, at most 200 characters, why the task failed." };
+        var command = new Command("work", "Show what every machine is doing: live sessions and open jobs. --session-start, --turn-end and --session-end are the laptop hooks that publish a session's status and deliver a session task; --step records the step a session is on; --done and --failed finish a session task.")
         {
-            sessionStart, turnEnd, sessionEnd, step, session, BusHost.ConfigOption, BusHost.VerboseOption,
+            sessionStart, turnEnd, sessionEnd, step, session, waiting, done, failed, why, BusHost.ConfigOption, BusHost.VerboseOption,
         };
         command.SetAction((parseResult, ct) =>
         {
             string? mode = parseResult.GetValue(sessionStart) ? "start" : parseResult.GetValue(turnEnd) ? "turn" : parseResult.GetValue(sessionEnd) ? "end" : null;
-            int modes = (parseResult.GetValue(sessionStart) ? 1 : 0) + (parseResult.GetValue(turnEnd) ? 1 : 0) + (parseResult.GetValue(sessionEnd) ? 1 : 0) + (parseResult.GetValue(step) is null ? 0 : 1);
+            int modes = (parseResult.GetValue(sessionStart) ? 1 : 0) + (parseResult.GetValue(turnEnd) ? 1 : 0) + (parseResult.GetValue(sessionEnd) ? 1 : 0) + (parseResult.GetValue(step) is null ? 0 : 1) + (parseResult.GetValue(waiting) ? 1 : 0)
+                + (parseResult.GetValue(done) is null ? 0 : 1) + (parseResult.GetValue(failed) is null ? 0 : 1);
             if (modes > 1)
             {
-                io.Error.WriteLine("zyggy: mode: --session-start, --turn-end, --session-end and --step are mutually exclusive");
+                io.Error.WriteLine("zyggy: mode: --session-start, --turn-end, --session-end, --step, --waiting, --done and --failed are mutually exclusive");
                 return Task.FromResult(mode is null ? ExitCodes.Usage : ExitCodes.Ok);
             }
 
+            if (parseResult.GetValue(why) is not null && parseResult.GetValue(failed) is null)
+            {
+                io.Error.WriteLine("zyggy: --why goes with --failed");
+                return Task.FromResult(ExitCodes.Usage);
+            }
+
             return mode is not null ? HookAsync(environment, io, configure, parseResult, mode, ct)
+                : parseResult.GetValue(done) is { } doneId ? FinishAsync(environment, io, configure, parseResult, doneId, true, null, ct)
+                : parseResult.GetValue(failed) is { } failedId ? FinishAsync(environment, io, configure, parseResult, failedId, false, parseResult.GetValue(why), ct)
                 : parseResult.GetValue(step) is { } label ? StepAsync(environment, io, configure, parseResult, parseResult.GetValue(session), label)
-                : BoardAsync(environment, io, configure, parseResult, ct);
+                : BoardAsync(environment, io, configure, parseResult, parseResult.GetValue(waiting), ct);
         });
         return command;
     }
@@ -142,7 +157,16 @@ internal static class WorkCommand
         return sb.ToString();
     }
 
-    private static async Task<int> BoardAsync(CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure, ParseResult parseResult, CancellationToken ct)
+    /// <summary>The owner's waiting list (deliverable 18, "Waiting list"): one fixed line per item, or that nothing waits.</summary>
+    internal static string RenderWaiting(IReadOnlyList<OwnerItem> items, DateTimeOffset now) =>
+        items.Count == 0 ? "nothing waits for you\n" : string.Concat(items.Select(i => i.Describe(now) + "\n"));
+
+    /// <summary>Spec 59 slice 11 (AC-14): on Central, the drafts kept in the owner's memory join the waiting list, oldest first.</summary>
+    private static IReadOnlyList<OwnerItem> WithDrafts(IReadOnlyList<OwnerItem> items, NodeConfiguration configuration, CliEnvironment environment) =>
+        configuration.Machine != MachineName.Central ? items
+            : [.. items.Concat(DraftVerb.Waiting(environment.Variables)).OrderBy(i => i.Since).ThenBy(i => i.Key, StringComparer.Ordinal)];
+
+    private static async Task<int> BoardAsync(CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure, ParseResult parseResult, bool waiting, CancellationToken ct)
     {
         (NodeConfiguration? configuration, int exitCode) = BusHost.LoadConfiguration(parseResult, environment, io);
         if (configuration is null)
@@ -159,7 +183,15 @@ internal static class WorkCommand
 
         try
         {
-            WorkBoard board = await services.GetRequiredService<BusInventory>().WorkAsync(configuration.Supervision.WorkMachines, ct);
+            BusInventory inventory = services.GetRequiredService<BusInventory>();
+            if (waiting)
+            {
+                IReadOnlyList<OwnerItem> items = WithDrafts(await inventory.WaitingAsync(configuration.Supervision.WorkMachines, ct), configuration, environment);
+                await io.Out.WriteAsync(RenderWaiting(items, services.GetRequiredService<TimeProvider>().GetUtcNow()));
+                return ExitCodes.Ok;
+            }
+
+            WorkBoard board = await inventory.WorkAsync(configuration.Supervision.WorkMachines, ct);
             await io.Out.WriteAsync(Render(board));
             return ExitCodes.Ok;
         }
@@ -226,6 +258,28 @@ internal static class WorkCommand
             await io.Error.WriteLineAsync(line);
         }
 
+        if (mode == "turn")
+        {
+            // Deliverable 18 ("Work into a live session"): at every turn end, at most one session task; its Stop-hook answer is the only stdout.
+            SessionTaskHook tasks = services.GetRequiredService<SessionTaskHook>();
+            SessionTaskOutcome task = await tasks.TurnEndAsync(hookJson, ct);
+
+            // Spec 59 slice 10: on Central, with no task this turn, the reports the wake handed over since the last notice.
+            if (task.Output is null && configuration.Machine == MachineName.Central)
+            {
+                task = tasks.ReportsArrived(hookJson) is { Output: not null } arrived ? arrived : task;
+            }
+
+            if (task.Output is { } answer)
+            {
+                await io.Out.WriteLineAsync(answer);
+            }
+            else if (task.Result == SessionTaskResult.Failed)
+            {
+                await io.Error.WriteLineAsync("work: session task not taken (" + FirstLine(task.Detail) + ")");
+            }
+        }
+
         if (mode == "start")
         {
             // The one thing a hook mode prints on stdout: a decision that came after the wait of a question asked in this project, once.
@@ -234,9 +288,81 @@ internal static class WorkCommand
                 await io.Out.WriteAsync(
                     "zyggy: Central decided on question " + late.InReplyTo.Value + " (" + EnvelopeWire.ToWire(late.Fields.Kind) + "), after the wait ended:\n" + late.Text);
             }
+
+            // Deliverable 18 ("Waiting list"): on Central, the session start also names how many items wait for the owner, when any do.
+            if (configuration.Machine == MachineName.Central)
+            {
+                try
+                {
+                    int count = WithDrafts(await services.GetRequiredService<BusInventory>().WaitingAsync(configuration.Supervision.WorkMachines, ct), configuration, environment).Count;
+                    if (count > 0)
+                    {
+                        await io.Out.WriteLineAsync(count.ToString(CultureInfo.InvariantCulture) + " item(s) wait for you: zyggy work --waiting");
+                    }
+                }
+                catch (BusBusyException)
+                {
+                    // A busy checkout costs the count at this start, nothing more.
+                }
+            }
         }
 
         return ExitCodes.Ok;
+    }
+
+    /// <summary><c>--done</c> / <c>--failed</c>: the report on the open session task. Exit 0; 2 bad id or line; 5 secret pattern; 1 no such open task; 6 failed; 7 not pushed yet.</summary>
+    private static async Task<int> FinishAsync(CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure, ParseResult parseResult, string id, bool done, string? why, CancellationToken ct)
+    {
+        (NodeConfiguration? configuration, int exitCode) = BusHost.LoadConfiguration(parseResult, environment, io);
+        if (configuration is null)
+        {
+            return exitCode;
+        }
+
+        if (configuration.SignWith is null)
+        {
+            return BusHost.ConfigurationError(io, "work: signWith missing in node.json");
+        }
+
+        string? patternsError = null;
+        await using ServiceProvider services = BusHost.BuildServices(configuration, parseResult.GetValue(BusHost.VerboseOption), environment, s =>
+        {
+            patternsError = s.AddSecretPatterns(environment.Variables);
+            configure?.Invoke(s);
+        });
+        if (patternsError is not null)
+        {
+            return BusHost.ConfigurationError(io, patternsError);
+        }
+
+        int checkout = await BusHost.CheckCheckoutAsync(services, configuration, io, ct);
+        if (checkout != ExitCodes.Ok)
+        {
+            return checkout;
+        }
+
+        SessionTaskOutcome outcome = await services.GetRequiredService<SessionTaskHook>().FinishAsync(id, done, why, ct);
+        switch (outcome.Result)
+        {
+            case SessionTaskResult.Reported:
+                await io.Out.WriteLineAsync((done ? "done " : "failed ") + id);
+                return ExitCodes.Ok;
+            case SessionTaskResult.Deferred:
+                await io.Out.WriteLineAsync((done ? "done " : "failed ") + id + "  (not pushed yet)");
+                return ExitCodes.PushDeferred;
+            case SessionTaskResult.RefusedBySecretPattern:
+                await io.Error.WriteLineAsync("zyggy: refused: " + outcome.Detail);
+                return ExitCodes.Refused;
+            case SessionTaskResult.Refused:
+                await io.Error.WriteLineAsync("zyggy: " + outcome.Detail);
+                return ExitCodes.Usage;
+            case SessionTaskResult.NotOpen:
+                await io.Error.WriteLineAsync("zyggy: " + outcome.Detail);
+                return ExitCodes.NotFound;
+            default:
+                await io.Error.WriteLineAsync("zyggy: report not written: " + FirstLine(outcome.Detail));
+                return ExitCodes.Failed;
+        }
     }
 
     /// <summary>The first non-empty line of a failure text: git answers in several lines, the hook prints one.</summary>

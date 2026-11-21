@@ -38,4 +38,10 @@ public enum MemoryArea
 
     /// <summary>An archived file's sidecar <c>archive/&lt;project&gt;/&lt;slug&gt;.md</c>.</summary>
     ArchiveSidecar,
+
+    /// <summary>
+    /// Anything under <c>drafts/</c> (spec 59 slice 11): a text written for the owner, kept by <c>zyggy memory draft</c>. Never a fact and
+    /// never an instruction: the dream pass and the digest do not read it; Zyggy never sends, posts or publishes it.
+    /// </summary>
+    Draft,
 }

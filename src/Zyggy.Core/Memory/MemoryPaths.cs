@@ -142,6 +142,20 @@ public sealed partial class MemoryPaths
         return Join(MemorySideWire.ToWire(side), category.Value, slug.Value + ".md");
     }
 
+    /// <summary>Gets <c>drafts/</c> (spec 59 slice 11): texts written for the owner, never sent by Zyggy.</summary>
+    public string DraftsDirectory => Join("drafts");
+
+    /// <summary>Returns a draft file.</summary>
+    /// <param name="date">The local date it was written.</param>
+    /// <param name="slug">The draft's slug.</param>
+    /// <returns><c>drafts/YYYY-MM-DD-&lt;slug&gt;.md</c>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="slug"/> is null.</exception>
+    public string Draft(DateOnly date, Slug slug)
+    {
+        ArgumentNullException.ThrowIfNull(slug);
+        return Join("drafts", date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + "-" + slug.Value + ".md");
+    }
+
     /// <summary>Gets <c>archive/</c> (spec 37).</summary>
     public string ArchiveDirectory => Join("archive");
 
@@ -307,6 +321,7 @@ public sealed partial class MemoryPaths
             "daily" => MemoryArea.Daily,
             "inbox" => MemoryArea.Inbox,
             "auto" => MemoryArea.Auto,
+            "drafts" => MemoryArea.Draft,
             ".dream" => MemoryArea.Dream,
             "areas" or "people" or "topics" => MemoryArea.Legacy,
             "work" => null,

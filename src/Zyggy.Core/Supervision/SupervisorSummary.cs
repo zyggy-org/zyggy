@@ -64,12 +64,12 @@ internal static class SupervisorSummary
         return "mandate paused: its three newest reports are not done (" + string.Join(", ", reports) + "); resume with: zyggy mandate resume " + ledger.Id.Value;
     }
 
-    /// <summary>The three newest reports since the last resume, oldest first: the reports that paused the mandate.</summary>
+    /// <summary>The three newest reports of model runs since the last resume, oldest first: the reports that paused the mandate (spec 59 AC-7: a report without <c>model</c> and <c>num_turns</c> does not count).</summary>
     public static IReadOnlyList<MandateReportEntry> PauseReports(MandateLedger ledger)
     {
         ArgumentNullException.ThrowIfNull(ledger);
         return [.. ledger.Reports
-            .Where(r => ledger.Resumed is null || r.Created > ledger.Resumed)
+            .Where(r => r.ModelStarted && (ledger.Resumed is null || r.Created > ledger.Resumed))
             .OrderByDescending(r => r.Id.Value, StringComparer.Ordinal)
             .Take(PauseAfter)
             .Reverse()];

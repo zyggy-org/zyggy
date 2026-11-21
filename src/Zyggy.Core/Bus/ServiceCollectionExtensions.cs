@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
+using Zyggy.Core.Brief;
 using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Git;
@@ -45,6 +46,22 @@ public static class ServiceCollectionExtensions
         }
 
         services.TryAddSingleton(new ItemDriveOptions());
+
+        // Deliverable 18 ("Mail", "Record"): with an M365 instance, Central's node mails the owner through Graph — the edge opened on the
+        // first send — and hands its decisions to the morning brief in the brief directory. Without one, neither exists.
+        if (configuration.Environment is { } instance
+            && instance.TryGetValue("ZYGGY_INSTANCE_DIR", out string? instanceDir) && !string.IsNullOrEmpty(instanceDir))
+        {
+            services.TryAddSingleton(new OwnerViewPaths(new BriefPaths(instance).Decided));
+            services.TryAddSingleton<INotifier>(sp =>
+            {
+                TimeProvider clock = sp.GetRequiredService<TimeProvider>();
+                IProcessRunner processes = sp.GetRequiredService<IProcessRunner>();
+                ItemDriveOptions driveOptions = sp.GetRequiredService<ItemDriveOptions>();
+                return new LazyNotifier(() => OpenMail(instance, clock, processes, driveOptions));
+            });
+        }
+
         services.TryAddSingleton(sp =>
         {
             ILogger<BusPickup> log = sp.GetService<ILoggerFactory>()?.CreateLogger<BusPickup>() ?? NullLogger<BusPickup>.Instance;
@@ -122,6 +139,16 @@ public static class ServiceCollectionExtensions
             NodeConfiguration node = sp.GetRequiredService<NodeConfiguration>();
             JobRunnerOptions runs = sp.GetRequiredService<IOptions<JobRunnerOptions>>().Value;
             ILogger<SupervisorWake> log = sp.GetService<ILoggerFactory>()?.CreateLogger<SupervisorWake>() ?? NullLogger<SupervisorWake>.Instance;
+            string nodeDir = runs.NodeDir ?? node.EffectiveNodeDir;
+            OwnerMailOptions mail = sp.GetService<IOptions<OwnerMailOptions>>()?.Value ?? new OwnerMailOptions();
+            OwnerNotifier? owner = sp.GetService<INotifier>() is { } notifier
+                ? new OwnerNotifier(
+                    notifier,
+                    sp.GetRequiredService<TimeProvider>(),
+                    Path.Join(nodeDir, "owner-mail.json"),
+                    sp.GetService<ILoggerFactory>()?.CreateLogger<OwnerNotifier>() ?? NullLogger<OwnerNotifier>.Instance,
+                    mail)
+                : null;
             return new SupervisorWake(
                 sp.GetRequiredService<BusInventory>(),
                 sp.GetRequiredService<DecisionWriter>(),
@@ -136,13 +163,16 @@ public static class ServiceCollectionExtensions
                     node.Supervision.WorkMachines,
                     node.Supervision.OutboundPaths,
                     sp.GetRequiredService<IOptions<GitHubBusOptions>>().Value.CheckoutRoot ?? throw Missing(nameof(GitHubBusOptions.CheckoutRoot)),
-                    runs.NodeDir ?? node.EffectiveNodeDir,
+                    nodeDir,
                     runs.HookExecutable ?? TranscriptPaths.DefaultHookExecutable(),
                     runs.ModelEnvironment,
                     runs.TimeoutOverride),
                 sp.GetRequiredService<TimeProvider>(),
                 log,
-                sp.GetRequiredService<SettingsInUse>());
+                sp.GetRequiredService<SettingsInUse>(),
+                owner,
+                sp.GetService<OwnerViewPaths>()?.DecidedFile,
+                mail);
         });
         services.TryAddSettingsInUse();
         return services;
@@ -153,6 +183,24 @@ public static class ServiceCollectionExtensions
     /// reader with no throttling retries — the key read only by <see cref="GraphTokenClient"/>; the drive writer is never taken from the
     /// parts. A load error is the "not configured" detail.
     /// </summary>
+    /// <summary>
+    /// Deliverable 18 (D7; founding spec §8 m365 rule as amended): the owner mail over the instance's M365 session — the key read only by
+    /// <see cref="GraphTokenClient"/>, no throttling retries, the recipient the instance's own mailbox. A load error is the reason the send fails.
+    /// </summary>
+    private static (INotifier? Notifier, string? Error) OpenMail(
+        IReadOnlyDictionary<string, string?> environment, TimeProvider clock, IProcessRunner processes, ItemDriveOptions options)
+    {
+        var context = new M365VerbContext(environment, clock, TimeZoneInfo.FindSystemTimeZoneById, processes, options.GraphHandlerFactory?.Invoke(), options.CheckKeyOwnership);
+        (M365Session? session, _, string? error) = M365Session.Load(context, baseOnly: false);
+        if (session is null)
+        {
+            return (null, error ?? "the M365 configuration did not load");
+        }
+
+        GraphParts parts = session.CreateGraph(context, retries: 0);
+        return (new MailNotifier(parts.Tokens, parts.Http, session.Configuration.Mailbox), null);
+    }
+
     private static (IGraphReader? Reader, string? Error) OpenGraphReader(
         IReadOnlyDictionary<string, string?> environment, TimeProvider clock, IProcessRunner processes, ItemDriveOptions options)
     {
@@ -238,7 +286,8 @@ public static class ServiceCollectionExtensions
                     (options.Identity ?? throw Missing(nameof(GitHubBusOptions.Identity))).Machine,
                     sp.GetService<NodeConfiguration>()?.Supervision.Enabled ?? true,
                     sp.GetRequiredService<TimeProvider>(),
-                    log),
+                    log,
+                    sp.GetService<IOptions<JobRunnerOptions>>()?.Value.NodeDir ?? sp.GetService<NodeConfiguration>()?.EffectiveNodeDir),
                 Wake = sp.GetService<SupervisorWake>(),
             };
         });
@@ -314,7 +363,8 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<EnvelopeSigner>(),
                 sp.GetRequiredService<KeyId>(),
                 sp.GetRequiredService<TimeProvider>(),
-                log);
+                log,
+                OriginBranchCheckOf(sp));
         });
         services.TryAddSingleton(sp =>
         {
@@ -325,7 +375,8 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<JobSubmitter>(),
                 sp.GetRequiredService<NodeConfiguration>().Supervision.WorkMachines,
                 sp.GetRequiredService<TimeProvider>(),
-                log);
+                log,
+                OriginBranchCheckOf(sp));
         });
         // Deliverable 41: the item sender. Resolving without a KeyId, the secret patterns or ItemSubmitterOptions throws (the verb registers them first — fail closed).
         services.TryAddSingleton(sp =>
@@ -406,6 +457,24 @@ public static class ServiceCollectionExtensions
     private static TimeSpan? SweepInterval(IServiceProvider sp) =>
         sp.GetService<IOptions<SweepScheduleOptions>>()?.Value.IntervalOverride
         ?? (sp.GetService<NodeConfiguration>() is { } node ? TimeSpan.FromMinutes(node.Sweep.IntervalMinutes) : null);
+
+    /// <summary>
+    /// Spec 59 slice 3 (Q5): the sender's base check, which looks a project up in this machine's own scan of its <c>devRoots</c> (never
+    /// the bus registry) and asks that checkout's origin with a git client of its own (the user's credentials, not the bus's).
+    /// <see langword="null"/> when the host registers no discovery scanner.
+    /// </summary>
+    private static OriginBranchCheck? OriginBranchCheckOf(IServiceProvider sp)
+    {
+        if (sp.GetService<DiscoveryScanner>() is not { } scanner || sp.GetService<NodeConfiguration>() is not { } node)
+        {
+            return null;
+        }
+
+        var git = new GitClient(sp.GetRequiredService<IProcessRunner>(), new GitClientOptions(), sp.GetRequiredService<TimeProvider>());
+        return new OriginBranchCheck(
+            git,
+            (name, ct) => scanner.FindProjects(node.DevRoots, ct).FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.Ordinal))?.Path);
+    }
 
     private static InvalidOperationException Missing(string option) =>
         new($"GitHubBusOptions.{option} is not set: the bus has no default remote, identity or checkout (configure it from node.json).");

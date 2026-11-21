@@ -86,6 +86,58 @@ public sealed class MandateSubmitTests : IAsyncLifetime
             Base: Branch));
     }
 
+    // Spec 59 AC-9 (Q6): a mandate step may continue a failed step's branch — same step name, a new job of the mandate, its own turn limit.
+    [Fact]
+    public async Task SubmitAsync_ContinueUnderTheMandate_JobCarriesContinueMaxTurnsAndTheSameStep_CountedAsANewJob()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields(), HomeLaptop, ct);
+        DropRegistry(HomeLaptop, supervision: true);
+        MandateSubmitOutcome first = await Submission().SubmitAsync(new MandateJobRequest(HomeLaptop, MandateId, MandateJobKind.Build, "slice 2", Base: Branch), ct);
+        EnvelopeId earlier = first.Result.Should().BeOfType<Submitted>().Subject.Id;
+
+        // Act
+        MandateSubmitOutcome outcome = await Submission().SubmitAsync(
+            new MandateJobRequest(HomeLaptop, MandateId, MandateJobKind.Build, "slice 2", Base: Branch, Continue: earlier, MaxTurns: 120), ct);
+
+        // Assert
+        var submitted = outcome.Result.Should().BeOfType<Submitted>().Subject;
+        JobFields job = (await new EnvelopeSigner(_store).ParseAndVerifyAsync(_checkout.Read(submitted.RelativePath), Acme, ct)).Envelope!.Job!;
+        BusRepository bus = Repository();
+        MandateLedger ledger = await new BusInventory(bus, _checkout.Root, new EnvelopeSigner(_store), _clock, new RecordingLogger<BusInventory>()).MandateLedgerAsync(MandateId, ct);
+        new { job.Continue, job.MaxTurns, job.Step, job.Base, Counted = ledger.Counted.Count(j => j.Step == "slice 2") }
+            .Should().BeEquivalentTo(new { Continue = earlier, MaxTurns = 120, Step = "slice 2", Base = Branch, Counted = 2 });
+    }
+
+    // Spec 59 slice 6 tightening (Central, 2026-11-21): under a mandate, continue only from a job of the same mandate and step — refused
+    // at submit with the limit named, nothing written.
+    [Fact]
+    public async Task SubmitAsync_ContinueFromAJobOfAnotherStep_RefusedContinue_NothingWritten()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields(), HomeLaptop, ct);
+        DropRegistry(HomeLaptop, supervision: true);
+        MandateSubmitOutcome first = await Submission().SubmitAsync(new MandateJobRequest(HomeLaptop, MandateId, MandateJobKind.Build, "slice 1", Base: Branch), ct);
+        EnvelopeId earlier = first.Result.Should().BeOfType<Submitted>().Subject.Id;
+        int commits = _processes.CallsOf("commit").Count();
+
+        // Act
+        MandateSubmitOutcome outcome = await Submission().SubmitAsync(
+            new MandateJobRequest(HomeLaptop, MandateId, MandateJobKind.Build, "slice 2", Base: Branch, Continue: earlier), ct);
+
+        // Assert
+        new { outcome.Verdict.Limit, outcome.Verdict.Detail, outcome.Result, Commits = _processes.CallsOf("commit").Count() }
+            .Should().BeEquivalentTo(new
+            {
+                Limit = MandateLimit.Continue,
+                Detail = "continue: " + earlier.Value + " is not a job of this mandate's step 'slice 2'",
+                Result = (SubmitResult?)null,
+                Commits = commits,
+            });
+    }
+
     [Fact]
     public async Task SubmitAsync_SessionTask_DeliverSessionNoWorktreeSixtyMinutes()
     {
@@ -234,16 +286,76 @@ public sealed class MandateSubmitTests : IAsyncLifetime
     private JobSubmitter Submitter() =>
         new(Repository(), new EnvelopeSigner(_store), TestKeys.Acme1, _clock, new RecordingLogger<JobSubmitter>());
 
-    private MandateSubmission Submission()
+    // Spec 59 AC-6: a base the origin does not have is refused when Central holds a checkout of the project.
+    [Fact]
+    public async Task SubmitAsync_BaseAbsentOnTheOriginOfALocalCheckout_RefusedBase_NothingWritten()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields(), HomeLaptop, ct);
+        DropRegistry(HomeLaptop, supervision: true);
+        _processes.On("ls-remote", RecordingProcessRunner.Fail(2, ""));
+
+        // Act
+        MandateSubmitOutcome outcome = await Submission(LocalCalizr).SubmitAsync(new MandateJobRequest(HomeLaptop, MandateId, MandateJobKind.Build, "slice 2", Base: Branch), ct);
+
+        // Assert
+        new { outcome.Verdict, outcome.Result, Jobs = _checkout.FilesUnder(BusPaths.Jobs(Acme, HomeLaptop)).Count }.Should().BeEquivalentTo(new
+        {
+            Verdict = new MandateVerdict(MandateLimit.Base, "'" + Branch + "' does not exist on the origin of calizr"),
+            Result = (SubmitResult?)null,
+            Jobs = 0,
+        });
+    }
+
+    // Spec 59 AC-6 (Q5): Central without the project submits; the node's report is the safety net.
+    [Fact]
+    public async Task SubmitAsync_BaseWithoutALocalCheckout_NoOriginAsked_Submitted()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields(), HomeLaptop, ct);
+        DropRegistry(HomeLaptop, supervision: true);
+        _processes.On("ls-remote", RecordingProcessRunner.Fail(2, ""));
+
+        // Act
+        MandateSubmitOutcome outcome = await Submission(_ => null).SubmitAsync(new MandateJobRequest(HomeLaptop, MandateId, MandateJobKind.Build, "slice 2", Base: Branch), ct);
+
+        // Assert
+        new { Submitted = outcome.Result is Submitted, Asked = _processes.CallsOf("ls-remote").Count() }.Should().BeEquivalentTo(new { Submitted = true, Asked = 0 });
+    }
+
+    // Spec 59 AC-6: a base the origin has passes the check.
+    [Fact]
+    public async Task SubmitAsync_BasePresentOnTheOriginOfALocalCheckout_Submitted()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields(), HomeLaptop, ct);
+        DropRegistry(HomeLaptop, supervision: true);
+        _processes.On("ls-remote", RecordingProcessRunner.Ok("abc\trefs/heads/" + Branch + "\n"));
+
+        // Act
+        MandateSubmitOutcome outcome = await Submission(LocalCalizr).SubmitAsync(new MandateJobRequest(HomeLaptop, MandateId, MandateJobKind.Build, "slice 2", Base: Branch), ct);
+
+        // Assert
+        outcome.Result.Should().BeOfType<Submitted>();
+    }
+
+    private string? LocalCalizr(string project) => project == "calizr" ? Path.Combine(_checkout.Root, "calizr") : null;
+
+    private MandateSubmission Submission(Func<string, string?>? localProject = null)
     {
         BusRepository bus = Repository();
         var signer = new EnvelopeSigner(_store);
+        var git = new GitClient(_processes, new GitClientOptions { Identity = new GitIdentity("zyggy (central)", "central@zyggy.org") }, _clock);
         return new MandateSubmission(
             bus,
             new BusInventory(bus, _checkout.Root, signer, _clock, new RecordingLogger<BusInventory>()),
             new JobSubmitter(bus, signer, TestKeys.Acme1, _clock, new RecordingLogger<JobSubmitter>()),
             [WorkLaptop],
             _clock,
-            new RecordingLogger<MandateSubmission>());
+            new RecordingLogger<MandateSubmission>(),
+            localProject is null ? null : new OriginBranchCheck(git, (name, _) => localProject(name)));
     }
 }

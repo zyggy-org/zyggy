@@ -28,7 +28,11 @@ internal sealed class NodeJsonPolicySource : IPolicySource
             claude.MaxBudgetUsd,
             [],
             configuration.MaxConcurrentJobs,
-            WorkHours.FromSettings(configuration.WorkHours));
+            WorkHours.FromSettings(configuration.WorkHours))
+        {
+            Commands = configuration.Commands,
+            FetchMaxBytes = configuration.FetchMaxBytes,
+        };
     }
 
     public Task<NodePolicy> GetAsync(CancellationToken ct)

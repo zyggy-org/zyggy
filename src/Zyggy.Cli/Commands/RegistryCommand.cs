@@ -103,8 +103,7 @@ internal static class RegistryCommand
     /// </summary>
     internal static void Render(StringBuilder sb, RegistryDocument document, DateTimeOffset now, TimeSpan staleAfter)
     {
-        bool stale = document.LastSeen is not { } seen || now - seen > staleAfter;
-        string machine = document.Machine.Value + (stale ? " (stale)" : string.Empty);
+        string machine = document.Machine.Value + (document.IsStaleAt(now, staleAfter) ? " (stale)" : string.Empty);
         if (document.Projects.Count == 0)
         {
             sb.Append(machine).Append(" (no projects)\n");

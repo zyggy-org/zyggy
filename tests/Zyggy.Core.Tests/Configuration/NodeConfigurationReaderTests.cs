@@ -2,6 +2,7 @@ using System.Globalization;
 
 using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
+using Zyggy.Core.Policy;
 using Zyggy.Core.Registry;
 using Zyggy.Core.Secrets;
 using Zyggy.Core.Tenancy;
@@ -897,6 +898,111 @@ public sealed class NodeConfigurationReaderTests : IDisposable
         result.Error.Should().Be(NodeConfigurationError.InvalidField);
         result.Field.Should().Be(field);
         result.ToString().Should().Be(message);
+    }
+
+    // AC-4 (spec 59 slice 2): node.json commands is the allow-list; argv as written, timeoutMinutes optional.
+    [Fact]
+    public void Read_Commands_ArgvAndTimeoutAsWritten()
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel(
+            "\"commands\": { \"run-tests\": { \"argv\": [\"dotnet\", \"test\", \"--no-build\"], \"timeoutMinutes\": 20 }, \"status\": { \"argv\": [\"git\", \"status\"] } },"));
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        result.Configuration!.Commands.Should().BeEquivalentTo(new Dictionary<string, NodeCommand>
+        {
+            ["run-tests"] = new(["dotnet", "test", "--no-build"], 20),
+            ["status"] = new(["git", "status"]),
+        });
+    }
+
+    [Fact]
+    public void Read_CommandsAbsent_EmptyAllowList()
+    {
+        // Act
+        NodeConfigurationResult result = Read(Minimal);
+
+        // Assert
+        result.Configuration!.Commands.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("\"commands\": [\"x\"],", "commands")]
+    [InlineData("\"commands\": { \"Run\": { \"argv\": [\"dotnet\"] } },", "commands.Run")]
+    [InlineData("\"commands\": { \"t\": [\"git\", \"status\"] },", "commands.t")]
+    [InlineData("\"commands\": { \"t\": { \"argv\": [] } },", "commands.t")]
+    [InlineData("\"commands\": { \"t\": { \"argv\": [\"dotnet\", 3] } },", "commands.t")]
+    [InlineData("\"commands\": { \"t\": { \"argv\": [\"tools/run.sh\"] } },", "commands.t")]
+    [InlineData("\"commands\": { \"t\": { \"timeoutMinutes\": 5 } },", "commands.t.argv")]
+    [InlineData("\"commands\": { \"t\": { \"argv\": [\"dotnet\"], \"timeoutMinutes\": 31 } },", "commands.t.timeoutMinutes")]
+    [InlineData("\"commands\": { \"t\": { \"argv\": [\"dotnet\"], \"timeoutMinutes\": 0 } },", "commands.t.timeoutMinutes")]
+    public void Read_CommandsInvalid_RefusedNamesKey(string insert, string field)
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel(insert));
+
+        // Assert
+        new { result.Error, result.Field }.Should().BeEquivalentTo(new { Error = NodeConfigurationError.InvalidField, Field = field }, result.ToString());
+    }
+
+    // The policy a node runs with carries the same allow-list.
+    [Fact]
+    public async Task PolicySource_Commands_PassedToNodePolicy()
+    {
+        // Arrange
+        NodeConfiguration configuration = Read(WithTopLevel("\"commands\": { \"status\": { \"argv\": [\"git\", \"status\"] } },")).Configuration!;
+
+        // Act
+        NodePolicy policy = await new NodeJsonPolicySource(configuration).GetAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        policy.Commands.Keys.Should().Equal("status");
+    }
+
+    // Spec 59 configuration: jobs.fetchMaxBytes as written; absent or null is 1,048,576.
+    [Theory]
+    [InlineData("", 1_048_576)]
+    [InlineData("\"jobs\": null,", 1_048_576)]
+    [InlineData("\"jobs\": { },", 1_048_576)]
+    [InlineData("\"jobs\": { \"fetchMaxBytes\": null },", 1_048_576)]
+    [InlineData("\"jobs\": { \"fetchMaxBytes\": 2048 },", 2048)]
+    public void Read_JobsFetchMaxBytes_AsWrittenOrDefault(string insert, int expected)
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel(insert));
+
+        // Assert
+        result.Configuration!.FetchMaxBytes.Should().Be(expected, result.ToString());
+    }
+
+    [Theory]
+    [InlineData("\"jobs\": 5,", "jobs")]
+    [InlineData("\"jobs\": { \"fetchMaxBytes\": 0 },", "jobs.fetchMaxBytes")]
+    [InlineData("\"jobs\": { \"fetchMaxBytes\": -1 },", "jobs.fetchMaxBytes")]
+    [InlineData("\"jobs\": { \"fetchMaxBytes\": \"1MB\" },", "jobs.fetchMaxBytes")]
+    [InlineData("\"jobs\": { \"fetchMaxBytes\": 1.5 },", "jobs.fetchMaxBytes")]
+    public void Read_JobsInvalid_RefusedNamesKey(string insert, string field)
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel(insert));
+
+        // Assert
+        new { result.Error, result.Field }.Should().BeEquivalentTo(new { Error = NodeConfigurationError.InvalidField, Field = field }, result.ToString());
+    }
+
+    // The policy a node runs with carries the configured fetch size limit.
+    [Fact]
+    public async Task PolicySource_FetchMaxBytes_PassedToNodePolicy()
+    {
+        // Arrange
+        NodeConfiguration configuration = Read(WithTopLevel("\"jobs\": { \"fetchMaxBytes\": 4096 },")).Configuration!;
+
+        // Act
+        NodePolicy policy = await new NodeJsonPolicySource(configuration).GetAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        policy.FetchMaxBytes.Should().Be(4096);
     }
 
     private const string Section10Keys = "\"workHours\": { \"timezone\": \"Europe/Brussels\", \"days\": [\"Mon\",\"Tue\",\"Wed\",\"Thu\",\"Fri\"], \"from\": \"08:00\", \"to\": \"19:00\" }, \"maxConcurrentJobs\": 2, \"log\": { \"level\": \"Information\" },";

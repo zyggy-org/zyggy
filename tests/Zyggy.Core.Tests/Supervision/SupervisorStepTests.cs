@@ -182,6 +182,23 @@ public sealed partial class SupervisorStepTests : IAsyncLifetime
         next.Should().BeNull();
     }
 
+    // Spec 59 AC-13: a report without a mandate is an event of the inventory (Central is told of it), never one that starts a run.
+    [Fact]
+    public async Task Events_ReportWithoutAMandate_ListedButNeverNext()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(ct);
+        EnvelopeId report = await DropReportAsync(Now.AddMinutes(-20), ct, noMandate: true);
+
+        // Act
+        IReadOnlyList<SupervisorEvent> events = await EventsAsync(Now, ct);
+
+        // Assert
+        new { Listed = events.Where(e => e.Kind == SupervisorEventKind.Report && e.Mandate is null).Select(e => e.Id.Value).ToArray(), Next = SupervisorStep.Next(events) }
+            .Should().BeEquivalentTo(new { Listed = new[] { report.Value }, Next = (SupervisorEvent?)null });
+    }
+
     // AC-19
     [Fact]
     public async Task Next_QuestionInAnotherMachinesFolder_Skipped()
@@ -414,7 +431,8 @@ public sealed partial class SupervisorStepTests : IAsyncLifetime
         EnvelopeId id = NextId(created);
         Model report = Model.CreateReport(
             new EnvelopeHeader(Acme, id, HomeLaptop, to ?? Central, created, EnvelopePriority.Normal, NextId(created.AddMinutes(-2))),
-            noMandate ? new ReportFields(status, reason) : new ReportFields(status, reason, Mandate: MandateId, Step: "slice 2"),
+            // Spec 59 Q5: a model run's report carries model and num_turns; the mandate pause counts only those.
+            noMandate ? new ReportFields(status, reason) : new ReportFields(status, reason, NumTurns: 3, Model: "claude-test", Mandate: MandateId, Step: "slice 2"),
             Encoding.UTF8.GetBytes(body));
         string folder = archived ? BusPaths.Archive(Acme, created.Year, created.Month) : BusPaths.Reports(Acme, HomeLaptop);
         _checkout.Drop(BusPaths.EnvelopeFile(folder, fileId ?? id), await SignedAsync(report, ct));

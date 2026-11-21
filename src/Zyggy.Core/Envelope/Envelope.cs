@@ -132,8 +132,21 @@ public sealed class Envelope
         AddOptional(entries, "step", job.Step);
         AddOptional(entries, "base", job.Base);
         AddOptional(entries, "deliver", job.Deliver == JobDelivery.Run ? null : EnvelopeWire.ToWire(job.Deliver));
+
+        // Spec 59: a model job keeps its bytes; kind and its fields are written only for another kind.
+        AddOptional(entries, "kind", job.Kind == JobKind.Model ? null : EnvelopeWire.ToWire(job.Kind));
+        AddOptional(entries, "fetch_path", job.FetchPath);
+        AddOptional(entries, "fetch_ref", job.FetchRef);
+        AddOptional(entries, "command", job.Command);
+
+        // Spec 59 slice 6: a job's own turn limit and the earlier job it continues; absent keys keep every older job's bytes.
+        AddOptional(entries, "max_turns", Invariant(job.MaxTurns));
+        AddOptional(entries, "continue", job.Continue?.Value);
         return Create(entries, header, body);
     }
+
+    // The ArgumentException of a field rule names the wire field (spec 59), as the parser's rejection does.
+    private static ArgumentException FieldError(string field, string message) => new(message, field);
 
     /// <summary>Creates an unsigned report envelope in canonical scalar text (§4 "Mandatory fields per type").</summary>
     /// <remarks>Same text rules as <see cref="CreateJob"/>; <see cref="EnvelopeHeader.InReplyTo"/> is mandatory.</remarks>
@@ -147,6 +160,23 @@ public sealed class Envelope
     {
         ArgumentNullException.ThrowIfNull(header);
         ArgumentNullException.ThrowIfNull(report);
+
+        // Spec 59 (Q2): the attached file's name and hash come together, in the shapes the parser reads.
+        if (report.FileName is not null && !FetchPaths.IsFileName(report.FileName))
+        {
+            throw FieldError("file_name", "file_name must be one path segment of at most 200 characters.");
+        }
+
+        if (report.FileSha256 is not null && (report.FileSha256.Length != 64 || !report.FileSha256.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f'))))
+        {
+            throw FieldError("file_sha256", "file_sha256 must be 64 lowercase hexadecimal characters.");
+        }
+
+        if (report.FileName is null != report.FileSha256 is null)
+        {
+            throw FieldError(report.FileName is null ? "file_name" : "file_sha256", "file_name and file_sha256 come together.");
+        }
+
         Dictionary<string, FrontMatterNode> entries = Common(header, EnvelopeType.Report);
         Add(entries, "status", EnvelopeWire.ToWire(report.Status));
         AddOptional(entries, "reason", report.Reason);
@@ -162,6 +192,8 @@ public sealed class Envelope
         AddOptional(entries, "diff_ref", report.DiffRef);
         AddOptional(entries, "mandate", report.Mandate?.Value);
         AddOptional(entries, "step", report.Step);
+        AddOptional(entries, "file_name", report.FileName);
+        AddOptional(entries, "file_sha256", report.FileSha256);
         return Create(entries, header, body);
     }
 

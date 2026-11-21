@@ -24,4 +24,7 @@ internal static class ExitCodes
 
     /// <summary>Spec 08 exit-code table: <c>zyggy status --id</c> found no such job; the same number as <see cref="NoRun"/>.</summary>
     public const int NotFound = 1;
+
+    /// <summary>Spec 59 CLI table: <c>zyggy report --wait</c> saw no report inside its timeout; the same number as <see cref="Configuration"/>.</summary>
+    public const int NoReportYet = 3;
 }

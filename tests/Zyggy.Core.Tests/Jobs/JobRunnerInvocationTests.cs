@@ -120,6 +120,43 @@ public sealed class JobRunnerInvocationTests : IDisposable
         ClaudeSpec().Arguments.Should().ContainInConsecutiveOrder("--max-turns", "40");
     }
 
+    // Spec 59 AC-9: the job's max_turns reaches the model request when it is under the node's ceiling.
+    [Fact]
+    public async Task RunAsync_JobMaxTurns20_UsesIt_NoLoweredLine()
+    {
+        // Arrange
+        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root, MaxTurns: 20));
+
+        // Act
+        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        new { Turns = TurnsArgument(), Lowered = System.Text.Encoding.UTF8.GetString(reply.Body.Span).Contains("lowered", StringComparison.Ordinal) }
+            .Should().BeEquivalentTo(new { Turns = "20", Lowered = false });
+    }
+
+    // Spec 59 AC-9 edge case: above the ceiling, the ceiling applies and the body says so.
+    [Fact]
+    public async Task RunAsync_JobMaxTurnsAboveCeiling_CeilingApplies_BodySaysLowered()
+    {
+        // Arrange
+        _h.NodePolicy = _h.NodePolicy with { MaxTurns = 40 };
+        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root, MaxTurns: 100));
+
+        // Act
+        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        new { Turns = TurnsArgument(), Lowered = System.Text.Encoding.UTF8.GetString(reply.Body.Span).Contains("max_turns lowered to 40\n", StringComparison.Ordinal) }
+            .Should().BeEquivalentTo(new { Turns = "40", Lowered = true });
+    }
+
+    private string TurnsArgument()
+    {
+        var arguments = ClaudeSpec().Arguments;
+        return arguments[arguments.ToList().IndexOf("--max-turns") + 1];
+    }
+
     [Fact]
     public async Task RunAsync_ModelEnvironment_AddedToTheProcess()
     {

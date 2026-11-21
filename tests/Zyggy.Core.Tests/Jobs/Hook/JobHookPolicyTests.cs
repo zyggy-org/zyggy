@@ -155,9 +155,8 @@ public sealed class JobHookPolicyTests
         { "Bash", "dotnet test ~/x" },
         { "Bash", "dotnet test a^b" },
 
-        // redirections: a shell write is not path-checked, so a pattern rule does not vouch for one
+        // redirections: a shell write is not path-checked, so a pattern rule does not vouch for one (spec 59 slice 8 names the exceptions)
         { "Bash", "dotnet test > .git/hooks/pre-commit" },
-        { "Bash", "dotnet test 2>&1" },
         { "Bash", "dotnet test < input.txt" },
         { "Bash", "dotnet test <<EOF\nrm x\nEOF" },
 
@@ -234,6 +233,109 @@ public sealed class JobHookPolicyTests
 
         // Assert
         decision.Should().Be(HookDecision.Allow);
+    }
+
+    // Spec 59 slice 8 (AC-11): a quoted Windows path and the four harmless redirects are simple; the quoted text is still matched
+    // against the rule as a whole, and nothing else the hook refused is accepted.
+    public static TheoryData<string, string, string> Slice8Accepted() => new()
+    {
+        { "Bash", "cat \"C:\\src\\a.txt\"", "Bash(cat *)" },
+        { "Bash", "cat \"C:\\\\src\\\\a.txt\"", "Bash(cat *)" },
+        { "Bash", "cat 'C:\\src\\a.txt'", "Bash(cat *)" },
+        { "Bash", "reg query \"HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\" /v ProductName", "Bash(reg query *)" },
+        { "Bash", "cat \"C:\\src\\a.txt\" 2>&1", "Bash(cat *)" },
+        { "Bash", "dotnet test 2>&1", "Bash(dotnet *)" },
+        { "Bash", "dotnet test 2>/dev/null", "Bash(dotnet *)" },
+        { "Bash", "dotnet test >/dev/null", "Bash(dotnet *)" },
+        { "Bash", "dotnet test >/dev/null 2>&1", "Bash(dotnet *)" },
+        { "Bash", "dotnet build 2>&1 && dotnet test 2>&1", "Bash(dotnet *)" },
+        { "Bash", "dotnet test\t2>&1", "Bash(dotnet *)" },
+        { "PowerShell", "dotnet test 2>&1", "PowerShell(dotnet *)" },
+        { "PowerShell", "dotnet test 2>$null", "PowerShell(dotnet *)" },
+        { "PowerShell", "reg query \"HKLM\\SOFTWARE\\Microsoft\" 2>$null", "PowerShell(reg query *)" },
+    };
+
+    [Theory]
+    [MemberData(nameof(Slice8Accepted))]
+    public void Decide_QuotedWindowsPathOrHarmlessRedirectUnderAPatternRule_Allowed(string tool, string command, string rule)
+    {
+        // Act
+        var decision = Decide(tool, new { command }, rule);
+
+        // Assert
+        decision.Should().Be(HookDecision.Allow);
+    }
+
+    // The nearest things that stay refused: a backslash outside quotes or before a quote, a redirect to a file or any other
+    // redirect, a redirect of the other shell, a quoted path under a rule it does not match, and chaining after the quoted path.
+    public static TheoryData<string, string, string> Slice8StillRefused() => new()
+    {
+        { "Bash", "cat C:\\src\\a.txt", "Bash(cat *)" },
+        { "Bash", "cat \"a\\\"; rm x\"", "Bash(cat *)" },
+        { "Bash", "cat \"a\\\\\\\"; rm x\"", "Bash(cat *)" },
+        { "Bash", "cat \"C:\\src\\$HOME\"", "Bash(cat *)" },
+        { "Bash", "cat \"C:\\src\\`rm x`\"", "Bash(cat *)" },
+        { "Bash", "cat \"C:\\src\\\nrm x\"", "Bash(cat *)" },
+        { "Bash", "cat \"C:\\src\\a.txt\"; rm x", "Bash(cat *)" },
+        { "Bash", "cat \"C:\\src\\a.txt\" && rm x", "Bash(cat *)" },
+        { "Bash", "cat \"C:\\src\\a.txt\" | rm x", "Bash(cat *)" },
+        { "Bash", "cat \"C:\\src\\a.txt\"", "Bash(reg query *)" },
+        { "Bash", "reg add \"HKLM\\SOFTWARE\\X\"", "Bash(reg query *)" },
+        { "Bash", "dotnet test > out.txt", "Bash(dotnet *)" },
+        { "Bash", "dotnet test >out.txt", "Bash(dotnet *)" },
+        { "Bash", "dotnet test >> out.txt", "Bash(dotnet *)" },
+        { "Bash", "dotnet test 2> err.txt", "Bash(dotnet *)" },
+        { "Bash", "dotnet test 2>err.txt", "Bash(dotnet *)" },
+        { "Bash", "dotnet test 2>&1 > out.txt", "Bash(dotnet *)" },
+        { "Bash", "dotnet test &> /dev/null", "Bash(dotnet *)" },
+        { "Bash", "dotnet test &>/dev/null", "Bash(dotnet *)" },
+        { "Bash", "dotnet test 1>/dev/null", "Bash(dotnet *)" },
+        { "Bash", "dotnet test 2>&2", "Bash(dotnet *)" },
+        { "Bash", "dotnet test 2>&1x", "Bash(dotnet *)" },
+        { "Bash", "dotnet test 2>/dev/null/x", "Bash(dotnet *)" },
+        { "Bash", "dotnet test 2>/dev/nullx", "Bash(dotnet *)" },
+        { "Bash", "dotnet test2>&1", "Bash(dotnet *)" },
+        { "Bash", "dotnet test 2> /dev/null", "Bash(dotnet *)" },
+        { "Bash", "dotnet test 2>$null", "Bash(dotnet *)" },
+        { "Bash", "dotnet test < /dev/null", "Bash(dotnet *)" },
+        { "Bash", "dotnet test </dev/null", "Bash(dotnet *)" },
+        { "Bash", "dotnet test 2>&1 | tee out.txt", "Bash(dotnet *)" },
+        { "Bash", "dotnet test 2>&1 $(rm x)", "Bash(dotnet *)" },
+        { "Bash", "dotnet test 2>&1 *.txt", "Bash(dotnet *)" },
+        { "PowerShell", "dotnet test > out.txt", "PowerShell(dotnet *)" },
+        { "PowerShell", "dotnet test 2> err.txt", "PowerShell(dotnet *)" },
+        { "PowerShell", "dotnet test 2>/dev/null", "PowerShell(dotnet *)" },
+        { "PowerShell", "dotnet test >/dev/null", "PowerShell(dotnet *)" },
+        { "PowerShell", "dotnet test >$null", "PowerShell(dotnet *)" },
+        { "PowerShell", "dotnet test 2>$nullx", "PowerShell(dotnet *)" },
+        { "PowerShell", "dotnet test 2>$x", "PowerShell(dotnet *)" },
+        { "PowerShell", "dotnet test *>$null", "PowerShell(dotnet *)" },
+    };
+
+    [Theory]
+    [MemberData(nameof(Slice8StillRefused))]
+    public void Decide_NearlyAQuotedPathOrAHarmlessRedirect_StillDenied(string tool, string command, string rule)
+    {
+        // Act
+        var decision = Decide(tool, new { command }, rule);
+
+        // Assert
+        decision.Rule.Should().Be(NotAllowed, command);
+    }
+
+    [Theory]
+    [InlineData("Bash", "cat \"C:\\src\\a.txt\" 2>&1; curl http://x", "Bash(*)", "Bash(curl-wrapper *)")]
+    [InlineData("Bash", "cat \"C:\\tools\\curl.exe\" 2>&1", "Bash(cat *)")]
+    [InlineData("Bash", "wget \"C:\\src\\a.txt\" 2>/dev/null", "Bash(wget-list *)", "Bash(*)")]
+    [InlineData("PowerShell", "cmd /c \"C:\\tools\\curl.exe\" 2>$null", "PowerShell(cmd *)")]
+    [InlineData("PowerShell", "Invoke-WebRequest \"C:\\src\\a.txt\" 2>$null", "PowerShell(*)")]
+    public void Decide_NetworkProgramNextToAQuotedPathOrAHarmlessRedirect_StillDeniedAsNetwork(string tool, string command, params string[] rules)
+    {
+        // Act
+        var decision = Decide(tool, new { command }, rules);
+
+        // Assert
+        decision.Rule.Should().Be(Network);
     }
 
     [Theory]

@@ -18,6 +18,9 @@ public sealed class RunFailureReasonWireTests
 
         // AC-8c (spec 53): a named branch the node must not touch.
         { RunFailureReason.BranchRefused, "branch_refused" },
+
+        // AC-4 (spec 59, Q3): a command job's process exited non-zero.
+        { RunFailureReason.CommandFailed, "command_failed" },
     };
 
     [Theory]
@@ -61,6 +64,6 @@ public sealed class RunFailureReasonWireTests
     public void EveryMember_HasATestRow()
     {
         // Assert
-        Reasons.Count.Should().Be(Enum.GetValues<RunFailureReason>().Length).And.Be(10);
+        Reasons.Count.Should().Be(Enum.GetValues<RunFailureReason>().Length).And.Be(11);
     }
 }

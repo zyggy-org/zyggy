@@ -69,6 +69,9 @@ public sealed partial class BusRepository
     /// <summary>Gets this node's identity on the bus.</summary>
     public BusIdentity Me => _me;
 
+    /// <summary>Gets the checkout's root folder (deliverable 18: a session task's claim is read from it; spec 59: the sender reads the target's registry file there).</summary>
+    internal string CheckoutRoot => _checkoutRoot;
+
     /// <summary>Gets the clock this repository stamps its envelopes with (Central's reports on items, spec 41).</summary>
     internal TimeProvider Clock => _clock;
 
@@ -273,7 +276,22 @@ public sealed partial class BusRepository
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The write outcome; <c>WriteFailed("sign", …)</c> when the key is absent.</returns>
     /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
-    public async Task<WriteOutcome> ReportAsync(AcceptedJob claimed, ReportFields report, ReadOnlyMemory<byte> body, KeyId signWith, CancellationToken ct)
+    public Task<WriteOutcome> ReportAsync(AcceptedJob claimed, ReportFields report, ReadOnlyMemory<byte> body, KeyId signWith, CancellationToken ct) =>
+        ReportAsync(claimed, report, body, null, signWith, ct);
+
+    /// <summary>
+    /// The report write with spec 59's attached file: <paramref name="attachment"/> (when given) is written as
+    /// <see cref="BusPaths.AttachmentFile"/> beside the report in the same commit; <paramref name="report"/> names and hashes it.
+    /// </summary>
+    /// <param name="claimed">The claimed job.</param>
+    /// <param name="report">The report fields, with <c>file_name</c> and <c>file_sha256</c> when a file is attached.</param>
+    /// <param name="body">The report body.</param>
+    /// <param name="attachment">The attached file's bytes, or <see langword="null"/>.</param>
+    /// <param name="signWith">This machine's signing key.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The write outcome.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
+    public async Task<WriteOutcome> ReportAsync(AcceptedJob claimed, ReportFields report, ReadOnlyMemory<byte> body, ReadOnlyMemory<byte>? attachment, KeyId signWith, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(claimed);
         ArgumentNullException.ThrowIfNull(report);
@@ -293,13 +311,20 @@ public sealed partial class BusRepository
         AssertMayWrite(reportPath, BusFolder.Reports);
         AssertMayWrite(claimedPath, BusFolder.Claimed);
         byte[] bytes = EnvelopeWriter.Serialize(signed.Envelope!);
+        string? attachmentPath = attachment is null ? null : BusPaths.AttachmentFile(new BusFile(reportPath, id));
+        string[] added = attachmentPath is null ? [reportPath] : [reportPath, attachmentPath];
         return await WriteAsync(
             Subject("report", id, _me.Machine.Value, claimed.Job.Header.From.Value),
-            [reportPath, claimedPath],
+            [.. added, claimedPath],
             async token =>
             {
                 await WriteFileAsync(reportPath, bytes, token).ConfigureAwait(false);
-                return Failure("add", await _git.AddAsync(_checkoutRoot, [reportPath], token).ConfigureAwait(false))
+                if (attachmentPath is not null)
+                {
+                    await WriteFileAsync(attachmentPath, attachment!.Value.ToArray(), token).ConfigureAwait(false);
+                }
+
+                return Failure("add", await _git.AddAsync(_checkoutRoot, added, token).ConfigureAwait(false))
                     ?? Failure("rm", await _git.RemoveAsync(_checkoutRoot, [claimedPath], token).ConfigureAwait(false));
             },
             ct).ConfigureAwait(false);
@@ -921,6 +946,23 @@ public sealed partial class BusRepository
             moved.Add((file.RelativePath, to, month));
         }
 
+        // Spec 59 (Q2): a report's attached file moves with it, beside the archived report; it is not counted as a move of its own.
+        var attached = new List<(string From, string To, string Month)>();
+        foreach (((BusFile file, _), (_, string to, string month)) in moves.Zip(moved))
+        {
+            // A file whose name is not <ULID>.md (a stray file in reports/) has no attachment; it moves as before.
+            if (!file.RelativePath.EndsWith("/" + file.Id.Value + ".md", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            string attachment = BusPaths.AttachmentFile(file);
+            if (File.Exists(BusPaths.Resolve(_checkoutRoot, attachment)))
+            {
+                attached.Add((attachment, BusPaths.AttachmentFile(new BusFile(to, file.Id)), month));
+            }
+        }
+
         var settled = new List<(string Item, string Report, byte[] Bytes, string Outcome)>(items.Count);
         foreach (SettledItem item in items)
         {
@@ -939,10 +981,10 @@ public sealed partial class BusRepository
         IEnumerable<string> lines = moved.Select(m => m.From + " → " + m.To).Concat(settled.Select(s => s.Item + " → " + s.Outcome));
         return WriteAsync(
             ArchiveSubject(moved.Count + settled.Count),
-            [.. moved.Select(m => m.From), .. moved.Select(m => m.To), .. settled.Select(s => s.Item), .. settled.Select(s => s.Report)],
+            [.. moved.Select(m => m.From), .. moved.Select(m => m.To), .. attached.Select(a => a.From), .. attached.Select(a => a.To), .. settled.Select(s => s.Item), .. settled.Select(s => s.Report)],
             async token =>
             {
-                foreach ((string from, string to, string month) in moved)
+                foreach ((string from, string to, string month) in moved.Concat(attached))
                 {
                     Directory.CreateDirectory(BusPaths.Resolve(_checkoutRoot, month));
                     WriteFailed? failed = Failure("mv", await _git.MoveAsync(_checkoutRoot, from, to, token).ConfigureAwait(false));
@@ -1115,6 +1157,78 @@ public sealed partial class BusRepository
                     ?? Failure("rm", await _git.RemoveAsync(_checkoutRoot, [claimed], token).ConfigureAwait(false));
             },
             ct);
+    }
+
+    /// <summary>Deliverable 18 (slice 14): Central removes an unclaimed session task past its timeout with its <c>no_session</c> report.</summary>
+    /// <remarks>
+    /// One commit <c>&lt;tenant&gt; report &lt;ulid&gt; central→&lt;from&gt;</c>: <c>jobs/&lt;id&gt;.md</c> of the task's machine removed,
+    /// <paramref name="signedReport"/> (Central's <c>failed</c> / <c>no_session</c> report) added to Central's own <c>reports/</c>. Only an
+    /// unclaimed <c>deliver: session</c> job whose <c>created</c> plus <c>timeout_minutes</c> (default 60) lies before now.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">Thrown when this machine is not Central, the path breaks the §4 write rule, the job is not a session task past its timeout or the report is not a signed report of this machine (a caller bug).</exception>
+    internal Task<WriteOutcome> ExpireSessionTaskAsync(SweepClaim task, Model signedReport, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        ArgumentNullException.ThrowIfNull(signedReport);
+        string path = task.File.RelativePath;
+        AssertMaySweep(path, BusFolder.Jobs, task.Folder);
+        EnvelopeResult parsed = EnvelopeParser.Parse(task.Bytes, _me.Tenant);
+        if (!parsed.IsAccepted || parsed.Envelope.Job is not { Deliver: JobDelivery.Session } job)
+        {
+            throw new InvalidOperationException("write rule: '" + path + "' is not a session task");
+        }
+
+        if (parsed.Envelope.Header.Created + TimeSpan.FromMinutes(job.TimeoutMinutes ?? SessionTaskTimeoutMinutes) >= _clock.GetUtcNow())
+        {
+            throw new InvalidOperationException("write rule: '" + path + "' is not past its timeout");
+        }
+
+        (string reportPath, byte[] bytes) = SweepReport(task, signedReport);
+        return WriteAsync(
+            Subject("report", signedReport.Header.Id, _me.Machine.Value, signedReport.Header.To.Value),
+            [reportPath, path],
+            async token =>
+            {
+                await WriteFileAsync(reportPath, bytes, token).ConfigureAwait(false);
+                return Failure("add", await _git.AddAsync(_checkoutRoot, [reportPath], token).ConfigureAwait(false))
+                    ?? Failure("rm", await _git.RemoveAsync(_checkoutRoot, [path], token).ConfigureAwait(false));
+            },
+            ct);
+    }
+
+    /// <summary>A session task's timeout when its job names none (deliverable 18).</summary>
+    internal const int SessionTaskTimeoutMinutes = 60;
+
+    /// <summary>
+    /// Deliverable 18 (slice 14): under the checkout write lock, every top-level <c>*.md</c> of every machine's <c>jobs/</c> (never
+    /// <c>claimed/</c>) with its bytes and its leniently read <c>created</c>; the sweep keeps the verified session tasks past their timeout.
+    /// </summary>
+    /// <exception cref="BusBusyException">Another zyggy process held the checkout's write lock for the whole wait.</exception>
+    internal async Task<IReadOnlyList<SweepClaim>> ListSessionTasksForSweepAsync(CancellationToken ct)
+    {
+        using IDisposable handle = await BusCheckoutLock.AcquireAsync(_checkoutRoot, BusCheckoutLock.WriteLockName, LockTimeout, _clock, ct).ConfigureAwait(false)
+            ?? throw new BusBusyException();
+        string nodes = BusPaths.Resolve(_checkoutRoot, BusPaths.Nodes(_me.Tenant));
+        if (!Directory.Exists(nodes))
+        {
+            return [];
+        }
+
+        var tasks = new List<SweepClaim>();
+        IEnumerable<MachineName> machines = Directory.EnumerateDirectories(nodes)
+            .Select(d => MachineName.TryParse(Path.GetFileName(d), out MachineName? machine) ? machine : null)
+            .OfType<MachineName>()
+            .OrderBy(m => m.Value, StringComparer.Ordinal);
+        foreach (MachineName machine in machines)
+        {
+            foreach (BusFile file in await ListFolderAsync(BusPaths.Jobs(_me.Tenant, machine), ct).ConfigureAwait(false))
+            {
+                byte[] bytes = await File.ReadAllBytesAsync(BusPaths.Resolve(_checkoutRoot, file.RelativePath), ct).ConfigureAwait(false);
+                tasks.Add(new SweepClaim(file, machine, bytes, EnvelopeParser.PeekHeader(bytes)?.Created));
+            }
+        }
+
+        return tasks;
     }
 
     /// <summary>

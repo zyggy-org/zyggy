@@ -18,11 +18,19 @@ internal enum ShellDialect
 /// try to understand a shell: a pattern rule vouches only for a <em>simple</em> command — plain words and plain quoted strings, made
 /// of characters with one meaning in both shells — and everything else (expansion, substitution, redirection, grouping, comments,
 /// escapes, wildcards, characters outside printable ASCII) is "not simple" and matches only a bare rule or <c>(*)</c>. The simple
-/// language has no escapes, so three states (unquoted, single-quoted, double-quoted) read it exactly.
+/// language has no escapes, so three states (unquoted, single-quoted, double-quoted) read it exactly. Two exceptions (spec 59
+/// slice 8, AC-11): a backslash inside double quotes in Bash is a path character unless bash reads it as an escape, and the four
+/// harmless redirects of <see cref="HarmlessRedirects"/> are simple words — each in the shell it belongs to.
 /// </summary>
 internal static class ShellCommand
 {
+    /// <summary>The redirects a job may write without a file being written: in Bash <c>2>&amp;1</c>, <c>2>/dev/null</c>, <c>>/dev/null</c>; in PowerShell <c>2>&amp;1</c>, <c>2>$null</c>.</summary>
+    public static readonly IReadOnlyList<string> HarmlessRedirects = ["2>&1", "2>/dev/null", ">/dev/null", "2>$null"];
+
     private const string UnquotedPunctuation = " \t-_./:=,+%;|&\r\n";
+
+    private static readonly string[] BashRedirects = ["2>&1", "2>/dev/null", ">/dev/null"];
+    private static readonly string[] PowerShellRedirects = ["2>&1", "2>$null"];
 
     /// <summary>The dialect of <paramref name="tool"/>'s shell.</summary>
     public static ShellDialect DialectOf(string tool) => tool == "PowerShell" ? ShellDialect.PowerShell : ShellDialect.Bash;
@@ -30,16 +38,20 @@ internal static class ShellCommand
     /// <summary>
     /// Why <paramref name="command"/> is not a simple command, or <see langword="null"/> when it is one. Unquoted: ASCII letters and
     /// digits, space, tab, <c>- _ . / : = , + %</c>, the separators <c>; | &amp;</c> and line breaks, <c>@</c> in Bash, <c>\</c> in
-    /// PowerShell. In single quotes: printable ASCII. In double quotes: printable ASCII without <c>$</c>, the backtick and, in Bash,
-    /// the backslash. No line break inside a quote, no quote left open, no <c>name=value</c> as the first word of a part.
+    /// PowerShell, and a harmless redirect of the dialect as a word of its own. In single quotes: printable ASCII. In double quotes:
+    /// printable ASCII without <c>$</c> and the backtick; in Bash a backslash there is a path character, a pair is one backslash, and
+    /// one before a quote or a line break is an escape (refused). No line break inside a quote, no quote left open, no
+    /// <c>name=value</c> as the first word of a part.
     /// </summary>
     public static string? WhyNotSimple(string command, ShellDialect dialect)
     {
         var quote = '\0';
         var inFirstWord = true;
         var firstWordStarted = false;
-        foreach (var c in command)
+        var redirects = dialect == ShellDialect.PowerShell ? PowerShellRedirects : BashRedirects;
+        for (var i = 0; i < command.Length; i++)
         {
+            var c = command[i];
             if (quote != '\0')
             {
                 if (c == quote)
@@ -50,7 +62,25 @@ internal static class ShellCommand
                 {
                     return "a line break inside a quote";
                 }
-                else if (!IsPrintableAscii(c) || (quote == '"' && (c is '$' or '`' || (c == '\\' && dialect == ShellDialect.Bash))))
+                else if (quote == '"' && c == '\\' && dialect == ShellDialect.Bash)
+                {
+                    // Spec 59 slice 8: "C:\src\a.txt" is a path; "a\"; rm x" hides a quote, "a\\" is one backslash before the closing quote.
+                    if (i + 1 == command.Length)
+                    {
+                        return "a quote never closes";
+                    }
+
+                    if (command[i + 1] is '"' or '\r' or '\n')
+                    {
+                        return "an escape inside a quote";
+                    }
+
+                    if (command[i + 1] == '\\')
+                    {
+                        i++;
+                    }
+                }
+                else if (!IsPrintableAscii(c) || (quote == '"' && c is '$' or '`'))
                 {
                     return Describe(c);
                 }
@@ -61,6 +91,13 @@ internal static class ShellCommand
             if (c is '\'' or '"')
             {
                 quote = c;
+                firstWordStarted = true;
+                continue;
+            }
+
+            if (RedirectAt(command, i, redirects) is > 0 and var redirect)
+            {
+                i += redirect - 1;
                 firstWordStarted = true;
                 continue;
             }
@@ -97,18 +134,27 @@ internal static class ShellCommand
         return quote == '\0' ? null : "a quote never closes";
     }
 
-    /// <summary>The trimmed, non-empty parts of a simple <paramref name="command"/>: split on <c>;</c>, <c>|</c>, <c>&amp;</c> and line breaks outside quotes.</summary>
+    /// <summary>
+    /// The trimmed, non-empty parts of a simple <paramref name="command"/>: split on <c>;</c>, <c>|</c>, <c>&amp;</c> and line breaks
+    /// outside quotes; a harmless redirect stays whole in its part.
+    /// </summary>
     public static IReadOnlyList<string> Parts(string command)
     {
         var parts = new List<string>();
         var current = new StringBuilder();
         var quote = '\0';
-        foreach (var c in command)
+        for (var i = 0; i < command.Length; i++)
         {
+            var c = command[i];
             if (quote != '\0')
             {
                 current.Append(c);
                 quote = c == quote ? '\0' : quote;
+            }
+            else if (RedirectAt(command, i, HarmlessRedirects) is > 0 and var redirect)
+            {
+                current.Append(command, i, redirect);
+                i += redirect - 1;
             }
             else if (IsSeparator(c))
             {
@@ -127,15 +173,17 @@ internal static class ShellCommand
 
     /// <summary>
     /// The words of one part of a simple command, quotes removed: split on blanks outside quotes. <c>Blank</c> says whether the word
-    /// held a blank inside its quotes — a sentence, not a path (deliverable 18, the read root).
+    /// held a blank inside its quotes — a sentence, not a path (deliverable 18, the read root). <c>Quoted</c> says whether any part of
+    /// the word was quoted: a quoted word is an ordinary argument, never a redirect (spec 59 slice 9 repair).
     /// </summary>
-    public static IReadOnlyList<(string Text, bool Blank)> Words(string part)
+    public static IReadOnlyList<(string Text, bool Blank, bool Quoted)> Words(string part)
     {
-        var words = new List<(string, bool)>();
+        var words = new List<(string, bool, bool)>();
         var current = new StringBuilder();
         var quote = '\0';
         var started = false;
         var blank = false;
+        var quoted = false;
         foreach (var c in part)
         {
             if (quote != '\0')
@@ -154,17 +202,19 @@ internal static class ShellCommand
             {
                 quote = c;
                 started = true;
+                quoted = true;
             }
             else if (c is ' ' or '\t')
             {
                 if (started)
                 {
-                    words.Add((current.ToString(), blank));
+                    words.Add((current.ToString(), blank, quoted));
                 }
 
                 current.Clear();
                 started = false;
                 blank = false;
+                quoted = false;
             }
             else
             {
@@ -175,7 +225,7 @@ internal static class ShellCommand
 
         if (started)
         {
-            words.Add((current.ToString(), blank));
+            words.Add((current.ToString(), blank, quoted));
         }
 
         return words;
@@ -211,6 +261,31 @@ internal static class ShellCommand
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// The length of one of <paramref name="redirects"/> standing as a word of its own at <paramref name="at"/> in <paramref name="command"/>
+    /// (after a blank; followed by the end, a blank or a separator), else 0. <c>2>&amp;1x</c>, <c>2>/dev/null/x</c> and <c>test2>&amp;1</c> are no redirect.
+    /// </summary>
+    private static int RedirectAt(string command, int at, IReadOnlyList<string> redirects)
+    {
+        if (at == 0 || command[at - 1] is not (' ' or '\t'))
+        {
+            return 0;
+        }
+
+        foreach (var token in redirects)
+        {
+            var end = at + token.Length;
+            if (end <= command.Length
+                && string.CompareOrdinal(command, at, token, 0, token.Length) == 0
+                && (end == command.Length || command[end] is ' ' or '\t' || IsSeparator(command[end])))
+            {
+                return token.Length;
+            }
+        }
+
+        return 0;
     }
 
     private static bool IsWordCharacter(char c) => char.IsLetterOrDigit(c) || c == '_';

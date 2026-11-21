@@ -31,6 +31,8 @@ public static class ServiceCollectionExtensions
         services.AddOptions<DiscoveryOptions>()
             .Configure<IServiceProvider>((options, sp) =>
             {
+                // Spec 59 slice 7: the file says which zyggy published it; a test that set its own version keeps it.
+                options.Version ??= Bus.ServiceCollectionExtensions.InformationalVersion();
                 if (sp.GetService<NodeConfiguration>() is { } configuration)
                 {
                     options.IntervalMinutes = configuration.Discovery.IntervalMinutes;

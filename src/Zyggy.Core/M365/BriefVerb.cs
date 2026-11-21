@@ -1,4 +1,6 @@
+using Zyggy.Core.Brief;
 using Zyggy.Core.M365.Runs;
+using Zyggy.Core.Supervision;
 using Zyggy.Core.Verbs;
 
 namespace Zyggy.Core.M365;
@@ -37,7 +39,8 @@ internal sealed class BriefVerb(M365VerbContext context) : IM365Verb
         }
 
         using var graph = setup.Session.CreateGraph(context);
-        var outcome = await new BriefRun(setup.Session, setup.Partition, graph.Reader, setup.Model, context.Clock)
+        var decided = BriefPaths.Beside(setup.Session.Instance.Paths).Decided;
+        var outcome = await new BriefRun(setup.Session, setup.Partition, graph.Reader, setup.Model, context.Clock, since => DecidedFile.Read(decided, since, setup.Session.TimeZone))
             .RunAsync(cancellationToken, context.SignalExit).ConfigureAwait(false);
         return await RunOutput.WriteAsync(io, outcome).ConfigureAwait(false);
     }

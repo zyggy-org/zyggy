@@ -9,6 +9,7 @@ using Zyggy.Core.Bus;
 using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Health;
+using Zyggy.Core.Registry;
 using Zyggy.Core.Verbs;
 
 namespace Zyggy.Cli.Commands;
@@ -81,7 +82,9 @@ internal static partial class StatusCommand
             }
 
             InventoryReport report = await inventory.ListAsync(RecentReports, ct);
-            await io.Out.WriteAsync(RenderOverview(configuration, health, verdict, report, now));
+            TimeSpan staleAfter = TimeSpan.FromHours(configuration.Discovery.LastSeenHours);
+            MachineLiveness[] machines = [.. (await inventory.RegistryAsync(ct)).Select(d => MachineLiveness.Of(d, now, staleAfter))];
+            await io.Out.WriteAsync(RenderOverview(configuration, health, verdict, report, now, machines));
             return verdict.Level switch
             {
                 HealthLevel.Green => ExitCodes.Ok,
@@ -118,8 +121,12 @@ internal static partial class StatusCommand
         return ExitCodes.Ok;
     }
 
-    /// <summary>The spec's "Output formats" block for <c>zyggy status</c>, line by line.</summary>
-    internal static string RenderOverview(NodeConfiguration configuration, NodeHealth? health, HealthVerdict verdict, InventoryReport report, DateTimeOffset now)
+    /// <summary>
+    /// The spec's "Output formats" block for <c>zyggy status</c>, line by line; after the machine table, one <c>registry</c> line per
+    /// published registry file (spec 59 slice 7): <c>last_seen</c> with its age, the node's <c>version</c>, <c>health</c>, and
+    /// <c>stale</c> only past <c>discovery.lastSeenHours</c>. Nothing when no machine has published.
+    /// </summary>
+    internal static string RenderOverview(NodeConfiguration configuration, NodeHealth? health, HealthVerdict verdict, InventoryReport report, DateTimeOffset now, IReadOnlyList<MachineLiveness> machines)
     {
         var sb = new StringBuilder();
         sb.Append("node    ").Append(configuration.Machine.Value).Append(" (").Append(configuration.Tenant.Value).Append(')');
@@ -160,6 +167,16 @@ internal static partial class StatusCommand
                 .Append(m.Rejected.ToString(CultureInfo.InvariantCulture).PadLeft(10))
                 .Append(m.Reports.ToString(CultureInfo.InvariantCulture).PadLeft(9))
                 .Append(m.Context.ToString(CultureInfo.InvariantCulture).PadLeft(9))
+                .Append('\n');
+        }
+
+        foreach (MachineLiveness m in machines)
+        {
+            sb.Append("registry ").Append(m.Machine.Value.PadRight(14))
+                .Append("last_seen ").Append(m.LastSeen is { } seen ? Timestamp(seen) + " (" + HealthRules.Age(now, seen) + ")" : "never")
+                .Append(Dot).Append("version ").Append(m.Version ?? "unknown")
+                .Append(Dot).Append("health ").Append(m.Health is { } level ? level.ToString().ToLowerInvariant() : "unknown")
+                .Append(m.Stale ? Dot + "stale" : string.Empty)
                 .Append('\n');
         }
 

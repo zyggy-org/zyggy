@@ -37,7 +37,10 @@ internal sealed class ProcessRunner(TimeProvider clock) : IProcessRunner
 
         var stdin = WriteStdinAsync(process, spec.StandardInput);
         var stdout = new BoundedCapture(spec.MaxStdoutBytes);
-        var stdoutTask = ReadStdoutAsync(process.StandardOutput, stdout, spec.OnStdoutLine);
+        // Spec 59: a fetched file goes to disk byte for byte, never decoded into lines.
+        var stdoutTask = spec.StandardOutputPath is { } outputPath
+            ? CopyStdoutToFileAsync(process.StandardOutput.BaseStream, outputPath)
+            : ReadStdoutAsync(process.StandardOutput, stdout, spec.OnStdoutLine);
         var stderr = new BoundedCapture(spec.MaxStderrBytes);
         var stderrTask = ReadStderrAsync(process.StandardError, stderr);
 
@@ -128,6 +131,15 @@ internal sealed class ProcessRunner(TimeProvider clock) : IProcessRunner
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
         {
             // The child exited without reading all of its input (broken pipe).
+        }
+    }
+
+    private static async Task CopyStdoutToFileAsync(Stream source, string path)
+    {
+        var file = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        await using (file.ConfigureAwait(false))
+        {
+            await source.CopyToAsync(file).ConfigureAwait(false);
         }
     }
 

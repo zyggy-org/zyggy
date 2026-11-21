@@ -110,7 +110,7 @@ Deliverable 14. The node tells the bus what it can run and routes jobs by projec
 
 - **First scan before any job.** At start the node scans every `devRoots` entry to `discovery.depth` levels (default 2) for Claude Code projects (a `.claude/` folder), not descending into projects, hidden or excluded folders, or links (a folder matching `discovery.exclude` is never published as a project either), **before** its listener admits a single job, so a job by name that was already waiting resolves against a real scan.
 - **First publish after the first poll.** The registry file `tenants/<tenant>/registry/<machine>.yaml` is committed once the listener is up and has polled (at most 60 s), so its `health` is not the "never polled" `red`. A refused start-up (exit 6) publishes nothing.
-- **Then every `discovery.intervalMinutes`** (60): a rescan replaces the in-memory snapshot; a commit happens only when the content changed or `last_seen` is older than `discovery.lastSeenHours` (6). Scans never overlap; a failing scan keeps the previous snapshot.
+- **Then every `discovery.intervalMinutes`** (60): a rescan replaces the in-memory snapshot; a commit happens only when the content changed or `last_seen` is older than half of `discovery.lastSeenHours` (6, so a refresh every 3 h: a healthy machine is never called stale, deliverable 59). The file carries `version`, the `zyggy` this node runs; an upgrade publishes at once. Scans never overlap; a failing scan keeps the previous snapshot.
 - **Routing.** A job's `project` that is a name resolves only through this node's own snapshot — never through the registry file on the bus, which anyone with push access could rewrite. This works on every node, `discovery.detail: names` included: the snapshot keeps each discovered project's folder in memory beside the published document, which on a `names` node still carries no path (spec 56). A name two folders derive at the same level is `rejected` with `unknown_project: ambiguous name`, never guessed. A path must lie under a `devRoots` entry. Anything else is `rejected` with `unknown_project: unknown name` or `outside devRoots`.
 - **Central** publishes its own file too, with `projects: []` unless it has `devRoots`. Registry files of other machines or tenants are never read.
 
@@ -168,6 +168,17 @@ Deliverable 18. On Central, unless `supervision.enabled` is `false`, the node wa
 3. **When the run ends** the node logs `supervisor run on <id> attempt <n> ended: <outcome>, blocked: <n>` and looks for the next event at once. An event two runs left without a decision gets a node-written `escalate`. The transcript and the blocked-calls file are `<nodeDir>/runs/<tenant>/<event id>.jsonl` and `.blocked`.
 
 A run that answers a machine of `supervision.workMachines` reads only `supervision.outboundPaths` and the one question it answers (the guard's read root) and has no Hub tool. The retry count of an event and the hourly cap live in memory; a restart starts both at zero. The remedies are the Cli README's "Troubleshooting — Mandate and supervisor".
+
+## The owner's view
+
+Deliverable 18, on Central with an M365 instance (`ZYGGY_INSTANCE_DIR`). After every supervisor pass, and once a minute between pulls, the node:
+
+- reads the waiting list (`zyggy work --waiting`) and mails the owner when it holds an item no mail has named yet and no mail went out in the last 30 minutes — subject `Zyggy: <n> item(s) wait for you`, one line per item (kind, machine, project, id, age; no project for a work machine), sent through Graph from the owner's mailbox to itself, never saved to Sent Items. What was named is kept in `<nodeDir>/owner-mail.json`. A failed send is one Error per streak and is tried again a minute later;
+- writes Central's decisions of the last 14 days (time, kind, machine, project, id — never the text) to `decided.json` in the brief directory (`<ZYGGY_STATE_DIR or ~/.local/state/zyggy>/brief`); the morning brief lists those since the previous brief under "Decided for you".
+
+A job with `deliver: session` is never claimed by the node service: it waits for a live session's turn end (`zyggy work --turn-end`, Cli README), and Central's sweep removes it with a `failed` / `no_session` report when none took it within its `timeout_minutes`.
+
+`zyggy supervise stop` puts `supervision-stopped` in the node folder: Central starts no supervisor run (the node-written decisions and the mail go on), and on any machine a job under a mandate is rejected `mandate_invalid` (limit `supervision_stopped`) until `zyggy supervise start`.
 
 ## Polling every second
 

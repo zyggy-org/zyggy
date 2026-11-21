@@ -237,7 +237,9 @@ public static partial class NodeConfigurationReader
             || !TryDiscovery(root, out DiscoverySettings discovery, out failure)
             || !TrySweep(root, machine, out SweepSettings sweep, out failure)
             || !TrySupervision(root, machine, discovery, out SupervisionSettings supervision, out failure)
-            || !TryAgentCore(root, out AgentCoreSettings agentCore, out failure))
+            || !TryAgentCore(root, out AgentCoreSettings agentCore, out failure)
+            || !TryCommands(root, out IReadOnlyDictionary<string, Policy.NodeCommand> commands, out failure)
+            || !TryJobs(root, out int fetchMaxBytes, out failure))
         {
             return failure;
         }
@@ -261,7 +263,128 @@ public static partial class NodeConfigurationReader
             Sweep = sweep,
             Supervision = supervision,
             AgentCore = agentCore,
+            Commands = commands,
+            FetchMaxBytes = fetchMaxBytes,
         });
+    }
+
+    /// <summary>
+    /// The <c>jobs</c> section (spec 59): absent or <c>null</c> means the defaults; <c>fetchMaxBytes</c> a positive integer, absent or
+    /// <c>null</c> meaning 1,048,576. Unknown keys inside the section are ignored.
+    /// </summary>
+    private static bool TryJobs(JsonElement root, out int fetchMaxBytes, out NodeConfigurationResult failure)
+    {
+        fetchMaxBytes = Policy.NodePolicy.DefaultFetchMaxBytes;
+        failure = null!;
+        if (!root.TryGetProperty("jobs", out JsonElement section) || section.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (section.ValueKind != JsonValueKind.Object)
+        {
+            failure = Invalid("jobs", "must be an object");
+            return false;
+        }
+
+        if (!section.TryGetProperty("fetchMaxBytes", out JsonElement value) || value.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out int bytes) || bytes < 1)
+        {
+            failure = Invalid("jobs.fetchMaxBytes", "must be a positive integer");
+            return false;
+        }
+
+        fetchMaxBytes = bytes;
+        return true;
+    }
+
+    /// <summary>
+    /// The <c>commands</c> section (spec 59 slice 2): absent or <c>null</c> means none; otherwise an object of name (<c>[a-z0-9-]</c>, at
+    /// most 64 characters) → <c>{ "argv": [program, args…], "timeoutMinutes": 1–30 }</c>. The program is a bare
+    /// name on PATH or an absolute path; every argv item a non-empty string. Nothing runs through a shell.
+    /// </summary>
+    private static bool TryCommands(JsonElement root, out IReadOnlyDictionary<string, Policy.NodeCommand> commands, out NodeConfigurationResult failure)
+    {
+        var map = new Dictionary<string, Policy.NodeCommand>(StringComparer.Ordinal);
+        commands = map;
+        failure = null!;
+        if (!root.TryGetProperty("commands", out JsonElement section) || section.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (section.ValueKind != JsonValueKind.Object)
+        {
+            failure = Invalid("commands", "must be an object of name to argv");
+            return false;
+        }
+
+        foreach (JsonProperty entry in section.EnumerateObject())
+        {
+            var key = "commands." + entry.Name;
+            if (!Envelope.JobCommands.IsName(entry.Name))
+            {
+                failure = Invalid(key, "the name must be a-z, 0-9 and -");
+                return false;
+            }
+
+            if (entry.Value.ValueKind != JsonValueKind.Object)
+            {
+                failure = Invalid(key, "must be an object with argv and an optional timeoutMinutes");
+                return false;
+            }
+
+            if (!entry.Value.TryGetProperty("argv", out JsonElement argvElement))
+            {
+                failure = Invalid(key + ".argv", "is required");
+                return false;
+            }
+
+            int? timeout = null;
+            if (entry.Value.TryGetProperty("timeoutMinutes", out JsonElement t) && t.ValueKind != JsonValueKind.Null)
+            {
+                if (t.ValueKind != JsonValueKind.Number || !t.TryGetInt32(out int minutes) || minutes < 1 || minutes > 30)
+                {
+                    failure = Invalid(key + ".timeoutMinutes", "must be an integer from 1 to 30");
+                    return false;
+                }
+
+                timeout = minutes;
+            }
+
+            if (argvElement.ValueKind != JsonValueKind.Array || argvElement.GetArrayLength() == 0)
+            {
+                failure = Invalid(key, "argv must be a non-empty array of strings");
+                return false;
+            }
+
+            var argv = new List<string>();
+            foreach (JsonElement item in argvElement.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.String || string.IsNullOrEmpty(item.GetString()))
+                {
+                    failure = Invalid(key, "argv must be a non-empty array of strings");
+                    return false;
+                }
+
+                argv.Add(item.GetString()!);
+            }
+
+            var program = argv[0];
+            if ((program.Contains('/', StringComparison.Ordinal) || program.Contains('\\', StringComparison.Ordinal)) && !Path.IsPathFullyQualified(program))
+            {
+                failure = Invalid(key, "the program must be a bare name on PATH or an absolute path");
+                return false;
+            }
+
+            map[entry.Name] = new Policy.NodeCommand(argv, timeout);
+        }
+
+        return true;
     }
 
     /// <summary>

@@ -20,6 +20,24 @@ namespace Zyggy.Core.Envelope;
 /// <param name="Step">The <c>step</c> the job belongs to: 1–60 characters of <c>[a-z0-9 -]</c>.</param>
 /// <param name="Base">The <c>base</c> branch a worktree job starts from and pushes back to.</param>
 /// <param name="Deliver">The <c>deliver</c> mode; <see cref="JobDelivery.Run"/> when absent, and then never written.</param>
+/// <param name="Kind">The <c>kind</c> (spec 59); <see cref="JobKind.Model"/> when absent, and then never written.</param>
+/// <param name="FetchPath">
+/// The <c>fetch_path</c> of a <see cref="JobKind.Fetch"/> job: a repository-relative path with <c>/</c> separators (mandatory there,
+/// refused on any other kind). Its safety (no <c>..</c>, not absolute) is the node's check, answered with <c>schema_unsupported</c>.
+/// </param>
+/// <param name="FetchRef">The <c>fetch_ref</c> branch a fetch reads as <c>origin/&lt;ref&gt;</c>; <see langword="null"/> reads the project's default branch.</param>
+/// <param name="Command">
+/// The <c>command</c> name of a <see cref="JobKind.Command"/> job (<c>[a-z0-9-]</c>; mandatory there, refused on any other kind), looked up
+/// in the node's own <c>node.json</c> <c>commands</c>; no text of the envelope reaches the process.
+/// </param>
+/// <param name="MaxTurns">
+/// The run's turn limit (spec 59 slice 6; a model job only): at least 1, and never above the node's <c>claude.maxTurns</c>, which the
+/// node applies instead and says so in the report; <see langword="null"/> runs with the node's value.
+/// </param>
+/// <param name="Continue">
+/// The id of an earlier job whose branch <c>zyggy/&lt;id&gt;</c> on the origin is this run's start point (spec 59 slice 6); only with
+/// <c>worktree: true</c> on a model job. A branch not on the origin is <c>rejected</c> / <c>branch_refused</c>.
+/// </param>
 public sealed record JobFields(
     string Project,
     string? Agent = null,
@@ -34,4 +52,10 @@ public sealed record JobFields(
     EnvelopeId? Mandate = null,
     string? Step = null,
     string? Base = null,
-    JobDelivery Deliver = JobDelivery.Run);
+    JobDelivery Deliver = JobDelivery.Run,
+    JobKind Kind = JobKind.Model,
+    string? FetchPath = null,
+    string? FetchRef = null,
+    string? Command = null,
+    int? MaxTurns = null,
+    EnvelopeId? Continue = null);

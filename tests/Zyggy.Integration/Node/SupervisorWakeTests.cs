@@ -8,6 +8,7 @@ using Zyggy.Core.Bus;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Jobs;
 using Zyggy.Core.Registry;
+using Zyggy.Core.Supervision;
 using Zyggy.Core.Tenancy;
 using Zyggy.Core.Tests.Infrastructure;
 using Zyggy.Integration.Infrastructure;
@@ -297,6 +298,54 @@ public sealed class SupervisorWakeTests : IAsyncLifetime
             .Should().BeEquivalentTo(new { Kind = DecisionKind.Stop, InReplyTo = (EnvelopeId?)mandate, Mandate = (EnvelopeId?)mandate, To = HomeLaptop, Named = true, Runs = 0 }, decision.BodyText + Log());
     }
 
+    // Spec 59 AC-13: a report of an ordinary job (no mandate) is handed to Central's session — no model run, no decision, no job.
+    [Fact]
+    public async Task Wake_ReportOfOrdinaryJob_HandedToCentralsSession_NoRunNoDecisionNoJob()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        EnvelopeId mandate = await SeedMandateAsync(ct);
+        EnvelopeId ordinary = await SeedReportAsync(null, ct);
+        Script((_, id) => new Step([Decide(id, mandate, "accept")]));
+        string arrivals = ReportArrivals.FileFor(_harness.NodeDir, Acme);
+
+        // Act
+        int exit = await _harness.RunUntilAsync(
+            async () => File.Exists(arrivals) && File.ReadAllText(arrivals).Contains(ordinary.Value, StringComparison.Ordinal) && await QuietForAsync(TimeSpan.FromSeconds(4)),
+            Limit,
+            ct,
+            Services);
+
+        // Assert
+        exit.Should().Be(0, Log());
+        new
+        {
+            Taken = ReportArrivals.Take(arrivals).Select(a => a.Id + " " + a.Machine).ToArray(),
+            Runs = _model.Calls,
+            Decisions = (await DecisionsAsync(ct)).Count,
+            Jobs = (await FilesOnMainAsync(BusPaths.Jobs(Acme, HomeLaptop), ct)).Count,
+        }.Should().BeEquivalentTo(new { Taken = new[] { ordinary.Value + " home-laptop" }, Runs = 0, Decisions = 0, Jobs = 0 }, Log());
+    }
+
+    // Spec 59 AC-13: a mandate report is not handed as an ordinary one; it still wakes its supervisor run as before.
+    [Fact]
+    public async Task Wake_ReportOfMandateJob_NotInTheArrivals_RunAsBefore()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        EnvelopeId mandate = await SeedMandateAsync(ct);
+        await SeedReportAsync(mandate, ct);
+        Script((_, id) => new Step([Decide(id, mandate, "accept")]));
+        string arrivals = ReportArrivals.FileFor(_harness.NodeDir, Acme);
+
+        // Act
+        int exit = await _harness.RunUntilAsync(async () => (await DecisionsAsync(ct)).Count == 1, Limit, ct, Services);
+
+        // Assert
+        exit.Should().Be(0, Log());
+        new { Runs = _model.Calls, Taken = ReportArrivals.Take(arrivals).Count }.Should().BeEquivalentTo(new { Runs = 1, Taken = 0 }, Log());
+    }
+
     private DateTimeOffset? _quietSince;
 
     /// <summary>True once <paramref name="time"/> has passed since the first call (the host had its start-up pass and several polls).</summary>
@@ -351,7 +400,7 @@ public sealed class SupervisorWakeTests : IAsyncLifetime
     }
 
     /// <summary>A report of <c>home-laptop</c> to Central on a job under <paramref name="mandate"/>, written <paramref name="age"/> ago.</summary>
-    private async Task<EnvelopeId> SeedReportAsync(EnvelopeId mandate, CancellationToken ct, ReportStatus status = ReportStatus.Done, TimeSpan? age = null)
+    private async Task<EnvelopeId> SeedReportAsync(EnvelopeId? mandate, CancellationToken ct, ReportStatus status = ReportStatus.Done, TimeSpan? age = null)
     {
         DateTimeOffset created = DateTimeOffset.UtcNow - (age ?? TimeSpan.FromMinutes(5)) + TimeSpan.FromMilliseconds(++_sequence);
         EnvelopeId job = EnvelopeId.New(created.AddMinutes(-2));
@@ -363,7 +412,8 @@ public sealed class SupervisorWakeTests : IAsyncLifetime
             _harness.Store,
             status == ReportStatus.Done ? "The step is built.\n" : "claude_error: exit 1\n",
             created: created,
-            fields: new ReportFields(status, status == ReportStatus.Done ? null : "claude_error", Mandate: mandate, Step: "slice 1"),
+            // Spec 59 Q5: a model run's report carries model and num_turns; without them it would not count toward the pause.
+            fields: new ReportFields(status, status == ReportStatus.Done ? null : "claude_error", NumTurns: 3, Model: "claude-test", Mandate: mandate, Step: mandate is null ? null : "slice 1"),
             ct: ct);
         return report.Id;
     }
