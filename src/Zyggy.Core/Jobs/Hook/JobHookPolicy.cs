@@ -184,19 +184,23 @@ internal sealed class JobHookPolicy
 
         foreach (var part in parts)
         {
-            foreach (var (word, blank) in ShellCommand.Words(part).Skip(1))
+            foreach (var (word, blank, quoted) in ShellCommand.Words(part).Skip(1))
             {
                 // An option's value: --file=<path>.
                 var equals = word.StartsWith('-') ? word.IndexOf('=', StringComparison.Ordinal) : -1;
                 var candidate = equals >= 0 ? word[(equals + 1)..] : word;
-                if (candidate.Length == 0 || ShellCommand.HarmlessRedirects.Contains(word, StringComparer.Ordinal))
+                if (candidate.Length == 0 || (!quoted && ShellCommand.HarmlessRedirects.Contains(word, StringComparer.Ordinal)))
                 {
-                    // A harmless redirect (spec 59 slice 8) reads nothing: /dev/null is no path to check.
+                    // An unquoted harmless redirect (spec 59 slice 8) reads nothing: /dev/null is no path to check. A quoted one
+                    // ("2>/dev/null") is an ordinary argument the program reads, judged as a path like any other (slice 9 repair).
                     continue;
                 }
 
                 // A quoted sentence with blanks is text, unless it exists on disk: then it is a path with blanks in it.
-                var full = candidate.StartsWith('~') ? null : Full(candidate, cwd);
+                // A UNC path (\\server\share\file) names another machine's share: rooted on every system, never under the run directory.
+                var full = candidate.StartsWith('~') ? null
+                    : candidate.StartsWith(@"\\", StringComparison.Ordinal) ? Full(candidate.Replace('\\', Path.DirectorySeparatorChar), cwd)
+                    : Full(candidate, cwd);
                 var shaped = !blank
                     && (candidate.Contains('/', StringComparison.Ordinal) || candidate.Contains('\\', StringComparison.Ordinal) || candidate[0] is '~' or '.');
                 if ((shaped || (full is not null && (File.Exists(full) || Directory.Exists(full)))) && !InsideReadRoot(full))

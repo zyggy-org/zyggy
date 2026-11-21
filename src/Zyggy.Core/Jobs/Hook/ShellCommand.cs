@@ -173,15 +173,17 @@ internal static class ShellCommand
 
     /// <summary>
     /// The words of one part of a simple command, quotes removed: split on blanks outside quotes. <c>Blank</c> says whether the word
-    /// held a blank inside its quotes — a sentence, not a path (deliverable 18, the read root).
+    /// held a blank inside its quotes — a sentence, not a path (deliverable 18, the read root). <c>Quoted</c> says whether any part of
+    /// the word was quoted: a quoted word is an ordinary argument, never a redirect (spec 59 slice 9 repair).
     /// </summary>
-    public static IReadOnlyList<(string Text, bool Blank)> Words(string part)
+    public static IReadOnlyList<(string Text, bool Blank, bool Quoted)> Words(string part)
     {
-        var words = new List<(string, bool)>();
+        var words = new List<(string, bool, bool)>();
         var current = new StringBuilder();
         var quote = '\0';
         var started = false;
         var blank = false;
+        var quoted = false;
         foreach (var c in part)
         {
             if (quote != '\0')
@@ -200,17 +202,19 @@ internal static class ShellCommand
             {
                 quote = c;
                 started = true;
+                quoted = true;
             }
             else if (c is ' ' or '\t')
             {
                 if (started)
                 {
-                    words.Add((current.ToString(), blank));
+                    words.Add((current.ToString(), blank, quoted));
                 }
 
                 current.Clear();
                 started = false;
                 blank = false;
+                quoted = false;
             }
             else
             {
@@ -221,7 +225,7 @@ internal static class ShellCommand
 
         if (started)
         {
-            words.Add((current.ToString(), blank));
+            words.Add((current.ToString(), blank, quoted));
         }
 
         return words;

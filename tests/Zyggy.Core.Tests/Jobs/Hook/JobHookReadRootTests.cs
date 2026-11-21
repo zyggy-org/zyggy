@@ -121,6 +121,16 @@ public sealed class JobHookReadRootTests : IDisposable
         { "Bash", "cat \"{project}/notes.md\" 2>/dev/null", ReadOutside },
         { "PowerShell", "Get-Content \"{outbound}/people/anna.md\" 2>$null", Allowed },
         { "PowerShell", "Get-Content \"{other}/a.md\" 2>$null", ReadOutside },
+
+        // Spec 59 slice 9 repair: only an unquoted redirect word reads nothing; a quoted one is an ordinary argument, judged as a path.
+        // Two look-alikes stay refused: a redirect followed by a path, and a UNC path (another machine's share) under a read root.
+        { "Bash", "cat \"2>/dev/null\"", ReadOutside },
+        { "Bash", "cat '>/dev/null'", ReadOutside },
+        { "Bash", "cat \"{outbound}/people/anna.md\" \"2>/dev/null\"", ReadOutside },
+        { "Bash", "cat >/dev/null/../x", ReadOutside },
+        { "Bash", "cat '\\\\server\\share\\file'", ReadOutside },
+        { "Bash", "cat \"\\\\\\\\server\\\\share\\\\file\"", ReadOutside },
+        { "PowerShell", "Get-Content '\\\\server\\share\\file'", ReadOutside },
     };
 
     [Theory]
