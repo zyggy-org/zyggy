@@ -118,9 +118,9 @@ internal sealed class WorktreeRun(GitClient git)
     /// on <c>zyggy/&lt;id&gt;</c> and the body says the named branch was not changed. <paramref name="outcome"/> is ignored for an unnamed job.
     /// The node's commit subject is <paramref name="description"/> when given, its body <c>zyggy job &lt;id&gt;</c> (spec 53 slice 4); a pushed
     /// named branch behind <c>origin/&lt;defaultBranch&gt;</c> sets <see cref="WorktreeOutcome.BehindLine"/>. With <paramref name="baseBranch"/>
-    /// (spec 18; never together with a named branch) the pushed tip also goes to that branch of the origin when git accepts it as a
-    /// fast-forward; a refusal keeps <c>zyggy/&lt;id&gt;</c> as the result and names it, the status unchanged. The project's default branch
-    /// is never pushed this way.
+    /// (spec 18; never together with a named branch) the pushed tip of a <c>done</c> run also goes to that branch of the origin when git
+    /// accepts it as a fast-forward; a refusal keeps <c>zyggy/&lt;id&gt;</c> as the result and names it, the status unchanged. A
+    /// <c>failed</c> or <c>timeout</c> run never touches that branch (spec 59 AC-8). The project's default branch is never pushed this way.
     /// </summary>
     public async Task<WorktreeOutcome> FinishAsync(
         string project,
@@ -233,8 +233,11 @@ internal sealed class WorktreeRun(GitClient git)
         lines.Add("branch " + branch + " pushed at " + tip);
         if (baseBranch is not null)
         {
+            // Spec 59 slice 5 (AC-8): only a done run moves base; a failed or timed-out run keeps its work on zyggy/<id> alone.
             // Before the local branch goes: the base push sends the same local ref.
-            lines.Add(await PushToBaseAsync(project, branch, baseBranch, tip, ct).ConfigureAwait(false));
+            lines.Add(outcome == ReportStatus.Done
+                ? await PushToBaseAsync(project, branch, baseBranch, tip, ct).ConfigureAwait(false)
+                : "branch " + baseBranch + " not updated: run " + EnvelopeWire.ToWire(outcome));
         }
 
         // git refuses to delete a branch a worktree still has checked out; the next run of this job id cleans both.

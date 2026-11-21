@@ -216,6 +216,36 @@ public sealed class MandateBranchTests : IAsyncLifetime
         }.Should().BeEquivalentTo(new { Status = ReportStatus.Done, Main = main, Pushed = true, SaysSo = true });
     }
 
+    // Spec 59 AC-8 (slice 5): a run that ends at the turn limit, or at the node's timeout, pushes zyggy/<id> and leaves base where it was.
+    [Theory]
+    [InlineData("max-turns", ReportStatus.Failed, "claude_error")]
+    [InlineData("timeout", ReportStatus.Timeout, "timeout")]
+    public async Task Run_WithBase_RunNotDone_ItsBranchPushed_BaseLeftWhereItWas_ReportSaysSo(string ending, ReportStatus status, string reason)
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        string start = await _project.AddBranchAsync(Feature, ct);
+        await using ServiceProvider laptop = await LaptopAsync(ct, ending);
+        string job = await SubmitAsync(await GrantAsync(ct), Feature, ct);
+
+        // Act
+        await ProcessAsync(laptop, ct);
+
+        // Assert
+        Model report = await SingleReportAsync(ct);
+        string? tip = await _project.ResolveAsync(_project.OriginDir, "refs/heads/zyggy/" + job, ct);
+        new
+        {
+            report.Report!.Status,
+            report.Report.Reason,
+            report.Report.DiffRef,
+            Pushed = tip is not null && tip != start,
+            Base = await _project.ResolveAsync(_project.OriginDir, "refs/heads/" + Feature, ct),
+            SaysSo = report.BodyText.Contains("branch " + Feature + " not updated: run " + EnvelopeWire.ToWire(status), StringComparison.Ordinal),
+            NoFastForward = !report.BodyText.Contains("fast-forwarded", StringComparison.Ordinal),
+        }.Should().BeEquivalentTo(new { Status = status, Reason = reason, DiffRef = tip, Pushed = true, Base = start, SaysSo = true, NoFastForward = true });
+    }
+
     private async Task<object> CheckoutAsync(CancellationToken ct) => new
     {
         Head = await _project.GitAsync(["rev-parse", "HEAD"], ct),
@@ -225,19 +255,30 @@ public sealed class MandateBranchTests : IAsyncLifetime
         Config = await File.ReadAllTextAsync(Path.Combine(_project.Path, ".git", "config"), ct),
     };
 
-    private async Task<ServiceProvider> LaptopAsync(CancellationToken ct)
+    // "done" and "max-turns" are fake-claude scenarios; "timeout" streams no result and lingers past a short node timeout.
+    private async Task<ServiceProvider> LaptopAsync(CancellationToken ct, string ending = "done")
     {
         var environment = new Dictionary<string, string>
         {
-            ["ZYGGY_FAKE_CLAUDE_SCENARIO"] = "done",
+            ["ZYGGY_FAKE_CLAUDE_SCENARIO"] = ending == "timeout" ? "no-result" : ending,
             ["ZYGGY_FAKE_CLAUDE_CAPTURE"] = CapturePath,
             ["ZYGGY_FAKE_CLAUDE_EDITS"] = "+src/new.txt\tnew",
         };
+        if (ending == "max-turns")
+        {
+            environment["ZYGGY_FAKE_CLAUDE_EXIT"] = "1";
+        }
+
+        if (ending == "timeout")
+        {
+            environment["ZYGGY_FAKE_CLAUDE_LINGER_MS"] = "30000";
+        }
+
         NodeConfiguration configuration = TestHost.NodeConfigurationFor(_harness.Bus, CliHarness.HomeLaptop);
         ServiceProvider services = TestHost.BuildRunnerListener(_harness.Bus, CliHarness.HomeLaptop, _harness.Store, FakeClaude.ExecutablePath, configuration, o =>
         {
             o.NodeDir = _project.NodeDir;
-            o.TimeoutOverride = TimeSpan.FromSeconds(30);
+            o.TimeoutOverride = ending == "timeout" ? TimeSpan.FromSeconds(2) : TimeSpan.FromSeconds(30);
             o.ModelEnvironment = environment;
         });
         services.GetRequiredService<RegistrySnapshot>().Replace(new RegistryDocument(

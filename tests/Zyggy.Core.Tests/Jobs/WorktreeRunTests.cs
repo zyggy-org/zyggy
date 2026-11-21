@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 
 using Zyggy.Core.Envelope;
+using Zyggy.Core.Models;
 using Zyggy.Core.Processes;
 using Zyggy.Core.Runs;
 using Zyggy.Core.Tests.Infrastructure;
@@ -482,6 +483,39 @@ public sealed class WorktreeRunTests : IDisposable
             Reason = (string?)null,
             DiffRef = WorktreeGit.TipSha,
             Body = "done\n\nbranch " + Branch(job) + " pushed at " + WorktreeGit.TipSha + "\nbranch feature/shop not updated (moved meanwhile); the result is " + Branch(job) + "\n",
+        });
+    }
+
+    // Spec 59 AC-8 (slice 5): a run that did not end done pushes zyggy/<id> only; base is never touched.
+    [Theory]
+    [InlineData(RunFailureReason.Timeout, "timeout", ReportStatus.Timeout, "timeout")]
+    [InlineData(RunFailureReason.ClaudeError, "error_max_turns", ReportStatus.Failed, "claude_error")]
+    public async Task RunAsync_WithBaseAndRunNotDone_OnlyTheJobBranchPushed_BodySaysBaseNotUpdated(RunFailureReason failure, string detail, ReportStatus status, string reason)
+    {
+        // Arrange
+        _h.Model.RunAsync(Arg.Any<ModelRunRequest>(), Arg.Any<CancellationToken>()).Returns(JobRunnerHarness.Failed(failure, detail, "partial"));
+        var job = await BaseJobAsync();
+
+        // Act
+        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        new
+        {
+            reply.Status,
+            reply.Reason,
+            reply.DiffRef,
+            Pushes = Git("push").Select(c => string.Join(' ', c.Arguments)).ToList(),
+            Tail = Encoding.UTF8.GetString(reply.Body.Span).EndsWith(
+                "branch " + Branch(job) + " pushed at " + WorktreeGit.TipSha + "\nbranch feature/shop not updated: run " + EnvelopeWire.ToWire(status) + "\n",
+                StringComparison.Ordinal),
+        }.Should().BeEquivalentTo(new
+        {
+            Status = status,
+            Reason = reason,
+            DiffRef = WorktreeGit.TipSha,
+            Pushes = new[] { "push origin refs/heads/" + Branch(job) + ":refs/heads/" + Branch(job) },
+            Tail = true,
         });
     }
 
