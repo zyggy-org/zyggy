@@ -23,7 +23,7 @@ public sealed partial class JobSubmitter
         "mandate", "step", "base", "deliver",
 
         // Spec 59: the kind of a model-free job and its fields.
-        "kind", "fetch_path", "fetch_ref",
+        "kind", "fetch_path", "fetch_ref", "command",
     ];
 
     private readonly BusRepository _bus;
@@ -83,7 +83,8 @@ public sealed partial class JobSubmitter
             request.Deliver,
             request.Kind,
             request.FetchPath,
-            request.FetchRef);
+            request.FetchRef,
+            request.Command);
         Model job;
         try
         {
@@ -134,6 +135,13 @@ public sealed partial class JobSubmitter
         {
             LogRefusing("kind");
             return new SubmitRefused("kind", $"kind fetch: machine {request.To.Value} does not advertise the fetch capability in its registry file");
+        }
+
+        // Spec 59 slice 2 (AC-5): the same rule for a command job.
+        if (request.Kind == JobKind.Command && !await AdvertisesAsync(request.To, Registry.RegistryDocument.CommandCapability, ct).ConfigureAwait(false))
+        {
+            LogRefusing("kind");
+            return new SubmitRefused("kind", $"kind command: machine {request.To.Value} does not advertise the command capability in its registry file");
         }
 
         BuildResult built;
@@ -300,6 +308,11 @@ public sealed partial class JobSubmitter
         if (!string.Equals(j.FetchRef, request.FetchRef, StringComparison.Ordinal))
         {
             return "fetch_ref";
+        }
+
+        if (!string.Equals(j.Command, request.Command, StringComparison.Ordinal))
+        {
+            return "command";
         }
 
         if (!parsed.Body.Span.SequenceEqual(request.Body.Span))

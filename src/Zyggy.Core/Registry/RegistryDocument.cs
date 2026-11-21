@@ -38,6 +38,9 @@ public sealed record RegistryDocument(
     /// <summary>The capability a node publishes once its version runs <c>kind: fetch</c> jobs (spec 59); a sender sends that kind only to such a machine.</summary>
     public const string FetchCapability = "fetch";
 
+    /// <summary>The capability a node publishes once its version runs <c>kind: command</c> jobs (spec 59 slice 2); a sender sends that kind only to such a machine.</summary>
+    public const string CommandCapability = "command";
+
     private const string TimestampFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'";
 
     /// <summary>
@@ -112,8 +115,8 @@ public sealed record RegistryDocument(
             scan.Projects)
         {
             // Deliverable 18: this version checks mandates at intake; with supervision off it accepts none, so it does not offer them.
-            // Spec 59: every node of this version runs fetch jobs.
-            Capabilities = configuration.Supervision.Enabled ? [FetchCapability, SupervisionCapability] : [FetchCapability],
+            // Spec 59: every node of this version runs fetch and command jobs.
+            Capabilities = configuration.Supervision.Enabled ? [FetchCapability, CommandCapability, SupervisionCapability] : [FetchCapability, CommandCapability],
         };
     }
 

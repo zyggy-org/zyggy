@@ -3,9 +3,7 @@ using System.Text;
 using NSubstitute;
 
 using Zyggy.Core.Envelope;
-using Zyggy.Core.Jobs;
 using Zyggy.Core.Policy;
-using Zyggy.Core.Processes;
 using Zyggy.Core.Registry;
 using Zyggy.Core.Tests.Infrastructure;
 using Zyggy.Core.Tests.Registry;

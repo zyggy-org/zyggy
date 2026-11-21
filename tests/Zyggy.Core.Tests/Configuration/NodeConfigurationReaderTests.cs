@@ -2,6 +2,7 @@ using System.Globalization;
 
 using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
+using Zyggy.Core.Policy;
 using Zyggy.Core.Registry;
 using Zyggy.Core.Secrets;
 using Zyggy.Core.Tenancy;
@@ -897,6 +898,65 @@ public sealed class NodeConfigurationReaderTests : IDisposable
         result.Error.Should().Be(NodeConfigurationError.InvalidField);
         result.Field.Should().Be(field);
         result.ToString().Should().Be(message);
+    }
+
+    // AC-4 (spec 59 slice 2): node.json commands is the allow-list; argv as written, timeoutMinutes optional, the array form alone allowed.
+    [Fact]
+    public void Read_Commands_ArgvAndTimeoutAsWritten()
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel(
+            "\"commands\": { \"run-tests\": { \"argv\": [\"dotnet\", \"test\", \"--no-build\"], \"timeoutMinutes\": 20 }, \"status\": [\"git\", \"status\"] },"));
+
+        // Assert
+        result.IsOk.Should().BeTrue(result.ToString());
+        result.Configuration!.Commands.Should().BeEquivalentTo(new Dictionary<string, NodeCommand>
+        {
+            ["run-tests"] = new(["dotnet", "test", "--no-build"], 20),
+            ["status"] = new(["git", "status"]),
+        });
+    }
+
+    [Fact]
+    public void Read_CommandsAbsent_EmptyAllowList()
+    {
+        // Act
+        NodeConfigurationResult result = Read(Minimal);
+
+        // Assert
+        result.Configuration!.Commands.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("\"commands\": [\"x\"],", "commands")]
+    [InlineData("\"commands\": { \"Run\": [\"dotnet\"] },", "commands.Run")]
+    [InlineData("\"commands\": { \"t\": [] },", "commands.t")]
+    [InlineData("\"commands\": { \"t\": [\"dotnet\", 3] },", "commands.t")]
+    [InlineData("\"commands\": { \"t\": [\"tools/run.sh\"] },", "commands.t")]
+    [InlineData("\"commands\": { \"t\": { \"timeoutMinutes\": 5 } },", "commands.t.argv")]
+    [InlineData("\"commands\": { \"t\": { \"argv\": [\"dotnet\"], \"timeoutMinutes\": 31 } },", "commands.t.timeoutMinutes")]
+    [InlineData("\"commands\": { \"t\": { \"argv\": [\"dotnet\"], \"timeoutMinutes\": 0 } },", "commands.t.timeoutMinutes")]
+    public void Read_CommandsInvalid_RefusedNamesKey(string insert, string field)
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel(insert));
+
+        // Assert
+        new { result.Error, result.Field }.Should().BeEquivalentTo(new { Error = NodeConfigurationError.InvalidField, Field = field }, result.ToString());
+    }
+
+    // The policy a node runs with carries the same allow-list.
+    [Fact]
+    public async Task PolicySource_Commands_PassedToNodePolicy()
+    {
+        // Arrange
+        NodeConfiguration configuration = Read(WithTopLevel("\"commands\": { \"status\": [\"git\", \"status\"] },")).Configuration!;
+
+        // Act
+        NodePolicy policy = await new NodeJsonPolicySource(configuration).GetAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        policy.Commands.Keys.Should().Equal("status");
     }
 
     private const string Section10Keys = "\"workHours\": { \"timezone\": \"Europe/Brussels\", \"days\": [\"Mon\",\"Tue\",\"Wed\",\"Thu\",\"Fri\"], \"from\": \"08:00\", \"to\": \"19:00\" }, \"maxConcurrentJobs\": 2, \"log\": { \"level\": \"Information\" },";

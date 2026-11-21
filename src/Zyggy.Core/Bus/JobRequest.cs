@@ -67,6 +67,9 @@ public sealed partial record JobRequest(
     /// <summary>Gets the branch a fetch reads as <c>origin/&lt;ref&gt;</c> (spec 59, job field <c>fetch_ref</c>); <see langword="null"/> for the default branch.</summary>
     public string? FetchRef { get; init; }
 
+    /// <summary>Gets the name a <see cref="JobKind.Command"/> job runs (spec 59 slice 2, job field <c>command</c>). Set by <see cref="TryWithCommand"/>.</summary>
+    public string? Command { get; init; }
+
     /// <summary>The body cap in UTF-8 bytes (a sanity check against a pasted document, not a protocol rule).</summary>
     public const int MaxBodyBytes = 65_536;
 
@@ -248,6 +251,31 @@ public sealed partial record JobRequest(
         }
 
         fetch = this with { Kind = JobKind.Fetch, FetchPath = path, FetchRef = reference };
+        return null;
+    }
+
+    /// <summary>
+    /// Makes this request a <c>command</c> job (spec 59 slice 2, <c>zyggy submit --command &lt;name&gt;</c>): <paramref name="name"/> is a
+    /// name of <c>a-z</c>, <c>0-9</c> and <c>-</c>, looked up by the node in its own <c>node.json</c> <c>commands</c>; no envelope text
+    /// reaches the argv. A command job carries no worktree, branch or description.
+    /// </summary>
+    /// <param name="name">The <c>--command</c> value.</param>
+    /// <param name="command">This request as a command job, when the name passes.</param>
+    /// <returns>The first refusal (field <c>command</c> or <c>worktree</c>), or <see langword="null"/>.</returns>
+    public JobRequestError? TryWithCommand(string name, out JobRequest? command)
+    {
+        command = null;
+        if (!Envelope.JobCommands.IsName(name))
+        {
+            return new JobRequestError("command", "command must be a name of a-z, 0-9 and -");
+        }
+
+        if (Worktree || Branch is not null || Description is not null)
+        {
+            return new JobRequestError("worktree", "a command job runs no worktree, branch or description");
+        }
+
+        command = this with { Kind = JobKind.Command, Command = name };
         return null;
     }
 

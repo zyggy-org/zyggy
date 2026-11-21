@@ -35,11 +35,12 @@ internal static class SubmitCommand
         var step = new Option<string?>("--step") { Description = "With --mandate: the step label (1-60 lowercase letters, digits, spaces or hyphens)." };
         var reference = new Option<string?>("--ref") { Description = "With --mandate: the id the template names (the verify report for --kind correct). With --fetch: the branch to read (the project's default branch when absent)." };
         var fetch = new Option<string?>("--fetch") { Description = "A fetch job: the node reads this repository-relative file at origin/<--ref> and attaches it to its report; no model runs." };
+        var commandName = new Option<string?>("--command") { Description = "A command job: the node runs the argv this name has in its own node.json commands, in the project folder, without a shell; no model runs." };
         var baseBranch = new Option<string?>("--base") { Description = "With --mandate: the branch the job starts from and pushes back to; one of the mandate's branches." };
         var session = new Option<bool>("--session") { Description = "With --mandate: deliver the task into a live session (the mandate must allow sessions)." };
         var command = new Command("submit", "Build, sign and publish a job envelope to a machine's inbox on the bus.")
         {
-            to, project, agent, timeout, allowedTools, priority, worktree, branch, description, body, mandate, kind, step, reference, baseBranch, session, fetch, BusHost.ConfigOption, BusHost.VerboseOption,
+            to, project, agent, timeout, allowedTools, priority, worktree, branch, description, body, mandate, kind, step, reference, baseBranch, session, fetch, commandName, BusHost.ConfigOption, BusHost.VerboseOption,
         };
         command.SetAction((parseResult, ct) => parseResult.GetValue(mandate) is not null
             ? MandateAsync(
@@ -58,7 +59,7 @@ internal static class SubmitCommand
                     parseResult.GetValue(body) is not null || parseResult.GetValue(project) is not null || parseResult.GetValue(agent) is not null
                         || parseResult.GetValue(timeout) is not null || parseResult.GetValue(allowedTools) is { Length: > 0 } || parseResult.GetValue(worktree)
                         || parseResult.GetValue(priority) is not null || parseResult.GetValue(branch) is not null || parseResult.GetValue(description) is not null
-                        || parseResult.GetValue(fetch) is not null),
+                        || parseResult.GetValue(fetch) is not null || parseResult.GetValue(commandName) is not null),
                 ct)
             : RunAsync(
             environment,
@@ -74,7 +75,7 @@ internal static class SubmitCommand
             parseResult.GetValue(worktree),
             parseResult.GetValue(branch),
             parseResult.GetValue(description),
-            new FetchGiven(parseResult.GetValue(fetch), parseResult.GetValue(reference)),
+            new FetchGiven(parseResult.GetValue(fetch), parseResult.GetValue(reference), parseResult.GetValue(commandName)),
             parseResult.GetValue(body),
             ct));
         return command;
@@ -101,6 +102,12 @@ internal static class SubmitCommand
         if (fetch.Path is null && fetch.Reference is not null)
         {
             await io.Error.WriteLineAsync("zyggy: submit: --ref needs --mandate or --fetch");
+            return ExitCodes.Usage;
+        }
+
+        if (fetch.Path is not null && fetch.Command is not null)
+        {
+            await io.Error.WriteLineAsync("zyggy: submit: --fetch and --command exclude each other");
             return ExitCodes.Usage;
         }
 
@@ -135,8 +142,9 @@ internal static class SubmitCommand
             return checkout;
         }
 
-        // A fetch job runs no model: its body is only the trace line, written here when none is given.
-        string? bodyText = positionalBody ?? (fetch.Path is null ? null : "fetch " + fetch.Path + "\n");
+        // A fetch or command job runs no model: its body is only the trace line, written here when none is given.
+        string? bodyText = positionalBody
+            ?? (fetch.Path is not null ? "fetch " + fetch.Path + "\n" : fetch.Command is not null ? "command " + fetch.Command + "\n" : null);
         if (bodyText is null)
         {
             if (!io.InputRedirected)
@@ -166,6 +174,16 @@ internal static class SubmitCommand
         if (fetch.Path is not null)
         {
             error = named!.TryWithFetch(fetch.Path, fetch.Reference, out named);
+            if (error is not null)
+            {
+                await io.Error.WriteLineAsync($"zyggy: {error.Field}: {error.Detail}");
+                return ExitCodes.Usage;
+            }
+        }
+
+        if (fetch.Command is not null)
+        {
+            error = named!.TryWithCommand(fetch.Command, out named);
             if (error is not null)
             {
                 await io.Error.WriteLineAsync($"zyggy: {error.Field}: {error.Detail}");
@@ -282,7 +300,7 @@ internal static class SubmitCommand
         }
     }
 
-    private sealed record FetchGiven(string? Path, string? Reference);
+    private sealed record FetchGiven(string? Path, string? Reference, string? Command);
 
     private sealed record MandateGiven(string? To, string? Mandate, string? Kind, string? Step, string? Reference, string? Base, bool Session, bool FreeFieldGiven);
 

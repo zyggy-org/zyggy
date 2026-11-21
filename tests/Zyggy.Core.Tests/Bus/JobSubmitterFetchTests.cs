@@ -109,6 +109,63 @@ public sealed class JobSubmitterFetchTests : IAsyncLifetime
         return new JobSubmitter(bus, signer, TestKeys.Acme1, _clock, new RecordingLogger<JobSubmitter>());
     }
 
+    // AC-5 (slice 2): a command job goes only to a machine advertising command; fetch alone is not enough.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SubmitAsync_CommandToMachineWithoutCommandCapability_RefusedKindNothingWritten(bool registryPresent)
+    {
+        // Arrange
+        if (registryPresent)
+        {
+            WriteRegistry([RegistryDocument.FetchCapability, "supervision"]);
+        }
+
+        // Act
+        SubmitResult result = await Submitter().SubmitAsync(CommandRequest(), TestContext.Current.CancellationToken);
+
+        // Assert
+        new { Field = result.Should().BeOfType<SubmitRefused>().Subject.Field, Jobs = _checkout.FilesUnder(BusPaths.Jobs(Acme, HomeLaptop)).Count, Calls = _processes.Calls.Count }
+            .Should().BeEquivalentTo(new { Field = "kind", Jobs = 0, Calls = 0 });
+    }
+
+    // AC-5 (slice 2): an advertising machine gets the job, and the signed envelope carries kind command and the name.
+    [Fact]
+    public async Task SubmitAsync_CommandToMachineAdvertisingCommand_Submitted()
+    {
+        // Arrange
+        WriteRegistry([RegistryDocument.CommandCapability]);
+
+        // Act
+        SubmitResult result = await Submitter().SubmitAsync(CommandRequest(), TestContext.Current.CancellationToken);
+
+        // Assert
+        result.Should().BeOfType<Submitted>();
+    }
+
+    [Theory]
+    [InlineData("Run Tests")]
+    [InlineData("tests; rm -rf /")]
+    [InlineData("")]
+    public void TryWithCommand_NameOutsideAllowedCharacters_RefusedCommand(string name)
+    {
+        // Arrange
+        JobRequest.TryCreate("home-laptop", "shop", null, null, null, null, "command x\n", out JobRequest? request).Should().BeNull();
+
+        // Act
+        JobRequestError? error = request!.TryWithCommand(name, out _);
+
+        // Assert
+        error!.Field.Should().Be("command");
+    }
+
+    private static JobRequest CommandRequest()
+    {
+        JobRequest.TryCreate("home-laptop", "shop", null, null, null, null, "command run-tests\n", out JobRequest? request).Should().BeNull();
+        request!.TryWithCommand("run-tests", out JobRequest? command).Should().BeNull();
+        return command!;
+    }
+
     private static JobRequest FetchRequest()
     {
         JobRequest.TryCreate("home-laptop", "shop", null, null, null, null, "fetch docs/plan.md\n", out JobRequest? request).Should().BeNull();
