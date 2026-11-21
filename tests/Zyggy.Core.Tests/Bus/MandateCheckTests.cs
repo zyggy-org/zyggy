@@ -650,13 +650,15 @@ public sealed class MandateCheckTests : IAsyncLifetime
     [InlineData("other-mandate", MandateLimit.Continue)]
     [InlineData("unknown", MandateLimit.Continue)]
     [InlineData("rejected", MandateLimit.Continue)]
+    [InlineData("self", MandateLimit.Continue)]
     public async Task CheckIntake_Continue_OnlyFromAJobOfTheSameMandateAndStep(string what, MandateLimit? expected)
     {
-        // Arrange
+        // Arrange: "self" — the job under intake names itself, and is already a counted job of the step (it sits in jobs/claimed/)
         var ct = TestContext.Current.CancellationToken;
         await DropMandateAsync(Fields with { MaxJobs = 20 }, ct);
-        EnvelopeId earlier = await DropEarlierAsync(what, ct);
-        Model job = await SignedJobAsync(JobOf("slice 2") with { Continue = earlier }, Now.AddMinutes(-1), ct);
+        EnvelopeId self = NextId(Now.AddMinutes(-1));
+        EnvelopeId earlier = await DropEarlierAsync(what, ct, self);
+        Model job = await SignedJobAsync(JobOf("slice 2") with { Continue = earlier }, Now.AddMinutes(-1), ct, self);
 
         // Act
         MandateVerdict verdict = MandateRules.CheckIntake(await LedgerAsync(ct), job, HomeLaptop, Now);
@@ -680,9 +682,17 @@ public sealed class MandateCheckTests : IAsyncLifetime
         verdict.Detail.Should().Be("continue: " + earlier.Value + " is not a job of this mandate's step 'slice 2'").And.NotContain("\n");
     }
 
-    /// <summary>The job a continue names, in the shape <paramref name="what"/> asks for; "unknown" drops nothing.</summary>
-    private async Task<EnvelopeId> DropEarlierAsync(string what, CancellationToken ct)
+    /// <summary>
+    /// The job a continue names, in the shape <paramref name="what"/> asks for; "unknown" drops nothing; "self" drops the job under
+    /// check itself (id <paramref name="self"/>, continuing from its own id) in jobs/claimed/.
+    /// </summary>
+    private async Task<EnvelopeId> DropEarlierAsync(string what, CancellationToken ct, EnvelopeId? self = null)
     {
+        if (what == "self")
+        {
+            return (await DropJobAsync(BusFolder.Claimed, Now.AddMinutes(-1), ct, id: self, continueFrom: self)).Header.Id;
+        }
+
         EnvelopeId other = EnvelopeId.New(Granted.AddMinutes(1));
         EnvelopeId earlier = NextId(Now.AddMinutes(-40));
         switch (what)
@@ -728,17 +738,18 @@ public sealed class MandateCheckTests : IAsyncLifetime
         return path;
     }
 
-    private async Task<Model> SignedJobAsync(JobFields fields, DateTimeOffset created, CancellationToken ct)
+    private async Task<Model> SignedJobAsync(JobFields fields, DateTimeOffset created, CancellationToken ct, EnvelopeId? id = null)
     {
-        Model job = Model.CreateJob(new EnvelopeHeader(Acme, NextId(created), Central, HomeLaptop, created), fields, "Build the step.\n"u8.ToArray());
+        Model job = Model.CreateJob(new EnvelopeHeader(Acme, id ?? NextId(created), Central, HomeLaptop, created), fields, "Build the step.\n"u8.ToArray());
         return (await new EnvelopeSigner(_store).SignAsync(job, TestKeys.Acme1, ct)).Envelope!;
     }
 
     /// <summary>A signed job under the mandate dropped in home-laptop's jobs/, jobs/claimed/ or jobs/rejected/.</summary>
-    private async Task<Model> DropJobAsync(BusFolder folder, DateTimeOffset created, CancellationToken ct, string step = "slice 2", EnvelopeId? mandate = null, bool noMandate = false)
+    private async Task<Model> DropJobAsync(
+        BusFolder folder, DateTimeOffset created, CancellationToken ct, string step = "slice 2", EnvelopeId? mandate = null, bool noMandate = false, EnvelopeId? id = null, EnvelopeId? continueFrom = null)
     {
-        JobFields fields = JobOf(step, mandate);
-        Model job = await SignedJobAsync(noMandate ? fields with { Mandate = null } : fields, created, ct);
+        JobFields fields = JobOf(step, mandate) with { Continue = continueFrom };
+        Model job = await SignedJobAsync(noMandate ? fields with { Mandate = null } : fields, created, ct, id);
         string directory = folder switch
         {
             BusFolder.Claimed => BusPaths.Claimed(Acme, HomeLaptop),

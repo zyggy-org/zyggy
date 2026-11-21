@@ -189,8 +189,9 @@ internal sealed class JobHookPolicy
                 // An option's value: --file=<path>.
                 var equals = word.StartsWith('-') ? word.IndexOf('=', StringComparison.Ordinal) : -1;
                 var candidate = equals >= 0 ? word[(equals + 1)..] : word;
-                if (candidate.Length == 0)
+                if (candidate.Length == 0 || ShellCommand.HarmlessRedirects.Contains(word, StringComparer.Ordinal))
                 {
+                    // A harmless redirect (spec 59 slice 8) reads nothing: /dev/null is no path to check.
                     continue;
                 }
 
