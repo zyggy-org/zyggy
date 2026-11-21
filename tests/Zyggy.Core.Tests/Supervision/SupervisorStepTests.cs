@@ -182,6 +182,23 @@ public sealed partial class SupervisorStepTests : IAsyncLifetime
         next.Should().BeNull();
     }
 
+    // Spec 59 AC-13: a report without a mandate is an event of the inventory (Central is told of it), never one that starts a run.
+    [Fact]
+    public async Task Events_ReportWithoutAMandate_ListedButNeverNext()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(ct);
+        EnvelopeId report = await DropReportAsync(Now.AddMinutes(-20), ct, noMandate: true);
+
+        // Act
+        IReadOnlyList<SupervisorEvent> events = await EventsAsync(Now, ct);
+
+        // Assert
+        new { Listed = events.Where(e => e.Kind == SupervisorEventKind.Report && e.Mandate is null).Select(e => e.Id.Value).ToArray(), Next = SupervisorStep.Next(events) }
+            .Should().BeEquivalentTo(new { Listed = new[] { report.Value }, Next = (SupervisorEvent?)null });
+    }
+
     // AC-19
     [Fact]
     public async Task Next_QuestionInAnotherMachinesFolder_Skipped()

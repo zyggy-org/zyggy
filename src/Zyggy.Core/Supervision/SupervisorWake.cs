@@ -254,6 +254,18 @@ internal sealed partial class SupervisorWake : IDisposable
     {
         DateTimeOffset now = _clock.GetUtcNow();
         await CloseMandatesAsync(now, ct).ConfigureAwait(false);
+
+        // Spec 55: the keys in use when the pass starts; a run started now keeps them, whatever the file says later.
+        SupervisorKeys keys = Keys();
+        IReadOnlyList<SupervisorEvent> all = await _inventory.SupervisorEventsAsync(now, ct).ConfigureAwait(false);
+
+        // Spec 59 slice 10: every report without a mandate is handed to Central's session (ids and names only); no run, no job.
+        int arrived = ReportArrivals.Record(ReportArrivals.FileFor(_options.NodeDir, _me.Tenant), all, keys.WorkMachines.Contains, now);
+        if (arrived > 0)
+        {
+            LogArrived(arrived);
+        }
+
         if (OwnerStopped())
         {
             return;
@@ -264,10 +276,7 @@ internal sealed partial class SupervisorWake : IDisposable
             return;
         }
 
-        // Spec 55: the keys in use when the pass starts; a run started now keeps them, whatever the file says later.
-        SupervisorKeys keys = Keys();
-        IReadOnlyList<SupervisorEvent> events = [.. (await _inventory.SupervisorEventsAsync(now, ct).ConfigureAwait(false))
-            .Where(e => !e.Handled && (!IsWorkMachine(e, keys) || keys.OutboundPaths.Count > 0))];
+        IReadOnlyList<SupervisorEvent> events = [.. all.Where(e => !e.Handled && (!IsWorkMachine(e, keys) || keys.OutboundPaths.Count > 0))];
 
         // An event two runs left without a decision: the node escalates it itself, and no third run starts on it.
         foreach (SupervisorEvent undecided in events.Where(e => Attempts(e) >= MaxAttempts))
@@ -601,6 +610,9 @@ internal sealed partial class SupervisorWake : IDisposable
 
     [LoggerMessage(Level = LogLevel.Information, Message = "supervisor run on {Event} attempt {Attempt} ended: {Outcome}, blocked: {Blocked}")]
     private partial void LogEnded(string @event, int attempt, string outcome, int blocked);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "supervisor: {Count} report(s) without a mandate arrived; Central's session is told at its next turn end, no run starts")]
+    private partial void LogArrived(int count);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "supervisor: {Kind} on {InReplyTo} written as {Decision}")]
     private partial void LogWritten(string kind, string inReplyTo, string decision);

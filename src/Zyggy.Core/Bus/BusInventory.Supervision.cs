@@ -9,8 +9,8 @@ public sealed partial class BusInventory
 {
     /// <summary>
     /// The events this checkout holds for a supervisor run: every verified question to Central in its writer's own <c>questions/</c>
-    /// folder, and every verified report to Central that carries a mandate, in its writer's <c>reports/</c> folder or in the archive
-    /// (Central's pickup archives such a report before the wake looks). Each with its mandate's state at <paramref name="now"/> and
+    /// folder, and every verified report to Central, with or without a mandate (spec 59 slice 10), in its writer's <c>reports/</c> folder
+    /// or in the archive (Central's pickup archives such a report before the wake looks). Each with its mandate's state at <paramref name="now"/> and
     /// whether a decision of Central already replies to it. Read from the bus only, so a restart sees the same events.
     /// </summary>
     internal async Task<IReadOnlyList<SupervisorEvent>> SupervisorEventsAsync(DateTimeOffset now, CancellationToken ct)
@@ -41,9 +41,10 @@ public sealed partial class BusInventory
             foreach ((string path, EnvelopeId id, MachineName? folder) in reportFiles)
             {
                 if (EnvelopeParser.PeekHeader(await File.ReadAllBytesAsync(BusPaths.Resolve(_root, path), ct).ConfigureAwait(false))?.Type == EnvelopeType.Report
-                    && await VerifiedForCentralAsync(path, id, folder, ct).ConfigureAwait(false) is { Report.Mandate: { } mandate } report)
+                    && await VerifiedForCentralAsync(path, id, folder, ct).ConfigureAwait(false) is { Report: { } fields } report)
                 {
-                    found.Add((id, SupervisorEventKind.Report, report.Header.From, mandate));
+                    // Spec 59 slice 10: a report without a mandate is an event too (Central is told of it); it never starts a run.
+                    found.Add((id, SupervisorEventKind.Report, report.Header.From, fields.Mandate));
                 }
             }
 

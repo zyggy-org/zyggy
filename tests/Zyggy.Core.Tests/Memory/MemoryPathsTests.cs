@@ -66,6 +66,7 @@ public sealed class MemoryPathsTests
     [InlineData("daily/2026-09-30.md", MemoryArea.Daily)]
     [InlineData("inbox/m365-mail-backfill-2026-10-03.md", MemoryArea.Inbox)]
     [InlineData("auto/MEMORY.md", MemoryArea.Auto)]
+    [InlineData("drafts/2026-11-21-mail-to-client.md", MemoryArea.Draft)]
     [InlineData(".dream/ledger.json", MemoryArea.Dream)]
     [InlineData("areas/work-redis.md", MemoryArea.Legacy)]
     [InlineData("people/carol.md", MemoryArea.Legacy)]
@@ -90,7 +91,7 @@ public sealed class MemoryPathsTests
     public void TryResolve_EveryArea_HasAValidRow()
     {
         // Assert: TryResolve_Valid_ClassifiesArea covers every member.
-        Enum.GetValues<MemoryArea>().Should().HaveCount(12);
+        Enum.GetValues<MemoryArea>().Should().HaveCount(13);
     }
 
     [Theory]

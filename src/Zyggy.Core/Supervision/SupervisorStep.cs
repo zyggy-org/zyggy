@@ -10,7 +10,7 @@ namespace Zyggy.Core.Supervision;
 /// <summary>What wakes a supervisor run (deliverable 18, "The supervisor run").</summary>
 internal enum SupervisorEventKind
 {
-    /// <summary>A report answering a job that carries a mandate.</summary>
+    /// <summary>A report to Central; with a mandate it may wake a run, without one it is only handed to Central's session (spec 59 slice 10).</summary>
     Report,
 
     /// <summary>A question an agent addressed to Central.</summary>
@@ -43,7 +43,7 @@ internal static partial class SupervisorStep
 
     /// <summary>
     /// The oldest event (id order) that no decision replies to yet and that may wake a run: every question, and a report only while
-    /// its mandate is <see cref="MandateState.Active"/>.
+    /// its mandate is <see cref="MandateState.Active"/>. A report without a mandate is never next (spec 59 slice 10: no run, no job).
     /// </summary>
     public static SupervisorEvent? Next(IReadOnlyList<SupervisorEvent> events)
     {
