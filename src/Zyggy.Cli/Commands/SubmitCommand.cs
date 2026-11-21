@@ -38,9 +38,11 @@ internal static class SubmitCommand
         var commandName = new Option<string?>("--command") { Description = "A command job: the node runs the argv this name has in its own node.json commands, in the project folder, without a shell; no model runs." };
         var baseBranch = new Option<string?>("--base") { Description = "With --mandate: the branch the job starts from and pushes back to; one of the mandate's branches." };
         var session = new Option<bool>("--session") { Description = "With --mandate: deliver the task into a live session (the mandate must allow sessions)." };
+        var maxTurns = new Option<int?>("--max-turns") { Description = "A model job's own turn limit (at least 1); the node lowers it to its claude.maxTurns and says so." };
+        var continueFrom = new Option<string?>("--continue") { Description = "With --worktree: start from branch zyggy/<job-id> of this earlier job on the project's origin (also under a mandate, same step)." };
         var command = new Command("submit", "Build, sign and publish a job envelope to a machine's inbox on the bus.")
         {
-            to, project, agent, timeout, allowedTools, priority, worktree, branch, description, body, mandate, kind, step, reference, baseBranch, session, fetch, commandName, BusHost.ConfigOption, BusHost.VerboseOption,
+            to, project, agent, timeout, allowedTools, priority, worktree, branch, description, body, mandate, kind, step, reference, baseBranch, session, fetch, commandName, maxTurns, continueFrom, BusHost.ConfigOption, BusHost.VerboseOption,
         };
         command.SetAction((parseResult, ct) => parseResult.GetValue(mandate) is not null
             ? MandateAsync(
@@ -56,6 +58,8 @@ internal static class SubmitCommand
                     parseResult.GetValue(reference),
                     parseResult.GetValue(baseBranch),
                     parseResult.GetValue(session),
+                    parseResult.GetValue(continueFrom),
+                    parseResult.GetValue(maxTurns),
                     parseResult.GetValue(body) is not null || parseResult.GetValue(project) is not null || parseResult.GetValue(agent) is not null
                         || parseResult.GetValue(timeout) is not null || parseResult.GetValue(allowedTools) is { Length: > 0 } || parseResult.GetValue(worktree)
                         || parseResult.GetValue(priority) is not null || parseResult.GetValue(branch) is not null || parseResult.GetValue(description) is not null
@@ -76,6 +80,7 @@ internal static class SubmitCommand
             parseResult.GetValue(branch),
             parseResult.GetValue(description),
             new FetchGiven(parseResult.GetValue(fetch), parseResult.GetValue(reference), parseResult.GetValue(commandName)),
+            new ContinueGiven(parseResult.GetValue(continueFrom), parseResult.GetValue(maxTurns)),
             parseResult.GetValue(body),
             ct));
         return command;
@@ -96,6 +101,7 @@ internal static class SubmitCommand
         string? branch,
         string? description,
         FetchGiven fetch,
+        ContinueGiven continued,
         string? positionalBody,
         CancellationToken ct)
     {
@@ -171,6 +177,14 @@ internal static class SubmitCommand
             return ExitCodes.Usage;
         }
 
+        // Spec 59 slice 6: --continue and --max-turns, checked in Core before the kind (a fetch or command job refuses them there).
+        error = named!.TryWithContinue(continued.Continue, continued.MaxTurns, out named);
+        if (error is not null)
+        {
+            await io.Error.WriteLineAsync($"zyggy: {error.Field}: {error.Detail}");
+            return ExitCodes.Usage;
+        }
+
         if (fetch.Path is not null)
         {
             error = named!.TryWithFetch(fetch.Path, fetch.Reference, out named);
@@ -207,13 +221,22 @@ internal static class SubmitCommand
 
         MandateJobKind kind = default;
         EnvelopeId? reference = null;
+        EnvelopeId? continueFrom = null;
         if (!MachineName.TryParse(given.To, out MachineName? to)
             || !EnvelopeId.TryParse(given.Mandate, out EnvelopeId? mandate)
             || !EnvelopeWire.TryFromWire(given.Kind, out kind)
             || string.IsNullOrEmpty(given.Step)
-            || (given.Reference is not null && !EnvelopeId.TryParse(given.Reference, out reference)))
+            || (given.Reference is not null && !EnvelopeId.TryParse(given.Reference, out reference))
+            || (given.Continue is not null && !EnvelopeId.TryParse(given.Continue, out continueFrom))
+            || given.MaxTurns is < 1)
         {
-            await io.Error.WriteLineAsync("zyggy: submit: under a mandate give --to <machine>, --mandate <id>, --kind brief|build|verify|correct|merge|release|deploy and --step <label>; --ref takes an id");
+            await io.Error.WriteLineAsync("zyggy: submit: under a mandate give --to <machine>, --mandate <id>, --kind brief|build|verify|correct|merge|release|deploy and --step <label>; --ref and --continue take an id, --max-turns at least 1");
+            return ExitCodes.Usage;
+        }
+
+        if (continueFrom is not null && given.Session)
+        {
+            await io.Error.WriteLineAsync("zyggy: submit: --continue needs a worktree job, not --session");
             return ExitCodes.Usage;
         }
 
@@ -250,7 +273,7 @@ internal static class SubmitCommand
         MandateSubmitOutcome outcome;
         try
         {
-            outcome = await services.GetRequiredService<MandateSubmission>().SubmitAsync(new MandateJobRequest(to, mandate, kind, given.Step, reference, given.Base, given.Session), ct);
+            outcome = await services.GetRequiredService<MandateSubmission>().SubmitAsync(new MandateJobRequest(to, mandate, kind, given.Step, reference, given.Base, given.Session, continueFrom, given.MaxTurns), ct);
         }
         catch (BusBusyException ex)
         {
@@ -302,7 +325,9 @@ internal static class SubmitCommand
 
     private sealed record FetchGiven(string? Path, string? Reference, string? Command);
 
-    private sealed record MandateGiven(string? To, string? Mandate, string? Kind, string? Step, string? Reference, string? Base, bool Session, bool FreeFieldGiven);
+    private sealed record ContinueGiven(string? Continue, int? MaxTurns);
+
+    private sealed record MandateGiven(string? To, string? Mandate, string? Kind, string? Step, string? Reference, string? Base, bool Session, string? Continue, int? MaxTurns, bool FreeFieldGiven);
 
     /// <summary>
     /// The target machine's registry file as it stands in this machine's bus checkout (spec 53 AC-15), or <see langword="null"/> when it

@@ -23,9 +23,11 @@ internal sealed class WorktreeRun(GitClient git)
     /// A named job (spec 53) is first checked for the refusals: <see cref="PrepareResult.Refused"/> before any writing git command; a
     /// named job carrying <c>base</c> or <c>mandate</c> is refused there, so <paramref name="baseBranch"/> and <paramref name="named"/>
     /// never both apply. With <paramref name="baseBranch"/> (spec 18) the branch starts from that branch of the origin, never a local one;
-    /// absent there is <c>base</c>. The start point is always a SHA, so git records no upstream in the project's config.
+    /// absent there is <c>base</c>. The start point is always a SHA, so git records no upstream in the project's config. With
+    /// <paramref name="continueFrom"/> (spec 59 slice 6) the start point is <c>origin/zyggy/&lt;continueFrom&gt;</c> as fetched, after the
+    /// <c>base</c> check when both are given; a branch the origin does not have is <see cref="PrepareResult.Refused"/>.
     /// </summary>
-    public async Task<PrepareResult> PrepareAsync(string project, string worktree, string jobId, string? baseBranch, NamedBranch? named, CancellationToken ct)
+    public async Task<PrepareResult> PrepareAsync(string project, string worktree, string jobId, string? baseBranch, NamedBranch? named, string? continueFrom, CancellationToken ct)
     {
         // Spec 53 Prepare step 0: a branch on a mandate job is refused before the first git command.
         if (named is { CarriesMandate: true })
@@ -58,13 +60,27 @@ internal sealed class WorktreeRun(GitClient git)
             // Spec 59 slice 3 (AC-6): without -q git says why the ref does not resolve; a failed fetch's own line comes first, as the cause.
             var resolved = await git.RunAsync(project, ["rev-parse", "--verify", "refs/remotes/origin/" + baseBranch], null, ct).ConfigureAwait(false);
             var start = resolved.Succeeded ? resolved.Stdout.Trim() : null;
-            if (start is { Length: > 0 })
+            if (start is not { Length: > 0 })
+            {
+                var message = FirstLine(fetchFailed ? fetch!.Stderr : null) ?? FirstLine(resolved.Stderr);
+                return new PrepareResult.Failed("base", fetchFailed, "origin/" + baseBranch + " not found" + (message is null ? string.Empty : " (" + message + ")"));
+            }
+
+            if (continueFrom is null)
             {
                 return await AddAsync(project, worktree, jobId, start, fetchFailed, defaultBranch, ct).ConfigureAwait(false);
             }
+        }
 
-            var message = FirstLine(fetchFailed ? fetch!.Stderr : null) ?? FirstLine(resolved.Stderr);
-            return new PrepareResult.Failed("base", fetchFailed, "origin/" + baseBranch + " not found" + (message is null ? string.Empty : " (" + message + ")"));
+        // Spec 59 slice 6 (AC-9): the continued job's branch on the origin is the start point; absent there, the run is refused before
+        // any writing git command (rejected / branch_refused), as spec 53's refusals are. Spec 18's base rules apply at Finish.
+        if (continueFrom is not null)
+        {
+            var continued = BranchFor(continueFrom);
+            var continueSha = await git.ResolveRefAsync(project, "refs/remotes/origin/" + continued, ct).ConfigureAwait(false);
+            return continueSha is null
+                ? new PrepareResult.Refused("continue: " + continued + " not found", fetchFailed)
+                : await AddAsync(project, worktree, jobId, continueSha, fetchFailed, defaultBranch, ct).ConfigureAwait(false);
         }
 
         // Spec 53 Prepare step 3: a named job starts at origin/<branch> when that remote-tracking ref exists (as fetched, or stale after a
@@ -310,10 +326,11 @@ internal abstract record PrepareResult(bool FetchFailed)
     public sealed record Failed(string Step, bool FetchFailed, string? Detail = null) : PrepareResult(FetchFailed);
 
     /// <summary>
-    /// The named branch must not be touched (spec 53): <c>rejected</c> / <c>branch_refused</c>, nothing fetched, no worktree, the model
-    /// must not start. <paramref name="Rule"/> is the body's rule (<c>branch with base or mandate</c>, <c>default branch &lt;name&gt;</c>).
+    /// The named branch must not be touched (spec 53), or the continued branch is not on the origin (spec 59 slice 6): <c>rejected</c> /
+    /// <c>branch_refused</c>, nothing written, no worktree, the model must not start. <paramref name="Rule"/> is the body's rule
+    /// (<c>branch with base or mandate</c>, <c>default branch &lt;name&gt;</c>, <c>continue: zyggy/&lt;id&gt; not found</c>).
     /// </summary>
-    public sealed record Refused(string Rule) : PrepareResult(false);
+    public sealed record Refused(string Rule, bool FetchFailed = false) : PrepareResult(FetchFailed);
 }
 
 /// <summary>A job's named branch as Prepare checks it (spec 53, internal; no public <c>Zyggy.Core</c> surface).</summary>

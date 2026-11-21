@@ -86,6 +86,30 @@ public sealed class MandateSubmitTests : IAsyncLifetime
             Base: Branch));
     }
 
+    // Spec 59 AC-9 (Q6): a mandate step may continue a failed step's branch — same step name, a new job of the mandate, its own turn limit.
+    [Fact]
+    public async Task SubmitAsync_ContinueUnderTheMandate_JobCarriesContinueMaxTurnsAndTheSameStep_CountedAsANewJob()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields(), HomeLaptop, ct);
+        DropRegistry(HomeLaptop, supervision: true);
+        MandateSubmitOutcome first = await Submission().SubmitAsync(new MandateJobRequest(HomeLaptop, MandateId, MandateJobKind.Build, "slice 2", Base: Branch), ct);
+        EnvelopeId earlier = first.Result.Should().BeOfType<Submitted>().Subject.Id;
+
+        // Act
+        MandateSubmitOutcome outcome = await Submission().SubmitAsync(
+            new MandateJobRequest(HomeLaptop, MandateId, MandateJobKind.Build, "slice 2", Base: Branch, Continue: earlier, MaxTurns: 120), ct);
+
+        // Assert
+        var submitted = outcome.Result.Should().BeOfType<Submitted>().Subject;
+        JobFields job = (await new EnvelopeSigner(_store).ParseAndVerifyAsync(_checkout.Read(submitted.RelativePath), Acme, ct)).Envelope!.Job!;
+        BusRepository bus = Repository();
+        MandateLedger ledger = await new BusInventory(bus, _checkout.Root, new EnvelopeSigner(_store), _clock, new RecordingLogger<BusInventory>()).MandateLedgerAsync(MandateId, ct);
+        new { job.Continue, job.MaxTurns, job.Step, job.Base, Counted = ledger.Counted.Count(j => j.Step == "slice 2") }
+            .Should().BeEquivalentTo(new { Continue = earlier, MaxTurns = 120, Step = "slice 2", Base = Branch, Counted = 2 });
+    }
+
     [Fact]
     public async Task SubmitAsync_SessionTask_DeliverSessionNoWorktreeSixtyMinutes()
     {

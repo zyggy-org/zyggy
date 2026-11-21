@@ -311,8 +311,46 @@ public static class EnvelopeParser
                 return false;
             }
 
-            job = new JobFields(project!, agent, worktree ?? false, allowedTools, reportBack, timeout, deadline, attempt ?? 1, branch, description, mandate, step, baseBranch, deliver, kind, fetchPath, fetchRef, command);
+            if (!ReadContinue(kind, worktree == true, out int? maxTurns, out EnvelopeId? continueFrom))
+            {
+                return false;
+            }
+
+            job = new JobFields(project!, agent, worktree ?? false, allowedTools, reportBack, timeout, deadline, attempt ?? 1, branch, description, mandate, step, baseBranch, deliver, kind, fetchPath, fetchRef, command, maxTurns, continueFrom);
             return true;
+        }
+
+        // Spec 59 slice 6: `max_turns` (at least 1) and `continue` (a job id, only with `worktree: true`) belong to a model job alone;
+        // the node's ceiling on `max_turns` is the node's own check, reported, not a parse rule.
+        private bool ReadContinue(JobKind kind, bool worktree, out int? maxTurns, out EnvelopeId? continueFrom)
+        {
+            continueFrom = null;
+            if (!Int("max_turns", 1, out maxTurns) || !Text("continue", false, out string? continueText))
+            {
+                return false;
+            }
+
+            if (maxTurns is not null && kind != JobKind.Model)
+            {
+                return Reject(FieldReader.Invalid("max_turns", "requires kind: model"));
+            }
+
+            if (continueText is null)
+            {
+                return true;
+            }
+
+            if (kind != JobKind.Model)
+            {
+                return Reject(FieldReader.Invalid("continue", "requires kind: model"));
+            }
+
+            if (!worktree)
+            {
+                return Reject(FieldReader.Invalid("continue", "requires worktree: true"));
+            }
+
+            return EnvelopeId.TryParse(continueText, out continueFrom) || Reject(FieldReader.Invalid("continue", "must be a job id (ULID)"));
         }
 
         // Spec 59 slice 2: `command` is a name ([a-z0-9-]), mandatory on a command job and refused on any other kind. Whether the node

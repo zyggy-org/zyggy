@@ -138,6 +138,10 @@ public sealed class Envelope
         AddOptional(entries, "fetch_path", job.FetchPath);
         AddOptional(entries, "fetch_ref", job.FetchRef);
         AddOptional(entries, "command", job.Command);
+
+        // Spec 59 slice 6: a job's own turn limit and the earlier job it continues; absent keys keep every older job's bytes.
+        AddOptional(entries, "max_turns", Invariant(job.MaxTurns));
+        AddOptional(entries, "continue", job.Continue?.Value);
         return Create(entries, header, body);
     }
 

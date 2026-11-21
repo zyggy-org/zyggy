@@ -191,6 +191,8 @@ public sealed partial class MandateGranter
 /// <param name="Reference">The reference id the template names (<c>--ref</c>).</param>
 /// <param name="Base">The branch the job starts from and pushes back to.</param>
 /// <param name="Session"><see langword="true"/> for a task delivered into a live session.</param>
+/// <param name="Continue">The earlier job of the same step whose branch <c>zyggy/&lt;id&gt;</c> the run starts from (spec 59 slice 6, Q6): the same step name, a new job of the mandate.</param>
+/// <param name="MaxTurns">The run's own turn limit (spec 59 slice 6); <see langword="null"/> runs with the node's.</param>
 public sealed record MandateJobRequest(
     MachineName To,
     EnvelopeId Mandate,
@@ -198,7 +200,9 @@ public sealed record MandateJobRequest(
     string Step,
     EnvelopeId? Reference = null,
     string? Base = null,
-    bool Session = false);
+    bool Session = false,
+    EnvelopeId? Continue = null,
+    int? MaxTurns = null);
 
 /// <summary>What <see cref="MandateSubmission"/> did: refused with the limit named and nothing written, or the submit's own result.</summary>
 /// <param name="Verdict">The mandate check's verdict.</param>
@@ -298,6 +302,10 @@ public sealed partial class MandateSubmission
             Step = request.Step,
             Base = request.Base,
             Deliver = request.Session ? JobDelivery.Session : JobDelivery.Run,
+
+            // Spec 59 slice 6 (Q6): a step may continue its earlier job's branch; the step cap counts it as one more job of that step.
+            Continue = request.Session ? null : request.Continue,
+            MaxTurns = request.MaxTurns,
         };
         return new MandateSubmitOutcome(verdict, await _submitter.SubmitAsync(job, ct).ConfigureAwait(false));
     }

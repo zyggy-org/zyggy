@@ -164,7 +164,7 @@ public sealed partial class JobRunner
         if (fields.Worktree)
         {
             runDirectory = TranscriptPaths.WorktreeFor(nodeDir, job.Header.Tenant, job.Header.Id);
-            var prepared = await worktrees.PrepareAsync(project, runDirectory, id, fields.Base, NamedBranchOf(job, fields), ct).ConfigureAwait(false);
+            var prepared = await worktrees.PrepareAsync(project, runDirectory, id, fields.Base, NamedBranchOf(job, fields), fields.Continue?.Value, ct).ConfigureAwait(false);
             if (prepared.FetchFailed)
             {
                 LogFetchFailed(id);
@@ -206,9 +206,13 @@ public sealed partial class JobRunner
         // Spec 06 "ModelRunRequest for a job": no tool set, extra directory, schema, model or system prompt; the project's own
         // hooks, skills, MCP servers and memory apply (Isolation.None, ex-Q7).
         var timeout = _options.TimeoutOverride ?? TimeSpan.FromMinutes(minutes);
+
+        // Spec 59 slice 6 (AC-9): the job's own turn limit, never above the node's; a lowered value is said in the report body.
+        var maxTurns = Math.Min(fields.MaxTurns ?? policy.MaxTurns, policy.MaxTurns);
+        var loweredLine = fields.MaxTurns > policy.MaxTurns ? string.Create(CultureInfo.InvariantCulture, $"max_turns lowered to {maxTurns}") : null;
         var request = new ModelRunRequest(_prompt.Render(job, runDirectory, allowedTools), runDirectory, timeout)
         {
-            MaxTurns = policy.MaxTurns,
+            MaxTurns = maxTurns,
             AllowedTools = allowedTools,
             MaxBudgetUsd = policy.MaxBudgetUsd,
             Isolation = ModelSessionIsolation.None,
@@ -238,8 +242,9 @@ public sealed partial class JobRunner
             behindLine = outcome.BehindLine;
         }
 
-        // Spec 53 Report body lines: after the branch lines, "description: <text>" when the job has one, then the "behind" line.
-        string[] trailing = [.. new[] { description is null ? null : "description: " + description, behindLine }.OfType<string>()];
+        // Spec 53 Report body lines: after the branch lines, "description: <text>" when the job has one, then the "behind" line; spec 59
+        // slice 6 adds "max_turns lowered to <n>" last.
+        string[] trailing = [.. new[] { description is null ? null : "description: " + description, behindLine, loweredLine }.OfType<string>()];
         if (trailing.Length > 0)
         {
             reply = reply with { Body = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(reply.Body.Span) + string.Join('\n', trailing) + "\n") };

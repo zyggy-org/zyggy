@@ -24,6 +24,9 @@ public sealed partial class JobSubmitter
 
         // Spec 59: the kind of a model-free job and its fields.
         "kind", "fetch_path", "fetch_ref", "command",
+
+        // Spec 59 slice 6: a model job's own turn limit and the job it continues.
+        "max_turns", "continue",
     ];
 
     private readonly BusRepository _bus;
@@ -84,7 +87,9 @@ public sealed partial class JobSubmitter
             request.Kind,
             request.FetchPath,
             request.FetchRef,
-            request.Command);
+            request.Command,
+            request.MaxTurns,
+            request.Continue);
         Model job;
         try
         {
@@ -313,6 +318,16 @@ public sealed partial class JobSubmitter
         if (!string.Equals(j.Command, request.Command, StringComparison.Ordinal))
         {
             return "command";
+        }
+
+        if (j.MaxTurns != request.MaxTurns)
+        {
+            return "max_turns";
+        }
+
+        if (j.Continue != request.Continue)
+        {
+            return "continue";
         }
 
         if (!parsed.Body.Span.SequenceEqual(request.Body.Span))

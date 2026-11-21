@@ -30,6 +30,14 @@ namespace Zyggy.Core.Envelope;
 /// The <c>command</c> name of a <see cref="JobKind.Command"/> job (<c>[a-z0-9-]</c>; mandatory there, refused on any other kind), looked up
 /// in the node's own <c>node.json</c> <c>commands</c>; no text of the envelope reaches the process.
 /// </param>
+/// <param name="MaxTurns">
+/// The run's turn limit (spec 59 slice 6; a model job only): at least 1, and never above the node's <c>claude.maxTurns</c>, which the
+/// node applies instead and says so in the report; <see langword="null"/> runs with the node's value.
+/// </param>
+/// <param name="Continue">
+/// The id of an earlier job whose branch <c>zyggy/&lt;id&gt;</c> on the origin is this run's start point (spec 59 slice 6); only with
+/// <c>worktree: true</c> on a model job. A branch not on the origin is <c>rejected</c> / <c>branch_refused</c>.
+/// </param>
 public sealed record JobFields(
     string Project,
     string? Agent = null,
@@ -48,4 +56,6 @@ public sealed record JobFields(
     JobKind Kind = JobKind.Model,
     string? FetchPath = null,
     string? FetchRef = null,
-    string? Command = null);
+    string? Command = null,
+    int? MaxTurns = null,
+    EnvelopeId? Continue = null);
