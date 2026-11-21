@@ -5,6 +5,7 @@
 - 2026-11-21: spec written by an unattended job from Central (job 01M7YRJ3701HSQCJBM704JYX8F); the owner was not interviewed, every gap is under Open questions. Not approved.
 - 2026-11-21: **build gate, not yet met** — no slice starts until the owner confirms that his client's IT policy covers reading and sending work mail through the agent, and that confirmation is recorded in the instance's `work-boundary.json` (AC-1).
 - 2026-11-21: the owner's answers to Q1–Q13 written in by an unattended job from Central (job 01M7YSXGK9VY2YNXM8XHTTNQ24); answers marked "Central" were decided by Central following the spec's recommendation. Main changes: reads (not actions) may run in a bus job or a scheduled run; work mail content, bodies included, may cross to Central and be kept on the business side only; reply drafts are never saved to Outlook; replies carry the quoted history. A new slice 5 (brief in a bus job or on a schedule) was inserted, so the guard, send-and-move and phone slices are now 6, 7 and 8. New open questions Q14–Q20. **Not approved: the owner still reads it.**
+- 2026-11-21: **approved by the owner** in his conversation with Central, with the decisions recorded in this spec and the proposed rule wordings (written in by an unattended job from Central, job 01M7YXYDDBND8AJ36E777RTB1A). The build gate is unchanged and **still not met**: no slice is built before the owner's IT policy confirmation for work mail is recorded in `work-boundary.json` (AC-1).
 
 ## Goal
 
