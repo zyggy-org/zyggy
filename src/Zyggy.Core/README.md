@@ -53,7 +53,7 @@ The library defines the interfaces behind which every external system hides. Eac
 | `IBusProvider` | GitHub (poll endpoint + git remote) |
 | `IModelRunner` | the Claude Code CLI |
 | `ISecretStore` | the OS secret store |
-| `INotifier` | the owner's channel: the first implementation is a mail to the owner (Telegram follows behind the same seam); `NotifyAsync(OwnerNotice)`, no implementation yet |
+| `INotifier` | the owner's channel: the first implementation is a mail to the owner (Telegram follows behind the same seam); `NotifyAsync(OwnerNotice)`; `MailNotifier` (internal) sends one Graph `sendMail` from the owner's mailbox to itself, opened on the first send by `LazyNotifier` from Central's M365 instance (`AddBusPickup`) |
 | `IPolicySource` | the node's policy; v1 reads it from `node.json` (`NodeJsonPolicySource`, the MVP-scope decision), the signed `policy.yaml` comes later |
 
 Plus `IProcessRunner`, the single path to the `git` and `claude` processes, so tests can substitute both.

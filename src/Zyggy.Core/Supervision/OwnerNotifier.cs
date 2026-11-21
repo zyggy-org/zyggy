@@ -29,6 +29,10 @@ internal sealed partial class OwnerNotifier
 
     private readonly ILogger<OwnerNotifier> _logger;
 
+    private readonly TimeSpan _window;
+
+    private readonly TimeSpan _retry;
+
     private OwnerMailState? _state;
 
     private DateTimeOffset _retryAt = DateTimeOffset.MinValue;
@@ -38,8 +42,11 @@ internal sealed partial class OwnerNotifier
     /// <param name="clock">The clock.</param>
     /// <param name="stateFile">The file that keeps what was named, in the node directory.</param>
     /// <param name="logger">The logger.</param>
-    public OwnerNotifier(INotifier notifier, TimeProvider clock, string stateFile, ILogger<OwnerNotifier> logger)
+    /// <param name="times">A test's window and retry; <see langword="null"/> means <see cref="Window"/> and <see cref="Retry"/>.</param>
+    public OwnerNotifier(INotifier notifier, TimeProvider clock, string stateFile, ILogger<OwnerNotifier> logger, OwnerMailOptions? times = null)
     {
+        _window = times?.Window ?? Window;
+        _retry = times?.Retry ?? Retry;
         _notifier = notifier;
         _clock = clock;
         _stateFile = stateFile;
@@ -62,7 +69,7 @@ internal sealed partial class OwnerNotifier
         }
 
         OwnerItem[] unnamed = [.. items.Where(i => !state.Named.Contains(i.Key))];
-        if (unnamed.Length == 0 || now < _retryAt || (state.LastMail is { } last && now < last + Window))
+        if (unnamed.Length == 0 || now < _retryAt || (state.LastMail is { } last && now < last + _window))
         {
             return;
         }
@@ -77,7 +84,7 @@ internal sealed partial class OwnerNotifier
         }
         catch (Exception ex)
         {
-            _retryAt = now + Retry;
+            _retryAt = now + _retry;
             state.Failures++;
             if (state.Failures == 1)
             {
@@ -97,12 +104,7 @@ internal sealed partial class OwnerNotifier
     private static OwnerNotice Notice(OwnerItem[] items, DateTimeOffset now) =>
         new(
             "Zyggy: " + items.Length.ToString(CultureInfo.InvariantCulture) + " item(s) wait for you",
-            [.. items.Select(i => string.Join(", ", new[] { i.Kind.ToString().ToLowerInvariant(), i.Machine.Value, i.Project, i.Id.Value, Age(now - i.Since) }.OfType<string>()))]);
-
-    private static string Age(TimeSpan age) =>
-        age < TimeSpan.FromHours(1) ? Math.Max(0, (int)age.TotalMinutes).ToString(CultureInfo.InvariantCulture) + " min"
-        : age < TimeSpan.FromHours(48) ? ((int)age.TotalHours).ToString(CultureInfo.InvariantCulture) + " h"
-        : ((int)age.TotalDays).ToString(CultureInfo.InvariantCulture) + " d";
+            [.. items.Select(i => i.Describe(now))]);
 
     private OwnerMailState Load()
     {

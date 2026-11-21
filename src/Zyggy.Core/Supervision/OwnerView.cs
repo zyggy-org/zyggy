@@ -1,11 +1,13 @@
+using System.Globalization;
+
 using Zyggy.Core.Bus;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Tenancy;
 
 namespace Zyggy.Core.Supervision;
 
-/// <summary>What kind of thing waits for the owner.</summary>
-internal enum OwnerItemKind
+/// <summary>What kind of thing waits for the owner (deliverable 18, "Waiting list").</summary>
+public enum OwnerItemKind
 {
     /// <summary>A question Central escalated.</summary>
     Question,
@@ -17,14 +19,26 @@ internal enum OwnerItemKind
     Mandate,
 }
 
-/// <summary>One item that waits for the owner: ids, kinds and names only, never a text an agent wrote.</summary>
+/// <summary>One item that waits for the owner (deliverable 18, "Waiting list"): ids, kinds and names only, never a text an agent wrote.</summary>
 /// <param name="Key">The stable name of the item; a mail names a key once.</param>
 /// <param name="Kind">Question, report or mandate.</param>
 /// <param name="Machine">The machine concerned.</param>
 /// <param name="Project">The project, never for a work machine.</param>
 /// <param name="Id">The id of the question, report or mandate.</param>
 /// <param name="Since">Since when it waits.</param>
-internal sealed record OwnerItem(string Key, OwnerItemKind Kind, MachineName Machine, string? Project, EnvelopeId Id, DateTimeOffset Since);
+public sealed record OwnerItem(string Key, OwnerItemKind Kind, MachineName Machine, string? Project, EnvelopeId Id, DateTimeOffset Since)
+{
+    /// <summary>The item's one line in a mail and in <c>zyggy work --waiting</c>: kind, machine, project (left out for a work machine), id and age.</summary>
+    /// <param name="now">The time the age is measured at.</param>
+    /// <returns>The line, without a line break.</returns>
+    public string Describe(DateTimeOffset now) =>
+        string.Join(", ", new[] { Kind.ToString().ToLowerInvariant(), Machine.Value, Project, Id.Value, Age(now - Since) }.OfType<string>());
+
+    private static string Age(TimeSpan age) =>
+        age < TimeSpan.FromHours(1) ? Math.Max(0, (int)age.TotalMinutes).ToString(CultureInfo.InvariantCulture) + " min"
+        : age < TimeSpan.FromHours(48) ? ((int)age.TotalHours).ToString(CultureInfo.InvariantCulture) + " h"
+        : ((int)age.TotalDays).ToString(CultureInfo.InvariantCulture) + " d";
+}
 
 /// <summary>
 /// The pure waiting list (deliverable 18, "Waiting list"). An item waits when the newest decision on an event is <c>escalate</c>, or a

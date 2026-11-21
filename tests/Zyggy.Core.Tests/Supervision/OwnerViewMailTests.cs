@@ -1,6 +1,7 @@
 using System.Text.Json;
 
 using Zyggy.Core.Supervision;
+using Zyggy.Core.Tests.Infrastructure;
 using Zyggy.Core.Tests.M365;
 
 namespace Zyggy.Core.Tests.Supervision;
