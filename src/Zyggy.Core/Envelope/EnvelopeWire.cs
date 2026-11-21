@@ -74,6 +74,23 @@ public static class EnvelopeWire
     /// <returns><see langword="true"/> when <paramref name="wire"/> is an exact wire string.</returns>
     public static bool TryFromWire(string? wire, out JobDelivery value) => TryMatch(wire, Enum.GetValues<JobDelivery>(), ToWire, out value);
 
+    /// <summary>Returns the wire string of a job's kind (spec 59).</summary>
+    /// <param name="value">The member.</param>
+    /// <returns><c>model</c> or <c>fetch</c>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown for an undefined member.</exception>
+    public static string ToWire(JobKind value) => value switch
+    {
+        JobKind.Model => "model",
+        JobKind.Fetch => "fetch",
+        _ => throw new ArgumentOutOfRangeException(nameof(value)),
+    };
+
+    /// <summary>Maps a wire string to a job's kind (spec 59).</summary>
+    /// <param name="wire">The wire string.</param>
+    /// <param name="value">The member when recognised.</param>
+    /// <returns><see langword="true"/> when <paramref name="wire"/> is an exact wire string.</returns>
+    public static bool TryFromWire(string? wire, out JobKind value) => TryMatch(wire, Enum.GetValues<JobKind>(), ToWire, out value);
+
     /// <summary>Maps a wire string to a mandate job kind.</summary>
     /// <param name="wire">The wire string.</param>
     /// <param name="value">The member when recognised.</param>

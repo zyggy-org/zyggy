@@ -35,6 +35,9 @@ public sealed record RegistryDocument(
     /// <summary>The capability a node publishes once its version checks a job against its mandate (deliverable 18).</summary>
     public const string SupervisionCapability = "supervision";
 
+    /// <summary>The capability a node publishes once its version runs <c>kind: fetch</c> jobs (spec 59); a sender sends that kind only to such a machine.</summary>
+    public const string FetchCapability = "fetch";
+
     private const string TimestampFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'";
 
     /// <summary>

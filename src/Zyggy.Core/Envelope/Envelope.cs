@@ -132,6 +132,11 @@ public sealed class Envelope
         AddOptional(entries, "step", job.Step);
         AddOptional(entries, "base", job.Base);
         AddOptional(entries, "deliver", job.Deliver == JobDelivery.Run ? null : EnvelopeWire.ToWire(job.Deliver));
+
+        // Spec 59: a model job keeps its bytes; kind and its fields are written only for another kind.
+        AddOptional(entries, "kind", job.Kind == JobKind.Model ? null : EnvelopeWire.ToWire(job.Kind));
+        AddOptional(entries, "fetch_path", job.FetchPath);
+        AddOptional(entries, "fetch_ref", job.FetchRef);
         return Create(entries, header, body);
     }
 
@@ -162,6 +167,8 @@ public sealed class Envelope
         AddOptional(entries, "diff_ref", report.DiffRef);
         AddOptional(entries, "mandate", report.Mandate?.Value);
         AddOptional(entries, "step", report.Step);
+        AddOptional(entries, "file_name", report.FileName);
+        AddOptional(entries, "file_sha256", report.FileSha256);
         return Create(entries, header, body);
     }
 

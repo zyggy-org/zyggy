@@ -58,6 +58,15 @@ public sealed partial record JobRequest(
     /// <summary>Gets how the job reaches its machine (deliverable 18); <see cref="JobDelivery.Run"/> by default.</summary>
     public JobDelivery Deliver { get; init; }
 
+    /// <summary>Gets what the node runs (spec 59, job field <c>kind</c>); <see cref="JobKind.Model"/> by default. Set by <see cref="TryWithFetch"/>.</summary>
+    public JobKind Kind { get; init; }
+
+    /// <summary>Gets the repository-relative file a <see cref="JobKind.Fetch"/> job reads (spec 59, job field <c>fetch_path</c>).</summary>
+    public string? FetchPath { get; init; }
+
+    /// <summary>Gets the branch a fetch reads as <c>origin/&lt;ref&gt;</c> (spec 59, job field <c>fetch_ref</c>); <see langword="null"/> for the default branch.</summary>
+    public string? FetchRef { get; init; }
+
     /// <summary>The body cap in UTF-8 bytes (a sanity check against a pasted document, not a protocol rule).</summary>
     public const int MaxBodyBytes = 65_536;
 
@@ -208,6 +217,37 @@ public sealed partial record JobRequest(
         }
 
         named = this with { Worktree = worktree, Branch = branch, Description = description };
+        return null;
+    }
+
+    /// <summary>
+    /// Makes this request a <c>fetch</c> job (spec 59, <c>zyggy submit --fetch &lt;path&gt; [--ref &lt;branch&gt;]</c>): <paramref name="path"/> is a
+    /// repository-relative path with <c>/</c> separators, no <c>.</c> or <c>..</c> segment, at most 200 characters; <paramref name="reference"/>
+    /// a branch name. A fetch carries no worktree, branch or description. The node checks the path again (§6, <c>schema_unsupported</c>).
+    /// </summary>
+    /// <param name="path">The <c>--fetch</c> value.</param>
+    /// <param name="reference">The <c>--ref</c> value, or <see langword="null"/> for the project's default branch.</param>
+    /// <param name="fetch">This request as a fetch job, when both values pass.</param>
+    /// <returns>The first refusal (field <c>fetch_path</c>, <c>fetch_ref</c> or <c>worktree</c>), or <see langword="null"/>.</returns>
+    public JobRequestError? TryWithFetch(string path, string? reference, out JobRequest? fetch)
+    {
+        fetch = null;
+        if (!FetchPaths.IsSafe(path))
+        {
+            return new JobRequestError("fetch_path", "fetch_path must be a repository-relative path with / separators, without . or .. segments, at most 200 characters");
+        }
+
+        if (reference is not null && !FetchPaths.IsBranch(reference))
+        {
+            return new JobRequestError("fetch_ref", "fetch_ref must be a branch name");
+        }
+
+        if (Worktree || Branch is not null || Description is not null)
+        {
+            return new JobRequestError("worktree", "a fetch job runs no worktree, branch or description");
+        }
+
+        fetch = this with { Kind = JobKind.Fetch, FetchPath = path, FetchRef = reference };
         return null;
     }
 

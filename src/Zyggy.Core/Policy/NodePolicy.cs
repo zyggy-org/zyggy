@@ -17,6 +17,15 @@ public sealed record NodePolicy(
     int MaxConcurrentJobs,
     WorkHours? WorkHours)
 {
+    /// <summary>The default of <see cref="FetchMaxBytes"/>: 1 MiB (spec 59, Q2).</summary>
+    public const int DefaultFetchMaxBytes = 1_048_576;
+
     /// <summary>Gets the §10 defaults: <c>Read, Grep, Glob</c>, 30 minutes, 60 turns, no budget cap, no roots, 2 jobs, no window.</summary>
     public static NodePolicy Default { get; } = new(["Read", "Grep", "Glob"], 30, 60, null, [], 2, null);
+
+    /// <summary>
+    /// Gets the largest file a <c>fetch</c> job reads, and the cap of any file attached to a report (<c>jobs.fetchMaxBytes</c>, spec 59);
+    /// <see cref="DefaultFetchMaxBytes"/> when absent.
+    /// </summary>
+    public int FetchMaxBytes { get; init; } = DefaultFetchMaxBytes;
 }
