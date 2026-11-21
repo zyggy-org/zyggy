@@ -532,5 +532,27 @@ public sealed class BriefRunTests : IDisposable
         };
     }
 
+    // Deliverable 18 slice 13 (AC-28 fed): the brief asks for Central's decisions since the previous brief — with none on disk, the
+    // last 24 hours — and shows them under "Decided for you".
+    [Fact]
+    public async Task Run_Weekday_DecisionsSinceThePreviousBrief_DecidedForYouSection()
+    {
+        // Arrange
+        DateTimeOffset? asked = null;
+        var sut = new BriefRun(_session, _partition, _graph.Reader, _model, _clock, since =>
+        {
+            asked = since;
+            return [new Zyggy.Core.Brief.DecidedLine("09:14", "accept", "home-laptop", "calizr", "01JABC")];
+        });
+
+        // Act
+        var outcome = await sut.RunAsync(CancellationToken.None);
+
+        // Assert
+        outcome.Exit.Should().Be(0, string.Join('\n', outcome.StderrLines));
+        new { Asked = asked, Section = File.ReadAllText(Markdown).Contains("## Decided for you\n- 09:14 accept — home-laptop, calizr — 01JABC\n", StringComparison.Ordinal) }
+            .Should().BeEquivalentTo(new { Asked = (DateTimeOffset?)_clock.GetUtcNow().AddHours(-24), Section = true });
+    }
+
     private Task<RunOutcome> RunAsync() => new BriefRun(_session, _partition, _graph.Reader, _model, _clock).RunAsync(CancellationToken.None);
 }
