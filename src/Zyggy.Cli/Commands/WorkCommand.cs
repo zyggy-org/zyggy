@@ -9,6 +9,8 @@ using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Health;
 using Zyggy.Core.Memory;
+using Zyggy.Core.Supervision;
+using Zyggy.Core.Tenancy;
 using Zyggy.Core.Verbs;
 
 namespace Zyggy.Cli.Commands;
@@ -31,23 +33,24 @@ internal static class WorkCommand
         var sessionEnd = new Option<bool>("--session-end") { Description = "Remove the session's status from the SessionEnd hook JSON on stdin (the laptop hook)." };
         var step = new Option<string?>("--step") { Description = "The step this session is on (1-60 lowercase letters, digits, spaces or hyphens); travels with its next status." };
         var session = new Option<string?>("--session") { Description = "The session id --step applies to." };
+        var waiting = new Option<bool>("--waiting") { Description = "Print what waits for the owner: escalated questions and reports, paused mandates; ids, kinds and names only." };
         var command = new Command("work", "Show what every machine is doing: live sessions and open jobs. --session-start, --turn-end and --session-end are the laptop hooks that publish a session's status; --step records the step a session is on.")
         {
-            sessionStart, turnEnd, sessionEnd, step, session, BusHost.ConfigOption, BusHost.VerboseOption,
+            sessionStart, turnEnd, sessionEnd, step, session, waiting, BusHost.ConfigOption, BusHost.VerboseOption,
         };
         command.SetAction((parseResult, ct) =>
         {
             string? mode = parseResult.GetValue(sessionStart) ? "start" : parseResult.GetValue(turnEnd) ? "turn" : parseResult.GetValue(sessionEnd) ? "end" : null;
-            int modes = (parseResult.GetValue(sessionStart) ? 1 : 0) + (parseResult.GetValue(turnEnd) ? 1 : 0) + (parseResult.GetValue(sessionEnd) ? 1 : 0) + (parseResult.GetValue(step) is null ? 0 : 1);
+            int modes = (parseResult.GetValue(sessionStart) ? 1 : 0) + (parseResult.GetValue(turnEnd) ? 1 : 0) + (parseResult.GetValue(sessionEnd) ? 1 : 0) + (parseResult.GetValue(step) is null ? 0 : 1) + (parseResult.GetValue(waiting) ? 1 : 0);
             if (modes > 1)
             {
-                io.Error.WriteLine("zyggy: mode: --session-start, --turn-end, --session-end and --step are mutually exclusive");
+                io.Error.WriteLine("zyggy: mode: --session-start, --turn-end, --session-end, --step and --waiting are mutually exclusive");
                 return Task.FromResult(mode is null ? ExitCodes.Usage : ExitCodes.Ok);
             }
 
             return mode is not null ? HookAsync(environment, io, configure, parseResult, mode, ct)
                 : parseResult.GetValue(step) is { } label ? StepAsync(environment, io, configure, parseResult, parseResult.GetValue(session), label)
-                : BoardAsync(environment, io, configure, parseResult, ct);
+                : BoardAsync(environment, io, configure, parseResult, parseResult.GetValue(waiting), ct);
         });
         return command;
     }
@@ -142,7 +145,11 @@ internal static class WorkCommand
         return sb.ToString();
     }
 
-    private static async Task<int> BoardAsync(CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure, ParseResult parseResult, CancellationToken ct)
+    /// <summary>The owner's waiting list (deliverable 18, "Waiting list"): one fixed line per item, or that nothing waits.</summary>
+    internal static string RenderWaiting(IReadOnlyList<OwnerItem> items, DateTimeOffset now) =>
+        items.Count == 0 ? "nothing waits for you\n" : string.Concat(items.Select(i => i.Describe(now) + "\n"));
+
+    private static async Task<int> BoardAsync(CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure, ParseResult parseResult, bool waiting, CancellationToken ct)
     {
         (NodeConfiguration? configuration, int exitCode) = BusHost.LoadConfiguration(parseResult, environment, io);
         if (configuration is null)
@@ -159,7 +166,15 @@ internal static class WorkCommand
 
         try
         {
-            WorkBoard board = await services.GetRequiredService<BusInventory>().WorkAsync(configuration.Supervision.WorkMachines, ct);
+            BusInventory inventory = services.GetRequiredService<BusInventory>();
+            if (waiting)
+            {
+                IReadOnlyList<OwnerItem> items = await inventory.WaitingAsync(configuration.Supervision.WorkMachines, ct);
+                await io.Out.WriteAsync(RenderWaiting(items, services.GetRequiredService<TimeProvider>().GetUtcNow()));
+                return ExitCodes.Ok;
+            }
+
+            WorkBoard board = await inventory.WorkAsync(configuration.Supervision.WorkMachines, ct);
             await io.Out.WriteAsync(Render(board));
             return ExitCodes.Ok;
         }
@@ -233,6 +248,23 @@ internal static class WorkCommand
             {
                 await io.Out.WriteAsync(
                     "zyggy: Central decided on question " + late.InReplyTo.Value + " (" + EnvelopeWire.ToWire(late.Fields.Kind) + "), after the wait ended:\n" + late.Text);
+            }
+
+            // Deliverable 18 ("Waiting list"): on Central, the session start also names how many items wait for the owner, when any do.
+            if (configuration.Machine == MachineName.Central)
+            {
+                try
+                {
+                    int count = (await services.GetRequiredService<BusInventory>().WaitingAsync(configuration.Supervision.WorkMachines, ct)).Count;
+                    if (count > 0)
+                    {
+                        await io.Out.WriteLineAsync(count.ToString(CultureInfo.InvariantCulture) + " item(s) wait for you: zyggy work --waiting");
+                    }
+                }
+                catch (BusBusyException)
+                {
+                    // A busy checkout costs the count at this start, nothing more.
+                }
             }
         }
 

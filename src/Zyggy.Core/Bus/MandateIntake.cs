@@ -18,6 +18,7 @@ internal sealed partial class MandateIntake
     private readonly bool _enabled;
     private readonly TimeProvider _clock;
     private readonly ILogger _log;
+    private readonly string? _nodeDir;
     private bool _busyLogged;
 
     /// <summary>Creates the check.</summary>
@@ -26,8 +27,10 @@ internal sealed partial class MandateIntake
     /// <param name="enabled"><c>supervision.enabled</c>: when <see langword="false"/> every job under a mandate is refused.</param>
     /// <param name="clock">The clock the mandate's expiry is judged by.</param>
     /// <param name="log">The logger.</param>
-    public MandateIntake(BusInventory inventory, MachineName me, bool enabled, TimeProvider clock, ILogger log)
+    /// <param name="nodeDir">The node directory whose stop marker (<c>zyggy supervise stop</c>) refuses every job under a mandate; <see langword="null"/>: no marker is looked for.</param>
+    public MandateIntake(BusInventory inventory, MachineName me, bool enabled, TimeProvider clock, ILogger log, string? nodeDir = null)
     {
+        _nodeDir = nodeDir;
         _inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
         _me = me ?? throw new ArgumentNullException(nameof(me));
         _enabled = enabled;
@@ -53,6 +56,12 @@ internal sealed partial class MandateIntake
         if (!_enabled)
         {
             return Refuse(job, "supervision_off");
+        }
+
+        // Deliverable 18 ("Stop"): the owner's marker in this node's folder refuses every job under a mandate until `zyggy supervise start`.
+        if (_nodeDir is not null && Supervision.SupervisionSwitch.IsStopped(_nodeDir))
+        {
+            return Refuse(job, "supervision_stopped");
         }
 
         MandateLedger ledger;

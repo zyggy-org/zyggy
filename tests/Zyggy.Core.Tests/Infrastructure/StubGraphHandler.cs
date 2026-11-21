@@ -68,6 +68,18 @@ internal sealed partial class StubGraphHandler : HttpMessageHandler
         return this;
     }
 
+    private string? _ownerMail;
+
+    /// <summary>
+    /// Deliverable 18 (AC-29): stops reporting exactly the owner notification — <c>POST /v1.0/users/{mailbox}/sendMail</c> for
+    /// <paramref name="mailbox"/> — as a violation, and answers it 202 unless a one-shot answer comes first. Any other send stays one.
+    /// </summary>
+    public StubGraphHandler AllowOwnerMail(string mailbox)
+    {
+        _ownerMail = mailbox;
+        return Always("POST", "/v1\\.0/users/[^/]+/sendMail$", 202, string.Empty);
+    }
+
     /// <summary>Gets the in-memory OneDrive that answers the archive offload's reads and writes ahead of the golden routes (plan 38).</summary>
     public StubOneDrive? Drive { get; private set; }
 
@@ -122,7 +134,9 @@ internal sealed partial class StubGraphHandler : HttpMessageHandler
         var isDriveWrite = _driveWrites && uri.Host == Graph
             && ((request.Method == HttpMethod.Post && DriveFolderCreate().IsMatch(uri.AbsolutePath))
                 || (request.Method == HttpMethod.Put && DriveFileCreate().IsMatch(uri.AbsolutePath)));
-        if (!isToken && !isDriveWrite && request.Method != HttpMethod.Get)
+        var isOwnerMail = _ownerMail is not null && uri.Host == Graph && request.Method == HttpMethod.Post
+            && uri.AbsolutePath == "/v1.0/users/" + _ownerMail + "/sendMail";
+        if (!isToken && !isDriveWrite && !isOwnerMail && request.Method != HttpMethod.Get)
         {
             Violations.Add($"{request.Method}: {uri}");
         }
