@@ -27,6 +27,19 @@ internal static partial class ReportSummary
         return result.LastAssistantText is { Length: > 0 } last ? Truncate(last) : NoOutput;
     }
 
+    /// <summary>Spec 59 (AC-3): the same text as <see cref="Extract"/>, uncut; the report attaches it when the summary was cut.</summary>
+    public static string ExtractWhole(ModelRunResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        if (result.ResultText?.Replace("\r", "", StringComparison.Ordinal) is { Length: > 0 } text)
+        {
+            var heading = ReportHeading().Match(text);
+            return heading.Success ? text[heading.Index..] : text;
+        }
+
+        return result.LastAssistantText is { Length: > 0 } last ? last : NoOutput;
+    }
+
     public static string Truncate(string text)
     {
         ArgumentNullException.ThrowIfNull(text);

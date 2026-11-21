@@ -112,7 +112,8 @@ public sealed record RegistryDocument(
             scan.Projects)
         {
             // Deliverable 18: this version checks mandates at intake; with supervision off it accepts none, so it does not offer them.
-            Capabilities = configuration.Supervision.Enabled ? [SupervisionCapability] : [],
+            // Spec 59: every node of this version runs fetch jobs.
+            Capabilities = configuration.Supervision.Enabled ? [FetchCapability, SupervisionCapability] : [FetchCapability],
         };
     }
 

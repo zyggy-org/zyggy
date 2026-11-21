@@ -122,6 +122,12 @@ public sealed partial class JobRunner
             return Reply(ReportStatus.Rejected, reason, $"{reason}: {rejected.Check}\n", started);
         }
 
+        // Spec 59: a fetch job reads one file through git; no model, so no hook either.
+        if (fields.Kind == JobKind.Fetch)
+        {
+            return await FetchAsync(job, fields, ((PreFlightResult.Ok)preFlight).ProjectPath, policy.FetchMaxBytes, started, ct).ConfigureAwait(false);
+        }
+
         // Spec 15: a hook that cannot start lets every tool call through (Claude Code treats it as a non-blocking error), so a job
         // whose hook binary is missing, or does not refuse an empty call, never starts — checked before the lock and the worktree, so
         // nothing is left behind.
@@ -237,6 +243,84 @@ public sealed partial class JobRunner
         LogFinished(id, reply, result);
         return reply;
     }
+
+    // Spec 59 Failure modes: the path's shape first (schema_unsupported: fetch_path), then fetch origin, the blob's size against
+    // jobs.fetchMaxBytes (schema_unsupported: too large), then its bytes; git's first error line on a missing file (git_error: fetch).
+    private async Task<JobReply> FetchAsync(Envelope.Envelope job, JobFields fields, string project, int maxBytes, DateTimeOffset started, CancellationToken ct)
+    {
+        var id = job.Header.Id.Value;
+        var schema = RunFailureReasonWire.ToWire(RunFailureReason.SchemaUnsupported);
+        var gitError = RunFailureReasonWire.ToWire(RunFailureReason.GitError);
+        var path = fields.FetchPath;
+        if (!FetchPaths.IsSafe(path))
+        {
+            LogRejected(id, schema, "fetch_path");
+            return Reply(ReportStatus.Rejected, schema, $"{schema}: fetch_path\n", started);
+        }
+
+        using var projectLock = ProjectLock.TryAcquire(project, job.Header.Id, ProjectLock.CurrentProcessId, _clock.GetUtcNow());
+        if (projectLock is null)
+        {
+            var lockPath = ProjectLock.PathOf(project);
+            LogLocked(id, lockPath);
+            return Reply(ReportStatus.Failed, RunFailureReasonWire.ToWire(RunFailureReason.Locked), $"locked: {lockPath}\n", started);
+        }
+
+        var branch = fields.FetchRef
+            ?? _registry.Current?.Projects.FirstOrDefault(p => string.Equals(p.Name, fields.Project, StringComparison.Ordinal))?.DefaultBranch
+            ?? await _git.DefaultBranchAsync(project, ct).ConfigureAwait(false)
+            ?? "main";
+        var revision = "origin/" + branch;
+        if (!(await _git.FetchAsync(project, ct).ConfigureAwait(false)).Succeeded)
+        {
+            LogFetchFailed(id);
+        }
+
+        var (size, sizeResult) = await _git.BlobSizeAsync(project, revision, path!, ct).ConfigureAwait(false);
+        if (size is null)
+        {
+            var line = FirstLine(sizeResult.Stderr) ?? "cat-file failed";
+            LogWorktreeFailed(id, "fetch");
+            return Reply(ReportStatus.Failed, gitError, $"{gitError}: fetch: {line}\n", started);
+        }
+
+        if (size > maxBytes)
+        {
+            LogRejected(id, schema, "too large");
+            return Reply(ReportStatus.Rejected, schema, $"{schema}: too large\n", started);
+        }
+
+        var temporary = Path.Combine(Path.GetTempPath(), "zyggy-fetch-" + id + ".bin");
+        byte[] bytes;
+        try
+        {
+            var read = await _git.ReadBlobToFileAsync(project, revision, path!, temporary, ct).ConfigureAwait(false);
+            if (!read.Succeeded)
+            {
+                LogWorktreeFailed(id, "fetch");
+                return Reply(ReportStatus.Failed, gitError, $"{gitError}: fetch: {FirstLine(read.Stderr) ?? "cat-file failed"}\n", started);
+            }
+
+            bytes = await File.ReadAllBytesAsync(temporary, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            File.Delete(temporary);
+        }
+
+        var text = Encoding.UTF8.GetString(bytes).Replace("\r\n", "\n", StringComparison.Ordinal);
+        var summary = ReportSummary.Truncate(text);
+        var body = $"fetched {path} at {revision} ({bytes.Length.ToString(CultureInfo.InvariantCulture)} bytes)\n\n{summary}{(summary.EndsWith('\n') ? string.Empty : "\n")}";
+        var name = Path.GetFileName(path!);
+        LogFetched(id, path!, revision, bytes.Length);
+        return Reply(ReportStatus.Done, null, body, started) with { Attachment = new ReportAttachment(name, bytes) };
+    }
+
+    private static string? FirstLine(string text) =>
+        text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "job {Id}: fetched {Path} at {Revision} ({Bytes} bytes)")]
+    private partial void LogFetched(string id, string path, string revision, int bytes);
 
     // Spec 53 Prepare steps 0–1: the job's branch, whether it also carries spec 18's base or mandate (read as front-matter keys, so the
     // rule holds before and after spec 18's parser knows them), and its project's default_branch in this node's own registry snapshot
@@ -371,8 +455,12 @@ public sealed partial class JobRunner
             reply = Reply(ReportStatus.Failed, RunFailureReasonWire.ToWire(RunFailureReason.ClaudeError), $"claude_error: {result.FailureDetail ?? "unknown"}\n\n{summary}\n", started);
         }
 
+        // Spec 59 (AC-3): a REPORT longer than the summary travels whole as report.md.
+        var whole = ReportSummary.ExtractWhole(result);
+        var attachment = whole.Length > ReportSummary.MaxCharacters ? new ReportAttachment("report.md", Encoding.UTF8.GetBytes(whole)) : null;
         return reply with
         {
+            Attachment = attachment,
             CostUsd = result.CostUsd,
             NumTurns = result.NumTurns,
             Model = result.Model,

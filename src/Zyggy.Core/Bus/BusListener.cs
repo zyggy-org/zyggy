@@ -718,8 +718,10 @@ public sealed partial class BusListener : IDisposable
                 reply.FilesChanged,
                 reply.DiffRef,
                 accepted.Job.Job?.Mandate,
-                accepted.Job.Job?.Step);
-            WriteOutcome report = await _bus.ReportAsync(accepted, fields, reply.Body, _signWith, ct).ConfigureAwait(false);
+                accepted.Job.Job?.Step,
+                reply.Attachment?.Name,
+                reply.Attachment is { } file ? Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(file.Bytes.Span)) : null);
+            WriteOutcome report = await _bus.ReportAsync(accepted, fields, reply.Body, reply.Attachment?.Bytes, _signWith, ct).ConfigureAwait(false);
             if (report is WriteFailed failed)
             {
                 LogWriteFailed("report", accepted.File.Id.Value, failed.Stage, failed.Detail);
