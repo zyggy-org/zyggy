@@ -69,6 +69,45 @@ public sealed partial class BusInventory
     }
 
     /// <summary>
+    /// What waits for the owner (deliverable 18, "Waiting list"), oldest first: an event whose newest decision is <c>escalate</c>, and a
+    /// paused mandate. Ids, kinds and names only; an item of a work machine names no project.
+    /// </summary>
+    /// <param name="workMachines">The machines in <c>supervision.workMachines</c>.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The items.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="workMachines"/> is null.</exception>
+    /// <exception cref="BusBusyException">Another zyggy process held the checkout's write lock for the whole wait.</exception>
+    public async Task<IReadOnlyList<OwnerItem>> WaitingAsync(IReadOnlyList<MachineName> workMachines, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(workMachines);
+
+        // Each read takes the lock itself; the report ids decide whether an escalated event is a report or a question.
+        IReadOnlyList<DecisionRecord> decisions = await DecisionsAsync(null, null, ct).ConfigureAwait(false);
+        IReadOnlyList<MandateLedger> ledgers = await MandatesAsync(ct).ConfigureAwait(false);
+        var reports = new HashSet<EnvelopeId>();
+        using (await LockAsync(ct).ConfigureAwait(false))
+        {
+            foreach (MachineName machine in Machines())
+            {
+                reports.UnionWith(Envelopes(BusPaths.Reports(_me.Tenant, machine)).Select(f => f.Id));
+            }
+
+            foreach (string month in ArchiveMonths.Folders(_root, _me.Tenant))
+            {
+                foreach ((string path, EnvelopeId id) in Envelopes(month))
+                {
+                    if (EnvelopeParser.PeekHeader(await File.ReadAllBytesAsync(BusPaths.Resolve(_root, path), ct).ConfigureAwait(false))?.Type == EnvelopeType.Report)
+                    {
+                        reports.Add(id);
+                    }
+                }
+            }
+        }
+
+        return OwnerView.Items(decisions, ledgers, reports, workMachines.Contains);
+    }
+
+    /// <summary>
     /// The envelope at <paramref name="path"/> when it verifies under its own id, is addressed to Central and, when
     /// <paramref name="folder"/> is given, was written by the machine whose folder holds it.
     /// </summary>

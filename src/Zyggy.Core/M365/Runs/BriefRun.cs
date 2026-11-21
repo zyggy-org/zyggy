@@ -24,7 +24,13 @@ namespace Zyggy.Core.M365.Runs;
 /// receipt → the watermark → the memory line → the sidecar, then the brief file → retention → the record.
 /// Exit 0 done or already created · 3 configuration · 5 audit flagged · 6 identity, Graph or model-run failure (no files, watermark unchanged).
 /// </summary>
-internal sealed class BriefRun(M365Session session, M365ToolPartition partition, IGraphReader reader, IModelRunner model, TimeProvider clock)
+internal sealed class BriefRun(
+    M365Session session,
+    M365ToolPartition partition,
+    IGraphReader reader,
+    IModelRunner model,
+    TimeProvider clock,
+    Func<DateTimeOffset, IReadOnlyList<DecidedLine>>? decided = null)
 {
     private const string Prefix = "m365-brief: ";
     private const string Runbook = "runbook 13 \"Model run failed\"";
@@ -227,7 +233,7 @@ internal sealed class BriefRun(M365Session session, M365ToolPartition partition,
             return new RunOutcome(signalExit?.Invoke() ?? 143, _stdout, _stderr);
         }
 
-        document = document with { Ideas = ideas.Lines, IdeasNote = ideas.Failure, IdeasOff = config.IdeasCap == 0 };
+        document = document with { Ideas = ideas.Lines, IdeasNote = ideas.Failure, IdeasOff = config.IdeasCap == 0, Decided = DecidedSince(store, today, now) };
         var c = document.Counts;
         var summary = $"mail {c.NewMails} ({c.Urgent} urgent, {c.Important} important, {c.Other} other), files {c.Files + c.FilesOther}, replies {output.Replies}, z {document.Items.Count}, you {document.You.Count}, ideas {document.Ideas.Count}, facts {output.Facts}";
         Remember($"Morning brief {_date} written: {summary}, audit {verdict}");
@@ -332,6 +338,7 @@ internal sealed class BriefRun(M365Session session, M365ToolPartition partition,
         var document = new BriefDocument(today, now, BriefMode.Weekend, string.Empty, "ok", [], [], [], [], 0, [], [], ideas.Lines, new BriefCounts(0, 0, 0, 0, 0))
         {
             IdeasOff = session.Configuration.IdeasCap == 0,
+            Decided = DecidedSince(store, today, now),
         };
         Remember($"Morning brief {_date} written: weekend, ideas {ideas.Lines.Count}");
         var (markdown, pageExceeded) = BriefRenderer.RenderMarkdown(document, session.Configuration.PageMaxLines, session.Configuration.PageMaxChars);
@@ -392,6 +399,18 @@ internal sealed class BriefRun(M365Session session, M365ToolPartition partition,
     private static string Printable(string text) => BriefPayload.Neutralise(text).Replace('\n', ' ').Trim();
 
     // AC-35: one "shown" row per kept suggestion; AC-42: the history pruned. A failure here never fails the brief.
+    // Deliverable 18 ("Record"): Central's decisions since the previous brief was generated, or of the last 24 hours when there is none.
+    private IReadOnlyList<DecidedLine> DecidedSince(BriefStore store, DateOnly today, DateTimeOffset now)
+    {
+        if (decided is null)
+        {
+            return [];
+        }
+
+        DateOnly[] earlier = [.. store.BriefDates().Where(d => d < today)];
+        return decided(earlier.Length > 0 ? store.Generated(earlier[^1]) : now.AddHours(-24));
+    }
+
     private void RecordIdeas(BriefPaths briefPaths, DateOnly today, IdeasPart ideas)
     {
         try

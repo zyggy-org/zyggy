@@ -99,6 +99,12 @@ internal sealed partial class SupervisorWake : IDisposable
     private readonly SettingsInUse? _settings;
     private string? _unknownLogged;
     private string? _lastFailure;
+    private readonly OwnerNotifier? _owner;
+    private readonly string? _decidedFile;
+    private readonly TimeSpan _ownerTick;
+    private Task _tick = Task.CompletedTask;
+    private bool _ticking;
+    private bool _stoppedLogged;
 
     public SupervisorWake(
         BusInventory inventory,
@@ -111,9 +117,15 @@ internal sealed partial class SupervisorWake : IDisposable
         SupervisorWakeOptions options,
         TimeProvider clock,
         ILogger<SupervisorWake> log,
-        SettingsInUse? settings = null)
+        SettingsInUse? settings = null,
+        OwnerNotifier? owner = null,
+        string? decidedFile = null,
+        OwnerMailOptions? mail = null)
     {
         _settings = settings;
+        _owner = owner;
+        _decidedFile = decidedFile;
+        _ownerTick = mail?.Tick ?? new OwnerMailOptions().Tick;
         _inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
         _decisions = decisions ?? throw new ArgumentNullException(nameof(decisions));
         _model = model ?? throw new ArgumentNullException(nameof(model));
@@ -130,7 +142,18 @@ internal sealed partial class SupervisorWake : IDisposable
     /// <summary>One pass: the node-written decisions, then at most one supervisor run started in the background.</summary>
     /// <param name="ct">Cancellation token of the caller's pass; a started run is stopped by <see cref="StopAsync"/>, not by this token.</param>
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="ct"/> is cancelled.</exception>
-    public Task RunAsync(CancellationToken ct) => GuardedPassAsync(null, ct);
+    public Task RunAsync(CancellationToken ct)
+    {
+        // Deliverable 18 ("Mail"): the owner pass also runs between pulls, so an item is named when its window ends and a failed send is tried again.
+        if (!_ticking && (_owner is not null || _decidedFile is not null))
+        {
+            _ticking = true;
+            CancellationToken stop = _stop.Token;
+            _tick = Task.Run(() => TickAsync(stop), CancellationToken.None);
+        }
+
+        return GuardedPassAsync(null, full: true, ct);
+    }
 
     /// <summary>Stops the run in flight, if any, and waits until it has ended (the host calls it after cancelling its loop).</summary>
     public async Task StopAsync()
@@ -143,6 +166,7 @@ internal sealed partial class SupervisorWake : IDisposable
             await run.ConfigureAwait(false);
         }
         while (!ReferenceEquals(run, _run));
+        await _tick.ConfigureAwait(false);
     }
 
     /// <summary>Cancels a run in flight without waiting for it.</summary>
@@ -166,7 +190,23 @@ internal sealed partial class SupervisorWake : IDisposable
         }
     }
 
-    private async Task GuardedPassAsync(Action? runEnded, CancellationToken ct)
+    private async Task TickAsync(CancellationToken stop)
+    {
+        try
+        {
+            while (true)
+            {
+                await Task.Delay(_ownerTick, _clock, stop).ConfigureAwait(false);
+                await GuardedPassAsync(null, full: false, stop).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (stop.IsCancellationRequested)
+        {
+            // the node is stopping
+        }
+    }
+
+    private async Task GuardedPassAsync(Action? runEnded, bool full, CancellationToken ct)
     {
         using IDisposable? scope = _log.BeginScope(new Dictionary<string, object>
         {
@@ -187,7 +227,12 @@ internal sealed partial class SupervisorWake : IDisposable
                 }
             }
 
-            await PassAsync(ct).ConfigureAwait(false);
+            if (full)
+            {
+                await PassAsync(ct).ConfigureAwait(false);
+            }
+
+            await OwnerPassAsync(ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -209,6 +254,11 @@ internal sealed partial class SupervisorWake : IDisposable
     {
         DateTimeOffset now = _clock.GetUtcNow();
         await CloseMandatesAsync(now, ct).ConfigureAwait(false);
+        if (OwnerStopped())
+        {
+            return;
+        }
+
         if (_running || _stop.IsCancellationRequested)
         {
             return;
@@ -252,6 +302,42 @@ internal sealed partial class SupervisorWake : IDisposable
         _running = true;
         CancellationToken stop = _stop.Token;
         _run = Task.Run(() => StepAsync(next, directory, attempt, keys, stop), CancellationToken.None);
+    }
+
+    // Deliverable 18 ("Stop"): while the owner's marker is in the node folder no run starts; the node-written decisions and the mail go on.
+    private bool OwnerStopped()
+    {
+        bool stopped = SupervisionSwitch.IsStopped(_options.NodeDir);
+        if (stopped != _stoppedLogged)
+        {
+            _stoppedLogged = stopped;
+            if (stopped)
+            {
+                LogOwnerStopped();
+            }
+            else
+            {
+                LogOwnerStarted();
+            }
+        }
+
+        return stopped;
+    }
+
+    // Deliverable 18 ("The owner's view"): one mail per change of the waiting list, and the decisions handed to the morning brief.
+    private async Task OwnerPassAsync(CancellationToken ct)
+    {
+        SupervisorKeys keys = Keys();
+        if (_owner is not null)
+        {
+            await _owner.RunAsync(await _inventory.WaitingAsync(keys.WorkMachines, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
+        }
+
+        if (_decidedFile is not null)
+        {
+            IReadOnlyList<DecisionRecord> decisions = await _inventory.DecisionsAsync(null, null, ct).ConfigureAwait(false);
+            DecidedFile.Write(_decidedFile, decisions, keys.WorkMachines.Contains, _clock.GetUtcNow());
+        }
     }
 
     private static bool IsWorkMachine(SupervisorEvent supervisorEvent, SupervisorKeys keys) => keys.WorkMachines.Contains(supervisorEvent.Machine);
@@ -428,6 +514,7 @@ internal sealed partial class SupervisorWake : IDisposable
                     _blocked[id] = blocked;
                     LogEnded(id, attempt, outcome, blocked);
                 },
+                full: true,
                 ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -499,6 +586,12 @@ internal sealed partial class SupervisorWake : IDisposable
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "supervisor: no run starts, supervision.project {Project} is not a project of this machine")]
     private partial void LogUnknownProject(string project);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "supervisor: stopped by the owner; no run starts until zyggy supervise start")]
+    private partial void LogOwnerStopped();
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "supervisor: started again by the owner")]
+    private partial void LogOwnerStarted();
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "supervisor: hourly cap of {Cap} run(s) reached; the next event waits")]
     private partial void LogCapReached(int cap);
