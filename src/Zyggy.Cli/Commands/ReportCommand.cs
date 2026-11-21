@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 
 using Microsoft.Extensions.DependencyInjection;
@@ -23,12 +24,24 @@ internal static class ReportCommand
     public static Command Create(CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure)
     {
         var id = new Argument<string>("id") { Description = "The job's ULID." };
-        var command = new Command("report", "Print the newest verified report answering a job, its fields and its body.") { id, BusHost.ConfigOption, BusHost.VerboseOption };
-        command.SetAction((parseResult, ct) => RunAsync(environment, io, configure, parseResult, parseResult.GetValue(id)!, ct));
+        var file = new Option<string?>("--file")
+        {
+            Description = "Write the report's attached file (spec 59) to <out>, or to its file_name in the current folder; checked against the signed file_sha256 first.",
+            Arity = ArgumentArity.ZeroOrOne,
+        };
+        var command = new Command("report", "Print the newest verified report answering a job, its fields and its body.") { id, file, BusHost.ConfigOption, BusHost.VerboseOption };
+        command.SetAction((parseResult, ct) => RunAsync(
+            environment,
+            io,
+            configure,
+            parseResult,
+            parseResult.GetValue(id)!,
+            parseResult.GetResult(file) is null ? null : new FileWanted(parseResult.GetValue(file)),
+            ct));
         return command;
     }
 
-    private static async Task<int> RunAsync(CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure, ParseResult parseResult, string idText, CancellationToken ct)
+    private static async Task<int> RunAsync(CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure, ParseResult parseResult, string idText, FileWanted? file, CancellationToken ct)
     {
         if (!EnvelopeId.TryParse(idText, out EnvelopeId? id))
         {
@@ -65,9 +78,47 @@ internal static class ReportCommand
             return ExitCodes.NotFound;
         }
 
+        if (file is not null)
+        {
+            return await WriteAttachmentAsync(io, configuration, trace, fields, file, ct);
+        }
+
         await io.Out.WriteAsync(Render(report, fields));
         return ExitCodes.Ok;
     }
+
+    // Spec 59 (Q2, AC-3): the attached file beside the newest verified report, written only when its SHA-256 equals the signed file_sha256.
+    private static async Task<int> WriteAttachmentAsync(VerbIo io, NodeConfiguration configuration, EnvelopeTrace trace, ReportFields fields, FileWanted file, CancellationToken ct)
+    {
+        EnvelopeSummary? newest = trace.Reports.LastOrDefault(r => r.Verified);
+        if (fields.FileName is null || fields.FileSha256 is null || newest is null)
+        {
+            await io.Error.WriteLineAsync($"zyggy: report {trace.Id.Value} has no attached file");
+            return ExitCodes.NotFound;
+        }
+
+        string source = BusPaths.Resolve(configuration.Bus.LocalPath, BusPaths.AttachmentFile(newest.RelativePath));
+        if (!File.Exists(source))
+        {
+            await io.Error.WriteLineAsync($"zyggy: the attached file of report {trace.Id.Value} is not in the bus checkout");
+            return ExitCodes.NotFound;
+        }
+
+        byte[] bytes = await File.ReadAllBytesAsync(source, ct);
+        if (!string.Equals(Convert.ToHexStringLower(SHA256.HashData(bytes)), fields.FileSha256, StringComparison.Ordinal))
+        {
+            await io.Error.WriteLineAsync($"zyggy: refused: the attached file of report {trace.Id.Value} does not match its signed file_sha256; nothing written");
+            return ExitCodes.Failed;
+        }
+
+        // file_name is data from the bus: only its last segment is used, never a path it names.
+        string target = Path.GetFullPath(file.Out ?? Path.GetFileName(fields.FileName));
+        await File.WriteAllBytesAsync(target, bytes, ct);
+        await io.Out.WriteLineAsync($"wrote {bytes.Length} bytes to {target}");
+        return ExitCodes.Ok;
+    }
+
+    private sealed record FileWanted(string? Out);
 
     /// <summary>The field lines in the spec's order (<c>reason</c> only when set, <c>-</c> for an absent value), then <c>body:</c> and the body verbatim.</summary>
     internal static string Render(Envelope report, ReportFields fields)

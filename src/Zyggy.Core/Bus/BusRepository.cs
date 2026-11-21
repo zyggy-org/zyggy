@@ -946,6 +946,18 @@ public sealed partial class BusRepository
             moved.Add((file.RelativePath, to, month));
         }
 
+        // Spec 59 (Q2): a report's attached file moves with it, beside the archived report; it is not counted as a move of its own.
+        var attached = new List<(string From, string To, string Month)>();
+        foreach ((string from, string to, string month) in moved)
+        {
+            if (from.EndsWith(".md", StringComparison.Ordinal)
+                && BusPaths.AttachmentFile(from) is { } attachment
+                && File.Exists(BusPaths.Resolve(_checkoutRoot, attachment)))
+            {
+                attached.Add((attachment, BusPaths.AttachmentFile(to), month));
+            }
+        }
+
         var settled = new List<(string Item, string Report, byte[] Bytes, string Outcome)>(items.Count);
         foreach (SettledItem item in items)
         {
@@ -964,10 +976,10 @@ public sealed partial class BusRepository
         IEnumerable<string> lines = moved.Select(m => m.From + " → " + m.To).Concat(settled.Select(s => s.Item + " → " + s.Outcome));
         return WriteAsync(
             ArchiveSubject(moved.Count + settled.Count),
-            [.. moved.Select(m => m.From), .. moved.Select(m => m.To), .. settled.Select(s => s.Item), .. settled.Select(s => s.Report)],
+            [.. moved.Select(m => m.From), .. moved.Select(m => m.To), .. attached.Select(a => a.From), .. attached.Select(a => a.To), .. settled.Select(s => s.Item), .. settled.Select(s => s.Report)],
             async token =>
             {
-                foreach ((string from, string to, string month) in moved)
+                foreach ((string from, string to, string month) in moved.Concat(attached))
                 {
                     Directory.CreateDirectory(BusPaths.Resolve(_checkoutRoot, month));
                     WriteFailed? failed = Failure("mv", await _git.MoveAsync(_checkoutRoot, from, to, token).ConfigureAwait(false));

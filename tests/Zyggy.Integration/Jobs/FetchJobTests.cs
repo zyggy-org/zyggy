@@ -155,7 +155,8 @@ public sealed class FetchJobTests : IAsyncLifetime
             o.ModelEnvironment = new Dictionary<string, string> { ["ZYGGY_FAKE_CLAUDE_SCENARIO"] = "done", ["ZYGGY_FAKE_CLAUDE_CAPTURE"] = CapturePath };
         });
         BusListener listener = services.GetRequiredService<BusListener>();
-        (await listener.StartAsync(ct)).Should().Be(BusStartupResult.Clean);
+        // The job is seeded before the host is built, as in JobRunnerRoundTripTests: no StartAsync, a pull, then one pass.
+        (await services.GetRequiredService<IBusProvider>().PullAsync(ct)).Succeeded.Should().BeTrue();
         (await listener.ProcessOnceAsync(ct)).Should().Be(1);
     }
 
