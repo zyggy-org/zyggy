@@ -54,8 +54,8 @@ public sealed class MandateIntakeTests : IAsyncLifetime, IDisposable
         EnvelopeWire.ToWire(EnvelopeRejectionReason.MandateInvalid).Should().Be("mandate_invalid");
 
     [Theory]
-    [InlineData(true, new[] { "fetch", "command", "supervision" })] // spec 59: every node advertises fetch and command; supervision only when enabled
-    [InlineData(false, new[] { "fetch", "command" })]
+    [InlineData(true, new[] { "command", "fetch", "supervision" })] // spec 59: every node advertises command and fetch (sorted); supervision only when enabled
+    [InlineData(false, new[] { "command", "fetch" })]
     public void FromScan_SupervisionSetting_CapabilityPublishedOnlyWhenEnabled(bool enabled, string[] expected)
     {
         // Arrange

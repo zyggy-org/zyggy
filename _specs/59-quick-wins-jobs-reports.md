@@ -143,6 +143,7 @@ flowchart LR
 | `fetch_path` with `..`, absolute, or above the cap | `rejected`, reason `schema_unsupported` (detail `fetch_path` / `too large`) |
 | `command` not in `node.json` | `rejected`, reason `schema_unsupported`, detail `unknown command <name>` |
 | command exits non-zero | `failed`, reason `command_failed` (new, Q3); body has the exit code and the output's tail, full output attached |
+| command program does not start (not found, no permission) | `failed`, reason `command_failed`; body `command_failed: command <name> did not start: <error>`, no attachment — decided by Central on 2026-11-21: the spec was silent |
 | A new kind sent to a node that does not advertise it | the sender refuses before writing the job; nothing reaches the bus |
 | Base branch missing on the origin at run time | `failed`, reason `git_error`, body `git_error: base: origin/<base> not found (<git's first error line>)` |
 | A failed or timed-out run with `base` | `zyggy/<id>` pushed and named; `base` not touched; body `branch <base> not updated: run <status>` |

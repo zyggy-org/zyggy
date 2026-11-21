@@ -137,7 +137,12 @@ public sealed class JobRunnerCommandTests : IDisposable
         var reply = await _h.Build().RunAsync(job, CancellationToken.None);
 
         // Assert
-        new { reply.Status, reply.Reason }.Should().BeEquivalentTo(new { Status = ReportStatus.Failed, Reason = "command_failed" });
+        new { reply.Status, reply.Reason, Body = Encoding.UTF8.GetString(reply.Body.Span) }.Should().BeEquivalentTo(new
+        {
+            Status = ReportStatus.Failed,
+            Reason = "command_failed",
+            Body = "command_failed: command unit-tests did not start: program dotnet not found or not executable\n",
+        });
     }
 
     // AC-4 / AC-15: a name not in node.json commands is schema_unsupported before any process starts — on any target, work machine included.

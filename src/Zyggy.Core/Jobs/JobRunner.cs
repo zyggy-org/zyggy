@@ -347,16 +347,15 @@ public sealed partial class JobRunner
         var minutes = entry.TimeoutMinutes ?? Math.Min(policy.DefaultTimeoutMinutes, 30);
         var spec = new ProcessSpec(entry.Argv[0], [.. entry.Argv.Skip(1)], project) { Timeout = TimeSpan.FromMinutes(minutes) };
         LogCommandStarted(id, name, minutes);
-        ProcessResult result;
-        try
-        {
-            result = await _processes.RunAsync(spec, ct).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException or InvalidOperationException)
+        // IProcessRunner never throws for a program that cannot start; it returns StartFailed (decided by Central on 2026-11-21).
+        var result = await _processes.RunAsync(spec, ct).ConfigureAwait(false);
+        if (result.StartFailed)
         {
             var failed = RunFailureReasonWire.ToWire(RunFailureReason.CommandFailed);
+            var error = result.Stderr.Trim();
+            var why = error.Length > 0 ? error : $"program {entry.Argv[0]} not found or not executable";
             LogCommandFinished(id, name, "not started");
-            return Reply(ReportStatus.Failed, failed, $"{failed}: command {name} did not start ({ex.GetType().Name})\n", started);
+            return Reply(ReportStatus.Failed, failed, $"{failed}: command {name} did not start: {why}\n", started);
         }
 
         var output = (result.Stdout + result.Stderr).Replace("\r\n", "\n", StringComparison.Ordinal);
