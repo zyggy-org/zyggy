@@ -330,7 +330,7 @@ internal sealed partial class SupervisorWake : IDisposable
         SupervisorKeys keys = Keys();
         if (_owner is not null)
         {
-            await Task.CompletedTask;
+            await _owner.RunAsync(await _inventory.WaitingAsync(keys.WorkMachines, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
         }
 
         if (_decidedFile is not null)

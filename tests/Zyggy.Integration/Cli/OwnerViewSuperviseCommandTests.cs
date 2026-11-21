@@ -140,6 +140,44 @@ public sealed class OwnerViewSuperviseCommandTests : IAsyncLifetime
         new { Exit = exit, Out = console.Stdout }.Should().BeEquivalentTo(new { Exit = 0, Out = "nothing waits for you\n" }, console.Stderr);
     }
 
+    // The owner's view: a session start on Central names how many items wait, and nothing more.
+    [Fact]
+    public async Task SessionStart_OnCentral_PausedMandate_CountLineOnStdout()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        string mandate = await GrantAsync(ct, maxJobs: "10");
+        for (var i = 3; i >= 1; i--)
+        {
+            await SeedFailedReportAsync(mandate, DateTimeOffset.UtcNow.AddMinutes(-5 * i), ct);
+        }
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(
+            ["work", "--session-start"],
+            _harness.CentralNodeJson,
+            stdin: HookJson.Stop(null, cwd: _harness.Scratch.File("central-session")),
+            ct: ct);
+
+        // Assert
+        new { Exit = exit, Out = console.Stdout }.Should().BeEquivalentTo(new { Exit = 0, Out = "1 item(s) wait for you: zyggy work --waiting\n" }, console.Stderr);
+    }
+
+    // The owner's view: with nothing waiting the session start prints nothing.
+    [Fact]
+    public async Task SessionStart_OnCentral_NothingWaits_NoLine()
+    {
+        // Act
+        var (exit, console) = await _harness.RunAsync(
+            ["work", "--session-start"],
+            _harness.CentralNodeJson,
+            stdin: HookJson.Stop(null, cwd: _harness.Scratch.File("central-session")),
+            ct: TestContext.Current.CancellationToken);
+
+        // Assert
+        new { Exit = exit, Out = console.Stdout }.Should().BeEquivalentTo(new { Exit = 0, Out = string.Empty }, console.Stderr);
+    }
+
     private async Task<string> GrantAsync(CancellationToken ct, string maxJobs = "3")
     {
         string[] args =

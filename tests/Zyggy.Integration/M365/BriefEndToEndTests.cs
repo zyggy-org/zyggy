@@ -80,6 +80,36 @@ public sealed partial class BriefEndToEndTests : IDisposable
         }
     }
 
+    // Spec 18 slice 13 (AC-28 fed): the real verb reads Central's decided.json beside the brief files and lists the decisions made
+    // after the previous brief was generated — one inside the last 24 hours but before that brief stays out — never a decision text.
+    [Fact]
+    public async Task Brief_DecidedFileBesideTheBrief_SectionListsOnlyDecisionsSinceThePreviousBrief()
+    {
+        // Arrange
+        Directory.CreateDirectory(BriefDirectory);
+        File.WriteAllText(Path.Combine(BriefDirectory, "brief-2026-10-05.md"), "Zyggy — morning brief 2026-10-05\n");
+        File.WriteAllText(Path.Combine(BriefDirectory, "brief-2026-10-05.json"), """{"generated":"2026-10-05T12:00:00Z"}""");
+        File.WriteAllText(
+            Path.Combine(BriefDirectory, "decided.json"),
+            """[{"time":"2026-10-05T10:00:00+00:00","kind":"correct","machine":"home-laptop","project":"shop","id":"01K6SQ0000000000000000000A"},{"time":"2026-10-05T15:00:00+00:00","kind":"accept","machine":"home-laptop","project":"shop","id":"01K6SQ0000000000000000000B"}]""");
+        var model = _run.Model(_ => "m365-brief-mail-ok");
+
+        // Act
+        var (exit, console) = await BriefAsync(model, TestContext.Current.CancellationToken);
+
+        // Assert
+        string[] lines = File.ReadAllLines(Markdown);
+        int at = Array.IndexOf(lines, "## Decided for you");
+        new
+        {
+            Exit = exit,
+            Section = at > 0,
+            Next = at > 0 ? lines[at + 1].EndsWith(" accept — home-laptop, shop — 01K6SQ0000000000000000000B", StringComparison.Ordinal) : false,
+            End = at > 0 ? lines[at + 2] : null,
+            Earlier = lines.Any(l => l.Contains("01K6SQ0000000000000000000A", StringComparison.Ordinal)),
+        }.Should().BeEquivalentTo(new { Exit = 0, Section = true, Next = true, End = string.Empty, Earlier = false }, console.Stderr + string.Join('\n', lines));
+    }
+
     [Fact]
     public async Task Brief_WithRequestFilePresent_FileDeletedBeforeTheRun()
     {
