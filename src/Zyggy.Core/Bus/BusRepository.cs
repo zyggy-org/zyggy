@@ -950,6 +950,12 @@ public sealed partial class BusRepository
         var attached = new List<(string From, string To, string Month)>();
         foreach (((BusFile file, _), (_, string to, string month)) in moves.Zip(moved))
         {
+            // A file whose name is not <ULID>.md (a stray file in reports/) has no attachment; it moves as before.
+            if (!file.RelativePath.EndsWith("/" + file.Id.Value + ".md", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             string attachment = BusPaths.AttachmentFile(file);
             if (File.Exists(BusPaths.Resolve(_checkoutRoot, attachment)))
             {

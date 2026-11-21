@@ -26,6 +26,10 @@ namespace Zyggy.Core.Envelope;
 /// refused on any other kind). Its safety (no <c>..</c>, not absolute) is the node's check, answered with <c>schema_unsupported</c>.
 /// </param>
 /// <param name="FetchRef">The <c>fetch_ref</c> branch a fetch reads as <c>origin/&lt;ref&gt;</c>; <see langword="null"/> reads the project's default branch.</param>
+/// <param name="Command">
+/// The <c>command</c> name of a <see cref="JobKind.Command"/> job (<c>[a-z0-9-]</c>; mandatory there, refused on any other kind), looked up
+/// in the node's own <c>node.json</c> <c>commands</c>; no text of the envelope reaches the process.
+/// </param>
 public sealed record JobFields(
     string Project,
     string? Agent = null,
@@ -43,4 +47,5 @@ public sealed record JobFields(
     JobDelivery Deliver = JobDelivery.Run,
     JobKind Kind = JobKind.Model,
     string? FetchPath = null,
-    string? FetchRef = null);
+    string? FetchRef = null,
+    string? Command = null);

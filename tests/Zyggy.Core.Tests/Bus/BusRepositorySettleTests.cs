@@ -171,6 +171,26 @@ public sealed class BusRepositorySettleTests : IDisposable
         commit.Arguments.Should().Contain([report.RelativePath, archived, attachment, archivedAttachment]);
     }
 
+    // Spec 59 slice 1 repair: a reports/ file whose name is not <id>.md of its id has no attachment; the pass moves it as before and
+    // does not throw. (A name that is no ULID at all is refused earlier by the write rule, as before slice 1.)
+    [Fact]
+    public async Task SettleAsync_ReportFileNameNotItsId_MovedWithoutAttachment()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        var id = EnvelopeId.New(_clock.GetUtcNow());
+        string path = BusPaths.EnvelopeFile(BusPaths.Reports(Acme, HomeLaptop), EnvelopeId.New(_clock.GetUtcNow().AddDays(-1)));
+        _checkout.Drop(path, Encoding.UTF8.GetBytes("stray"));
+        string archived = BusPaths.EnvelopeFile(BusPaths.Archive(Acme, 2026, 10), id);
+
+        // Act
+        WriteOutcome outcome = await Repository().SettleAsync([(new BusFile(path, id), T)], [], ct);
+
+        // Assert
+        outcome.Should().Be(new Pushed(1));
+        _processes.CallsOf("mv").Should().ContainSingle().Which.Arguments.Should().Equal("mv", "--", path, archived);
+    }
+
     private static async Task<Model> ReportAsync(EnvelopeId item, CancellationToken ct, MachineName? from = null, MachineName? to = null) =>
         await TestEnvelopes.SignedReportAsync(
             from ?? Central, to ?? HomeLaptop, item, await TestKeys.StoreWithAsync(TestKeys.Acme1, ct), TestKeys.Acme1, "archived: archive/calizr/staging-restore-notes.txt\n", ct, created: T);

@@ -137,6 +137,7 @@ public sealed class Envelope
         AddOptional(entries, "kind", job.Kind == JobKind.Model ? null : EnvelopeWire.ToWire(job.Kind));
         AddOptional(entries, "fetch_path", job.FetchPath);
         AddOptional(entries, "fetch_ref", job.FetchRef);
+        AddOptional(entries, "command", job.Command);
         return Create(entries, header, body);
     }
 

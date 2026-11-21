@@ -128,6 +128,12 @@ public sealed partial class JobRunner
             return await FetchAsync(job, fields, ((PreFlightResult.Ok)preFlight).ProjectPath, policy.FetchMaxBytes, started, ct).ConfigureAwait(false);
         }
 
+        // Spec 59 slice 2: a command job runs one allow-listed argv of this node's own node.json; no model, so no hook either.
+        if (fields.Kind == JobKind.Command)
+        {
+            return await CommandAsync(job, fields, ((PreFlightResult.Ok)preFlight).ProjectPath, policy, started, ct).ConfigureAwait(false);
+        }
+
         // Spec 15: a hook that cannot start lets every tool call through (Claude Code treats it as a non-blocking error), so a job
         // whose hook binary is missing, or does not refuse an empty call, never starts — checked before the lock and the worktree, so
         // nothing is left behind.
@@ -315,6 +321,78 @@ public sealed partial class JobRunner
         LogFetched(id, path!, revision, bytes.Length);
         return Reply(ReportStatus.Done, null, body, started) with { Attachment = new ReportAttachment(name, bytes) };
     }
+
+    // Spec 59 slice 2 Failure modes: a name this node's node.json does not list is schema_unsupported before any process starts; the
+    // argv is the entry's, never text of the envelope, run in the project folder without a shell; exit 0 is done, a non-zero exit
+    // command_failed with the exit code and the output's tail in the body; the full output (capped at jobs.fetchMaxBytes) attached.
+    private async Task<JobReply> CommandAsync(Envelope.Envelope job, JobFields fields, string project, NodePolicy policy, DateTimeOffset started, CancellationToken ct)
+    {
+        var id = job.Header.Id.Value;
+        var name = fields.Command ?? string.Empty;
+        if (!policy.Commands.TryGetValue(name, out NodeCommand? entry) || entry.Argv.Count == 0)
+        {
+            var schema = RunFailureReasonWire.ToWire(RunFailureReason.SchemaUnsupported);
+            LogRejected(id, schema, "unknown command");
+            return Reply(ReportStatus.Rejected, schema, $"{schema}: unknown command {name}\n", started);
+        }
+
+        using var projectLock = ProjectLock.TryAcquire(project, job.Header.Id, ProjectLock.CurrentProcessId, _clock.GetUtcNow());
+        if (projectLock is null)
+        {
+            var lockPath = ProjectLock.PathOf(project);
+            LogLocked(id, lockPath);
+            return Reply(ReportStatus.Failed, RunFailureReasonWire.ToWire(RunFailureReason.Locked), $"locked: {lockPath}\n", started);
+        }
+
+        var minutes = entry.TimeoutMinutes ?? Math.Min(policy.DefaultTimeoutMinutes, 30);
+        var spec = new ProcessSpec(entry.Argv[0], [.. entry.Argv.Skip(1)], project) { Timeout = TimeSpan.FromMinutes(minutes) };
+        LogCommandStarted(id, name, minutes);
+        ProcessResult result;
+        try
+        {
+            result = await _processes.RunAsync(spec, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or IOException or InvalidOperationException)
+        {
+            var failed = RunFailureReasonWire.ToWire(RunFailureReason.CommandFailed);
+            LogCommandFinished(id, name, "not started");
+            return Reply(ReportStatus.Failed, failed, $"{failed}: command {name} did not start ({ex.GetType().Name})\n", started);
+        }
+
+        var output = (result.Stdout + result.Stderr).Replace("\r\n", "\n", StringComparison.Ordinal);
+        var bytes = Encoding.UTF8.GetBytes(output);
+        if (bytes.Length > policy.FetchMaxBytes)
+        {
+            bytes = bytes[..policy.FetchMaxBytes];
+        }
+
+        var tail = output.Length > ReportSummary.MaxCharacters ? "…" + output[^ReportSummary.MaxCharacters..] : output;
+        var text = tail.Length == 0 || tail.EndsWith('\n') ? tail : tail + "\n";
+        var attachment = new ReportAttachment("output.txt", bytes);
+        if (result.TimedOut)
+        {
+            var timeout = RunFailureReasonWire.ToWire(RunFailureReason.Timeout);
+            LogCommandFinished(id, name, timeout);
+            return Reply(ReportStatus.Timeout, timeout, $"timeout after {minutes} min: command {name}\n\n{text}", started) with { Attachment = attachment };
+        }
+
+        var code = result.ExitCode?.ToString(CultureInfo.InvariantCulture) ?? "unknown";
+        if (result.ExitCode != 0)
+        {
+            var failed = RunFailureReasonWire.ToWire(RunFailureReason.CommandFailed);
+            LogCommandFinished(id, name, "exit " + code);
+            return Reply(ReportStatus.Failed, failed, $"{failed}: command {name} exited {code}\n\n{text}", started) with { Attachment = attachment };
+        }
+
+        LogCommandFinished(id, name, "exit 0");
+        return Reply(ReportStatus.Done, null, $"command {name} exited 0\n\n{text}", started) with { Attachment = attachment };
+    }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "job {Id}: command {Name} started (timeout {Minutes} min)")]
+    private partial void LogCommandStarted(string id, string name, int minutes);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "job {Id}: command {Name} finished: {Outcome}")]
+    private partial void LogCommandFinished(string id, string name, string outcome);
 
     private static string? FirstLine(string text) =>
         text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();

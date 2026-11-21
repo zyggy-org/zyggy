@@ -176,8 +176,7 @@ public sealed class JobRunnerFetchTests : IDisposable
     public async Task RunAsync_FetchOnListedWorkMachine_DoneWithFileAttachedAsOnAnyMachine()
     {
         // Arrange
-        var workMachines = new Zyggy.Core.Configuration.SupervisionSettings(Enabled: true) { WorkMachines = [Zyggy.Core.Tenancy.MachineName.Parse("work-laptop")] };
-        var job = await JobToAsync(workMachines.WorkMachines[0].Value, Fetch("docs/plan.md", "main"));
+        var job = await JobToAsync("work-laptop", Fetch("docs/plan.md", "main"));
 
         // Act
         var reply = await _h.Build().RunAsync(job, CancellationToken.None);

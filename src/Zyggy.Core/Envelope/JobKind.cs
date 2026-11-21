@@ -8,4 +8,7 @@ public enum JobKind
 
     /// <summary><c>fetch</c>: the node reads one file of the project at <c>origin/&lt;fetch_ref&gt;</c> and attaches it to the report; no model.</summary>
     Fetch,
+
+    /// <summary><c>command</c>: the node runs the argv its own <c>node.json</c> <c>commands</c> lists under the job's <c>command</c> name; no model, no shell.</summary>
+    Command,
 }

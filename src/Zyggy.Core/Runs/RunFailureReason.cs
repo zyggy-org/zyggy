@@ -38,4 +38,10 @@ public enum RunFailureReason
     /// the job also carries spec 18's <c>base</c> or <c>mandate</c>. Sent with <c>status: rejected</c>; the model never ran.
     /// </summary>
     BranchRefused,
+
+    /// <summary>
+    /// A <c>command</c> job's process exited non-zero (<c>command_failed</c>, spec 59 Q3). Sent with <c>status: failed</c>; the body has
+    /// the exit code and the output's tail, the full output is attached.
+    /// </summary>
+    CommandFailed,
 }

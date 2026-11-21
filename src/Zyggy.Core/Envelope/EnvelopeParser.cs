@@ -306,13 +306,35 @@ public static class EnvelopeParser
                 return Reject(FieldReader.Invalid("deliver", "must be run or session"));
             }
 
-            if (!ReadKind(out JobKind kind, out string? fetchPath, out string? fetchRef))
+            if (!ReadKind(out JobKind kind, out string? fetchPath, out string? fetchRef) || !ReadCommand(kind, out string? command))
             {
                 return false;
             }
 
-            job = new JobFields(project!, agent, worktree ?? false, allowedTools, reportBack, timeout, deadline, attempt ?? 1, branch, description, mandate, step, baseBranch, deliver, kind, fetchPath, fetchRef);
+            job = new JobFields(project!, agent, worktree ?? false, allowedTools, reportBack, timeout, deadline, attempt ?? 1, branch, description, mandate, step, baseBranch, deliver, kind, fetchPath, fetchRef, command);
             return true;
+        }
+
+        // Spec 59 slice 2: `command` is a name ([a-z0-9-]), mandatory on a command job and refused on any other kind. Whether the node
+        // lists it is the node's check (schema_unsupported: unknown command), so that refusal is reported, not dropped.
+        private bool ReadCommand(JobKind kind, out string? command)
+        {
+            if (!Text("command", false, out command))
+            {
+                return false;
+            }
+
+            if (kind == JobKind.Command && command is null)
+            {
+                return Reject(new EnvelopeRejection(EnvelopeRejectionReason.MissingField, "command", "command is missing"));
+            }
+
+            if (kind != JobKind.Command && command is not null)
+            {
+                return Reject(FieldReader.Invalid("command", "requires kind: command"));
+            }
+
+            return command is null || JobCommands.IsName(command) || Reject(FieldReader.Invalid("command", "must be a name of a-z, 0-9 and -"));
         }
 
         // Spec 59: `kind` (model when absent); `fetch_path` is mandatory on a fetch and refused on any other kind, `fetch_ref` a branch
@@ -329,7 +351,7 @@ public static class EnvelopeParser
 
             if (kindText is not null && !EnvelopeWire.TryFromWire(kindText, out kind))
             {
-                return Reject(FieldReader.Invalid("kind", "must be model or fetch"));
+                return Reject(FieldReader.Invalid("kind", "must be model, fetch or command"));
             }
 
             if (!Text("fetch_path", false, out fetchPath) || !Text("fetch_ref", false, out fetchRef))

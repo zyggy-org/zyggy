@@ -82,6 +82,7 @@ public static class EnvelopeWire
     {
         JobKind.Model => "model",
         JobKind.Fetch => "fetch",
+        JobKind.Command => "command",
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 

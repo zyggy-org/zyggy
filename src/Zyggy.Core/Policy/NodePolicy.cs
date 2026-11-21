@@ -28,4 +28,15 @@ public sealed record NodePolicy(
     /// <see cref="DefaultFetchMaxBytes"/> when absent.
     /// </summary>
     public int FetchMaxBytes { get; init; } = DefaultFetchMaxBytes;
+
+    /// <summary>
+    /// Gets the allow-list of <c>command</c> jobs (<c>node.json</c> <c>commands</c>, spec 59 slice 2): name → argv; the only source of a
+    /// command's program and arguments. Empty when absent.
+    /// </summary>
+    public IReadOnlyDictionary<string, NodeCommand> Commands { get; init; } = new Dictionary<string, NodeCommand>(StringComparer.Ordinal);
 }
+
+/// <summary>One entry of <c>node.json</c> <c>commands</c> (spec 59 slice 2).</summary>
+/// <param name="Argv">The program (a bare name on PATH or an absolute path the owner wrote) and its fixed arguments; run without a shell.</param>
+/// <param name="TimeoutMinutes">The run's time limit, 1–30; <see langword="null"/> uses <see cref="NodePolicy.DefaultTimeoutMinutes"/> capped at 30.</param>
+public sealed record NodeCommand(IReadOnlyList<string> Argv, int? TimeoutMinutes = null);
