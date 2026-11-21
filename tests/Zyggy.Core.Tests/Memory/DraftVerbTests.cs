@@ -142,6 +142,16 @@ public sealed class DraftVerbTests : IDisposable
     }
 
     [Fact]
+    public void DreamSource_DraftFile_NeverASourceOfFacts()
+    {
+        // Act: the dream pass batches only daily/ and inbox/ files as sources of facts
+        var source = Zyggy.Core.Dream.BatchPlanner.Source("drafts/2026-11-21-mail-to-client.md");
+
+        // Assert
+        source.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Waiting_TwoDrafts_ListedOldestFirstAsDraftItemsOfCentral()
     {
         // Arrange
