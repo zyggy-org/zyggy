@@ -62,6 +62,12 @@ public sealed record NodeConfiguration(
     /// </summary>
     public IReadOnlyDictionary<string, Policy.NodeCommand> Commands { get; init; } = new Dictionary<string, Policy.NodeCommand>(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Gets <c>jobs.fetchMaxBytes</c> (spec 59): the largest file a <c>fetch</c> job reads and the cap of an attached file;
+    /// <see cref="Policy.NodePolicy.DefaultFetchMaxBytes"/> when absent.
+    /// </summary>
+    public int FetchMaxBytes { get; init; } = Policy.NodePolicy.DefaultFetchMaxBytes;
+
     /// <summary>Gets <see cref="NodeDir"/> or, when it is <see langword="null"/>, the per-OS default (<c>%LOCALAPPDATA%\zyggy</c>, <c>~/.local/share/zyggy</c>) — the one place that rule lives (spec 07).</summary>
     public string EffectiveNodeDir => NodeDir ?? Jobs.TranscriptPaths.DefaultNodeDir();
 }

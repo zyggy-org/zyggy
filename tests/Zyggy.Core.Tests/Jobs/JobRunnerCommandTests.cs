@@ -99,6 +99,47 @@ public sealed class JobRunnerCommandTests : IDisposable
         });
     }
 
+    // AC-4: a command that runs past its timeoutMinutes is timeout, with the output so far in the body and attached.
+    [Fact]
+    public async Task RunAsync_CommandPastTimeout_TimeoutWithOutputSoFar()
+    {
+        // Arrange
+        _h.Processes.Hook = spec => spec.FileName == "dotnet"
+            ? new Zyggy.Core.Processes.ProcessResult(null, "Running 3 of 12\n", "", TimedOut: true, StartFailed: false, StdoutTruncated: false, TimeSpan.FromMinutes(5))
+            : null;
+        var job = await JobRunnerHarness.JobAsync(Command("unit-tests"));
+
+        // Act
+        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        new { reply.Status, reply.Reason, Body = Encoding.UTF8.GetString(reply.Body.Span), Output = Encoding.UTF8.GetString(reply.Attachment!.Bytes.Span) }
+            .Should().BeEquivalentTo(new
+            {
+                Status = ReportStatus.Timeout,
+                Reason = "timeout",
+                Body = "timeout after 5 min: command unit-tests\n\nRunning 3 of 12\n",
+                Output = "Running 3 of 12\n",
+            });
+    }
+
+    // AC-4: a program that cannot be started (not on PATH) is failed with reason command_failed, never done.
+    [Fact]
+    public async Task RunAsync_ProgramCannotStart_FailedCommandFailed()
+    {
+        // Arrange
+        _h.Processes.Hook = spec => spec.FileName == "dotnet"
+            ? new Zyggy.Core.Processes.ProcessResult(null, "", "", TimedOut: false, StartFailed: true, StdoutTruncated: false, TimeSpan.Zero)
+            : null;
+        var job = await JobRunnerHarness.JobAsync(Command("unit-tests"));
+
+        // Act
+        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        new { reply.Status, reply.Reason }.Should().BeEquivalentTo(new { Status = ReportStatus.Failed, Reason = "command_failed" });
+    }
+
     // AC-4 / AC-15: a name not in node.json commands is schema_unsupported before any process starts — on any target, work machine included.
     [Theory]
     [InlineData("home-laptop")]

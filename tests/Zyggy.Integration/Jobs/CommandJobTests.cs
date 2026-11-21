@@ -1,3 +1,5 @@
+using System.Text;
+
 using Microsoft.Extensions.DependencyInjection;
 
 using Zyggy.Core.Bus;
@@ -77,6 +79,23 @@ public sealed class CommandJobTests : IAsyncLifetime
             .Should().BeEquivalentTo(new { Status = ReportStatus.Failed, Reason = "command_failed", ModelStarted = false }, report.BodyText);
     }
 
+    // AC-4 / Q2: a non-zero exit still attaches the full output as output.txt beside the report, named in the signed front matter.
+    [Fact]
+    public async Task CommandJob_AllowListedNonZeroExit_FullOutputAttachedAsOutputTxt()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+
+        // Act
+        SeededJob job = await ProcessAsync("broken", ct);
+
+        // Assert
+        (string path, Model report) = await ReportEntryAsync(job, ct);
+        string attached = Encoding.UTF8.GetString(await _harness.Bus.ShowBytesAsync(Path.ChangeExtension(path, ".att"), ct));
+        new { report.Report!.FileName, Output = attached.Contains("no-such-verb", StringComparison.Ordinal) }
+            .Should().BeEquivalentTo(new { FileName = "output.txt", Output = true }, attached);
+    }
+
     // AC-4 / AC-15: a name not in this node's commands is refused before any process starts.
     [Fact]
     public async Task CommandJob_NameNotInNodeJson_RejectedSchemaUnsupported()
@@ -127,16 +146,18 @@ public sealed class CommandJobTests : IAsyncLifetime
         return job;
     }
 
-    private async Task<Model> ReportForAsync(SeededJob job, CancellationToken ct)
+    private async Task<Model> ReportForAsync(SeededJob job, CancellationToken ct) => (await ReportEntryAsync(job, ct)).Report;
+
+    private async Task<(string Path, Model Report)> ReportEntryAsync(SeededJob job, CancellationToken ct)
     {
         string output = await _harness.Bus.RunGitAsync(_harness.Bus.BareDir, ["ls-tree", "--name-only", "main", BusPaths.Reports(CliHarness.Acme, CliHarness.HomeLaptop) + "/"], ct);
-        var reports = new List<Model>();
+        var reports = new List<(string, Model)>();
         foreach (var path in output.Split('\n', StringSplitOptions.RemoveEmptyEntries).Where(p => p.EndsWith(".md", StringComparison.Ordinal)))
         {
             Model report = await _harness.ParseOnMainAsync(path, ct);
             if (report.Header.InReplyTo == job.Id)
             {
-                reports.Add(report);
+                reports.Add((path, report));
             }
         }
 

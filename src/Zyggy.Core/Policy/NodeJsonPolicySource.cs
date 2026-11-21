@@ -31,6 +31,7 @@ internal sealed class NodeJsonPolicySource : IPolicySource
             WorkHours.FromSettings(configuration.WorkHours))
         {
             Commands = configuration.Commands,
+            FetchMaxBytes = configuration.FetchMaxBytes,
         };
     }
 
