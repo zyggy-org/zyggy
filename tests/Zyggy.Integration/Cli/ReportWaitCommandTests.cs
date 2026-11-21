@@ -103,6 +103,25 @@ public sealed class ReportWaitCommandTests : IAsyncLifetime
             .Should().BeEquivalentTo(new { Exit = 3, Stdout = $"job {job.Value} rejected without a report (its sender could not be read)\n", ClockMoved = false }, console.Stderr);
     }
 
+    // AC-12 (second slice 9 verification): a job in rejected/ that also has its report — the report wins: printed, exit 0.
+    [Fact]
+    public async Task ReportWait_JobInRejectedWithItsReport_ReportWinsExitZero()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        var job = EnvelopeId.New(T.AddMinutes(-10));
+        string rejected = BusPaths.EnvelopeFile(BusPaths.Rejected(TestKeys.Acme1.Tenant, CliHarness.HomeLaptop), job);
+        await _harness.Bus.SeedRawFileAsync(rejected, "not an envelope: no sender to read\n"u8.ToArray(), $"acme reject {job.Value} home-laptop→unknown", ct);
+        await SeedReportAsync(job, "REPORT\nsummary: refused\n", new ReportFields(ReportStatus.Rejected, "unknown_project"), ct);
+
+        // Act
+        var (exit, console) = await DriveAsync(WaitAsync(job, ["--timeout", "5"], ct), ct);
+
+        // Assert
+        new { Exit = exit, Report = console.Stdout.StartsWith("status: rejected\nreason: unknown_project\n", StringComparison.Ordinal) }
+            .Should().BeEquivalentTo(new { Exit = 0, Report = true }, console.Stdout + console.Stderr);
+    }
+
     // The wait holds no lock between two looks: another zyggy process takes the checkout's write lock at once, and the wait recovers.
     [Fact]
     public async Task ReportWait_WhileWaiting_TheWriteLockIsFreeAndTheWaitRecovers()

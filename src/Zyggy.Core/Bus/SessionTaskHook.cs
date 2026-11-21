@@ -67,6 +67,7 @@ public sealed partial class SessionTaskHook
     private readonly SupervisionSettings _settings;
     private readonly string _nodeDir;
     private readonly string _stateFile;
+    private readonly string _arrivalsFile;
     private readonly TimeProvider _clock;
     private readonly ILogger<SessionTaskHook> _log;
 
@@ -91,8 +92,36 @@ public sealed partial class SessionTaskHook
         _nodeDir = nodeDir ?? throw new ArgumentNullException(nameof(nodeDir));
         ArgumentNullException.ThrowIfNull(tenant);
         _stateFile = Path.Join(nodeDir, "work", tenant.Value, "session-task.json");
+        _arrivalsFile = ReportArrivals.FileFor(nodeDir, tenant);
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _log = log ?? throw new ArgumentNullException(nameof(log));
+    }
+
+    /// <summary>
+    /// Spec 59 slice 10 (AC-13), Central's turn end when no task was delivered: the reports to Central the supervisor wake handed over
+    /// since the last notice, as the Stop-hook answer (ids and machine names, framed as data), each once. Nothing on a continuation
+    /// (<c>stop_hook_active</c>), while statuses are off or while the owner's stop marker is there; the reports then wait for a later
+    /// turn end. Reads only the node directory: no pull, no model run, no job.
+    /// </summary>
+    /// <param name="hookJson">The Stop hook's JSON.</param>
+    /// <returns><see cref="SessionTaskResult.Delivered"/> with the answer, or <see cref="SessionTaskResult.Nothing"/>.</returns>
+    public SessionTaskOutcome ReportsArrived(string? hookJson)
+    {
+        if (!_settings.Enabled || SupervisionSwitch.IsStopped(_nodeDir))
+        {
+            return new SessionTaskOutcome(SessionTaskResult.Nothing);
+        }
+
+        StopHookEnvelope? envelope = HookJsonContext.Deserialize<StopHookEnvelope>(hookJson ?? string.Empty);
+        if (envelope is null || envelope.StopHookActive == true)
+        {
+            return new SessionTaskOutcome(SessionTaskResult.Nothing);
+        }
+
+        IReadOnlyList<ReportArrival> arrived = ReportArrivals.Take(_arrivalsFile);
+        return arrived.Count == 0
+            ? new SessionTaskOutcome(SessionTaskResult.Nothing)
+            : new SessionTaskOutcome(SessionTaskResult.Delivered, SessionTaskRules.StopJson(ReportArrivals.Frame(arrived)));
     }
 
     /// <summary>The turn-end step: claims at most one task and returns the Stop-hook answer.</summary>

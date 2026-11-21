@@ -256,7 +256,15 @@ internal static class WorkCommand
         if (mode == "turn")
         {
             // Deliverable 18 ("Work into a live session"): at every turn end, at most one session task; its Stop-hook answer is the only stdout.
-            SessionTaskOutcome task = await services.GetRequiredService<SessionTaskHook>().TurnEndAsync(hookJson, ct);
+            SessionTaskHook tasks = services.GetRequiredService<SessionTaskHook>();
+            SessionTaskOutcome task = await tasks.TurnEndAsync(hookJson, ct);
+
+            // Spec 59 slice 10: on Central, with no task this turn, the reports the wake handed over since the last notice.
+            if (task.Output is null && configuration.Machine == MachineName.Central)
+            {
+                task = tasks.ReportsArrived(hookJson) is { Output: not null } arrived ? arrived : task;
+            }
+
             if (task.Output is { } answer)
             {
                 await io.Out.WriteLineAsync(answer);
