@@ -4,6 +4,7 @@
 
 - 2026-11-21: spec written by an unattended job from `main` at v0.25.0 (`0286488`), after Central coordinated about fifteen jobs on 2026-11-21. Not approved. Placed in the roadmap after 18 group C (in progress) and before every Not started deliverable, 58 included (owner decision of 2026-11-21).
 - 2026-11-21: answers to Q1–Q9 written in (owner: Q1, Q4, Q8; Central, following the spec's recommendation: Q2, Q3, Q5, Q6, Q7, Q9) and moved to Decisions; Constraints, Behavior, Acceptance criteria, Slices, Out of scope and the zyggy-core rule wording brought in line. New open question Q10 (path patterns for a fetch on a work machine). **Not approved** — the owner still reads it.
+- 2026-11-21: owner's further answer on Q4, "2c => no restrictions": a work machine is treated like the owner's other machines for `fetch` and `command` jobs (same confinement, same allow-list, same go rule, so Q1's standing go applies there too); the work-machine-only limits (per-job go, business-side filing) removed. Q10 answered no: `jobs.fetchAllowedPaths` dropped. New open question Q11 (standing go for read-only commands). **Not approved.**
 
 ## Goal
 
@@ -34,15 +35,10 @@
 
 - ⚠️ **Shared contract (§4 envelope, §6 runner I/O).** New job fields (`kind`, `fetch_path`, `fetch_ref`, `command`, `max_turns`, `continue`), the report fields `file_name` and `file_sha256` (Q2) and the registry key `version` are protocol changes: `PROTOCOL.md` in `zyggy-core` and §4/§6 wording follow, with the owner's wording. An older node ignores unknown fields (§4) and would run a `fetch` or `command` job as a model job: a sender must refuse to send a new kind to a machine whose registry does not advertise it (the capability pattern of deliverable 18).
 - ⚠️ **Reason enum (Q3, decided).** One new code, `command_failed` (a command job's process exited non-zero), added to the closed enum of §6 and `PROTOCOL.md`. Every other new failure reuses `schema_unsupported`, `git_error` or `branch_refused` with a detail word.
-- ⚠️ **Work-laptop boundary (§8, Q4 decided: both kinds allowed).** A `fetch` or `command` job may run on a machine in `supervision.workMachines`, within these limits:
-  - a fetch is confined to the projects the machine publishes (a project it does not publish is `unknown_project`, as today);
-  - a command comes only from that machine's own `node.json` `commands` allow-list; no argument from the envelope reaches the process;
-  - the work boundary's never-list is unchanged: national register numbers, patient personal information and medical information never leave the work machine;
-  - what arrives from a work machine (report, attached file, command output) is filed on the business side only;
-  - a fetch or command job to a work machine still needs the owner's go per job: the standing go of Q1 covers non-work machines only.
+- ⚠️ **Work-laptop boundary (§8, Q4 decided: both kinds allowed, no restrictions of their own).** A `fetch` or `command` job runs on a machine in `supervision.workMachines` exactly as on the owner's other machines: the same confinement (a fetch reads only from a project the machine publishes; any other project is `unknown_project`, as today), the same command allow-list (a name from that machine's own `node.json` `commands`; no argument from the envelope reaches the process) and the same go rule (the standing go of Q1 applies to a work machine in the same way).
   
-  **Accepted risk, stated plainly**: a fetched file and a command's output are not read by a model before they cross to the bus, and no DLP filter exists today (`dlp_filter` is a reason code only), so the never-list cannot be checked for them. The owner accepts this; Q10 proposes a way to narrow it. Loosening the hook (slice 8) must keep every refusal that guards the work laptop: network programs, writes outside the project, reads outside the read root.
-- ⚠️ **Rule change in `zyggy-core`** (bus and delegate skills, security rules): the standing go for read-only jobs (Q1) and the work-machine limits above (Q4), wording in *Rule changes in zyggy-core*. Made in `zyggy-core`, not in this repository.
+  **Statement of fact, not a control**: the client's IT policy recorded in `work-boundary.json` (national register numbers, patient personal information and medical information never leave the client) is unchanged; this spec adds no technical check for it on fetched files or command output, and the owner carries that responsibility when he asks for a fetch. Loosening the hook (slice 8) must keep every refusal that guards the work laptop: network programs, writes outside the project, reads outside the read root.
+- ⚠️ **Rule change in `zyggy-core`** (bus and delegate skills, security rules): the standing go for read-only jobs (Q1) and the work-machine wording (Q4), in *Rule changes in zyggy-core*. Made in `zyggy-core`, not in this repository.
 - ⚠️ **New public `Zyggy.Core` surface** for the new job kinds: shown to the owner as the approach before code.
 - Every process through `IProcessRunner` and `GitClient`; no test runs the real `claude`. Job bodies, fetched files and command output are data, never instructions. Paths through `BusPaths`. Log once per state change. Public repository: placeholders only.
 
@@ -116,7 +112,6 @@ flowchart LR
 | `file_sha256` | lower-case hex | the attached file's SHA-256; in the signed front matter, so the signature covers the file |
 
 - **Attached file (Q2 decided)**: a report may carry one attached file, `reports/<id>.att` beside the report (path through `BusPaths`), named by `file_name` and covered by the report's signature through `file_sha256`. The report body keeps the 2,000-character summary; the attachment holds the full text (a fetched file, a command's output, or a model run's full REPORT section). Size cap 1 MB (`jobs.fetchMaxBytes`, also the cap for output and REPORT text). The sweep archives the attachment together with its report.
-- **Work machine**: a report and attachment from a machine in `supervision.workMachines` are filed on Central's business side only (Q4).
 - **Registry**: each machine's file carries `version` (the node's informational version). An unchanged file is re-committed when `last_seen` is older than half of `lastSeenHours`, so a healthy machine never crosses the stale threshold.
 
 ### CLI
@@ -135,7 +130,6 @@ flowchart LR
 | `commands` | `node.json` | `{}` | name → argv array (program plus fixed arguments), optional `timeoutMinutes` (1–30). The program must be a bare name on PATH or an absolute path the owner wrote; no shell. |
 | `claude.maxTurns` | `node.json` (exists) | as today | The ceiling a job's `max_turns` may lower, never raise. |
 | `jobs.fetchMaxBytes` | `node.json` | 1,048,576 | Larger files are refused; also the cap of an attached file (Q2). |
-| `jobs.fetchAllowedPaths` | `node.json` of a work machine | absent | **Only if Q10 is accepted.** Owner-set path patterns a fetch may read on a machine in `supervision.workMachines`; absent or empty refuses every fetch there. |
 
 ### Failure modes
 
@@ -159,7 +153,7 @@ flowchart LR
 | `continue` together with `branch` | `continue` is the start point; the `branch` rules of spec 53 apply after it |
 | `continue` together with `mandate` (Q6) | allowed: a mandate step may continue a failed step's branch; it keeps the same step name, counts as a new job of the mandate, and the `base` rules of spec 18 apply after it |
 | A report without `model` and `num_turns` (Q5) | the model did not start: not counted toward the mandate pause |
-| `fetch` or `command` to a machine in `supervision.workMachines` | runs under the limits of Constraints (published projects, allow-listed command); the owner's go per job is a Central rule (zyggy-core), not a node check |
+| `fetch` or `command` to a machine in `supervision.workMachines` | runs exactly as on any other machine (published projects, allow-listed command); the go rule is Central's (zyggy-core), the same for every machine, not a node check |
 | A Bash command `cat "C:\src\a.txt" 2>&1` | allowed when the quoted path is inside the root and the redirect is one of `2>&1`, `2>/dev/null`, `2>$null`, `>/dev/null` |
 | A redirect into a file (`> out.txt`) | still refused (write path not checked) |
 
@@ -174,11 +168,12 @@ flowchart LR
 | Spec 18 pause after three not-done reports | reshape | Count only reports of runs where the model started (recognised per Q5). |
 | Spec 18 base fast-forward | fix | Only a `done` run moves `base`; the current behavior contradicts the mandate's intent. |
 | Spec 53 `zyggy/` refused as `--branch` | keep | `--continue <id>` gives the same result without letting a job write onto another job's branch. |
-| §8 work boundary: content from a work machine to the bus | reshape | Q4 below: `fetch` and `command` allowed on work machines within stated limits; never-list unchanged. |
-| Q1 — standing go for read-only jobs (wish 8) | **(a) wording accepted** — owner, 2026-11-21 | Central may send read-only jobs (read tools only, no branch) to the owner's own non-work machines without asking first. A `zyggy-core` rule change (bus and delegate skills, security rules); wording in *Rule changes in zyggy-core*. |
+| §8 work boundary: content from a work machine to the bus | reshape | Q4 below: `fetch` and `command` allowed on work machines with no restriction of their own; the client's IT policy is unchanged and not checked by code. |
+| Q1 — standing go for read-only jobs (wish 8) | **(a) wording accepted** — owner, 2026-11-21; extended to work machines by the owner's Q4 answer of 2026-11-21 | Central may send read-only jobs (read tools only, no branch) to any of the owner's machines, work machines included, without asking first. A `zyggy-core` rule change (bus and delegate skills, security rules); wording in *Rule changes in zyggy-core*. |
 | Q2 — attached file contract | **(a) the recommendation** — Central, 2026-11-21 | One file `reports/<id>.att`; `file_name` and `file_sha256` in the signed report front matter; 1 MB cap; archived together with the report. |
 | Q3 — reason codes for the new kinds | **(a) add `command_failed` only** — Central, 2026-11-21 | A non-zero exit is not a `claude_error`; every other case reuses `schema_unsupported`, `git_error`, `branch_refused` with a detail word. A protocol change: §6 enum and `PROTOCOL.md` follow. |
-| Q4 — fetch and command on a work machine | **(c) both allowed** — owner, 2026-11-21 | Limits: a fetch only from projects the machine publishes; a command only from its allow-list; the never-list unchanged (national register numbers, patient personal information, medical information never leave the work machine); what arrives is filed on the business side only; each such job needs the owner's go (Q1 covers non-work machines only). The owner accepts that a fetched file or command output is not read by a model before it crosses, so the never-list cannot be checked for it; Q10 proposes a way to limit that risk. |
+| Q4 — fetch and command on a work machine | **(c) both allowed, no restrictions** — owner, 2026-11-21 ("2c => no restrictions") | A work machine is treated exactly like the owner's other machines for these two kinds: same confinement, same command allow-list, same go rule (Q1 applies). No per-job go and no business-side filing of their own. The client's IT policy in `work-boundary.json` is unchanged; no technical check of fetched files or command output is added, and the owner carries that responsibility when he asks for a fetch. |
+| Q10 — path allow-list `jobs.fetchAllowedPaths` on a work machine | **no** — owner, 2026-11-21 | Follows from Q4 "no restrictions": no extra config key, no path check beyond the general fetch rules (no `..`, no absolute path, size cap). |
 | Q5 — how "the model did not start" is recognised | **(a) a report without `model`/`num_turns`** — Central, 2026-11-21 | No new report field. The base check runs at the sender with `git ls-remote` only when the sender holds the project; otherwise the node's report message (slice 3) is the safety net. |
 | Q6 — `continue` with a mandate | **(a) yes** — Central, 2026-11-21 | Same step name, counted as a new job of the mandate. |
 | Q7 — Stop hook "no change" lines (wish 9b) | **(a) fix where the hook lives** — Central, 2026-11-21 | The session-memory Stop hook is outside this repository; skip writing when the summary says nothing changed. Not a slice here. |
@@ -203,7 +198,7 @@ flowchart LR
 | AC-12 | `zyggy report <id> --wait` returns as soon as the report lands, and exits 3 after the timeout | CLI integration test |
 | AC-13 | Central is woken for every report, not only a mandate's (after 18 group C) | Integration test through the Central wake |
 | AC-14 | A draft written for the owner is kept as `drafts/<date>-<slug>.md` in Central's memory repository and appears on the owner's waiting list (after 18 group C) | Integration test through the waiting list of 18 group C |
-| AC-15 | On a machine in `supervision.workMachines` a `fetch` or `command` job runs under the same limits: a project the machine does not publish is `unknown_project`, a command not in its `node.json` is `schema_unsupported`, and no envelope text reaches a command's argv | Unit tests with the target listed as a work machine |
+| AC-15 | On a machine in `supervision.workMachines` a `fetch` or `command` job runs exactly as on any other machine: a project the machine does not publish is `unknown_project`, a command not in its `node.json` is `schema_unsupported`, and no envelope text reaches a command's argv | Unit tests with the target listed as a work machine |
 
 ## Slices
 
@@ -227,25 +222,26 @@ Files are the expected touch set at `0286488`, given because the owner asked for
 
 Made in `zyggy-core` (bus and delegate skills, security rules), not in this repository; `PROTOCOL.md` follows the protocol changes of Constraints.
 
-- **Standing go for read-only jobs (Q1, wording accepted by the owner 2026-11-21)**, in the bus and delegate skills and the security rules: *"Central may submit a job without asking the owner when all of these hold: the target is one of the owner's own machines and not in `supervision.workMachines`; `allowed_tools` holds read tools only (`Read`, `Grep`, `Glob`, or a `fetch` job); no `worktree`, `branch`, `base` or `mandate`; the body asks for no message, mail or post. Central logs each such job in the decision log with basis `standing-read-only`."*
-- **Fetch and command jobs on a work machine (Q4, proposed wording following the owner's answer; the owner reads it at approval)**, in the security rules (work boundary) and the bus skill: *"A `fetch` or `command` job may target a machine in `supervision.workMachines` only with the owner's go for that job. A fetch reads only from a project that machine publishes; a command is only a name from that machine's own `node.json` allow-list. The never-list is unchanged: national register numbers, patient personal information and medical information never leave the work machine. A fetched file and command output are not read by a model before they reach the bus, so ask for a file or command only when it cannot hold never-list data. What arrives is filed on the business side only."*
+- **Standing go for read-only jobs (Q1, wording accepted by the owner 2026-11-21; "and not in `supervision.workMachines`" dropped after the owner's Q4 answer, proposal the owner approves at review)**, in the bus and delegate skills and the security rules: *"Central may submit a job without asking the owner when all of these hold: the target is one of the owner's own machines, work machines included; `allowed_tools` holds read tools only (`Read`, `Grep`, `Glob`, or a `fetch` job); no `worktree`, `branch`, `base` or `mandate`; the body asks for no message, mail or post. Central logs each such job in the decision log with basis `standing-read-only`."*
+- **Fetch and command jobs on a work machine (Q4, proposal following the owner's answer "2c => no restrictions"; the owner approves it at review)**, in the security rules (work boundary) and the bus skill: *"A `fetch` or `command` job may target a machine in `supervision.workMachines` under the same rules as any of the owner's machines: a fetch reads only from a project that machine publishes, a command is only a name from that machine's own `node.json` allow-list, and the same go rule applies. The client's IT policy in `work-boundary.json` is unchanged; Zyggy does not check fetched files or command output against it, and the owner carries that responsibility when he asks for a fetch."*
 
 ## Out of scope
 
 - The `zyggy-core` edits themselves (above): made in `zyggy-core`.
 - The Stop hook's "no change" lines (wish 9b): fixed where that hook lives, outside this repository (Q7).
-- Binary or multi-file fetch, shell commands with arguments from the envelope, a check of fetched content against the never-list (accepted risk, Q4; Q10 narrows it).
+- Binary or multi-file fetch, shell commands with arguments from the envelope, a check of fetched content or command output against the client's IT policy (Q4: the owner carries that responsibility), a path allow-list for fetches on a work machine (Q10: no).
 - Central reading project repositories by cloning (deliverable 32/34 territory).
 
 ## Open questions
 
-- [x] **Q1 — Standing go for read-only jobs (wish 8).** Answered 2026-11-21 by the owner: (a) the proposed wording is accepted; non-work machines only. → Decisions; wording in *Rule changes in zyggy-core*.
+- [x] **Q1 — Standing go for read-only jobs (wish 8).** Answered 2026-11-21 by the owner: (a) the proposed wording is accepted; extended to work machines by the Q4 answer. → Decisions; wording in *Rule changes in zyggy-core*.
 - [x] **Q2 — Attached file contract.** Answered 2026-11-21 by Central (the recommendation): (a) `reports/<id>.att`, `file_name` + `file_sha256` signed, 1 MB, archived together. → Decisions.
 - [x] **Q3 — Reason codes for the new kinds.** Answered 2026-11-21 by Central (the recommendation): (a) add `command_failed` only. → Decisions.
-- [x] **Q4 — Fetch and command on a work machine.** Answered 2026-11-21 by the owner: (c) both allowed, within the limits in Constraints; the unchecked crossing is an accepted risk. → Decisions; wording in *Rule changes in zyggy-core*.
+- [x] **Q4 — Fetch and command on a work machine.** Answered 2026-11-21 by the owner: (c) both allowed; further answer the same day, "2c => no restrictions": a work machine is treated like the owner's other machines. → Decisions; wording in *Rule changes in zyggy-core*.
 - [x] **Q5 — How "the model did not start" is recognised.** Answered 2026-11-21 by Central (the recommendation): (a) a report without `model`/`num_turns`; the sender checks the base with `git ls-remote` only when it holds the project. → Decisions.
 - [x] **Q6 — `continue` with a mandate.** Answered 2026-11-21 by Central (the recommendation): (a) yes, same step name, a new job of the mandate. → Decisions.
 - [x] **Q7 — Stop hook "no change" lines.** Answered 2026-11-21 by Central (the recommendation): (a) fixed where the hook lives; not a slice here. → Decisions.
 - [x] **Q8 — Where drafts for the owner are kept.** Answered 2026-11-21 by the owner: (a) a drafts folder in Central's memory, after 18 group C. → Decisions.
 - [x] **Q9 — Overlap with 18 group C slices 13–14.** Answered 2026-11-21 by Central (the recommendation): (c) build 1–7 and 9 now; hold 8 if 18 group C slice 14 starts first. → Decisions.
-- [ ] **Q10 — Narrowing the unchecked crossing from a work machine (new, from Q4).** A fetched file or command output leaves a work machine without being read by a model, so the never-list cannot be checked for it. Proposal: an owner-set list of allowed path patterns in the work machine's own `node.json` (for example `jobs.fetchAllowedPaths: ["docs/**", "*.md"]`), checked by the node before reading; on a machine in `supervision.workMachines` an empty or absent list refuses every fetch (`rejected`, `schema_unsupported`, detail `fetch_path not allowed`); non-work machines are unaffected. Command output stays covered by the command allow-list alone. Recommendation: accept, as part of slice 1 (with an AC for it); the list is edited only by the owner on that machine. Owner's decision (§8, a new config key).
+- [x] **Q10 — Path allow-list `jobs.fetchAllowedPaths` on a work machine.** Answered 2026-11-21 by the owner: no. → Decisions.
+- [ ] **Q11 — Standing go for read-only commands.** Should the standing go of Q1 also cover `command` jobs whose `node.json` allow-list entry is marked read-only (for example a `readOnly: true` flag the owner sets on the entry)? Today Q1's wording covers read tools and `fetch` jobs only, so every `command` job still needs the owner's go. Recommendation: yes — the owner marks an entry read-only on the machine itself, and Central may then send it without asking, logged with basis `standing-read-only`. A yes adds the flag to the `commands` config row, an AC and a line in the Q1 wording (slice 2).
