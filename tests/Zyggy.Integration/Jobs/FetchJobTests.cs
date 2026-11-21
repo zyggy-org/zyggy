@@ -59,10 +59,9 @@ public sealed class FetchJobTests : IAsyncLifetime
     {
         // Arrange
         var ct = TestContext.Current.CancellationToken;
-        SeededJob job = await SeedFetchAsync("docs/plan.md", Docs, ct);
 
         // Act
-        await ProcessAsync(ct);
+        SeededJob job = await ProcessAsync("docs/plan.md", Docs, ct);
 
         // Assert
         (Model report, string path) = await ReportForAsync(job, ct);
@@ -90,10 +89,9 @@ public sealed class FetchJobTests : IAsyncLifetime
     {
         // Arrange
         var ct = TestContext.Current.CancellationToken;
-        SeededJob job = await SeedFetchAsync("docs/plan.md", "main", ct);
 
         // Act
-        await ProcessAsync(ct);
+        SeededJob job = await ProcessAsync("docs/plan.md", "main", ct);
 
         // Assert
         Model report = (await ReportForAsync(job, ct)).Report;
@@ -111,8 +109,7 @@ public sealed class FetchJobTests : IAsyncLifetime
     {
         // Arrange
         var ct = TestContext.Current.CancellationToken;
-        SeededJob job = await SeedFetchAsync("docs/plan.md", Docs, ct);
-        await ProcessAsync(ct);
+        SeededJob job = await ProcessAsync("docs/plan.md", Docs, ct);
         string output = _harness.Scratch.File("out.md");
 
         // Act
@@ -139,13 +136,8 @@ public sealed class FetchJobTests : IAsyncLifetime
             .Should().BeEquivalentTo(new { Exit = 2, Commits = before, Refused = true }, console.Stderr);
     }
 
-    private async Task<SeededJob> SeedFetchAsync(string path, string reference, CancellationToken ct)
-    {
-        var fields = new JobFields(_project.Path, TimeoutMinutes: 2, Kind: JobKind.Fetch, FetchPath: path, FetchRef: reference);
-        return await _harness.Bus.SeedSignedJobAsync(CliHarness.Central, CliHarness.HomeLaptop, TestKeys.Acme1, _harness.Store, "fetch " + path + "\n", fields: fields, ct: ct);
-    }
-
-    private async Task ProcessAsync(CancellationToken ct)
+    // The host starts first (StartAsync's checks stay in the test, as in WorktreeRoundTripTests), then the job is seeded, pulled and run in one pass.
+    private async Task<SeededJob> ProcessAsync(string path, string reference, CancellationToken ct)
     {
         NodeConfiguration configuration = TestHost.NodeConfigurationFor(_harness.Bus, CliHarness.HomeLaptop);
         await using ServiceProvider services = TestHost.BuildRunnerListener(_harness.Bus, CliHarness.HomeLaptop, _harness.Store, FakeClaude.ExecutablePath, configuration, o =>
@@ -155,9 +147,12 @@ public sealed class FetchJobTests : IAsyncLifetime
             o.ModelEnvironment = new Dictionary<string, string> { ["ZYGGY_FAKE_CLAUDE_SCENARIO"] = "done", ["ZYGGY_FAKE_CLAUDE_CAPTURE"] = CapturePath };
         });
         BusListener listener = services.GetRequiredService<BusListener>();
-        // The job is seeded before the host is built, as in JobRunnerRoundTripTests: no StartAsync, a pull, then one pass.
+        (await listener.StartAsync(ct)).Should().Be(BusStartupResult.Clean);
+        var fields = new JobFields(_project.Path, TimeoutMinutes: 2, Kind: JobKind.Fetch, FetchPath: path, FetchRef: reference);
+        SeededJob job = await _harness.Bus.SeedSignedJobAsync(CliHarness.Central, CliHarness.HomeLaptop, TestKeys.Acme1, _harness.Store, "fetch " + path + "\n", fields: fields, ct: ct);
         (await services.GetRequiredService<IBusProvider>().PullAsync(ct)).Succeeded.Should().BeTrue();
         (await listener.ProcessOnceAsync(ct)).Should().Be(1);
+        return job;
     }
 
     private async Task<(Model Report, string Path)> ReportForAsync(SeededJob job, CancellationToken ct)

@@ -311,7 +311,7 @@ public sealed partial class BusRepository
         AssertMayWrite(reportPath, BusFolder.Reports);
         AssertMayWrite(claimedPath, BusFolder.Claimed);
         byte[] bytes = EnvelopeWriter.Serialize(signed.Envelope!);
-        string? attachmentPath = attachment is null ? null : BusPaths.AttachmentFile(reportPath);
+        string? attachmentPath = attachment is null ? null : BusPaths.AttachmentFile(new BusFile(reportPath, id));
         string[] added = attachmentPath is null ? [reportPath] : [reportPath, attachmentPath];
         return await WriteAsync(
             Subject("report", id, _me.Machine.Value, claimed.Job.Header.From.Value),
@@ -948,13 +948,12 @@ public sealed partial class BusRepository
 
         // Spec 59 (Q2): a report's attached file moves with it, beside the archived report; it is not counted as a move of its own.
         var attached = new List<(string From, string To, string Month)>();
-        foreach ((string from, string to, string month) in moved)
+        foreach (((BusFile file, _), (_, string to, string month)) in moves.Zip(moved))
         {
-            if (from.EndsWith(".md", StringComparison.Ordinal)
-                && BusPaths.AttachmentFile(from) is { } attachment
-                && File.Exists(BusPaths.Resolve(_checkoutRoot, attachment)))
+            string attachment = BusPaths.AttachmentFile(file);
+            if (File.Exists(BusPaths.Resolve(_checkoutRoot, attachment)))
             {
-                attached.Add((attachment, BusPaths.AttachmentFile(to), month));
+                attached.Add((attachment, BusPaths.AttachmentFile(new BusFile(to, file.Id)), month));
             }
         }
 

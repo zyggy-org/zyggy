@@ -153,11 +153,15 @@ public sealed class JobRunnerFetchTests : IDisposable
     }
 
     // AC-15: a project this machine does not publish is unknown_project for a fetch, as for any job — work machine or not, the node has no rule of its own.
-    [Fact]
-    public async Task RunAsync_FetchUnpublishedProject_RejectedUnknownProjectNoGit()
+    // The work-laptop case is a job addressed to the machine a Central node.json lists in supervision.workMachines; the runner has no
+    // work-machine input at all, so the same outcome on both targets is the proof that no rule of its own applies.
+    [Theory]
+    [InlineData("home-laptop")]
+    [InlineData("work-laptop")]
+    public async Task RunAsync_FetchUnpublishedProject_RejectedUnknownProjectNoGit(string target)
     {
         // Arrange
-        var job = await JobRunnerHarness.JobAsync(new JobFields("payroll", Kind: JobKind.Fetch, FetchPath: "a.txt"));
+        var job = await JobToAsync(target, new JobFields("payroll", Kind: JobKind.Fetch, FetchPath: "a.txt"));
 
         // Act
         var reply = await _h.Build().RunAsync(job, CancellationToken.None);
@@ -165,6 +169,22 @@ public sealed class JobRunnerFetchTests : IDisposable
         // Assert
         new { reply.Status, reply.Reason, Calls = _h.Processes.Calls.Count }
             .Should().BeEquivalentTo(new { Status = ReportStatus.Rejected, Reason = "unknown_project", Calls = 0 });
+    }
+
+    // AC-15: on a machine listed in supervision.workMachines a fetch of a published project runs exactly as anywhere else.
+    [Fact]
+    public async Task RunAsync_FetchOnListedWorkMachine_DoneWithFileAttachedAsOnAnyMachine()
+    {
+        // Arrange
+        var workMachines = new Zyggy.Core.Configuration.SupervisionSettings(Enabled: true) { WorkMachines = [Zyggy.Core.Tenancy.MachineName.Parse("work-laptop")] };
+        var job = await JobToAsync(workMachines.WorkMachines[0].Value, Fetch("docs/plan.md", "main"));
+
+        // Act
+        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        new { reply.Status, reply.Reason, reply.Attachment!.Name, Bytes = reply.Attachment.Bytes.ToArray() }
+            .Should().BeEquivalentTo(new { Status = ReportStatus.Done, Reason = (string?)null, Name = "plan.md", Bytes = PlanBytes });
     }
 
     // AC-3: a REPORT longer than 2,000 characters is kept whole in report.md; the body still holds the cut summary.
@@ -196,6 +216,13 @@ public sealed class JobRunnerFetchTests : IDisposable
 
         // Assert
         reply.Attachment.Should().BeNull();
+    }
+
+    private static async Task<Zyggy.Core.Envelope.Envelope> JobToAsync(string target, JobFields fields)
+    {
+        var store = await TestKeys.StoreWithBothAsync(CancellationToken.None);
+        return await TestEnvelopes.SignedJobAsync(
+            JobRunnerHarness.Central, Zyggy.Core.Tenancy.MachineName.Parse(target), store, TestKeys.Acme1, "Investigate 502.\n", CancellationToken.None, null, fields);
     }
 
     private static JobFields Fetch(string path, string? reference) => new("shop", Kind: JobKind.Fetch, FetchPath: path, FetchRef: reference);

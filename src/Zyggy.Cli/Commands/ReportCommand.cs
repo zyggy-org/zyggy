@@ -97,7 +97,7 @@ internal static class ReportCommand
             return ExitCodes.NotFound;
         }
 
-        string source = BusPaths.Resolve(configuration.Bus.LocalPath, BusPaths.AttachmentFile(newest.RelativePath));
+        string source = BusPaths.Resolve(configuration.Bus.LocalPath, BusPaths.AttachmentFile(new BusFile(newest.RelativePath, newest.Id)));
         if (!File.Exists(source))
         {
             await io.Error.WriteLineAsync($"zyggy: the attached file of report {trace.Id.Value} is not in the bus checkout");

@@ -146,6 +146,31 @@ public sealed class BusRepositorySettleTests : IDisposable
             "acme archive 1 central→archive\n\n" + report.RelativePath + " → " + archived);
     }
 
+    // Spec 59 (Q2): a report's attached file moves into the archive beside its report, in the same commit, and is not counted as a move.
+    [Fact]
+    public async Task SettleAsync_ReportWithAttachment_AttachmentMovedInSameCommit()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        BusFile report = File(BusPaths.Reports(Acme, HomeLaptop));
+        string attachment = BusPaths.AttachmentFile(report);
+        _checkout.Drop(attachment, Encoding.UTF8.GetBytes("attached bytes"));
+        string archived = BusPaths.EnvelopeFile(BusPaths.Archive(Acme, 2026, 10), report.Id);
+        string archivedAttachment = BusPaths.AttachmentFile(new BusFile(archived, report.Id));
+
+        // Act
+        WriteOutcome outcome = await Repository().SettleAsync([(report, T)], [], ct);
+
+        // Assert
+        outcome.Should().Be(new Pushed(1));
+        _processes.CallsOf("mv").Select(c => c.Arguments).Should().BeEquivalentTo(
+            [new[] { "mv", "--", report.RelativePath, archived }, ["mv", "--", attachment, archivedAttachment]],
+            o => o.WithStrictOrdering());
+        var commit = _processes.CallsOf("commit").Should().ContainSingle().Subject;
+        commit.StandardInput.Should().Be("acme archive 1 central→archive\n\n" + report.RelativePath + " → " + archived);
+        commit.Arguments.Should().Contain([report.RelativePath, archived, attachment, archivedAttachment]);
+    }
+
     private static async Task<Model> ReportAsync(EnvelopeId item, CancellationToken ct, MachineName? from = null, MachineName? to = null) =>
         await TestEnvelopes.SignedReportAsync(
             from ?? Central, to ?? HomeLaptop, item, await TestKeys.StoreWithAsync(TestKeys.Acme1, ct), TestKeys.Acme1, "archived: archive/calizr/staging-restore-notes.txt\n", ct, created: T);
