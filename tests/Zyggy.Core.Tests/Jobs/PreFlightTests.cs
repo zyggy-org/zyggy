@@ -328,6 +328,30 @@ public sealed class PreFlightTests : IDisposable
         result.Should().Be(new PreFlightResult.Rejected(RunFailureReason.UnknownProject, "ambiguous name"));
     }
 
+    // AC-6 (spec 56): the same name at level one and level two is no tie; the snapshot a names-only scan leaves routes it to the
+    // shallowest folder (spec 45's shallowest-wins), never refused as ambiguous.
+    [Fact]
+    public async Task CheckAsync_NamesOnlyScan_LevelOneAndLevelTwoSameName_ShallowestFolder()
+    {
+        // Arrange
+        using var tree = new ScanTree();
+        string root = tree.Root("a");
+        string shallow = tree.Project(root, "devops");
+        tree.Project(Path.Combine(root, "group"), "DevOps");
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 11, 19, 9, 0, 0, TimeSpan.Zero));
+        ScanResult scan = await new DiscoveryScanner(
+                new GitClient(_processes, new GitClientOptions(), clock), DiscoveryScannerTests.Patterns, new DiscoveryOptions(), clock, new RecordingLogger<DiscoveryScanner>())
+            .ScanAsync([root], DiscoveryDetail.Names, TestContext.Current.CancellationToken);
+        var snapshot = new RegistrySnapshot();
+        snapshot.Replace(RegistryDocumentTests.Central() with { Projects = [.. scan.Projects] }, scan.Folders, scan.Ambiguous);
+
+        // Act
+        var result = await CheckAsync(new JobFields("devops"), snapshot, [ScratchProject.ParentRoot]);
+
+        // Assert
+        result.Should().Be(new PreFlightResult.Ok(Path.GetFullPath(shallow), null));
+    }
+
     // AC-6 (spec 56): a name that is neither kept nor tied is still `unknown name` on a snapshot that holds a tie.
     [Fact]
     public async Task CheckAsync_SnapshotWithTie_OtherUnknownName_UnknownName()
