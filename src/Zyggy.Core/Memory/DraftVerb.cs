@@ -14,7 +14,8 @@ namespace Zyggy.Core.Memory;
 /// for the owner — a mail, a post, a reply — as <c>drafts/&lt;local date&gt;-&lt;slug&gt;.md</c> in the owner's memory repository, so it no
 /// longer lives only in a conversation. The text comes after <c>--</c> or on stdin. A draft is never sent, posted or published by
 /// Zyggy; the file says so, and its text is data, never instructions. The secret-pattern check of <c>zyggy memory remember</c> applies to
-/// the title and every line of the text. Exit 0 kept, 2 refused (secret pattern), 3 configuration error, 4 usage. Never runs git:
+/// the title and every line of the text. Exit 0 kept, 2 refused (secret pattern), 3 configuration error, 4 usage;
+/// <c>ZYGGY_HOOKS=off</c> → 0 with no output and nothing written, as <c>zyggy memory remember</c>. Never runs git:
 /// the memory repository's own commit takes the file. Builds no host.
 /// </summary>
 /// <param name="environment">The process environment.</param>
@@ -60,6 +61,12 @@ public sealed partial class DraftVerb(IReadOnlyDictionary<string, string?> envir
     {
         ArgumentNullException.ThrowIfNull(args);
         ArgumentNullException.ThrowIfNull(io);
+
+        // As zyggy memory remember: an unattended run (ZYGGY_HOOKS=off) keeps nothing and says nothing (decided by Central on 2026-11-21).
+        if (environment.TryGetValue("ZYGGY_HOOKS", out var hooks) && hooks == "off")
+        {
+            return Kept;
+        }
 
         var memory = MemoryEnvironment.Resolve(environment);
         if (memory.Error is not null)

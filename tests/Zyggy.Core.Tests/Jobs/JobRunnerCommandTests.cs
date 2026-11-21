@@ -193,6 +193,30 @@ public sealed class JobRunnerCommandTests : IDisposable
         _h.Processes.Calls.Where(c => c.FileName != "git").Should().ContainSingle().Which.Arguments.Should().Equal("test", "--no-build");
     }
 
+    // AC-15: on a machine listed in supervision.workMachines an allow-listed command runs exactly as anywhere else. The work-laptop
+    // case is a job addressed to the machine a Central node.json lists in supervision.workMachines; the runner has no work-machine
+    // input at all, so the same done report with the output attached as on any machine is the proof that no rule of its own applies.
+    [Fact]
+    public async Task RunAsync_CommandOnListedWorkMachine_DoneWithOutputAttachedAsOnAnyMachine()
+    {
+        // Arrange
+        var job = await JobToAsync("work-laptop", Command("unit-tests"));
+
+        // Act
+        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        new { reply.Status, reply.Reason, Body = Encoding.UTF8.GetString(reply.Body.Span), reply.Attachment!.Name, Output = Encoding.UTF8.GetString(reply.Attachment.Bytes.Span) }
+            .Should().BeEquivalentTo(new
+            {
+                Status = ReportStatus.Done,
+                Reason = (string?)null,
+                Body = "command unit-tests exited 0\n\nPassed: 12\n",
+                Name = "output.txt",
+                Output = "Passed: 12\n",
+            });
+    }
+
     private static async Task<Zyggy.Core.Envelope.Envelope> JobToAsync(string target, JobFields fields)
     {
         var store = await TestKeys.StoreWithBothAsync(CancellationToken.None);

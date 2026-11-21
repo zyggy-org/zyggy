@@ -89,6 +89,22 @@ public sealed class DraftsTests : IAsyncLifetime
         new { Exit = exit, Drafts = Directory.Exists(Path.Combine(Principal, "drafts")) }.Should().BeEquivalentTo(new { Exit = 2, Drafts = false }, console.Stderr);
     }
 
+    // Decided by Central on 2026-11-21 (the spec was silent): an unattended run (ZYGGY_HOOKS=off) keeps no draft, as memory remember.
+    [Fact]
+    public async Task Draft_HooksOff_ExitZeroNoOutputNothingKept()
+    {
+        // Arrange
+        var environment = new Dictionary<string, string?>(_memory, StringComparer.Ordinal) { ["ZYGGY_HOOKS"] = "off" };
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(
+            ["memory", "draft", "--title", "Mail to client"], _harness.CentralNodeJson, stdin: "Dear client,\n", extraEnvironment: environment, ct: TestContext.Current.CancellationToken);
+
+        // Assert
+        new { Exit = exit, console.Stdout, console.Stderr, Drafts = Directory.Exists(Path.Combine(Principal, "drafts")) }
+            .Should().BeEquivalentTo(new { Exit = 0, Stdout = string.Empty, Stderr = string.Empty, Drafts = false });
+    }
+
     private Task<(int Exit, VerbConsole Console)> DraftAsync(string body, string title) =>
         _harness.RunAsync(["memory", "draft", "--title", title], _harness.CentralNodeJson, stdin: body, extraEnvironment: _memory, ct: TestContext.Current.CancellationToken);
 }

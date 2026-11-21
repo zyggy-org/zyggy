@@ -118,6 +118,21 @@ public sealed class DraftVerbTests : IDisposable
         new { Exit = exit, console.Stderr }.Should().BeEquivalentTo(new { Exit = 4, Stderr = "draft: draft larger than 65536 bytes" + DraftVerb.UsageSuffix + "\n" });
     }
 
+    // Decided by Central on 2026-11-21 (the spec was silent): under ZYGGY_HOOKS=off draft behaves as memory remember does there.
+    [Fact]
+    public async Task Run_HooksOff_ExitZeroNoOutputNothingWritten()
+    {
+        // Arrange
+        _environment["ZYGGY_HOOKS"] = "off";
+
+        // Act
+        var (exit, console) = await RunAsync("Dear client,\n", "--title", "Mail to client");
+
+        // Assert
+        new { Exit = exit, console.Stdout, console.Stderr, Written = Directory.Exists(_tree.Full("drafts")) }
+            .Should().BeEquivalentTo(new { Exit = 0, Stdout = string.Empty, Stderr = string.Empty, Written = false });
+    }
+
     [Fact]
     public async Task Run_MemoryNotConfigured_ExitThree()
     {
