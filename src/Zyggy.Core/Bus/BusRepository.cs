@@ -69,6 +69,9 @@ public sealed partial class BusRepository
     /// <summary>Gets this node's identity on the bus.</summary>
     public BusIdentity Me => _me;
 
+    /// <summary>Gets the checkout's root folder (deliverable 18: a session task's claim is read from it).</summary>
+    internal string CheckoutRoot => _checkoutRoot;
+
     /// <summary>Gets the clock this repository stamps its envelopes with (Central's reports on items, spec 41).</summary>
     internal TimeProvider Clock => _clock;
 
@@ -1115,6 +1118,78 @@ public sealed partial class BusRepository
                     ?? Failure("rm", await _git.RemoveAsync(_checkoutRoot, [claimed], token).ConfigureAwait(false));
             },
             ct);
+    }
+
+    /// <summary>Deliverable 18 (slice 14): Central removes an unclaimed session task past its timeout with its <c>no_session</c> report.</summary>
+    /// <remarks>
+    /// One commit <c>&lt;tenant&gt; report &lt;ulid&gt; central→&lt;from&gt;</c>: <c>jobs/&lt;id&gt;.md</c> of the task's machine removed,
+    /// <paramref name="signedReport"/> (Central's <c>failed</c> / <c>no_session</c> report) added to Central's own <c>reports/</c>. Only an
+    /// unclaimed <c>deliver: session</c> job whose <c>created</c> plus <c>timeout_minutes</c> (default 60) lies before now.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">Thrown when this machine is not Central, the path breaks the §4 write rule, the job is not a session task past its timeout or the report is not a signed report of this machine (a caller bug).</exception>
+    internal Task<WriteOutcome> ExpireSessionTaskAsync(SweepClaim task, Model signedReport, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        ArgumentNullException.ThrowIfNull(signedReport);
+        string path = task.File.RelativePath;
+        AssertMaySweep(path, BusFolder.Jobs, task.Folder);
+        EnvelopeResult parsed = EnvelopeParser.Parse(task.Bytes, _me.Tenant);
+        if (!parsed.IsAccepted || parsed.Envelope.Job is not { Deliver: JobDelivery.Session } job)
+        {
+            throw new InvalidOperationException("write rule: '" + path + "' is not a session task");
+        }
+
+        if (parsed.Envelope.Header.Created + TimeSpan.FromMinutes(job.TimeoutMinutes ?? SessionTaskTimeoutMinutes) >= _clock.GetUtcNow())
+        {
+            throw new InvalidOperationException("write rule: '" + path + "' is not past its timeout");
+        }
+
+        (string reportPath, byte[] bytes) = SweepReport(task, signedReport);
+        return WriteAsync(
+            Subject("report", signedReport.Header.Id, _me.Machine.Value, signedReport.Header.To.Value),
+            [reportPath, path],
+            async token =>
+            {
+                await WriteFileAsync(reportPath, bytes, token).ConfigureAwait(false);
+                return Failure("add", await _git.AddAsync(_checkoutRoot, [reportPath], token).ConfigureAwait(false))
+                    ?? Failure("rm", await _git.RemoveAsync(_checkoutRoot, [path], token).ConfigureAwait(false));
+            },
+            ct);
+    }
+
+    /// <summary>A session task's timeout when its job names none (deliverable 18).</summary>
+    internal const int SessionTaskTimeoutMinutes = 60;
+
+    /// <summary>
+    /// Deliverable 18 (slice 14): under the checkout write lock, every top-level <c>*.md</c> of every machine's <c>jobs/</c> (never
+    /// <c>claimed/</c>) with its bytes and its leniently read <c>created</c>; the sweep keeps the verified session tasks past their timeout.
+    /// </summary>
+    /// <exception cref="BusBusyException">Another zyggy process held the checkout's write lock for the whole wait.</exception>
+    internal async Task<IReadOnlyList<SweepClaim>> ListSessionTasksForSweepAsync(CancellationToken ct)
+    {
+        using IDisposable handle = await BusCheckoutLock.AcquireAsync(_checkoutRoot, BusCheckoutLock.WriteLockName, LockTimeout, _clock, ct).ConfigureAwait(false)
+            ?? throw new BusBusyException();
+        string nodes = BusPaths.Resolve(_checkoutRoot, BusPaths.Nodes(_me.Tenant));
+        if (!Directory.Exists(nodes))
+        {
+            return [];
+        }
+
+        var tasks = new List<SweepClaim>();
+        IEnumerable<MachineName> machines = Directory.EnumerateDirectories(nodes)
+            .Select(d => MachineName.TryParse(Path.GetFileName(d), out MachineName? machine) ? machine : null)
+            .OfType<MachineName>()
+            .OrderBy(m => m.Value, StringComparer.Ordinal);
+        foreach (MachineName machine in machines)
+        {
+            foreach (BusFile file in await ListFolderAsync(BusPaths.Jobs(_me.Tenant, machine), ct).ConfigureAwait(false))
+            {
+                byte[] bytes = await File.ReadAllBytesAsync(BusPaths.Resolve(_checkoutRoot, file.RelativePath), ct).ConfigureAwait(false);
+                tasks.Add(new SweepClaim(file, machine, bytes, EnvelopeParser.PeekHeader(bytes)?.Created));
+            }
+        }
+
+        return tasks;
     }
 
     /// <summary>

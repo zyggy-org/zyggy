@@ -52,6 +52,18 @@ public static class ServiceCollectionExtensions
             configuration.Supervision,
             sp.GetRequiredService<TimeProvider>(),
             sp.GetService<ILoggerFactory>()?.CreateLogger<WorkStatusHook>() ?? NullLogger<WorkStatusHook>.Instance));
+        // Deliverable 18: a task delivered into a live session; the secret patterns and the signing key are resolved only when a task is finished.
+        services.TryAddSingleton(sp => new SessionTaskHook(
+            sp.GetRequiredService<BusRepository>(),
+            sp.GetRequiredService<BusInventory>(),
+            sp.GetRequiredService<Git.GitClient>(),
+            () => sp.GetRequiredService<SecretPatterns>(),
+            () => sp.GetRequiredService<KeyId>(),
+            configuration.Supervision,
+            configuration.EffectiveNodeDir,
+            configuration.Tenant,
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetService<ILoggerFactory>()?.CreateLogger<SessionTaskHook>() ?? NullLogger<SessionTaskHook>.Instance));
         // Deliverable 18: the asking side of a question; the sender is resolved only once a question is written (it needs the signing key and the secret patterns).
         services.TryAddSingleton(sp => new AskFlow(
             () => sp.GetRequiredService<QuestionAsker>(),
