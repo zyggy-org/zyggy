@@ -182,7 +182,8 @@ public sealed partial class JobRunner
             {
                 var gitError = RunFailureReasonWire.ToWire(RunFailureReason.GitError);
                 LogWorktreeFailed(id, failed.Step);
-                return Reply(ReportStatus.Failed, gitError, $"{gitError}: {failed.Step}\n", started);
+                var detail = failed.Detail is null ? string.Empty : ": " + failed.Detail;
+                return Reply(ReportStatus.Failed, gitError, $"{gitError}: {failed.Step}{detail}\n", started);
             }
 
             baseSha = ((PrepareResult.Prepared)prepared).BaseSha;

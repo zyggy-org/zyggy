@@ -142,8 +142,9 @@ public sealed class MandateBranchTests : IAsyncLifetime
         (await CheckoutAsync(ct)).Should().BeEquivalentTo(before);
     }
 
+    // Spec 59 AC-6: Central does not hold the project, so grant and submit send the job; the node's report carries git's own message.
     [Fact]
-    public async Task Run_BaseAbsentOnOrigin_FailedGitErrorBase_ModelNeverStarted()
+    public async Task Run_BaseAbsentOnOrigin_FailedGitErrorBase_WithGitsMessage_ModelNeverStarted()
     {
         // Arrange
         var ct = TestContext.Current.CancellationToken;
@@ -161,7 +162,7 @@ public sealed class MandateBranchTests : IAsyncLifetime
             report.Report.Reason,
             report.BodyText,
             Started = File.Exists(CapturePath),
-        }.Should().BeEquivalentTo(new { Status = ReportStatus.Failed, Reason = "git_error", BodyText = "git_error: base\n", Started = false });
+        }.Should().BeEquivalentTo(new { Status = ReportStatus.Failed, Reason = "git_error", BodyText = "git_error: base: origin/feature/shop not found (fatal: Needed a single revision)\n", Started = false });
     }
 
     [Fact]

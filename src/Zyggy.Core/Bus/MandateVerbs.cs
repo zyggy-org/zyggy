@@ -20,9 +20,11 @@ public sealed partial class MandateGranter
     private readonly KeyId _signWith;
     private readonly TimeProvider _clock;
     private readonly ILogger<MandateGranter> _log;
+    private readonly OriginBranchCheck? _originCheck;
 
-    internal MandateGranter(BusRepository bus, BusInventory inventory, EnvelopeSigner signer, KeyId signWith, TimeProvider clock, ILogger<MandateGranter> log)
+    internal MandateGranter(BusRepository bus, BusInventory inventory, EnvelopeSigner signer, KeyId signWith, TimeProvider clock, ILogger<MandateGranter> log, OriginBranchCheck? originCheck = null)
     {
+        _originCheck = originCheck;
         _bus = bus ?? throw new ArgumentNullException(nameof(bus));
         _inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
         _signer = signer ?? throw new ArgumentNullException(nameof(signer));
@@ -45,6 +47,12 @@ public sealed partial class MandateGranter
         if (me.Machine != MachineName.Central)
         {
             return new AskDecideRefused("machine", "only central grants a mandate");
+        }
+
+        // Spec 59 slice 3 (AC-6, Q5): a branch the origin does not have is refused before anything is signed, when Central holds the project.
+        if (_originCheck is not null && await _originCheck.MissingAsync(fields.Project, fields.Branches, ct).ConfigureAwait(false) is { } missing)
+        {
+            return new AskDecideRefused("branches", missing);
         }
 
         DateTimeOffset now = _clock.GetUtcNow();
@@ -216,9 +224,18 @@ public sealed partial class MandateSubmission
     private readonly IReadOnlyList<MachineName> _workMachines;
     private readonly TimeProvider _clock;
     private readonly ILogger<MandateSubmission> _log;
+    private readonly OriginBranchCheck? _originCheck;
 
-    internal MandateSubmission(BusRepository bus, BusInventory inventory, JobSubmitter submitter, IReadOnlyList<MachineName> workMachines, TimeProvider clock, ILogger<MandateSubmission> log)
+    internal MandateSubmission(
+        BusRepository bus,
+        BusInventory inventory,
+        JobSubmitter submitter,
+        IReadOnlyList<MachineName> workMachines,
+        TimeProvider clock,
+        ILogger<MandateSubmission> log,
+        OriginBranchCheck? originCheck = null)
     {
+        _originCheck = originCheck;
         _bus = bus ?? throw new ArgumentNullException(nameof(bus));
         _inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
         _submitter = submitter ?? throw new ArgumentNullException(nameof(submitter));
@@ -262,6 +279,15 @@ public sealed partial class MandateSubmission
         if (!ProjectReference.TryParse(fields!.Project, out ProjectReference project, out string? detail))
         {
             return new MandateSubmitOutcome(new MandateVerdict(MandateLimit.Project, detail), null);
+        }
+
+        // Spec 59 slice 3 (AC-6, Q5): a base the origin does not have is refused before anything is signed, when Central holds the project.
+        if (request.Base is { } baseBranch && _originCheck is not null
+            && await _originCheck.MissingAsync(fields.Project, [baseBranch], ct).ConfigureAwait(false) is { } missing)
+        {
+            var refused = new MandateVerdict(MandateLimit.Base, missing);
+            LogRefused(request.Mandate.Value, MandateRules.ToWire(MandateLimit.Base), missing);
+            return new MandateSubmitOutcome(refused, null);
         }
 
         string body = MandateJobTemplates.Render(request.Kind, fields.Spec, fields.SpecCommit, request.Step, request.Reference);

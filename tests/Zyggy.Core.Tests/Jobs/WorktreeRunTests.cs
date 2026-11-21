@@ -397,7 +397,30 @@ public sealed class WorktreeRunTests : IDisposable
             Body = Encoding.UTF8.GetString(reply.Body.Span),
             LocalLookedUp = Git("rev-parse").Any(c => c.Arguments[^1] == "refs/heads/feature/shop"),
             Model = _h.Model.ReceivedCalls().Count(),
-        }.Should().BeEquivalentTo(new { Status = ReportStatus.Failed, Reason = "git_error", Body = "git_error: base\n", LocalLookedUp = false, Model = 0 });
+        }.Should().BeEquivalentTo(new
+        {
+            Status = ReportStatus.Failed,
+            Reason = "git_error",
+            Body = "git_error: base: origin/feature/shop not found (fatal: Needed a single revision)\n",
+            LocalLookedUp = false,
+            Model = 0,
+        });
+    }
+
+    // Spec 59 AC-6 (node side): when the fetch failed, its first error line is the message the report carries.
+    [Fact]
+    public async Task RunAsync_WithBaseAbsentAfterAFailedFetch_BodyCarriesTheFetchErrorLine()
+    {
+        // Arrange
+        _git.OriginFeatureExists = false;
+        _git.Failing.Add("fetch");
+        var job = await BaseJobAsync();
+
+        // Act
+        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        Encoding.UTF8.GetString(reply.Body.Span).Should().Be("git_error: base: origin/feature/shop not found (fatal: fetch failed)\n");
     }
 
     [Fact]

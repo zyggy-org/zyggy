@@ -50,14 +50,21 @@ internal sealed class WorktreeRun(GitClient git)
             }
         }
 
-        var fetchFailed = hasOrigin && !(await git.FetchAsync(project, ct).ConfigureAwait(false)).Succeeded;
+        var fetch = hasOrigin ? await git.FetchAsync(project, ct).ConfigureAwait(false) : null;
+        var fetchFailed = fetch is { Succeeded: false };
 
         if (baseBranch is not null)
         {
-            var start = await git.ResolveRefAsync(project, "refs/remotes/origin/" + baseBranch, ct).ConfigureAwait(false);
-            return start is null
-                ? new PrepareResult.Failed("base", fetchFailed)
-                : await AddAsync(project, worktree, jobId, start, fetchFailed, defaultBranch, ct).ConfigureAwait(false);
+            // Spec 59 slice 3 (AC-6): without -q git says why the ref does not resolve; a failed fetch's own line comes first, as the cause.
+            var resolved = await git.RunAsync(project, ["rev-parse", "--verify", "refs/remotes/origin/" + baseBranch], null, ct).ConfigureAwait(false);
+            var start = resolved.Succeeded ? resolved.Stdout.Trim() : null;
+            if (start is { Length: > 0 })
+            {
+                return await AddAsync(project, worktree, jobId, start, fetchFailed, defaultBranch, ct).ConfigureAwait(false);
+            }
+
+            var message = FirstLine(fetchFailed ? fetch!.Stderr : null) ?? FirstLine(resolved.Stderr);
+            return new PrepareResult.Failed("base", fetchFailed, "origin/" + baseBranch + " not found" + (message is null ? string.Empty : " (" + message + ")"));
         }
 
         // Spec 53 Prepare step 3: a named job starts at origin/<branch> when that remote-tracking ref exists (as fetched, or stale after a
@@ -79,6 +86,9 @@ internal sealed class WorktreeRun(GitClient git)
 
         return await AddAsync(project, worktree, jobId, baseSha, fetchFailed, defaultBranch, ct).ConfigureAwait(false);
     }
+
+    private static string? FirstLine(string? text) =>
+        text?.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0);
 
     private async Task<PrepareResult> AddAsync(string project, string worktree, string jobId, string baseSha, bool fetchFailed, string? defaultBranch, CancellationToken ct)
     {
@@ -290,8 +300,11 @@ internal abstract record PrepareResult(bool FetchFailed)
     /// <summary>The worktree exists; <paramref name="BaseSha"/> is the commit the branch is compared with. <paramref name="DefaultBranch"/> is git's default branch as Prepare found it (spec 53, the "behind" line), or <see langword="null"/>.</summary>
     public sealed record Prepared(string BaseSha, bool FetchFailed, string? DefaultBranch = null) : PrepareResult(FetchFailed);
 
-    /// <summary>No worktree; the model must not start. <paramref name="Step"/> names the git step for the report body.</summary>
-    public sealed record Failed(string Step, bool FetchFailed) : PrepareResult(FetchFailed);
+    /// <summary>
+    /// No worktree; the model must not start. <paramref name="Step"/> names the git step for the report body; <paramref name="Detail"/>,
+    /// when given, follows it with git's own message (spec 59 slice 3).
+    /// </summary>
+    public sealed record Failed(string Step, bool FetchFailed, string? Detail = null) : PrepareResult(FetchFailed);
 
     /// <summary>
     /// The named branch must not be touched (spec 53): <c>rejected</c> / <c>branch_refused</c>, nothing fetched, no worktree, the model
