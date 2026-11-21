@@ -474,6 +474,54 @@ public sealed class MandateCheckTests : IAsyncLifetime
         MandateRules.CheckSubmit(ledger, Submit, Now).Limit.Should().Be(expected == MandateState.Paused ? MandateLimit.Paused : null);
     }
 
+    // Spec 59 AC-7 (Q5): a report without model and num_turns means the model never started; it does not count toward the pause.
+    // A trailing "?" marks such a report. The first row is 2026-11-21: two "git_error: base" failures and one real failure.
+    [Theory]
+    [InlineData("failed?,failed?,failed", MandateState.Active)]
+    [InlineData("failed,failed?,failed,failed", MandateState.Paused)]
+    [InlineData("done,failed?,failed?,failed?", MandateState.Active)]
+    [InlineData("failed?,failed?,failed?,failed?", MandateState.Active)]
+    [InlineData("failed,failed,done?,failed", MandateState.Paused)]
+    public async Task StateAt_ReportsWithoutModelAndTurns_DoNotCountTowardThePause(string statusesOldestFirst, MandateState expected)
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields with { MaxJobs = 20 }, ct);
+        string[] statuses = statusesOldestFirst.Split(',');
+        for (int i = 0; i < statuses.Length; i++)
+        {
+            bool modelStarted = !statuses[i].EndsWith('?');
+            ReportStatus status = statuses[i].TrimEnd('?') == "done" ? ReportStatus.Done : ReportStatus.Failed;
+            await DropReportAsync(status, Now.AddMinutes(-60 + i), ct, reason: status == ReportStatus.Done ? null : "git_error", modelStarted: modelStarted);
+        }
+
+        // Act
+        MandateLedger ledger = await LedgerAsync(ct);
+
+        // Assert
+        ledger.StateAt(Now).Should().Be(expected);
+        MandateRules.CheckSubmit(ledger, Submit, Now).Limit.Should().Be(expected == MandateState.Paused ? MandateLimit.Paused : null);
+    }
+
+    // Spec 59 AC-7: a report with only num_turns (a run cut before the model line) still counts as a model run.
+    [Fact]
+    public async Task StateAt_ThreeFailuresWithTurnsButNoModel_Paused()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields with { MaxJobs = 20 }, ct);
+        for (int i = 0; i < 3; i++)
+        {
+            await DropReportAsync(ReportStatus.Timeout, Now.AddMinutes(-20 + i), ct, reason: "timeout", modelStarted: false, numTurns: 200);
+        }
+
+        // Act
+        MandateState state = (await LedgerAsync(ct)).StateAt(Now);
+
+        // Assert
+        state.Should().Be(MandateState.Paused);
+    }
+
     [Fact]
     public async Task StateAt_ResumeDecisionAfterThreeFailures_ActiveAgain_EarlierReportsNoLongerCountTowardsAPause()
     {
@@ -620,12 +668,15 @@ public sealed class MandateCheckTests : IAsyncLifetime
         string body = "## REPORT\nsummary: ok\n",
         bool archived = false,
         EnvelopeId? mandate = null,
-        EnvelopeId? job = null)
+        EnvelopeId? job = null,
+        bool modelStarted = true,
+        int? numTurns = null)
     {
+        // Spec 59 Q5: a report of a run where the model started carries model and num_turns; a pre-model failure carries neither.
         EnvelopeId id = NextId(created);
         Model report = Model.CreateReport(
             new EnvelopeHeader(Acme, id, HomeLaptop, Central, created, EnvelopePriority.Normal, job ?? NextId(created.AddMinutes(-2))),
-            new ReportFields(status, reason, Mandate: mandate ?? MandateId, Step: step),
+            new ReportFields(status, reason, NumTurns: numTurns ?? (modelStarted ? 7 : null), Model: modelStarted ? "claude-test" : null, Mandate: mandate ?? MandateId, Step: step),
             Encoding.UTF8.GetBytes(body));
         string folder = archived ? BusPaths.Archive(Acme, created.Year, created.Month) : BusPaths.Reports(Acme, HomeLaptop);
         _checkout.Drop(BusPaths.EnvelopeFile(folder, id), await SignedAsync(report, ct));

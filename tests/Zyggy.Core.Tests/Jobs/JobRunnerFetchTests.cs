@@ -63,7 +63,7 @@ public sealed class JobRunnerFetchTests : IDisposable
 
         // Assert
         _h.Processes.Calls.Select(c => string.Join(' ', c.Arguments)).Should().ContainInOrder(
-            "fetch origin", "cat-file -s origin/feature/12-cart:docs/plan.md", "cat-file blob origin/feature/12-cart:docs/plan.md");
+            "fetch --prune origin", "cat-file -s origin/feature/12-cart:docs/plan.md", "cat-file blob origin/feature/12-cart:docs/plan.md");
     }
 
     // AC-1: without fetch_ref the project's default branch of the node's own registry applies.

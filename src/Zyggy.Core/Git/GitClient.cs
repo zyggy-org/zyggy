@@ -219,7 +219,8 @@ internal sealed class GitClient(IProcessRunner processes, GitClientOptions optio
         RunAsync(repository, ["branch", "-D", branch], null, cancellationToken);
 
     public Task<GitResult> FetchAsync(string repository, CancellationToken cancellationToken) =>
-        RunAsync(repository, ["fetch", "origin"], null, cancellationToken);
+        // Spec 59 slice 3 repair: prune, so a branch deleted on the origin cannot still resolve from a stale remote-tracking ref.
+        RunAsync(repository, ["fetch", "--prune", "origin"], null, cancellationToken);
 
     public Task<GitResult> RebaseAsync(string repository, string branch, CancellationToken cancellationToken) =>
         RunAsync(repository, ["-c", "rebase.autoStash=true", "rebase", "origin/" + branch], null, cancellationToken);

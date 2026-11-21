@@ -165,6 +165,34 @@ public sealed class MandateBranchTests : IAsyncLifetime
         }.Should().BeEquivalentTo(new { Status = ReportStatus.Failed, Reason = "git_error", BodyText = "git_error: base: origin/feature/shop not found (fatal: Needed a single revision)\n", Started = false });
     }
 
+    // Spec 59 AC-6 (slice 3 repair): a base fetched earlier and then deleted on the origin must not resolve from the node's stale
+    // remote-tracking ref; the fetch before the base check prunes.
+    [Fact]
+    public async Task Run_BaseDeletedOnOriginAfterAnEarlierFetch_FailedGitErrorBase_ModelNeverStarted()
+    {
+        // Arrange: the branch exists, the project checkout has fetched it, then it is deleted on the origin
+        var ct = TestContext.Current.CancellationToken;
+        await _project.AddBranchAsync(Feature, ct);
+        await _project.GitAsync(["fetch", "-q", "origin"], ct);
+        await _project.OriginGitAsync(["update-ref", "-d", "refs/heads/" + Feature], ct);
+        (await _project.ResolveAsync(_project.Path, "refs/remotes/origin/" + Feature, ct)).Should().NotBeNull("the stale remote-tracking ref is the trap");
+        await using ServiceProvider laptop = await LaptopAsync(ct);
+        await SubmitAsync(await GrantAsync(ct), Feature, ct);
+
+        // Act
+        await ProcessAsync(laptop, ct);
+
+        // Assert
+        Model report = await SingleReportAsync(ct);
+        new
+        {
+            report.Report!.Status,
+            report.Report.Reason,
+            report.BodyText,
+            Started = File.Exists(CapturePath),
+        }.Should().BeEquivalentTo(new { Status = ReportStatus.Failed, Reason = "git_error", BodyText = "git_error: base: origin/feature/shop not found (fatal: Needed a single revision)\n", Started = false });
+    }
+
     [Fact]
     public async Task Run_BaseIsTheDefaultBranch_DefaultBranchNotPushed_ItsBranchPushed_ReportSaysSo()
     {

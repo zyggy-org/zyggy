@@ -189,6 +189,29 @@ public sealed class SupervisorWakeTests
             false);
     }
 
+    // Spec 59 AC-7: the paused summary names the three model runs, not a failure before the model started that sits between them.
+    [Fact]
+    public void PauseReports_PreModelFailureAmongThreeModelFailures_NamesOnlyTheModelRuns()
+    {
+        // Arrange: oldest first: a model failure, a base failure (no model, no turns), two model failures
+        MandateLedger ledger = Ledger(10, 0);
+        MandateReportEntry[] entries = [Entry(true), Entry(false), Entry(true), Entry(true)];
+        ledger = ledger with { Reports = entries };
+
+        // Act
+        IReadOnlyList<MandateReportEntry> reports = SupervisorSummary.PauseReports(ledger);
+
+        // Assert
+        reports.Should().Equal(entries[0], entries[2], entries[3]);
+    }
+
+    private MandateReportEntry Entry(bool modelStarted)
+    {
+        EnvelopeId job = Id();
+        EnvelopeId report = Id();
+        return new MandateReportEntry(report, job, report.Timestamp, ReportStatus.Failed, modelStarted ? "claude_error" : "git_error", "slice 1", false, modelStarted);
+    }
+
     private MandateLedger Ledger(int maxJobs, int reports, ReportStatus status = ReportStatus.Done)
     {
         var fields = new MandateFields("shop", "Build the shop", ["Read"], maxJobs, Granted.AddDays(3));
@@ -197,7 +220,7 @@ public sealed class SupervisorWakeTests
         {
             EnvelopeId job = Id();
             EnvelopeId report = Id();
-            return new MandateReportEntry(report, job, report.Timestamp, status, status == ReportStatus.Done ? null : "claude_error", "slice 1", false);
+            return new MandateReportEntry(report, job, report.Timestamp, status, status == ReportStatus.Done ? null : "claude_error", "slice 1", false, true);
         })];
         return new MandateLedger(MandateId, mandate, true, false, [], entries, null);
     }

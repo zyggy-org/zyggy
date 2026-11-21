@@ -73,7 +73,8 @@ public sealed partial class BusInventory
                 bool usageLimit = fields.Status == ReportStatus.Failed
                     && fields.Reason == RunFailureReasonWire.ToWire(RunFailureReason.ClaudeError)
                     && report.BodyText.StartsWith(UsageLimitBody, StringComparison.Ordinal);
-                reports.Add(new MandateReportEntry(reportId, job, report.Header.Created, fields.Status, fields.Reason, fields.Step, usageLimit));
+                bool modelStarted = fields.Model is not null || fields.NumTurns is not null;
+                reports.Add(new MandateReportEntry(reportId, job, report.Header.Created, fields.Status, fields.Reason, fields.Step, usageLimit, modelStarted));
             }
         }
 

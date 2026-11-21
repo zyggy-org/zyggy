@@ -100,7 +100,11 @@ public sealed record MandateJobEntry(EnvelopeId Id, DateTimeOffset Created, stri
 /// <param name="Reason">Its reason, when not <c>done</c>.</param>
 /// <param name="Step">The step copied from its job.</param>
 /// <param name="UsageLimit"><see langword="true"/> when it is a <c>failed</c> / <c>claude_error</c> report whose body starts with <c>claude_error: rate_limit</c>.</param>
-public sealed record MandateReportEntry(EnvelopeId Id, EnvelopeId Job, DateTimeOffset Created, ReportStatus Status, string? Reason, string? Step, bool UsageLimit);
+/// <param name="ModelStarted">
+/// <see langword="true"/> when the report carries <c>model</c> or <c>num_turns</c> (spec 59, Q5): the model ran. A report with neither
+/// is a failure before the model started (a missing base, a refused branch, an unknown project) and does not count toward the pause.
+/// </param>
+public sealed record MandateReportEntry(EnvelopeId Id, EnvelopeId Job, DateTimeOffset Created, ReportStatus Status, string? Reason, string? Step, bool UsageLimit, bool ModelStarted);
 
 /// <summary>
 /// Everything a bus checkout says about one mandate (deliverable 18): the file, the open jobs and the reports that carry its id, and
@@ -137,12 +141,16 @@ public sealed record MandateLedger(
             .OrderBy(j => j.Id.Value, StringComparer.Ordinal),
     ];
 
-    /// <summary>Gets a value indicating whether the three newest reports since the last resume all have a status other than <c>done</c>.</summary>
+    /// <summary>
+    /// Gets a value indicating whether the three newest reports of runs where the model started, since the last resume, all have a
+    /// status other than <c>done</c>. A report without <c>model</c> and <c>num_turns</c> (spec 59, Q5) is a failure before the model
+    /// started and does not count.
+    /// </summary>
     public bool Paused
     {
         get
         {
-            MandateReportEntry[] newest = [.. Reports.Where(r => Resumed is null || r.Created > Resumed).OrderByDescending(r => r.Id.Value, StringComparer.Ordinal).Take(PauseAfter)];
+            MandateReportEntry[] newest = [.. Reports.Where(r => r.ModelStarted && (Resumed is null || r.Created > Resumed)).OrderByDescending(r => r.Id.Value, StringComparer.Ordinal).Take(PauseAfter)];
             return newest.Length == PauseAfter && newest.All(r => r.Status != ReportStatus.Done);
         }
     }

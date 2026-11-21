@@ -414,7 +414,8 @@ public sealed partial class SupervisorStepTests : IAsyncLifetime
         EnvelopeId id = NextId(created);
         Model report = Model.CreateReport(
             new EnvelopeHeader(Acme, id, HomeLaptop, to ?? Central, created, EnvelopePriority.Normal, NextId(created.AddMinutes(-2))),
-            noMandate ? new ReportFields(status, reason) : new ReportFields(status, reason, Mandate: MandateId, Step: "slice 2"),
+            // Spec 59 Q5: a model run's report carries model and num_turns; the mandate pause counts only those.
+            noMandate ? new ReportFields(status, reason) : new ReportFields(status, reason, NumTurns: 3, Model: "claude-test", Mandate: MandateId, Step: "slice 2"),
             Encoding.UTF8.GetBytes(body));
         string folder = archived ? BusPaths.Archive(Acme, created.Year, created.Month) : BusPaths.Reports(Acme, HomeLaptop);
         _checkout.Drop(BusPaths.EnvelopeFile(folder, fileId ?? id), await SignedAsync(report, ct));

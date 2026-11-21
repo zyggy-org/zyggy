@@ -363,7 +363,8 @@ public sealed class SupervisorWakeTests : IAsyncLifetime
             _harness.Store,
             status == ReportStatus.Done ? "The step is built.\n" : "claude_error: exit 1\n",
             created: created,
-            fields: new ReportFields(status, status == ReportStatus.Done ? null : "claude_error", Mandate: mandate, Step: "slice 1"),
+            // Spec 59 Q5: a model run's report carries model and num_turns; without them it would not count toward the pause.
+            fields: new ReportFields(status, status == ReportStatus.Done ? null : "claude_error", NumTurns: 3, Model: "claude-test", Mandate: mandate, Step: "slice 1"),
             ct: ct);
         return report.Id;
     }
