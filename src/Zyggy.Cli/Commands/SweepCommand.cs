@@ -35,6 +35,7 @@ internal static class SweepCommand
     {
         SweepActionKind.Requeued => string.Create(CultureInfo.InvariantCulture, $"requeued {action.Id.Value} {action.Machine.Value} attempt {action.Attempt}"),
         SweepActionKind.Exhausted => string.Create(CultureInfo.InvariantCulture, $"exhausted {action.Id.Value} {action.Machine.Value} after {action.Attempt} attempts"),
+        SweepActionKind.SessionExpired => $"no_session {action.Id.Value} {action.Machine.Value}",
         _ => $"rejected {action.Id.Value} {action.Machine.Value} {action.Reason}",
     };
 

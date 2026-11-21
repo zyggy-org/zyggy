@@ -23,6 +23,9 @@ public sealed partial class BusSweep
     /// <summary>The report reason of a job whose third claim went stale (founding spec §4 as amended by deliverable 17); written only here.</summary>
     internal const string AttemptsExhaustedReason = "attempts_exhausted";
 
+    /// <summary>The reason of Central's report on a session task no live session took (deliverable 18).</summary>
+    internal const string NoSessionReason = "no_session";
+
     /// <summary>The attempts a job gets (§4); a stale claim at this attempt or above is exhausted.</summary>
     private const int MaxAttempts = 3;
 
@@ -164,6 +167,24 @@ public sealed partial class BusSweep
                 default:
                     LogRejected(action.Id.Value, action.Machine.Value, action.Reason ?? "-");
                     break;
+            }
+        }
+
+        // Deliverable 18: a session task still unclaimed after its timeout is removed with Central's failed / no_session report.
+        foreach ((WriteOutcome? outcome, SweepAction action) in await ExpireSessionTasksAsync(now, dryRun, async () => canSign ??= await CanSignAsync(ct).ConfigureAwait(false), ct).ConfigureAwait(false))
+        {
+            if (outcome is WriteFailed failed)
+            {
+                failure ??= failed;
+                NoteFailed(failed);
+                continue;
+            }
+
+            deferred |= outcome is Deferred;
+            actions.Add(action);
+            if (!dryRun)
+            {
+                LogSessionExpired(action.Id.Value, action.Machine.Value);
             }
         }
 
@@ -332,6 +353,60 @@ public sealed partial class BusSweep
         return _signer.SignAsync(Model.CreateReport(header, fields, Encoding.UTF8.GetBytes(body)), _options.SignWith!, ct);
     }
 
+    // Every verified deliver: session job in a machine's jobs/ whose created plus timeout_minutes (60 by default) has passed.
+    private async Task<List<(WriteOutcome? Outcome, SweepAction Action)>> ExpireSessionTasksAsync(DateTimeOffset now, bool dryRun, Func<Task<bool?>> canSign, CancellationToken ct)
+    {
+        var done = new List<(WriteOutcome? Outcome, SweepAction Action)>();
+        IReadOnlyList<SweepClaim> tasks;
+        try
+        {
+            tasks = await _bus.ListSessionTasksForSweepAsync(ct).ConfigureAwait(false);
+        }
+        catch (BusBusyException ex)
+        {
+            done.Add((new WriteFailed("lock", ex.Message), new SweepAction(SweepActionKind.SessionExpired, EnvelopeId.New(now), _bus.Me.Machine, 1, NoSessionReason)));
+            return done;
+        }
+
+        foreach (SweepClaim task in tasks)
+        {
+            if (EnvelopeParser.PeekHeader(task.Bytes) is not { Type: EnvelopeType.Job } || task.ClaimTime is not { } created)
+            {
+                continue;
+            }
+
+            EnvelopeResult verified = await _signer.ParseAndVerifyAsync(task.Bytes, _bus.Me.Tenant, ct).ConfigureAwait(false);
+            if (!verified.IsAccepted
+                || verified.Envelope.Job is not { Deliver: JobDelivery.Session } job
+                || verified.Envelope.Header.Id != task.File.Id
+                || verified.Envelope.Header.To != task.Folder
+                || now <= created + TimeSpan.FromMinutes(job.TimeoutMinutes ?? BusRepository.SessionTaskTimeoutMinutes))
+            {
+                continue;
+            }
+
+            var action = new SweepAction(SweepActionKind.SessionExpired, task.File.Id, task.Folder, job.Attempt, NoSessionReason);
+            if (dryRun)
+            {
+                done.Add((null, action));
+                continue;
+            }
+
+            if (await canSign().ConfigureAwait(false) == false)
+            {
+                break;
+            }
+
+            string body = string.Create(CultureInfo.InvariantCulture, $"machine: {task.Folder.Value}\nsubmitted: {Utc(created)}\ntimeout_minutes: {job.TimeoutMinutes ?? BusRepository.SessionTaskTimeoutMinutes}\n");
+            EnvelopeResult report = await SignReportAsync(verified.Envelope.Header.From, task.File.Id, new ReportFields(ReportStatus.Failed, NoSessionReason, Mandate: job.Mandate, Step: job.Step), body, ct).ConfigureAwait(false);
+            done.Add(report.IsAccepted
+                ? (await _bus.ExpireSessionTaskAsync(task, report.Envelope, ct).ConfigureAwait(false), action)
+                : (new WriteFailed("sign", report.Rejection.Detail), action));
+        }
+
+        return done;
+    }
+
     private async Task<bool> CanSignAsync(CancellationToken ct)
     {
         string? detail = "signWith missing: Central must sign what the sweep writes";
@@ -370,6 +445,9 @@ public sealed partial class BusSweep
 
     [LoggerMessage(Level = LogLevel.Error, Message = "job {Id} on {Machine} failed after {Attempts} attempts")]
     private partial void LogExhausted(string id, string machine, int attempts);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "session task {Id} on {Machine} not taken within its timeout: removed, no_session")]
+    private partial void LogSessionExpired(string id, string machine);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "claimed job {Id} on {Machine} does not verify ({Reason}): rejected")]
     private partial void LogRejected(string id, string machine, string reason);
