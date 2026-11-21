@@ -151,6 +151,34 @@ public sealed class ReportArrivalsTests : IDisposable
         ReportArrivals.Take(File).Single().Work.Should().BeTrue();
     }
 
+    [Fact]
+    public void Record_PendingReportPastTheHorizon_DroppedWhenTheFileIsWritten()
+    {
+        // Arrange: no live session took it for more than a day
+        SupervisorEvent early = Report(Now.AddMinutes(-3));
+        ReportArrivals.Record(File, [early], _ => false, Now);
+        SupervisorEvent late = Report(Now.AddDays(1));
+
+        // Act
+        ReportArrivals.Record(File, [late], _ => false, Now.AddDays(1).AddMinutes(1));
+
+        // Assert
+        ReportArrivals.Take(File).Select(a => a.Id).Should().Equal(late.Id.Value);
+    }
+
+    [Fact]
+    public void Record_MorePendingThanTheCap_KeepsTheNewest()
+    {
+        // Arrange
+        SupervisorEvent[] reports = [.. Enumerable.Range(0, ReportArrivals.PendingMax + 5).Select(i => Report(Now.AddMinutes(-60).AddSeconds(i)))];
+
+        // Act
+        ReportArrivals.Record(File, reports, _ => false, Now);
+
+        // Assert
+        ReportArrivals.Take(File).Select(a => a.Id).Should().Equal(reports.Skip(5).Select(r => r.Id.Value));
+    }
+
     private static SupervisorEvent Report(DateTimeOffset created) =>
         new(EnvelopeId.New(created), SupervisorEventKind.Report, HomeLaptop, null, null, false);
 }

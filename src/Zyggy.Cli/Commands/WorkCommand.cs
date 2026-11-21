@@ -161,6 +161,11 @@ internal static class WorkCommand
     internal static string RenderWaiting(IReadOnlyList<OwnerItem> items, DateTimeOffset now) =>
         items.Count == 0 ? "nothing waits for you\n" : string.Concat(items.Select(i => i.Describe(now) + "\n"));
 
+    /// <summary>Spec 59 slice 11 (AC-14): on Central, the drafts kept in the owner's memory join the waiting list, oldest first.</summary>
+    private static IReadOnlyList<OwnerItem> WithDrafts(IReadOnlyList<OwnerItem> items, NodeConfiguration configuration, CliEnvironment environment) =>
+        configuration.Machine != MachineName.Central ? items
+            : [.. items.Concat(DraftVerb.Waiting(environment.Variables)).OrderBy(i => i.Since).ThenBy(i => i.Key, StringComparer.Ordinal)];
+
     private static async Task<int> BoardAsync(CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure, ParseResult parseResult, bool waiting, CancellationToken ct)
     {
         (NodeConfiguration? configuration, int exitCode) = BusHost.LoadConfiguration(parseResult, environment, io);
@@ -181,7 +186,7 @@ internal static class WorkCommand
             BusInventory inventory = services.GetRequiredService<BusInventory>();
             if (waiting)
             {
-                IReadOnlyList<OwnerItem> items = await inventory.WaitingAsync(configuration.Supervision.WorkMachines, ct);
+                IReadOnlyList<OwnerItem> items = WithDrafts(await inventory.WaitingAsync(configuration.Supervision.WorkMachines, ct), configuration, environment);
                 await io.Out.WriteAsync(RenderWaiting(items, services.GetRequiredService<TimeProvider>().GetUtcNow()));
                 return ExitCodes.Ok;
             }
@@ -289,7 +294,7 @@ internal static class WorkCommand
             {
                 try
                 {
-                    int count = (await services.GetRequiredService<BusInventory>().WaitingAsync(configuration.Supervision.WorkMachines, ct)).Count;
+                    int count = WithDrafts(await services.GetRequiredService<BusInventory>().WaitingAsync(configuration.Supervision.WorkMachines, ct), configuration, environment).Count;
                     if (count > 0)
                     {
                         await io.Out.WriteLineAsync(count.ToString(CultureInfo.InvariantCulture) + " item(s) wait for you: zyggy work --waiting");

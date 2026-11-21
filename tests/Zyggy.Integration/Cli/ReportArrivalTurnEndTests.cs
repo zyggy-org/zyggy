@@ -100,6 +100,23 @@ public sealed class ReportArrivalTurnEndTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task TurnEnd_StatusesOff_NothingAndTheReportStaysPending()
+    {
+        // Arrange: supervision.enabled false in Central's node.json
+        EnvelopeId report = Record();
+        var config = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(_harness.CentralNodeJson))!.AsObject();
+        config["supervision"] = new System.Text.Json.Nodes.JsonObject { ["enabled"] = false };
+        File.WriteAllText(_harness.CentralNodeJson, config.ToJsonString());
+
+        // Act
+        var (exit, console) = await TurnEndAsync(_harness.CentralNodeJson);
+
+        // Assert
+        new { Exit = exit, console.Stdout, Pending = ReportArrivals.Take(Arrivals).Select(a => a.Id).ToArray() }
+            .Should().BeEquivalentTo(new { Exit = 0, Stdout = string.Empty, Pending = new[] { report.Value } }, console.Stderr);
+    }
+
+    [Fact]
     public async Task TurnEnd_OnAnotherMachine_NothingDelivered()
     {
         // Arrange: a file in the laptop's node directory would never be written by a wake; the turn end there ignores it

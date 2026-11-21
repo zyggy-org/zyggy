@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 
+using Zyggy.Core.Envelope;
 using Zyggy.Core.Tenancy;
 
 namespace Zyggy.Core.Supervision;
@@ -27,6 +28,13 @@ internal static class ReportArrivals
 
     /// <summary>The most reports one notice names; the rest are counted.</summary>
     internal const int FrameMax = 20;
+
+    /// <summary>
+    /// The most reports kept waiting for a session (the newest). Without a live Central session nothing takes the list, so it is
+    /// trimmed whenever the file is written: entries past <see cref="Horizon"/> go, and of the rest at most 200 stay — ten notices'
+    /// worth of <see cref="FrameMax"/>, far above a day of jobs, while the file stays a few kilobytes.
+    /// </summary>
+    internal const int PendingMax = 200;
 
     private static readonly TimeSpan Forget = Horizon * 2;
 
@@ -81,6 +89,7 @@ internal static class ReportArrivals
             added++;
         }
 
+        state.Pending = Trim(state.Pending, now);
         Save(file, state);
         return added;
     }
@@ -136,6 +145,13 @@ internal static class ReportArrivals
 
         return sb.ToString();
     }
+
+    // Drops entries whose report is older than the horizon (an id that does not parse goes too) and keeps the newest PendingMax.
+    private static List<ReportArrival> Trim(List<ReportArrival> pending, DateTimeOffset now) =>
+        [.. pending
+            .Where(a => EnvelopeId.TryParse(a.Id, out EnvelopeId? id) && now - id.Timestamp <= Horizon)
+            .OrderBy(a => a.Id, StringComparer.Ordinal)
+            .TakeLast(PendingMax)];
 
     private static FileStream? Lock(string file)
     {

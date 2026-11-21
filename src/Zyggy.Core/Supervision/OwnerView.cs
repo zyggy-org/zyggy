@@ -17,6 +17,9 @@ public enum OwnerItemKind
 
     /// <summary>A paused mandate.</summary>
     Mandate,
+
+    /// <summary>A draft written for the owner, kept in Central's memory (spec 59 slice 11).</summary>
+    Draft,
 }
 
 /// <summary>One item that waits for the owner (deliverable 18, "Waiting list"): ids, kinds and names only, never a text an agent wrote.</summary>
@@ -28,11 +31,14 @@ public enum OwnerItemKind
 /// <param name="Since">Since when it waits.</param>
 public sealed record OwnerItem(string Key, OwnerItemKind Kind, MachineName Machine, string? Project, EnvelopeId Id, DateTimeOffset Since)
 {
-    /// <summary>The item's one line in a mail and in <c>zyggy work --waiting</c>: kind, machine, project (left out for a work machine), id and age.</summary>
+    /// <summary>Gets the file a draft is kept in, relative to the owner's memory directory (<c>drafts/&lt;date&gt;-&lt;slug&gt;.md</c>); <see langword="null"/> for other kinds.</summary>
+    public string? File { get; init; }
+
+    /// <summary>The item's one line in a mail and in <c>zyggy work --waiting</c>: kind, machine, project (left out for a work machine), a draft's file, id and age.</summary>
     /// <param name="now">The time the age is measured at.</param>
     /// <returns>The line, without a line break.</returns>
     public string Describe(DateTimeOffset now) =>
-        string.Join(", ", new[] { Kind.ToString().ToLowerInvariant(), Machine.Value, Project, Id.Value, Age(now - Since) }.OfType<string>());
+        string.Join(", ", new[] { Kind.ToString().ToLowerInvariant(), Machine.Value, Project, File, Id.Value, Age(now - Since) }.OfType<string>());
 
     private static string Age(TimeSpan age) =>
         age < TimeSpan.FromHours(1) ? Math.Max(0, (int)age.TotalMinutes).ToString(CultureInfo.InvariantCulture) + " min"
