@@ -309,6 +309,9 @@ public sealed partial class BusListener : IDisposable
                     }
 
                     break;
+                case AcceptedJob { Job.Job.Deliver: JobDelivery.Session }:
+                    // Deliverable 18: a session task waits for a live session's turn end (`zyggy work --turn-end`); the node service never runs it.
+                    break;
                 case AcceptedJob accepted:
                     if (await AdmitClaimAndTrackAsync(accepted, ct).ConfigureAwait(false))
                     {

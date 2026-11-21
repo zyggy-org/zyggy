@@ -14,6 +14,9 @@ public enum SweepActionKind
 
     /// <summary>Did not verify: moved unchanged to the machine's <c>jobs/rejected/</c>.</summary>
     Rejected,
+
+    /// <summary>A session task no live session took within its timeout: removed and answered by Central's <c>failed</c> / <c>no_session</c> report (deliverable 18).</summary>
+    SessionExpired,
 }
 
 /// <summary>One stale claim the sweep settled, as <c>zyggy sweep</c> prints it (spec 17 "CLI").</summary>
@@ -38,6 +41,9 @@ public sealed record SweepResult(IReadOnlyList<SweepAction> Actions, WriteFailed
 
     /// <summary>Gets the number of claims rejected.</summary>
     public int Rejected => Actions.Count(a => a.Kind == SweepActionKind.Rejected);
+
+    /// <summary>Gets how many session tasks were removed with a <c>no_session</c> report.</summary>
+    public int SessionsExpired => Actions.Count(a => a.Kind == SweepActionKind.SessionExpired);
 
     /// <summary>Gets the number of <c>reports/</c> and <c>context/</c> files moved to <c>archive/</c> by the pass's archive commit.</summary>
     public int Archived { get; init; }

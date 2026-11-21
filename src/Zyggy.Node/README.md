@@ -176,6 +176,8 @@ Deliverable 18, on Central with an M365 instance (`ZYGGY_INSTANCE_DIR`). After e
 - reads the waiting list (`zyggy work --waiting`) and mails the owner when it holds an item no mail has named yet and no mail went out in the last 30 minutes — subject `Zyggy: <n> item(s) wait for you`, one line per item (kind, machine, project, id, age; no project for a work machine), sent through Graph from the owner's mailbox to itself, never saved to Sent Items. What was named is kept in `<nodeDir>/owner-mail.json`. A failed send is one Error per streak and is tried again a minute later;
 - writes Central's decisions of the last 14 days (time, kind, machine, project, id — never the text) to `decided.json` in the brief directory (`<ZYGGY_STATE_DIR or ~/.local/state/zyggy>/brief`); the morning brief lists those since the previous brief under "Decided for you".
 
+A job with `deliver: session` is never claimed by the node service: it waits for a live session's turn end (`zyggy work --turn-end`, Cli README), and Central's sweep removes it with a `failed` / `no_session` report when none took it within its `timeout_minutes`.
+
 `zyggy supervise stop` puts `supervision-stopped` in the node folder: Central starts no supervisor run (the node-written decisions and the mail go on), and on any machine a job under a mandate is rejected `mandate_invalid` (limit `supervision_stopped`) until `zyggy supervise start`.
 
 ## Polling every second
