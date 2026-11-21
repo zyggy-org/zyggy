@@ -100,6 +100,12 @@ internal static class ReportCommand
 
         if (trace?.NewestReport is not { Report: { } fields } report)
         {
+            if (wait && trace is not null && IsRejectedWithoutReport(trace))
+            {
+                await io.Out.WriteLineAsync($"job {id.Value} rejected without a report (its sender could not be read)");
+                return ExitCodes.NoReportYet;
+            }
+
             if (wait)
             {
                 await io.Out.WriteLineAsync($"no report yet for {id.Value} in tenant {configuration.Tenant.Value} after {timeoutMinutes} min");
@@ -167,9 +173,9 @@ internal static class ReportCommand
             await bus.PullAsync(ct);
             try
             {
-                if (await inventory.TraceAsync(id, ct) is { NewestReport: not null } answered)
+                if (await inventory.TraceAsync(id, ct) is { } trace && (trace.NewestReport is not null || IsRejectedWithoutReport(trace)))
                 {
-                    return answered;
+                    return trace;
                 }
             }
             catch (BusBusyException)
@@ -186,6 +192,13 @@ internal static class ReportCommand
             await Task.Delay(left < PullEvery ? left : PullEvery, clock, ct);
         }
     }
+
+    /// <summary>
+    /// Spec 59 slice 9 correction: the job sits in <c>jobs/rejected/</c> and no report answers it — the node or the sweep moved it there
+    /// without one because its sender could not be read — so no report will ever come and the wait need not run to its timeout.
+    /// </summary>
+    private static bool IsRejectedWithoutReport(EnvelopeTrace trace) =>
+        trace.State == TraceState.Rejected && trace.Job is not null && trace.Reports.Count == 0;
 
     private sealed record FileWanted(string? Out);
 
