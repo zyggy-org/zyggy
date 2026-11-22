@@ -208,6 +208,49 @@ public sealed class MandateCheckTests : IAsyncLifetime
         verdict.Should().Be(MandateVerdict.Ok);
     }
 
+    // Q23 (Central, 2026-11-22): a submit under a mandate for a work machine whose allowed_tools mix work-mail reading and code-running
+    // tools is refused work_mail_code_mix, even for a session task.
+    [Theory]
+    [InlineData("Bash(zyggy outlook *)", "Bash(python *)")]
+    [InlineData("mcp__github", "Bash(dotnet *)")]
+    public async Task CheckSubmit_WorkMachineMandateCeilingMixes_RefusedWorkMailCodeMix(string mail, string code)
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields with { AllowedTools = ["Read", mail, code], Sessions = true }, ct);
+
+        // Act
+        MandateVerdict verdict = MandateRules.CheckSubmit(await LedgerAsync(ct), Submit with { Tools = ["Read"], Session = true, TargetIsWorkMachine = true }, Now);
+
+        // Assert
+        verdict.Should().Be(new MandateVerdict(MandateLimit.WorkMailCodeMix, "allowed_tools can read work mail (" + mail + ") and run code (" + code + ") on a work machine"));
+    }
+
+    // Q23: the same mandate for a machine that is not a work machine is judged as before.
+    [Fact]
+    public async Task CheckSubmit_OtherMachineMandateCeilingMixes_Allowed()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields with { AllowedTools = ["Read", "Bash(zyggy outlook *)", "Bash(python *)"], Sessions = true }, ct);
+
+        // Act
+        MandateVerdict verdict = MandateRules.CheckSubmit(await LedgerAsync(ct), Submit with { Tools = ["Read"], Session = true }, Now);
+
+        // Assert
+        verdict.Should().Be(MandateVerdict.Ok);
+    }
+
+    [Fact]
+    public void MandateLimit_WorkMailCodeMix_SameWireAsTheRunnerReason()
+    {
+        // Act
+        string wire = MandateRules.ToWire(MandateLimit.WorkMailCodeMix);
+
+        // Assert
+        wire.Should().Be("work_mail_code_mix");
+    }
+
     [Fact]
     public async Task CheckSubmit_NoBase_AllowedWhateverTheBranches()
     {
@@ -615,7 +658,7 @@ public sealed class MandateCheckTests : IAsyncLifetime
 
         // Assert
         wires.Should().OnlyHaveUniqueItems().And.OnlyContain(w => w.Length > 0 && w.All(c => char.IsAsciiLetterLower(c) || c == '_'));
-        wires.Should().HaveCount(19);
+        wires.Should().HaveCount(20);
     }
 
     // Spec 59 slice 6 tightening (Central, 2026-11-21): under a mandate a job continues only from a job that ran under the same mandate

@@ -21,10 +21,20 @@ public sealed partial class MandateGranter
     private readonly TimeProvider _clock;
     private readonly ILogger<MandateGranter> _log;
     private readonly OriginBranchCheck? _originCheck;
+    private readonly IReadOnlyList<MachineName> _workMachines;
 
-    internal MandateGranter(BusRepository bus, BusInventory inventory, EnvelopeSigner signer, KeyId signWith, TimeProvider clock, ILogger<MandateGranter> log, OriginBranchCheck? originCheck = null)
+    internal MandateGranter(
+        BusRepository bus,
+        BusInventory inventory,
+        EnvelopeSigner signer,
+        KeyId signWith,
+        TimeProvider clock,
+        ILogger<MandateGranter> log,
+        OriginBranchCheck? originCheck = null,
+        IReadOnlyList<MachineName>? workMachines = null)
     {
         _originCheck = originCheck;
+        _workMachines = workMachines ?? [];
         _bus = bus ?? throw new ArgumentNullException(nameof(bus));
         _inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
         _signer = signer ?? throw new ArgumentNullException(nameof(signer));
@@ -37,7 +47,7 @@ public sealed partial class MandateGranter
     /// <param name="to">The machine the mandate is for.</param>
     /// <param name="fields">The mandate's fields; <c>expires</c> is judged against now as the envelope's <c>created</c>.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns><see cref="AskDecidePublished"/>, <see cref="AskDecideRefused"/> naming the field (<c>machine</c> off Central) or <see cref="AskDecideFailed"/>.</returns>
+    /// <returns><see cref="AskDecidePublished"/>, <see cref="AskDecideRefused"/> naming the field (<c>machine</c> off Central; <c>work_mail_code_mix</c> for a machine of <c>supervision.workMachines</c> whose <c>allowed_tools</c> can both read work mail and run code, spec 58 Q23) or <see cref="AskDecideFailed"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
     public async Task<AskDecideResult> GrantAsync(MachineName to, MandateFields fields, CancellationToken ct)
     {
@@ -47,6 +57,12 @@ public sealed partial class MandateGranter
         if (me.Machine != MachineName.Central)
         {
             return new AskDecideRefused("machine", "only central grants a mandate");
+        }
+
+        // Spec 58 Q23 (Central, 2026-11-22): a work machine's mandate whose ceiling mixes work mail and code would only yield refused jobs.
+        if (_workMachines.Contains(to) && Outlook.WorkMailToolMix.Refusal(fields.AllowedTools) is { } mix)
+        {
+            return new AskDecideRefused(MandateRules.ToWire(MandateLimit.WorkMailCodeMix), mix);
         }
 
         // Spec 59 slice 3 (AC-6, Q5): a branch the origin does not have is refused before anything is signed, when Central holds the project.

@@ -31,7 +31,7 @@ public sealed class WorkMailToolMixTests
     [InlineData("Read", "Grep", "Glob")]
     [InlineData("Read", "Edit", "Write", "Bash(dotnet *)", "Bash(git status*)", "Bash(git commit *)")]
     [InlineData("Bash(python *)", "Write")]
-    [InlineData("WebFetch", "mcp__github", "Task")]
+    [InlineData("WebFetch", "Task")]
     [InlineData("Bash(dotnet test --filter \"FullyQualifiedName~OutlookAction\")")]
     public void Refusal_JobThatReadsNoWorkMail_Null(params string[] rules)
     {
@@ -84,6 +84,56 @@ public sealed class WorkMailToolMixTests
 
         // Assert
         refusal.Should().NotBeNull();
+    }
+
+    // Q22 (Central, 2026-11-22): on a work machine an MCP rule may read work mail; one MCP server alone, or beside file reads, runs.
+    [Theory]
+    [InlineData("mcp__github")]
+    [InlineData("mcp__outlook__list_mail", "Read", "Grep", "Glob")]
+    [InlineData("Read(notes/**)", "mcp__graph")]
+    public void Refusal_OneMcpRuleBesideFileReadsOnly_Null(params string[] rules)
+    {
+        // Act
+        string? refusal = WorkMailToolMix.Refusal(rules);
+
+        // Assert
+        refusal.Should().BeNull();
+    }
+
+    // Q22 (Central, 2026-11-22): an MCP rule counts as mail-reading, so beside a code runner (or anything but file reads) it is refused.
+    [Theory]
+    [InlineData("mcp__github", "Bash(python *)")]
+    [InlineData("mcp__outlook__list_mail", "Bash(dotnet *)")]
+    [InlineData("Bash(git status*)", "mcp__graph")]
+    [InlineData("mcp__github", "Bash")]
+    [InlineData("mcp__github", "PowerShell(Get-ChildItem)")]
+    [InlineData("mcp__github", "Write")]
+    [InlineData("mcp__github", "Edit(**)")]
+    [InlineData("mcp__github", "Task")]
+    [InlineData("WebFetch", "mcp__github", "Task")]
+    [InlineData("mcp__github", "mcp__filesystem")]
+    [InlineData("mcp__github", "Bash(zyggy outlook *)")]
+    [InlineData("MCP__github", "Bash(python *)")]
+    [InlineData(" mcp__github ", "Bash(python *)")]
+    [InlineData("Read,mcp__github")]
+    [InlineData("mcp__github,Bash(python *)")]
+    public void Refusal_McpRuleWithACodeRunner_Refused(params string[] rules)
+    {
+        // Act
+        string? refusal = WorkMailToolMix.Refusal(rules);
+
+        // Assert
+        refusal.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void Refusal_McpAndCode_NamesTheMcpRuleAndTheCodeRule()
+    {
+        // Act
+        string? refusal = WorkMailToolMix.Refusal(["Read", "mcp__github", "Bash(python *)"]);
+
+        // Assert
+        refusal.Should().Be("allowed_tools can read work mail (mcp__github) and run code (Bash(python *)) on a work machine");
     }
 
     [Fact]

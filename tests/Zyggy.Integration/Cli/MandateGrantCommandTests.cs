@@ -5,6 +5,7 @@ using Zyggy.Core.Bus;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Registry;
 using Zyggy.Core.Tests.Infrastructure;
+using Zyggy.Integration.Infrastructure;
 
 using Model = Zyggy.Core.Envelope.Envelope;
 
@@ -103,6 +104,41 @@ public sealed class MandateGrantCommandTests : IAsyncLifetime
         exit.Should().Be(3, console.Stdout);
         console.Stderr.Should().StartWith("zyggy: refused: ").And.Contain(named);
         (await _harness.CommitCountOnMainAsync(ct)).Should().Be(commits);
+    }
+
+    // Spec 58 Q23 (Central, 2026-11-22): Central's node.json lists home-laptop in supervision.workMachines; a mandate for it whose
+    // allowed_tools mix work-mail reading and code-running tools is refused at grant with the runner's reason, nothing written.
+    [Theory]
+    [InlineData("Read,Bash(zyggy outlook *),Bash(python *)")]
+    [InlineData("Read,mcp__github,Bash(dotnet *)")]
+    public async Task Grant_WorkMachineCeilingMixes_ExitThreeWorkMailCodeMix_NothingWritten(string tools)
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        string outbound = _harness.Scratch.File("outbound").Replace('\\', '/');
+        string nodeJson = NodeJson.Write(
+            _harness.Scratch.File("config-central-work-machines"),
+            CliHarness.Acme,
+            CliHarness.Central,
+            TestKeys.Acme1,
+            busLocalPath: _harness.Bus.SenderDir,
+            remote: TestHost.Remote.HttpsUrl!.ToString(),
+            secretsRoot: _harness.SecretsRoot,
+            claudePath: FakeClaude.ExecutablePath,
+            nodeDir: _harness.NodeDirOf("central-work-machines"),
+            extraTopLevelJson: "\"supervision\": { \"workMachines\": [\"home-laptop\"], \"outboundPaths\": [\"" + outbound + "\"] }");
+        int commits = await _harness.CommitCountOnMainAsync(ct);
+
+        // Act
+        var (exit, console) = await GrantRunAsync(["--allowed-tools", tools], nodeJson: nodeJson, ct: ct);
+
+        // Assert
+        new { Exit = exit, console.Stderr, Commits = await _harness.CommitCountOnMainAsync(ct) }.Should().BeEquivalentTo(new
+        {
+            Exit = 3,
+            Stderr = "zyggy: refused: work_mail_code_mix: allowed_tools can read work mail (" + tools.Split(',')[1] + ") and run code (" + tools.Split(',')[2] + ") on a work machine\n",
+            Commits = commits,
+        });
     }
 
     [Fact]

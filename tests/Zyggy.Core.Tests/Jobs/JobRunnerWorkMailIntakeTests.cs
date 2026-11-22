@@ -59,6 +59,42 @@ public sealed class JobRunnerWorkMailIntakeTests : IDisposable
         (reply.Status, reply.Reason).Should().Be((ReportStatus.Rejected, "work_mail_code_mix"));
     }
 
+    // Q22 (Central, 2026-11-22): on a work machine an MCP rule may read mail, so an MCP rule beside a code runner is refused at intake.
+    [Fact]
+    public async Task RunAsync_WorkMachineMcpAndCodeRules_RejectedWorkMailCodeMix()
+    {
+        // Arrange
+        _h.NodePolicy = _h.NodePolicy with { WorkMail = true };
+        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root, AllowedTools: ["Read", "mcp__github", "Bash(dotnet *)"]));
+
+        // Act
+        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        new { reply.Status, reply.Reason, Body = Encoding.UTF8.GetString(reply.Body.Span), ModelCalls = _h.Model.ReceivedCalls().Count() }
+            .Should().BeEquivalentTo(new
+            {
+                Status = ReportStatus.Rejected,
+                Reason = "work_mail_code_mix",
+                Body = "work_mail_code_mix: allowed_tools can read work mail (mcp__github) and run code (Bash(dotnet *)) on a work machine\n",
+                ModelCalls = 0,
+            });
+    }
+
+    // Q22: the same MCP and code rules on another machine run.
+    [Fact]
+    public async Task RunAsync_OtherMachineMcpAndCodeRules_Runs()
+    {
+        // Arrange
+        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root, AllowedTools: ["Read", "mcp__github", "Bash(dotnet *)"]));
+
+        // Act
+        await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        _h.Request().AllowedTools.Should().Contain("mcp__github");
+    }
+
     // AC-B1: the mail brief job of Central's timer still runs on the work machine, with the hook told it runs there.
     [Fact]
     public async Task RunAsync_WorkMachineReadVerbsOnly_RunsWithWorkMailHook()

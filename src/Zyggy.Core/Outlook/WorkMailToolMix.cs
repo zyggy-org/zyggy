@@ -11,7 +11,10 @@ namespace Zyggy.Core.Outlook;
 /// A job <b>reads work mail</b> when one of its rules can run a <c>zyggy outlook</c> verb: a <c>Bash</c> or <c>PowerShell</c> rule (any
 /// case, any blank around it) that is bare, empty or <c>*</c>; whose program word holds a wildcard, an <c>=</c> (an environment prefix) or
 /// names <c>zyggy</c> (a path or <c>zyggy.exe</c> included) with <c>outlook</c> or a wildcard after it. Each entry is judged whole and,
-/// because Claude Code reads a comma list as several rules, each comma-separated piece too.
+/// because Claude Code reads a comma list as several rules, each comma-separated piece too. Any MCP rule (<c>mcp__*</c>, any case) also
+/// counts as reading work mail (Q22, Central 2026-11-22): a project MCP server on the work laptop may reach the mailbox. A job whose only
+/// mail reader is one MCP rule, written alone, keeps it beside the file reads; anything else beside it (a code runner, <c>Write</c>/<c>Edit</c>,
+/// a second MCP server, <c>Task</c>, a comma list) is refused.
 /// </para>
 /// <para>
 /// Such a job may hold only <c>Read</c>, <c>Grep</c> and <c>Glob</c> rules (bare or with a path) and <c>Bash</c> rules for the
@@ -28,6 +31,8 @@ internal static partial class WorkMailToolMix
     /// <summary>The <c>zyggy outlook</c> verbs that only read (the read tools of slices 2–5).</summary>
     public static readonly IReadOnlyList<string> ReadVerbs = ["policy", "count", "list", "read", "brief", "brief-done", "drafts", "share"];
 
+    private const string McpPrefix = "mcp__";
+
     private static readonly string[] FileReadTools = ["Read", "Grep", "Glob"];
 
     private static readonly string[] Programs = ["zyggy", "zyggy.exe"];
@@ -38,19 +43,36 @@ internal static partial class WorkMailToolMix
     public static string? Refusal(IReadOnlyList<string> rules)
     {
         ArgumentNullException.ThrowIfNull(rules);
-        if (rules.FirstOrDefault(ReadsMail) is not { } reads || rules.FirstOrDefault(r => !MailOnly(r)) is not { } code)
+        string[] readers = [.. rules.Where(ReadsMail)];
+        if (readers.Length == 0)
         {
             return null;
         }
 
+        // Q22: a lone MCP rule that is the job's only mail reader may stand beside the file reads; it is the reader, not a second tool.
+        string reads = readers[0];
+        string[] others = [.. rules.Where(r => !MailOnly(r) && !(readers.Length == 1 && IsMcp(r)))];
+        if (others.Length == 0)
+        {
+            return null;
+        }
+
+        string code = others.FirstOrDefault(r => !string.Equals(r, reads, StringComparison.Ordinal)) ?? others[0];
         return $"allowed_tools can read work mail ({reads}) and run code ({code}) on a work machine";
     }
 
     private static bool ReadsMail(string entry) =>
         entry.Split(',').Append(entry).Any(piece => LooseRule().Match(piece) is { Success: true } m
             && m.Groups["tool"].Value is var tool
-            && (tool.Equals("Bash", StringComparison.OrdinalIgnoreCase) || tool.Equals("PowerShell", StringComparison.OrdinalIgnoreCase))
-            && ShellReadsMail(m.Groups["spec"].Success ? m.Groups["spec"].Value : null));
+            && (tool.StartsWith(McpPrefix, StringComparison.OrdinalIgnoreCase)
+                || ((tool.Equals("Bash", StringComparison.OrdinalIgnoreCase) || tool.Equals("PowerShell", StringComparison.OrdinalIgnoreCase))
+                    && ShellReadsMail(m.Groups["spec"].Success ? m.Groups["spec"].Value : null))));
+
+    // One MCP rule, written alone (no comma list).
+    private static bool IsMcp(string entry) =>
+        !entry.Contains(',', StringComparison.Ordinal)
+        && LooseRule().Match(entry) is { Success: true } m
+        && m.Groups["tool"].Value.StartsWith(McpPrefix, StringComparison.OrdinalIgnoreCase);
 
     private static bool ShellReadsMail(string? specifier)
     {
