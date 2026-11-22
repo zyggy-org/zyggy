@@ -58,17 +58,7 @@
       "PowerShell(git tag -d *)",
       "PowerShell(git tag -f *)"
     ],
-    "defaultMode": "acceptEdits",
-    "ask": [
-      "Bash(git commit)",
-      "Bash(git commit *)",
-      "Bash(git push)",
-      "Bash(git push *)",
-      "PowerShell(git commit)",
-      "PowerShell(git commit *)",
-      "PowerShell(git push)",
-      "PowerShell(git push *)"
-    ]
+    "defaultMode": "acceptEdits"
   },
   "hooks": {
     "PreToolUse": [

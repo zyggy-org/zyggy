@@ -36,6 +36,8 @@ Add a new public type, interface, or method to `Zyggy.Core` with full test cover
 10. RECORD — one Status line in the spec if the addition belongs to a slice; commit only on the owner's approval
 ```
 
+In a Zyggy job run (`ZYGGY_JOB` set) the 🛑 stops follow `CLAUDE.md` § Job runs: the job's TASK is the approval for what it asks; otherwise commit on the feature branch, push, and end with the results in the REPORT.
+
 **Never batch steps. Never skip RED. Never skip CODE ANALYSIS. Never proceed past 🛑 without user confirmation.**
 
 ---
