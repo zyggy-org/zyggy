@@ -7,7 +7,7 @@ using Zyggy.Core.Verbs;
 namespace Zyggy.Core.Jobs;
 
 /// <summary>
-/// <c>zyggy hook pre-tool-use --root &lt;dir&gt; --blocked-file &lt;path&gt; [--allow &lt;rule&gt;]…</c>: the <c>PreToolUse</c> hook the
+/// <c>zyggy hook pre-tool-use --root &lt;dir&gt; --blocked-file &lt;path&gt; [--allow &lt;rule&gt;]… [--work-mail]</c>: the <c>PreToolUse</c> hook the
 /// job runner adds to every job run (spec 15, founding spec §3 Hooks and §8). Reads Claude Code's hook input on stdin and holds
 /// the call to the job's <c>allowed_tools</c>, to writes inside the run directory and to no network program unless allowed.
 /// </summary>
@@ -59,7 +59,7 @@ public sealed class JobHookVerb(bool ignoreCase)
             }
 
             var cwd = root.TryGetProperty("cwd", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() : null;
-            var decision = new JobHookPolicy(options.Root, options.Rules, ignoreCase, options.ReadRoots).Decide(tool, root.GetProperty("tool_input"), cwd);
+            var decision = new JobHookPolicy(options.Root, options.Rules, ignoreCase, options.ReadRoots, options.WorkMail).Decide(tool, root.GetProperty("tool_input"), cwd);
             return decision.Allowed ? 0 : await DenyAsync(io, blockedFile, tool, decision).ConfigureAwait(false);
         }
 #pragma warning disable CA1031 // Fail closed: every unexpected error, a cancelled read included, blocks the call.
@@ -99,7 +99,7 @@ public sealed class JobHookVerb(bool ignoreCase)
         return 2;
     }
 
-    private sealed record HookArguments(string Root, string BlockedFile, IReadOnlyList<string> Rules, IReadOnlyList<string> ReadRoots)
+    private sealed record HookArguments(string Root, string BlockedFile, IReadOnlyList<string> Rules, IReadOnlyList<string> ReadRoots, bool WorkMail)
     {
         public static (HookArguments? Options, string? Error) Parse(IReadOnlyList<string> args)
         {
@@ -117,8 +117,16 @@ public sealed class JobHookVerb(bool ignoreCase)
             string? blocked = null;
             var rules = new List<string>();
             var readRoots = new List<string>();
+            var workMail = false;
             for (var i = 1; i < args.Count; i++)
             {
+                // Spec 58 decision B: a flag without a value, set by the runner on a work machine (outlook.enabled).
+                if (args[i] == "--work-mail")
+                {
+                    workMail = true;
+                    continue;
+                }
+
                 if (args[i] is not ("--root" or "--blocked-file" or "--allow" or "--read-root"))
                 {
                     return (null, $"unexpected argument '{args[i]}'");
@@ -168,7 +176,7 @@ public sealed class JobHookVerb(bool ignoreCase)
                 return (null, "--read-root must be an absolute path");
             }
 
-            return (new HookArguments(root, blocked, rules, readRoots), null);
+            return (new HookArguments(root, blocked, rules, readRoots, workMail), null);
         }
     }
 }

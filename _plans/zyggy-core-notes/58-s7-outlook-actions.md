@@ -56,14 +56,20 @@ laptop), add:
   and `ZYGGY_NODE_JSON` is ignored.
 - Its exit 2 (a failure of its own) blocks the call; nothing to configure.
 - `settle` exits 1 on a configuration error (never 2, so the session can always stop).
-- The node's job hook refuses, in every job, a shell command that names `outlook` followed by `send` or `move`, or names `outlook`
-  with anything that can build a word at run time (a variable, a substitution, an escape such as `$'\x73end'`, a glob, `[char]`,
-  `eval`, `base64`, …), or names `zyggy` with `send`/`move` and such a construct (`outlook action in a job`). This refusal is
-  **not complete**: it reads the command text only.
-- **Known limit:** a job that writes a script file and runs it (`bash s.sh`, `pwsh s.ps1`, a compiled helper), or builds every
-  name wholly from data, is not seen by the job hook; such a script could also clear `ZYGGY_JOB` and forge a pass in the
-  laptop's user-writable state. What still stands is the tool's own `not attended` refusal while the job's variables are set.
-  Closing it needs the work-machine refusal of code and script tools in jobs, which waits for the owner's decision.
+- On a work machine (`outlook.enabled` `true`; the runner passes `--work-mail`), the node's job hook refuses, in every job, a shell
+  command that names `outlook` followed by `send` or `move`, or names `outlook` with anything that can build a word at run time (a
+  variable, a substitution, an escape such as `$'\x73end'`, a glob, `[char]`, `eval`, `base64`, …), or names `zyggy` with
+  `send`/`move` and such a construct (`outlook action in a job`). On other machines the hook leaves such commands to the job's
+  rules (a test filter or commit message may name them); `zyggy` itself refuses every send and move from any job everywhere.
+- Decision B (owner, 2026-11-22): on a work machine the node refuses at intake (`rejected` / `work_mail_code_mix`) every job whose
+  `allowed_tools` can both read work mail and run code. A mail-reading job holds only `Read`, `Grep`, `Glob` and
+  `Bash(zyggy outlook <read verb> …)` rules (or `Bash(zyggy outlook *)`).
+- **Known limit:** the hook reads the command text only, so a script file or a name built wholly from data is not seen by it.
+  Since decision B no job that reads work mail can write or run such a script on the work laptop, so nothing a job read can be
+  sent or moved by code it wrote. A code-running job that reads no mail could in theory drive Outlook over COM directly, or run
+  `zyggy outlook` through an interpreter, a launcher or a script, clear `ZYGGY_JOB` and forge a pass in the laptop's user-writable
+  state: an accepted risk, as for any code run on that machine. Give jobs on the work laptop pattern rules, never a bare shell rule
+  (which is refused there anyway).
 
 ## 4. `zyggy-core` — the work mail skill's action section
 

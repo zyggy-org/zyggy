@@ -134,6 +134,17 @@ public sealed partial class JobRunner
             return await CommandAsync(job, fields, ((PreFlightResult.Ok)preFlight).ProjectPath, policy, started, ct).ConfigureAwait(false);
         }
 
+        // Spec 58 decision B: on a work machine no job may both read work mail and run code; refused before the hook, the lock and the
+        // model, on the rules the hook would get (the job's, else the node's default, else the code default).
+        var allowedTools = fields.AllowedTools is { Count: > 0 } tools ? tools : policy.DefaultAllowedTools;
+        IReadOnlyList<string> hookRules = allowedTools.Count > 0 ? allowedTools : CodeDefaultAllowedTools;
+        if (policy.WorkMail && Outlook.WorkMailToolMix.Refusal(hookRules) is { } mix)
+        {
+            var workMailCodeMix = RunFailureReasonWire.ToWire(RunFailureReason.WorkMailCodeMix);
+            LogWorkMailCodeMix(id);
+            return Reply(ReportStatus.Rejected, workMailCodeMix, $"{workMailCodeMix}: {mix}\n", started);
+        }
+
         // Spec 15: a hook that cannot start lets every tool call through (Claude Code treats it as a non-blocking error), so a job
         // whose hook binary is missing, or does not refuse an empty call, never starts — checked before the lock and the worktree, so
         // nothing is left behind.
@@ -190,7 +201,6 @@ public sealed partial class JobRunner
             defaultBranch = ((PrepareResult.Prepared)prepared).DefaultBranch;
         }
 
-        var allowedTools = fields.AllowedTools is { Count: > 0 } tools ? tools : policy.DefaultAllowedTools;
         var minutes = fields.TimeoutMinutes ?? policy.DefaultTimeoutMinutes;
 
         // Spec 15: the rules travel as hook arguments, never through a file the model can reach; the blocked-calls file starts empty.
@@ -198,9 +208,15 @@ public sealed partial class JobRunner
         Directory.CreateDirectory(Path.GetDirectoryName(blockedFile)!);
         File.Delete(blockedFile);
         List<string> hookArgs = ["hook", "pre-tool-use", "--root", runDirectory, "--blocked-file", blockedFile];
-        foreach (var rule in allowedTools.Count > 0 ? allowedTools : CodeDefaultAllowedTools)
+        foreach (var rule in hookRules)
         {
             hookArgs.AddRange(["--allow", rule]);
+        }
+
+        // Spec 58 decision B: on a work machine the hook refuses every command that names an outlook action.
+        if (policy.WorkMail)
+        {
+            hookArgs.Add("--work-mail");
         }
 
         // Spec 06 "ModelRunRequest for a job": no tool set, extra directory, schema, model or system prompt; the project's own
@@ -659,6 +675,9 @@ public sealed partial class JobRunner
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: rejected: branch_refused ({Rule})")]
     private partial void LogBranchRefused(string id, string rule);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: rejected: work_mail_code_mix (allowed_tools can read work mail and run code on this work machine)")]
+    private partial void LogWorkMailCodeMix(string id);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: worktree git step failed: {Step}")]
     private partial void LogWorktreeFailed(string id, string step);

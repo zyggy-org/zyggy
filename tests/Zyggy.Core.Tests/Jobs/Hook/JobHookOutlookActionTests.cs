@@ -5,7 +5,7 @@ using Zyggy.Core.Jobs.Hook;
 namespace Zyggy.Core.Tests.Jobs.Hook;
 
 /// <summary>
-/// Spec 58 slice 7, AC-11: the node's job hook refuses every shell command that names an outlook action (send, move), however it is
+/// Spec 58 slice 7, AC-11 (narrowed by decision B to work machines, <c>--work-mail</c>): the node's job hook refuses every shell command that names an outlook action (send, move), however it is
 /// quoted or prefixed, whatever the job's <c>allowed_tools</c> say — so a job cannot send or move work mail even with its environment
 /// variables cleared in the command. The read tools stay allowed when the rules allow them.
 /// </summary>
@@ -86,9 +86,38 @@ public sealed class JobHookOutlookActionTests
         decision.Allowed.Should().BeTrue();
     }
 
-    private static HookDecision Decide(string tool, string command, params string[] rules)
+    // Decision B, task point 3: on a machine without outlook.enabled the hook does not judge outlook actions, so a job there may name
+    // outlook with send or move in a test filter or a commit message; zyggy itself still refuses every send and move from any job.
+    [Theory]
+    [InlineData("dotnet test --filter \"FullyQualifiedName~Outlook&DisplayName~send\"")]
+    [InlineData("git commit -m \"Spec 58: zyggy outlook send and move refused in jobs\"")]
+    public void Decide_OutlookActionNamedOnAnotherMachine_AllowedByTheRules(string command)
+    {
+        // Act
+        var decision = DecideOn(workMail: false, "Bash", command, "Bash(dotnet *)", "Bash(git commit *)");
+
+        // Assert
+        decision.Allowed.Should().BeTrue();
+    }
+
+    // The same commands stay refused on a work machine: there the refusal is complete.
+    [Theory]
+    [InlineData("dotnet test --filter \"FullyQualifiedName~Outlook&DisplayName~send\"")]
+    [InlineData("git commit -m \"Spec 58: zyggy outlook send and move refused in jobs\"")]
+    public void Decide_OutlookActionNamedOnAWorkMachine_Denied(string command)
+    {
+        // Act
+        var decision = Decide("Bash", command, "Bash(dotnet *)", "Bash(git commit *)");
+
+        // Assert
+        (decision.Allowed, decision.Rule).Should().Be((false, HookDecision.OutlookActionRule));
+    }
+
+    private static HookDecision Decide(string tool, string command, params string[] rules) => DecideOn(workMail: true, tool, command, rules);
+
+    private static HookDecision DecideOn(bool workMail, string tool, string command, params string[] rules)
     {
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(new { command }));
-        return new JobHookPolicy(Root, rules, ignoreCase: true).Decide(tool, document.RootElement, Root);
+        return new JobHookPolicy(Root, rules, ignoreCase: true, workMail: workMail).Decide(tool, document.RootElement, Root);
     }
 }

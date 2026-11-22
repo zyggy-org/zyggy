@@ -58,6 +58,34 @@ public sealed class JobHookVerbTests : IDisposable
         (exit, console.Stdout, console.Stderr, File.Exists(BlockedFile)).Should().Be((0, "", "", false));
     }
 
+    // Spec 58 decision B: --work-mail (no value) marks a work machine's job; there the hook refuses an outlook action.
+    [Fact]
+    public async Task Run_WorkMailFlag_OutlookActionDenied()
+    {
+        // Arrange
+        var console = new VerbConsole(Call("Bash", new { command = "zyggy outlook send --draft 1" }));
+
+        // Act
+        var exit = await RunAsync(console.Io, [.. Args("Bash"), "--work-mail"]);
+
+        // Assert
+        (exit, console.Stderr).Should().Be((2, "zyggy: blocked Bash: outlook action in a job (zyggy outlook send --draft 1)\n"));
+    }
+
+    // Without --work-mail the hook leaves outlook actions to zyggy itself (it refuses every send and move from a job).
+    [Fact]
+    public async Task Run_NoWorkMailFlag_OutlookActionLeftToTheRules()
+    {
+        // Arrange
+        var console = new VerbConsole(Call("Bash", new { command = "zyggy outlook send --draft 1" }));
+
+        // Act
+        var exit = await RunAsync(console.Io, Args("Bash"));
+
+        // Assert
+        exit.Should().Be(0);
+    }
+
     [Fact]
     public async Task Run_CallOutsideAllowedTools_ExitTwoWithOneStderrLine()
     {

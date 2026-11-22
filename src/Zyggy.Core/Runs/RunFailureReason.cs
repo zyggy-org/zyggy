@@ -44,4 +44,10 @@ public enum RunFailureReason
     /// the exit code and the output's tail, the full output is attached.
     /// </summary>
     CommandFailed,
+
+    /// <summary>
+    /// A work machine's job whose <c>allowed_tools</c> can both read work mail and run code (<c>work_mail_code_mix</c>, spec 58
+    /// decision B). Sent with <c>status: rejected</c> at intake; the model never ran.
+    /// </summary>
+    WorkMailCodeMix,
 }

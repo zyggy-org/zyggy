@@ -48,6 +48,25 @@ public sealed class NodeJsonPolicySourceTests
         policy.Should().BeEquivalentTo(NodePolicy.Default);
     }
 
+    // Spec 58 decision B: outlook.enabled marks a work machine; absent, false or malformed is not one.
+    [Theory]
+    [InlineData("""{ "enabled": true }""", true)]
+    [InlineData("""{ "enabled": false }""", false)]
+    [InlineData("""{ "enabled": "true" }""", false)]
+    [InlineData(null, false)]
+    public async Task GetAsync_OutlookEnabled_ProjectsWorkMail(string? outlook, bool workMail)
+    {
+        // Arrange
+        using var document = outlook is null ? null : System.Text.Json.JsonDocument.Parse(outlook);
+        var configuration = Configuration() with { Outlook = document?.RootElement.Clone() };
+
+        // Act
+        var policy = await new NodeJsonPolicySource(configuration).GetAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        policy.WorkMail.Should().Be(workMail);
+    }
+
     [Fact]
     public async Task GetAsync_ProjectsMaxConcurrentJobsAndWorkHours()
     {

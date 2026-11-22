@@ -34,6 +34,12 @@ public sealed record NodePolicy(
     /// command's program and arguments. Empty when absent.
     /// </summary>
     public IReadOnlyDictionary<string, NodeCommand> Commands { get; init; } = new Dictionary<string, NodeCommand>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Gets whether this node is a work machine that reads work mail (<c>node.json</c> <c>outlook.enabled</c>, spec 58 decision B): its
+    /// jobs may not both read work mail and run code, and its job hook refuses every outlook action. False when absent.
+    /// </summary>
+    public bool WorkMail { get; init; }
 }
 
 /// <summary>One entry of <c>node.json</c> <c>commands</c> (spec 59 slice 2).</summary>
