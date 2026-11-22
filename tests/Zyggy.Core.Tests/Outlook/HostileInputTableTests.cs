@@ -88,6 +88,27 @@ public sealed class HostileInputTableTests
         { "Bel ０４７５ １２ ３４ ５６", "５６" },
         { "Fax: 02/123.45.68", "123.45.68" },
 
+        // Phone numbers that start like a date (verify 01M81K807RE27PQS6J4N961QBD (1), (4)).
+        { "Bel 06.12.34.56.78", "56.78" },
+        { "Bel 04.75.12.34.56", "12.34.56" },
+        { "Op 05/12/2026 0475 12 34 56 bellen", "12 34 56" },
+        { "Bel 02.12.34.56.78", "56.78" },
+        { "Bel 09/12/34 56 78", "56 78" },
+        { "Bel (02.12.34.56.78)", "56.78" },
+        { "Bel 01.01.01.01.01", "01.01.01" },
+        { "Bel 02/12.34.56.78", "56.78" },
+        { "05-12-2026-0475123456", "0475123456" },
+        { "31.12.99 0475/12.34.56", "12.34.56" },
+        { "Bel 03-12-34-56-78", "56-78" },
+        { "Tel 01/12/2026 - 0475 12 34 56", "12 34 56" },
+        { "Bel 0475 12 34 56 op 05/12/2026", "12 34 56" },
+        { "Tel 05.12.2026 09 0475 12 34 56", "12 34 56" },
+        { "Bel 01/12/2026-31/12/2026 0475123456", "0475123456" },
+        { "Tel 08.12.34.56.78", "56.78" },
+
+        // Archive file names (verify 01M81K807RE27PQS6J4N961QBD (2)).
+        { "offerte-0475123456", "0475123456" },
+
         // E-mail addresses.
         { "Mail:jan@example.test", "example.test" },
         { "JAN.PEETERS@EXAMPLE.TEST", "EXAMPLE" },
@@ -132,6 +153,16 @@ public sealed class HostileInputTableTests
         "Jan Peeters, project lead at Acme, asks to confirm the Q4 budget by Friday.",
         "On January 12, 2026 Jan called about the Kerkstraat project.",
         "Version 2.10.3 shipped on 22.11.2026.",
+
+        // Dates, alone, as a range or with a time (verify 01M81K807RE27PQS6J4N961QBD (1), (4)).
+        "Delivered 05/12/2026.",
+        "Meeting 05/12/2026 09:00 in room 3.",
+        "Meeting 05/12/2026 09.30 in room 3.",
+        "Period 01/12/2026-31/12/2026 closed.",
+        "Period 01.12.2026 - 31.12.2026 closed.",
+        "Due 05.12.26, then 06.01.27.",
+        "Signed 01-02-2026 (copy 2).",
+        "Starts 05/12 at 9h.",
     };
 
     [Theory]

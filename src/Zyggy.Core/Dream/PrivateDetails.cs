@@ -30,13 +30,29 @@ internal static partial class PrivateDetails
         result = EmailAddress().Replace(result, Removed);
         result = SpacedEmailAddress().Replace(result, Removed);
         result = PostalAddress().Replace(result, Removed);
-        return PhoneCandidate().Replace(result, m => IsPhoneNumber(m.Value) ? Removed : m.Value);
+        return PhoneCandidate().Replace(result, m => IsPhoneNumber(m, result) ? Removed : m.Value);
     }
 
     // At least nine digits (the Belgian national forms and E.164; a longer run, two numbers written one after the other, goes too), and
-    // not a date that runs on into a number.
-    private static bool IsPhoneNumber(string candidate) =>
-        candidate.Count(char.IsAsciiDigit) >= 9 && !DatePrefix().IsMatch(candidate.TrimStart('('));
+    // not a date (verify 01M81K807RE27PQS6J4N961QBD (1)). A candidate is a date only when it is nothing but a valid date (day 1-31,
+    // month 1-12, optional 2- or 4-digit year), a range of two, or one followed by a time ("05/12/2026 09.30", or "05/12/2026 09" when
+    // a ':' or 'h' follows); a date that runs on into more digits ("06.12.34.56.78", "05/12/2026 0475 12 34 56") is a phone number.
+    private static bool IsPhoneNumber(Match candidate, string text)
+    {
+        if (candidate.Value.Count(char.IsAsciiDigit) < 9)
+        {
+            return false;
+        }
+
+        var value = candidate.Value.TrimStart('(');
+        if (DateOrRange().IsMatch(value))
+        {
+            return false;
+        }
+
+        var end = candidate.Index + candidate.Length;
+        return !(DateAndHour().IsMatch(value) && end < text.Length && text[end] is ':' or 'h' or 'u');
+    }
 
     // Every Unicode decimal digit (full-width, Arabic-Indic, \u2026) as its ASCII digit, one character for one, so a number in another
     // digit script is matched like an ASCII one.
@@ -69,8 +85,17 @@ internal static partial class PrivateDetails
         RegexOptions.CultureInvariant)]
     private static partial Regex PhoneCandidate();
 
-    [GeneratedRegex(@"^[0-9]{1,2}[./\-][0-9]{1,2}[./\-][0-9]{2,4}", RegexOptions.CultureInvariant)]
-    private static partial Regex DatePrefix();
+    // A valid date: day 1-31, month 1-12, an optional 2- or 4-digit year.
+    private const string Date = @"(?:0?[1-9]|[12][0-9]|3[01])[./\-](?:0?[1-9]|1[0-2])(?:[./\-](?:[0-9]{4}|[0-9]{2}))?";
+
+    // A date, or a range of two ("01/12/2026-31/12/2026", "01.12.2026 - 31.12.2026"), optionally with a time ("09.30", "09:30" stops
+    // the candidate at the ':'), and nothing else.
+    [GeneratedRegex(@"^" + Date + @"(?:\s*[\-‐-―]\s*" + Date + @")?(?:\s+(?:[01]?[0-9]|2[0-3])[.h][0-5][0-9])?$", RegexOptions.CultureInvariant)]
+    private static partial Regex DateOrRange();
+
+    // A date followed by an hour only, whose minutes come after a ':' or 'h' outside the candidate ("05/12/2026 09:00").
+    [GeneratedRegex(@"^" + Date + @"\s+(?:[01]?[0-9]|2[0-3])$", RegexOptions.CultureInvariant)]
+    private static partial Regex DateAndHour();
 
     // Three street forms, each with an optional box and an optional ", <postcode> <Town>": a Dutch or English street word and its number
     // ("Kerkstraat 12", "Grote Steenweg 120 bus 3"), a French street ("rue de la Loi 16"), an English number-first street

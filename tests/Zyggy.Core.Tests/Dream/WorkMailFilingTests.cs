@@ -183,6 +183,25 @@ public sealed class WorkMailFilingTests : IDisposable
         ((outcome as BatchAborted)?.Check, set.ChangedPaths.Any()).Should().Be(((DreamCheck?)DreamCheck.ContactDetail, false));
     }
 
+    // Verify 01M81K807RE27PQS6J4N961QBD (2): the project and file name (in the item path and the index line) pass the same check.
+    [Theory]
+    [InlineData("q4-budget", "offerte-0475123456")]
+    [InlineData("q4-budget", "call-0475-12-34-56")]
+    [InlineData("acme-0475123456", "offerte")]
+    public async Task FileBatch_ArchiveProjectOrFileNameWithPrivateDetail_AbortsContactDetail(string project, string slug)
+    {
+        // Arrange
+        var proposal = TestProposals.New().Disposition("L1", "filed", "business/areas/q4-budget.md")
+            .Edit("business/areas/q4-budget.md", append: [WorkMail, $"- [observed] 2026-11-22 [work-mail 2026-11-21]: Archived \"Q4 budget mail\" at archive/{project}/{slug}.txt — the client's Q4 budget request"])
+            .Archive("L1", project, slug, "Q4 budget mail", "The client's Q4 budget request");
+
+        // Act
+        var (outcome, set) = await FileAsync(proposal);
+
+        // Assert
+        ((outcome as BatchAborted)?.Check, set.ChangedPaths.Any()).Should().Be(((DreamCheck?)DreamCheck.ContactDetail, false));
+    }
+
     [Fact]
     public async Task FileBatch_WorkMailArchivedForAPrivateProject_AbortsPathRefused()
     {

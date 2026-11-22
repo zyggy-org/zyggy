@@ -308,6 +308,13 @@ internal static partial class DreamChecks
                 return Fail(DreamCheck.SlugInvalid, $"{where}: project or slug");
             }
 
+            // Verify 01M81K807RE27PQS6J4N961QBD (2), D-Q18: the project and file name end up in the item path and the index line, so they
+            // pass the same check as the name and description ("offerte-0475123456" is refused).
+            if (ContainsPrivateDetail(entry.Project) || ContainsPrivateDetail(entry.Slug))
+            {
+                return Fail(DreamCheck.ContactDetail, $"project or file name of {where}");
+            }
+
             if (!seen.Add(write.ItemPath) || WorkMailArchiver.Taken(before, write))
             {
                 return Fail(DreamCheck.SlugDuplicate, $"{where}: {Safe(write.ItemPath)}");
