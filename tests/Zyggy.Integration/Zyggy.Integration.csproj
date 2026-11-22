@@ -25,6 +25,8 @@
     <Compile Include="../Zyggy.Core.Tests/Infrastructure/ThrowingSecretStore.cs" Link="Infrastructure/ThrowingSecretStore.cs" />
     <Compile Include="../Zyggy.Core.Tests/Infrastructure/FakeHiddenInput.cs" Link="Infrastructure/FakeHiddenInput.cs" />
     <Compile Include="../Zyggy.Core.Tests/Infrastructure/TestEnvelopes.cs" Link="Infrastructure/TestEnvelopes.cs" />
+    <!-- Deliverable 58: the fake Outlook access, registered at the internal seam for the entry-point test of the outlook tools. -->
+    <Compile Include="../Zyggy.Core.Tests/Outlook/FakeOutlookAccess.cs" Link="Outlook/FakeOutlookAccess.cs" />
   </ItemGroup>
 
   <!--

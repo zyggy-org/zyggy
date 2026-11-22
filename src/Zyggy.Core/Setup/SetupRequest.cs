@@ -34,6 +34,12 @@ public sealed record SetupRequest(
     /// <summary>The public template repository every laptop checks out (spec 42 Contracts).</summary>
     public const string DefaultCoreRemote = "https://github.com/zyggy-org/zyggy-core.git";
 
+    /// <summary>
+    /// Gets the instance checkout on this laptop (<c>--instance-path</c>, spec 58 D-Q7): its <c>work-boundary.json</c> is copied to the
+    /// node directory for the outlook tools; <see langword="null"/> when the option was not given (nothing printed, nothing copied).
+    /// </summary>
+    public string? InstancePath { get; init; }
+
     /// <summary>Gets the backup suffix of this run: <see cref="Now"/> in UTC as <c>yyyyMMddTHHmmssZ</c>.</summary>
     public string BackupStamp => Now.ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
 }

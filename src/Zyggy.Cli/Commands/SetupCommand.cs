@@ -26,15 +26,16 @@ internal static class SetupCommand
         var corePath = new Option<string?>("--core-path") { Description = "The zyggy-core checkout (default: C:/agents/zyggy-core on Windows, ~/agents/zyggy-core elsewhere)." };
         var claudeDir = new Option<string?>("--claude-dir") { Description = "The user-scope Claude Code directory (default: CLAUDE_CONFIG_DIR, then ~/.claude)." };
         var coreRemote = new Option<string?>("--core-remote") { Description = "The zyggy-core remote, for tests and forks (default: the public template repository)." };
+        var instancePath = new Option<string?>("--instance-path") { Description = "The instance checkout on this laptop (work laptop only): its work-boundary.json is copied to the node directory for the outlook tools." };
         var command = new Command("setup", "Wire this laptop as a node: complete node.json, check out zyggy-core, wire the user-scope Claude Code settings and skills, name every missing secret.")
         {
-            BusHost.ConfigOption, tenant, machine, signWith, corePath, claudeDir, coreRemote,
+            BusHost.ConfigOption, tenant, machine, signWith, corePath, claudeDir, coreRemote, instancePath,
         };
         command.SetAction((parseResult, ct) => RunAsync(
             environment,
             io,
             configure,
-            new Options(parseResult.GetValue(BusHost.ConfigOption), parseResult.GetValue(tenant)!, parseResult.GetValue(machine)!, parseResult.GetValue(signWith), parseResult.GetValue(corePath), parseResult.GetValue(claudeDir), parseResult.GetValue(coreRemote)),
+            new Options(parseResult.GetValue(BusHost.ConfigOption), parseResult.GetValue(tenant)!, parseResult.GetValue(machine)!, parseResult.GetValue(signWith), parseResult.GetValue(corePath), parseResult.GetValue(claudeDir), parseResult.GetValue(coreRemote), parseResult.GetValue(instancePath)),
             ct));
         return command;
     }
@@ -73,7 +74,10 @@ internal static class SetupCommand
             SetupPaths.ResolveClaudeDir(options.ClaudeDir, variables),
             SetupPaths.ResolveUserProfile(variables),
             SetupPaths.ResolveLocalAppData(variables),
-            TimeProvider.System.GetUtcNow());
+            TimeProvider.System.GetUtcNow())
+        {
+            InstancePath = options.InstancePath,
+        };
 
         // The tools (process runner, the git isolation hook of the harness) and, once node.json is complete, the node's services for its store.
         var toolServices = new ServiceCollection().AddProcessRunner();
@@ -105,5 +109,5 @@ internal static class SetupCommand
         return SetupExit.Usage;
     }
 
-    private sealed record Options(string? Config, string Tenant, string Machine, string? SignWith, string? CorePath, string? ClaudeDir, string? CoreRemote);
+    private sealed record Options(string? Config, string Tenant, string Machine, string? SignWith, string? CorePath, string? ClaudeDir, string? CoreRemote, string? InstancePath);
 }

@@ -16,7 +16,8 @@
 #   5. pre-flight: git, the checkout and its tenants\<tenant> folder;
 #   6. zyggy setup (deliverable 42): completes node.json (claude.path, signWith; backup first), clones or fast-forwards
 #      zyggy-core at -CorePath, wires the user-scope Claude Code settings and the remember/archive/bus/discover skills, names every missing
-#      secret with the command that sets it and a spike file store (rotate-hmac.md step 0); exit 3 or 4 stops here;
+#      secret with the command that sets it and a spike file store (rotate-hmac.md step 0); with -InstancePath (the work laptop,
+#      deliverable 58) also copies the instance's work-boundary.json to the node directory for the outlook tools; exit 3 or 4 stops here;
 #   7. pre-flight: claude.path;
 #   8. registers or updates the per-user logon task zyggy-node (interactive logon type, limited run level, hidden, restart on failure);
 #   9. starts the task, prints the first line of zyggy status and the reopen line; a setup exit 6 then ends the run with exit 1.
@@ -28,6 +29,7 @@ param(
     [string] $SignWith,
     [string] $BusLocalPath = 'C:\agents\bus',
     [string] $CorePath = 'C:\agents\zyggy-core',
+    [string] $InstancePath,
     [string] $Source,
     [string] $NodeJson,
     [switch] $Uninstall
@@ -270,6 +272,10 @@ Step "checkout: $BusLocalPath holds tenants\$Tenant"
 $setupArgs = @('setup', '--config', $NodeJson, '--tenant', $Tenant, '--machine', $Machine, '--core-path', $CorePath)
 if (-not [string]::IsNullOrWhiteSpace($SignWith)) {
     $setupArgs += @('--sign-with', $SignWith)
+}
+# Deliverable 58 (work laptop only): the instance checkout whose work-boundary.json the outlook tools read, copied by setup.
+if (-not [string]::IsNullOrWhiteSpace($InstancePath)) {
+    $setupArgs += @('--instance-path', $InstancePath)
 }
 $setupOutput = Invoke-Native $zyggyExe $setupArgs
 $setupExit = $LASTEXITCODE

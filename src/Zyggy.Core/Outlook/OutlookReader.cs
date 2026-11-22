@@ -43,7 +43,8 @@ internal sealed record OutlookFolderCount(string Folder, int Count);
 /// <typeparam name="T">The value type.</typeparam>
 /// <param name="Value">The value when not refused.</param>
 /// <param name="Refusal">The refusal, or <see langword="null"/>.</param>
-internal sealed record OutlookResult<T>(T? Value, OutlookRefusal? Refusal)
+/// <param name="Detail">For <see cref="OutlookRefusal.OutlookNotAvailable"/>: the short reason Outlook gave (never mail content).</param>
+internal sealed record OutlookResult<T>(T? Value, OutlookRefusal? Refusal, string? Detail = null)
     where T : class
 {
     /// <summary>Gets the refusal as the tools print it (<c>policy not confirmed</c>, …), or <see langword="null"/>.</summary>
@@ -191,9 +192,9 @@ internal sealed class OutlookReader(IOutlookAccess access, OutlookPolicyDecision
         {
             return read();
         }
-        catch (OutlookUnavailableException)
+        catch (OutlookUnavailableException ex)
         {
-            return Refused<T>(OutlookRefusal.OutlookNotAvailable);
+            return new OutlookResult<T>(null, OutlookRefusal.OutlookNotAvailable, ex.Message);
         }
     }
 

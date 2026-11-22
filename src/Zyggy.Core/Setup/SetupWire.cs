@@ -8,6 +8,7 @@ internal static class SetupWire
     public static string ItemWords(SetupItem item, KeyId? signWith) => item switch
     {
         SetupItem.NodeJson => "node.json",
+        SetupItem.WorkBoundary => "work-boundary",
         SetupItem.ZyggyCore => "zyggy-core",
         SetupItem.SettingsEnv or SetupItem.SettingsDeny => "settings",
         SetupItem.SkillRemember => "skill remember",

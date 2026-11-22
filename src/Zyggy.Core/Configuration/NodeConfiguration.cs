@@ -68,6 +68,13 @@ public sealed record NodeConfiguration(
     /// </summary>
     public int FetchMaxBytes { get; init; } = Policy.NodePolicy.DefaultFetchMaxBytes;
 
+    /// <summary>
+    /// Gets the <c>outlook</c> object of <c>node.json</c> (spec 58 Configuration), kept as JSON for the outlook tools of the work laptop
+    /// (<c>Outlook.OutlookSettings</c>, <c>Outlook.OutlookActionSettings</c>); <see langword="null"/> when absent or not an object. The node
+    /// service does not read it.
+    /// </summary>
+    internal System.Text.Json.JsonElement? Outlook { get; init; }
+
     /// <summary>Gets <see cref="NodeDir"/> or, when it is <see langword="null"/>, the per-OS default (<c>%LOCALAPPDATA%\zyggy</c>, <c>~/.local/share/zyggy</c>) — the one place that rule lives (spec 07).</summary>
     public string EffectiveNodeDir => NodeDir ?? Jobs.TranscriptPaths.DefaultNodeDir();
 }

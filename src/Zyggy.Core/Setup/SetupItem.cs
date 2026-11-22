@@ -6,6 +6,9 @@ public enum SetupItem
     /// <summary><c>node.json</c>: <c>claude.path</c> and <c>signWith</c> completed backup-first.</summary>
     NodeJson,
 
+    /// <summary>The copy of the instance's <c>work-boundary.json</c> in the node directory (spec 58 D-Q7); printed only with <c>--instance-path</c>.</summary>
+    WorkBoundary,
+
     /// <summary>The <c>zyggy-core</c> checkout: cloned or fast-forwarded on <c>main</c>.</summary>
     ZyggyCore,
 

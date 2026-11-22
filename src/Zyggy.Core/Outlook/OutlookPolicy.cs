@@ -107,6 +107,21 @@ internal sealed record OutlookPolicyDecision(OutlookPolicyRecord? Record, Outloo
 /// </summary>
 internal static class OutlookPolicy
 {
+    /// <summary>The file name of the instance record and of its copy on the laptop.</summary>
+    public const string WorkBoundaryFileName = "work-boundary.json";
+
+    /// <summary>
+    /// Returns where the laptop keeps its copy of <c>work-boundary.json</c> (spec 58 D-Q7): in the node directory, beside the runs and
+    /// logs, written by <c>zyggy setup --instance-path</c> and read by every outlook tool.
+    /// </summary>
+    /// <param name="nodeDir">The node directory (<c>nodeDir</c>, or its per-OS default).</param>
+    /// <returns>The path of the copy.</returns>
+    public static string CopyPath(string nodeDir)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(nodeDir);
+        return Path.GetFullPath(Path.Combine(nodeDir, WorkBoundaryFileName));
+    }
+
     /// <summary>Evaluates the policy.</summary>
     /// <param name="workBoundaryJson">The text of the laptop's copy of <c>work-boundary.json</c>, or <see langword="null"/> when there is no copy.</param>
     /// <param name="settings">The <c>outlook</c> section of <c>node.json</c>.</param>
