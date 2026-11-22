@@ -16,7 +16,7 @@ internal sealed record SettingsLayer(string Source, string? Text, bool Unreadabl
 /// else that a deny rule does not take back. It refuses on a file it cannot read (fail closed).
 /// </summary>
 /// <remarks>
-/// Rules that stay allowed: <c>Read</c>, <c>Grep</c>, <c>Glob</c> (bare or with a path: Claude Code never prompts for them anyway), and
+/// Rules that stay allowed: <c>Read</c> (bare or with a path; verify 01M81Z8AHR6ZWCDWQS92TYSA54: Grep and Glob stay on the prompt), and
 /// <c>Bash(zyggy outlook &lt;read verb&gt;)</c>, with <c>zyggy.exe</c>, a trailing <c> *</c> or <c>:*</c>, no shell metacharacter. An allow
 /// rule is taken back by a deny rule written the same or by a bare deny of its tool (deny wins in Claude Code). What the guard cannot
 /// see — a <c>--allowedTools</c> flag, an older client without <c>permission_mode</c> (refused), another hook that allows — is the
@@ -24,7 +24,7 @@ internal sealed record SettingsLayer(string Source, string? Text, bool Unreadabl
 /// </remarks>
 internal static partial class OutlookSessionSettings
 {
-    private static readonly string[] FileReads = ["Read", "Grep", "Glob"];
+    private static readonly string[] FileReads = ["Read"];
 
     /// <summary>Why the session may not send or move, or <see langword="null"/>.</summary>
     /// <param name="permissionMode">The hook input's <c>permission_mode</c>.</param>

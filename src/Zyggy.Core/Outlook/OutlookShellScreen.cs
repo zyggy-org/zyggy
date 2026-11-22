@@ -44,10 +44,11 @@ internal static partial class OutlookShellScreen
 
         // Verify 01M81XMXM722ESMJ8M0Y6VBP6N: a path that leads into the state folder under another spelling (.., \\?\, a share, an 8.3
         // name, a junction, a link), compared as the full path the file system opens.
+        // Verify 01M81Z8AHR6ZWCDWQS92TYSA54: a glob's fixed part that is the state folder or any parent of it can reach it.
         if (resolve is not null)
         {
-            string resolvedState = resolve(stateDirectory);
-            if (PathTokens(decoded).Select(resolve).Any(p => OutlookPaths.IsUnder(p, resolvedState) || OutlookPaths.IsUnder(p, stateDirectory)))
+            string[] states = [resolve(stateDirectory), stateDirectory];
+            if (PathTokens(decoded).Any(t => t.Globbed ? Reaches(resolve(t.Path), states) : states.Any(s => OutlookPaths.IsUnder(resolve(t.Path), s))))
             {
                 return NamesState;
             }
@@ -102,29 +103,111 @@ internal static partial class OutlookShellScreen
         return OutlookPaths.IsUnder(resolved, resolve(stateDirectory)) || OutlookPaths.IsUnder(resolved, stateDirectory) ? NamesState : null;
     }
 
-    // The words of a command that name a path (a separator, ~, . or ..), each cut before its first glob character.
-    private static IEnumerable<string> PathTokens(string decoded)
+    /// <summary>
+    /// Screens a search (Grep, Glob; verify 01M81Z8AHR6ZWCDWQS92TYSA54): its root may not be the state folder, inside it or any parent of
+    /// it, and each glob (Grep's <c>glob</c>, Glob's <c>pattern</c>) is read as a path from that root, its fixed part checked the same way.
+    /// </summary>
+    /// <param name="root">The folder the search starts in (its <c>path</c>, else the session's directory).</param>
+    /// <param name="globs">The globs the search matches files with.</param>
+    /// <param name="stateDirectory">The laptop's outlook state directory.</param>
+    /// <param name="resolve">Makes a full path (see <see cref="OutlookPaths.Resolve"/>); <see langword="null"/> compares as written.</param>
+    /// <returns>Why the call is refused, or <see langword="null"/>.</returns>
+    public static string? CheckSearch(string root, IReadOnlyList<string> globs, string stateDirectory, Func<string, string>? resolve = null)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        ArgumentNullException.ThrowIfNull(globs);
+        ArgumentNullException.ThrowIfNull(stateDirectory);
+        resolve ??= path => path;
+        string[] states = [resolve(stateDirectory), stateDirectory];
+        if (Reaches(resolve(Lexical(root)), states))
+        {
+            return NamesState;
+        }
+
+        foreach (string glob in globs)
+        {
+            string form = PathForm(glob);
+            if (StateNamed().IsMatch(form) || NearState(form))
+            {
+                return NamesState;
+            }
+
+            var (fixedPart, globbed) = FixedPart(glob);
+            string full = resolve(Lexical(IsRooted(fixedPart) ? fixedPart : root.TrimEnd('/', '\\') + "/" + fixedPart));
+            if (globbed ? Reaches(full, states) : states.Any(s => OutlookPaths.IsUnder(full, s)))
+            {
+                return NamesState;
+            }
+        }
+
+        return null;
+    }
+
+    // Whether a path is a state folder, inside it, or any parent of it (a file-system root included).
+    private static bool Reaches(string path, string[] states) =>
+        path.Replace('\\', '/').TrimEnd('/').Length == 0 || states.Any(s => OutlookPaths.IsUnder(path, s) || OutlookPaths.IsUnder(s, path));
+
+    // The part of a path before its first glob character, cut after the last separator before it ("." when there is none).
+    private static (string Path, bool Globbed) FixedPart(string token)
+    {
+        int glob = token.IndexOfAny(['*', '?', '[', '{']);
+        if (glob < 0)
+        {
+            return (token, false);
+        }
+
+        int separator = token.LastIndexOfAny(['/', '\\'], glob);
+        return (separator < 0 ? "." : token[..(separator + 1)], true);
+    }
+
+    private static bool IsRooted(string path) =>
+        path.StartsWith('/') || path.StartsWith('\\') || path.StartsWith('~') || path.StartsWith('$') || path.StartsWith('%')
+        || (path.Length >= 2 && char.IsAsciiLetter(path[0]) && path[1] == ':');
+
+    // "." and ".." segments taken out as written (the resolver does this for a real path; a fake one in a test may not).
+    private static string Lexical(string path)
+    {
+        string p = path.Replace('\\', '/');
+        string[] segments = p.Split('/');
+        if (!segments.Any(s => s is "." or ".."))
+        {
+            return path;
+        }
+
+        var kept = new List<string>();
+        foreach (string segment in segments.Skip(1))
+        {
+            if (segment is "" or ".")
+            {
+                continue;
+            }
+
+            if (segment == ".." && kept.Count > 0 && kept[^1] != "..")
+            {
+                kept.RemoveAt(kept.Count - 1);
+                continue;
+            }
+
+            kept.Add(segment);
+        }
+
+        string first = segments[0] is "." ? "." : segments[0];
+        return first == ".." ? "../" + string.Join('/', kept) : first + "/" + string.Join('/', kept);
+    }
+
+    // The words of a command that name a path (a separator, ~, . or ..) or hold a glob, each glob cut to its fixed part.
+    private static IEnumerable<(string Path, bool Globbed)> PathTokens(string decoded)
     {
         string plain = string.Concat(decoded.Where(c => c is not ('\'' or '"' or '`' or '^')));
         foreach (string token in Separators().Split(plain))
         {
-            if (!(token.Contains('/', StringComparison.Ordinal) || token.Contains('\\', StringComparison.Ordinal) || token.StartsWith('~') || token is "." or ".."))
+            bool globbed = token.IndexOfAny(['*', '?', '[']) >= 0;
+            if (token.Length == 0 || !(globbed || token.Contains('/', StringComparison.Ordinal) || token.Contains('\\', StringComparison.Ordinal) || token.StartsWith('~') || token is "." or ".."))
             {
                 continue;
             }
 
-            int glob = token.IndexOfAny(['*', '?', '[']);
-            if (glob < 0)
-            {
-                yield return token;
-                continue;
-            }
-
-            int separator = token.LastIndexOfAny(['/', '\\'], glob);
-            if (separator > 0)
-            {
-                yield return token[..separator];
-            }
+            yield return FixedPart(token);
         }
     }
 

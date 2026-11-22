@@ -68,8 +68,9 @@ else). Commit it with that project, or write it by hand there:
 
 Claude Code adds the allow rules of every settings file the session reads: `%USERPROFILE%\.claude\settings.json` (or
 `%CLAUDE_CONFIG_DIR%\settings.json`), the project's `.claude\settings.json` and `.claude\settings.local.json`, and the managed file
-(`%ProgramFiles%\ClaudeCode\managed-settings.json`). For the guarantee, none of them may allow anything beyond `Read`, `Grep`,
-`Glob` and the read verbs above, unless the project's `deny` takes it back (deny wins). Check them once:
+(`%ProgramFiles%\ClaudeCode\managed-settings.json`). For the guarantee, none of them may allow anything beyond `Read` and the read
+verbs above, unless the project's `deny` takes it back (deny wins). `Grep` and `Glob` stay on the prompt (verify
+01M81Z8AHR6ZWCDWQS92TYSA54). Check them once:
 
 ```powershell
 Get-Content "$env:USERPROFILE\.claude\settings.json"
@@ -85,7 +86,7 @@ Before it passes a send or move to the prompt, `zyggy outlook guard` refuses it 
 
 - the hook's `permission_mode` is not `default` (`acceptEdits`, `bypassPermissions`, `dontAsk`, `plan`, or missing in an older
   client): `the session's permission mode is …`;
-- a settings file above auto-allows anything beyond `Read`/`Grep`/`Glob` (bare or with a path) and
+- a settings file above auto-allows anything beyond `Read` (bare or with a path; `Grep` and `Glob` count) and
   `Bash(zyggy outlook <read verb>)`, `Bash(zyggy outlook <read verb> *)`, `Bash(zyggy outlook <read verb>:*)` (also `zyggy.exe`),
   and no deny rule written the same, or a bare deny of its tool, takes it back: `<file> auto-allows <rule> (…)`. Bare `Bash`,
   `Bash(*)`, `PowerShell`, `Write`, `Edit`, any MCP tool, `WebFetch`, `Bash(git *)`, `Bash(zyggy outlook *)` all count;
@@ -96,6 +97,9 @@ It reads the project files of `CLAUDE_PROJECT_DIR` and of the hook's `cwd`. Read
 Every other tool call on the work laptop goes through the screen as before, now with full paths: a path in a command or in
 `file_path`/`path`/`notebook_path` is resolved (`~` and environment variables, `\\?\`/`\\.\`, `\\<host>\<drive>$\…`, `..`/`.`, then
 the file system's own final path — 8.3 names, junctions, symbolic links) and refused when it lies in the outlook state folder; a
+glob in a command is refused when its fixed part (up to the folder before the first `*`, `?`, `[`) is the state folder, inside it or
+any parent of it; a `Grep` or `Glob` is refused when its root (`path`, else the session's folder) is the state folder or any parent
+of it, or its glob (`glob`, `pattern`) read as a path from that root can reach it (verify 01M81Z8AHR6ZWCDWQS92TYSA54); a
 pipe or redirect into a shell or interpreter (`| bash`, `| pwsh`, `| python`, `| iex`, `bash < file`, `python3 <<EOF`,
 `bash <(…)`) is refused.
 

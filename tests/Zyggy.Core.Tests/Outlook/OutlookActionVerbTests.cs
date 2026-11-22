@@ -274,6 +274,43 @@ public sealed class OutlookActionVerbTests : IDisposable
         HookOutput(console.Stdout).Decision.Should().Be("deny");
     }
 
+    // Verify 01M81Z8AHR6ZWCDWQS92TYSA54: a search rooted at the state folder or any parent of it reaches the pass file and the key;
+    // Grep's glob and Glob's pattern are screened as paths from that root.
+    [Theory]
+    [InlineData("Glob", """{ "pattern": "**/*.key", "path": "{node}" }""", "{project}")]
+    [InlineData("Grep", """{ "pattern": "nonce", "path": "{node}/work" }""", "{project}")]
+    [InlineData("Grep", """{ "pattern": "nonce" }""", "{node}")]
+    [InlineData("Glob", """{ "pattern": "**/*" }""", "{node}")]
+    [InlineData("Glob", """{ "pattern": "{node}/*/*/*/*" }""", "{project}")]
+    [InlineData("Grep", """{ "pattern": "nonce", "glob": "../outlook/*" }""", "{brief}")]
+    [InlineData("Glob", """{ "pattern": "../*/*" }""", "{brief}")]
+    public async Task Guard_WorkMachine_SearchReachingTheStateFolder_Denied(string tool, string input, string cwd)
+    {
+        // Act
+        var (_, console) = await GuardInputAsync(tool, JsonNode.Parse(Placeholders(input))!.AsObject(), Placeholders(cwd));
+
+        // Assert
+        HookOutput(console.Stdout).Decision.Should().Be("deny");
+    }
+
+    [Theory]
+    [InlineData("Glob", """{ "pattern": "**/*.cs" }""")]
+    [InlineData("Grep", """{ "pattern": "nonce", "path": "src", "glob": "*.cs" }""")]
+    [InlineData("Grep", """{ "pattern": "nonce", "glob": "**/*.md" }""")]
+    public async Task Guard_WorkMachine_SearchElsewhere_Silent(string tool, string input)
+    {
+        // Act
+        var (_, console) = await GuardInputAsync(tool, JsonNode.Parse(Placeholders(input))!.AsObject(), Placeholders("{project}"));
+
+        // Assert
+        console.Stdout.Should().BeEmpty();
+    }
+
+    private string Placeholders(string text) => text
+        .Replace("{node}", NodeDir.Replace('\\', '/'), StringComparison.Ordinal)
+        .Replace("{project}", Directory.CreateDirectory(Path.Combine(_root, "project")).FullName.Replace('\\', '/'), StringComparison.Ordinal)
+        .Replace("{brief}", Directory.CreateDirectory(Path.Combine(NodeDir, "work", "acme", "brief")).FullName.Replace('\\', '/'), StringComparison.Ordinal);
+
     [Fact]
     public async Task Guard_WorkMachine_ScriptFileRunningOutlook_Denied()
     {

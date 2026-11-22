@@ -248,6 +248,18 @@ internal sealed class OutlookActions(IReadOnlyDictionary<string, string?> enviro
             }
         }
 
+        // A search (verify 01M81Z8AHR6ZWCDWQS92TYSA54): its root (path, else the session's directory) and its glob, read as paths.
+        string tool = hook.GetProperty("tool_name").GetString()!;
+        if (tool is "Grep" or "Glob" && toolInput.ValueKind == JsonValueKind.Object)
+        {
+            string root = toolInput.TryGetProperty("path", out JsonElement r) && r.ValueKind == JsonValueKind.String && r.GetString() is { Length: > 0 } given ? given : cwd;
+            string[] globs = toolInput.TryGetProperty(tool == "Glob" ? "pattern" : "glob", out JsonElement g) && g.ValueKind == JsonValueKind.String ? [g.GetString()!] : [];
+            if (OutlookShellScreen.CheckSearch(root, globs, stateDirectory, resolve) is { } searchProblem)
+            {
+                return searchProblem;
+            }
+        }
+
         return OutlookShellScreen.Check(command, stateDirectory, path => ReadScript(cwd, path), resolve);
     }
 

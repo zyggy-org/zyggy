@@ -193,13 +193,62 @@ public sealed class OutlookShellScreenTests
         problem.Should().NotBeNull();
     }
 
+    // Verify 01M81Z8AHR6ZWCDWQS92TYSA54: a glob is not cut at its parent folder and let through; one whose fixed part is the state
+    // folder, inside it or any parent of it can reach the pass file and the key.
+    [Theory]
+    [InlineData("cat C:/Users/me/AppData/Local/*/*/*/*/*/p*l")]
+    [InlineData("grep -r nonce C:/Users/me/AppData/*/*.jsonl")]
+    [InlineData("cp C:\\Users\\ME~1\\AppData\\Local\\zyggy\\node\\w*\\a*\\o*\\*.jsonl .")]
+    [InlineData("cat C:/*/*/*/*/*/*/*/*/*/p?nding.jsonl")]
+    [InlineData("cat /*/*.jsonl")]
+    public void Check_GlobThatCanReachTheStateFolder_Refused(string command)
+    {
+        // Act
+        string? problem = OutlookShellScreen.Check(command, State, Read, Resolve);
+
+        // Assert
+        problem.Should().NotBeNull();
+    }
+
     [Theory]
     [InlineData("cat C:/tmp/k/notes.txt")]
     [InlineData("cat C:/Users/ME~1/AppData/Local/zyggy/node/work/acme/brief.md")]
+    [InlineData("ls C:/source/zyggy/src/*.cs")]
+    [InlineData("cat src/*.cs")]
+    [InlineData("dotnet test --filter FullyQualifiedName~Screen*")]
     public void Check_PathResolvingElsewhere_Passes(string command)
     {
         // Act
         string? problem = OutlookShellScreen.Check(command, State, Read, Resolve);
+
+        // Assert
+        problem.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("C:/Users/me/AppData/Local/zyggy/node", null)]
+    [InlineData("C:/", null)]
+    [InlineData("C:/source/zyggy", "C:/Users/me/AppData/Local/zyggy/node/*/*/*/*")]
+    [InlineData("C:/source/zyggy", "../../Users/me/AppData/**")]
+    [InlineData("C:/source/zyggy", "**/approval*.key")]
+    [InlineData("C:/tmp/j", "*.txt")]
+    public void CheckSearch_ReachingTheStateFolder_Refused(string root, string? glob)
+    {
+        // Act
+        string? problem = OutlookShellScreen.CheckSearch(root, glob is null ? [] : [glob], State, Resolve);
+
+        // Assert
+        problem.Should().NotBeNull();
+    }
+
+    [Theory]
+    [InlineData("C:/source/zyggy", null)]
+    [InlineData("C:/source/zyggy", "**/*.cs")]
+    [InlineData("C:/Users/me/AppData/Local/zyggy/node/work/acme/brief", "*.md")]
+    public void CheckSearch_Elsewhere_Passes(string root, string? glob)
+    {
+        // Act
+        string? problem = OutlookShellScreen.CheckSearch(root, glob is null ? [] : [glob], State, Resolve);
 
         // Assert
         problem.Should().BeNull();

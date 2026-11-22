@@ -65,6 +65,10 @@ public sealed class OutlookSessionSettingsTests
     [InlineData("Bash(zyggy outlook send *)")]
     [InlineData("Bash(zyggy outlook list; bash x)")]
     [InlineData("Bash(python3 *)")]
+    [InlineData("Grep")]
+    [InlineData("Glob")]
+    [InlineData("Grep(src/**)")]
+    [InlineData("Glob(**)")]
     public void Problem_AutoAllowedBeyondTheReads_Refused(string rule)
     {
         // Arrange
