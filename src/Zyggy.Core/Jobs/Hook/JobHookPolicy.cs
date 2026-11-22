@@ -49,6 +49,13 @@ internal sealed class JobHookPolicy
         var command = shell ? Text(input, "command") ?? string.Empty : string.Empty;
         var path = PathOf(tool, input);
 
+        // Spec 58 slice 7 (AC-11): a send or a move of work mail never runs in a job, whatever the job's allowed_tools say, however
+        // the command is quoted or what it does to its environment first. The outlook tools refuse it themselves too.
+        if (shell && Outlook.OutlookShellCall.ActionNamed(command) is not null)
+        {
+            return HookDecision.Deny(HookDecision.OutlookActionRule, command);
+        }
+
         // A pattern rule vouches only for a simple command; one that is not simple is matched, and scanned, as a whole.
         var notSimple = shell ? ShellCommand.WhyNotSimple(command, ShellCommand.DialectOf(tool)) : null;
         IReadOnlyList<string> parts = !shell ? [] : notSimple is null ? ShellCommand.Parts(command) : [command];

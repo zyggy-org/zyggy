@@ -13,7 +13,7 @@ using ContextRequest = Zyggy.Core.Bus.ContextRequest;
 namespace Zyggy.Cli.Commands;
 
 /// <summary>
-/// <c>zyggy outlook policy | count | list | read | brief | brief-done | drafts | share</c> (spec 58 slices 2–4): the work mailbox's tools
+/// <c>zyggy outlook policy | count | list | read | brief | brief-done | drafts | share | send | move | guard | settle</c> (spec 58 slices 2–7): the work mailbox's tools
 /// on the work laptop. Argument parsing, the policy check, the reads and the sensitive-data filter are Core's <see cref="OutlookVerbHost"/>;
 /// this class gives it the console, the context path to Central for <c>share</c> (the <c>zyggy context</c> path: signed context envelope,
 /// secret patterns, bus checkout) and, in tests, the Outlook access and clock the service hook registers.
@@ -22,7 +22,7 @@ internal static class OutlookCommand
 {
     /// <summary>The <c>--help</c> entry; <see cref="RunAsync"/> runs the verb with its own parser.</summary>
     public static Command Create() =>
-        new("outlook", "The work mailbox on the work laptop, read through classic Outlook (zyggy outlook policy | count | list | read | brief | brief-done | drafts | share ...); refuses without the policy record; never saves anything in Outlook; share sends only what passes the sensitive-data filter.");
+        new("outlook", "The work mailbox on the work laptop, read through classic Outlook (zyggy outlook policy | count | list | read | brief | brief-done | drafts | share | send | move | guard | settle ...); refuses without the policy record; never saves anything in Outlook; share sends only what passes the sensitive-data filter; send and move run only in an attended session, through the guard hook and one permission prompt each.");
 
     /// <summary>Runs the verb with the arguments after <c>outlook</c>.</summary>
     public static async Task<int> RunAsync(IReadOnlyList<string> args, CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure, CancellationToken ct)

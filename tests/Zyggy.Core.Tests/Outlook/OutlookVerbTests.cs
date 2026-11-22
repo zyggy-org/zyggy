@@ -455,5 +455,9 @@ public sealed class OutlookVerbTests : IDisposable
         public OutlookRawItem? Find(string storeId, string entryId) => throw new OutlookPromptTimeoutException(waited);
 
         public string ReadBody(string storeId, string entryId) => throw new OutlookPromptTimeoutException(waited);
+
+        public void Send(OutlookOutgoing message) => throw new OutlookPromptTimeoutException(waited);
+
+        public bool Move(string storeId, string entryId, string folder) => throw new OutlookPromptTimeoutException(waited);
     }
 }

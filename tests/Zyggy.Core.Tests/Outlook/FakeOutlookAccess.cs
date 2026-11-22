@@ -88,6 +88,47 @@ internal sealed class FakeOutlookAccess : IOutlookAccess
         return _bodies[(storeId, entryId)];
     }
 
+    /// <summary>Gets the messages sent, in order (spec 58 slice 7): what Outlook would have sent.</summary>
+    public List<OutlookOutgoing> Sent { get; } = [];
+
+    /// <summary>Gets or sets a value indicating whether a send or a move fails in Outlook (the item and folders stay as they are).</summary>
+    public bool ActionsFail { get; set; }
+
+    public void Send(OutlookOutgoing message)
+    {
+        Record("Send");
+        if (ActionsFail)
+        {
+            throw new OutlookUnavailableException("the send failed");
+        }
+
+        Sent.Add(message);
+    }
+
+    public bool Move(string storeId, string entryId, string folder)
+    {
+        Record($"Move {storeId} {entryId} {folder}");
+        if (ActionsFail)
+        {
+            throw new OutlookUnavailableException("the move failed");
+        }
+
+        var from = _folders.FirstOrDefault(f => f.Key.Store == storeId && f.Value.Exists(i => i.EntryId == entryId));
+        if (from.Value is null || !_folders.TryGetValue((storeId, folder), out var to))
+        {
+            return false;
+        }
+
+        var item = from.Value.Single(i => i.EntryId == entryId);
+        from.Value.Remove(item);
+        to.Add(item);
+        return true;
+    }
+
+    /// <summary>Returns the folder of the default store that holds <paramref name="entryId"/>, or <see langword="null"/>.</summary>
+    public string? FolderOf(string entryId) =>
+        _folders.Where(f => f.Key.Store == DefaultStore && f.Value.Exists(i => i.EntryId == entryId)).Select(f => f.Key.Folder).FirstOrDefault();
+
     private void Record(string call)
     {
         Calls.Add(call);

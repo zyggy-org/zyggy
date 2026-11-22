@@ -360,13 +360,13 @@ public sealed class OutlookBriefTests : IDisposable
     }
 
     [Fact]
-    public void Access_HasNoMemberThatSavesADraftOrWrites()
+    public void Access_HasNoMemberThatSavesADraftOrDeletes()
     {
         // Act
         var names = typeof(IOutlookAccess).GetMethods().Select(m => m.Name).ToList();
 
-        // Assert
-        names.Should().BeEquivalentTo(["DefaultStoreId", "Items", "Count", "Find", "ReadBody"]);
+        // Assert: the reads, and slice 7's two guarded actions — no draft save, no delete, no forward (AC-7, AC-13).
+        names.Should().BeEquivalentTo(["DefaultStoreId", "Items", "Count", "Find", "ReadBody", "Send", "Move"]);
     }
 
     [Theory]

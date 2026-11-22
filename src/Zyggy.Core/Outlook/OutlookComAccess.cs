@@ -61,6 +61,12 @@ internal sealed class OutlookAccessUnavailable(string reason) : IOutlookAccess
 
     /// <inheritdoc/>
     public string ReadBody(string storeId, string entryId) => throw new OutlookUnavailableException(reason);
+
+    /// <inheritdoc/>
+    public void Send(OutlookOutgoing message) => throw new OutlookUnavailableException(reason);
+
+    /// <inheritdoc/>
+    public bool Move(string storeId, string entryId, string folder) => throw new OutlookUnavailableException(reason);
 }
 
 /// <summary>
@@ -80,6 +86,9 @@ internal sealed class OutlookComAccess(TimeSpan callTimeout, Func<object> create
 
     private const string ProgId = "Outlook.Application";
     private const int OlMail = 43;
+    private const int OlMailItem = 0;
+    private const int OlFormatPlain = 1;
+    private const int OlDiscard = 1;
     private const string SmtpAddressProperty = "http://schemas.microsoft.com/mapi/proptag/0x5D01001F";
 
     /// <summary>Initializes a new instance of the <see cref="OutlookComAccess"/> class over the real Outlook, waiting <see cref="DefaultCallTimeout"/> per call.</summary>
@@ -144,6 +153,48 @@ internal sealed class OutlookComAccess(TimeSpan callTimeout, Func<object> create
     /// <inheritdoc/>
     public string ReadBody(string storeId, string entryId) => Invoke(app =>
         FindItem(app, storeId, entryId) is { } item ? (string?)item.Body ?? string.Empty : throw new OutlookUnavailableException("item not found"));
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// A new mail item from the default account (<c>SendUsingAccount</c> is never set), plain-text format before the body is set, To
+    /// and Cc only, every recipient resolved before the send (an unresolved one fails the send, nothing goes out). Outlook keeps the
+    /// copy in Sent Items. An unresolved recipient or any COM error is "Outlook not available"; never retried another way.
+    /// </remarks>
+    public void Send(OutlookOutgoing message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        Invoke(app =>
+        {
+            dynamic mail = app.CreateItem(OlMailItem);
+            mail.BodyFormat = OlFormatPlain;
+            mail.To = string.Join("; ", message.To);
+            mail.CC = string.Join("; ", message.Cc);
+            mail.Subject = message.Subject;
+            mail.Body = message.Body;
+            if (!(bool)mail.Recipients.ResolveAll())
+            {
+                mail.Close(OlDiscard);
+                throw new OutlookUnavailableException("a recipient could not be resolved; nothing was sent");
+            }
+
+            mail.Send();
+            return true;
+        });
+    }
+
+    /// <inheritdoc/>
+    public bool Move(string storeId, string entryId, string folder) => Invoke(app =>
+    {
+        dynamic? target = FindFolder(app, storeId, folder);
+        dynamic? item = target is null ? null : FindItem(app, storeId, entryId);
+        if (target is null || item is null)
+        {
+            return false;
+        }
+
+        item.Move(target);
+        return true;
+    });
 
     private static dynamic? FindItem(dynamic app, string storeId, string entryId)
     {

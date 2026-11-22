@@ -20,7 +20,8 @@ internal sealed record OutlookGuardDecision(string? Reason)
 /// The guard of the outlook actions (spec 58 slice 6, AC-10, AC-11): refuses every send and move outside an attended session, outside
 /// the policy record and <c>node.json</c>, or outside the send and move rules, before the permission prompt, with one log row per
 /// refusal. It never allows and never asks; a read it needs that fails makes it refuse (fail closed). A refusal never echoes a value
-/// of the request. A call that passes writes no row here: the row after the prompt and the action is the action tool's (slice 7).
+/// of the request. A call that passes writes no row here: the row after the prompt and the action is the action tool's
+/// (<see cref="OutlookActions"/>, slice 7), which runs it again just before it acts.
 /// </summary>
 /// <remarks>
 /// The order is the spec's action decision: attended run, then <c>outlook.enabled</c> and the policy record's scope, then
@@ -46,6 +47,9 @@ internal sealed partial class OutlookGuard(
 
     // Outlook's recoverable-items folders: a move there is a permanent delete.
     private static readonly string[] Recoverable = ["Recoverable Items", "Deletions", "Purges", "Versions", "DiscoveryHolds"];
+
+    // Folders a filing never targets: the send path and the drafts (with their subfolders).
+    private static readonly string[] NotFiling = ["Outbox", "Drafts"];
 
     /// <summary>Checks one send.</summary>
     /// <param name="request">The send.</param>
@@ -79,6 +83,22 @@ internal sealed partial class OutlookGuard(
             ? OutlookGuardDecision.Pass
             : Refuse(OutlookAction.Move, reason, request.Reference, [], subject: null, request.Destination);
     }
+
+    /// <summary>
+    /// Checks only what every call of <paramref name="action"/> shares — attended run, <c>outlook.enabled</c> and the record's scope,
+    /// <c>outlook.actions</c> — before the request itself is known (a send by draft number, spec 58 slice 7), with one row on refusal.
+    /// </summary>
+    /// <param name="action">The action.</param>
+    /// <returns>Pass, or the refusal.</returns>
+    public OutlookGuardDecision CheckRun(OutlookAction action) =>
+        Common(action) is { } reason ? Refuse(action, reason, reference: null, [], subject: null, destination: null) : OutlookGuardDecision.Pass;
+
+    /// <summary>Whether a text holds a character that can fake or hide a line where it is shown: a control or a bidi control.</summary>
+    /// <param name="text">The text.</param>
+    /// <returns>Whether it does.</returns>
+    public static bool HasControl(string text) => text.Any(IsHidingCharacter);
+
+    private static bool IsHidingCharacter(char c) => char.IsControl(c) || c is (>= '‪' and <= '‮') or (>= '⁦' and <= '⁩') or '‎' or '‏' or '؜';
 
     private static string Word(OutlookAction action) => action == OutlookAction.Send ? "send" : "move";
 
@@ -128,6 +148,14 @@ internal sealed partial class OutlookGuard(
         }
 
         var recipients = request.To.Concat(request.Cc).ToList();
+
+        // Slice 7: the prompt shows the message as text; a line break in a header, or a terminal or bidi control anywhere, could fake
+        // a line of it (another "To:"), or hide a part of the body.
+        if (recipients.Append(request.Subject).Any(HasControl) || request.Body.Any(c => c is not ('\r' or '\n' or '\t') && IsHidingCharacter(c)))
+        {
+            return "control characters in the message";
+        }
+
         if (recipients.Count == 0)
         {
             return "no recipient";
@@ -155,9 +183,15 @@ internal sealed partial class OutlookGuard(
             return "permanent delete not allowed";
         }
 
-        if (destination.Length == 0)
+        if (destination.Length == 0 || HasControl(destination))
         {
             return "folder not found";
+        }
+
+        // Slice 7: filing never puts a mail in the send path or among the drafts (no draft is saved in Outlook, AC-7).
+        if (NotFiling.Contains(destination.Split('/')[0], StringComparer.OrdinalIgnoreCase))
+        {
+            return "not a filing folder";
         }
 
         var wellKnown = AlwaysAllowed.Contains(destination, StringComparer.OrdinalIgnoreCase);

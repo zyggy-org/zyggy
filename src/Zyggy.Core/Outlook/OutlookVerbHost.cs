@@ -27,12 +27,15 @@ namespace Zyggy.Core.Outlook;
 /// Exit codes: 0 · 1 folder, item or draft not found · 2 usage · 3 configuration · 5 refused (<c>policy not confirmed</c>, <c>outlook not
 /// enabled</c>, a draft text with a link or an address) · 6 Outlook not available, or Outlook asked for access (its security prompt was
 /// not answered within the timeout). Reads are not actions (D-Q6): a bus job or an unattended run may call them.
+/// Slice 7 adds the actions — <c>send</c>, <c>move</c> and their hooks <c>guard</c> (PreToolUse) and <c>settle</c> (Stop) — in
+/// <see cref="OutlookActions"/>: attended sessions only, each through the guard and the owner's permission prompt, one log row each.
 /// </remarks>
 public sealed class OutlookVerbHost
 {
     private const string Prefix = "outlook: ";
     private const string Usage = " (usage: zyggy outlook policy | count [--folder <name>]... | list [--folder <name>] [--since <date>] [--max <n>] | read <reference>"
-        + " | brief [--since <date>] [--max <n>] | brief-done --until <date> [< drafts.json] | drafts [<n>] | share [< mails.json]; each [--config <node.json>])";
+        + " | brief [--since <date>] [--max <n>] | brief-done --until <date> [< drafts.json] | drafts [<n>] | share [< mails.json]; each [--config <node.json>]"
+        + " | send … | move … | guard | settle: attended only, see the README)";
     private const string ReadScope = "read";
 
     private static readonly TimeSpan DefaultSince = TimeSpan.FromDays(7);
@@ -95,6 +98,13 @@ public sealed class OutlookVerbHost
     {
         ArgumentNullException.ThrowIfNull(args);
         ArgumentNullException.ThrowIfNull(io);
+
+        // Spec 58 slice 7: the action tools and their two hooks, attended only, each through the guard.
+        if (args.Count > 0 && OutlookActions.Verbs.Contains(args[0]))
+        {
+            return await new OutlookActions(_environment, _clock, _access).RunAsync(args, io, cancellationToken).ConfigureAwait(false);
+        }
+
         Arguments? parsed = Arguments.Parse(args, _zone, out string? usageError);
         if (parsed is null)
         {

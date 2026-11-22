@@ -4,7 +4,7 @@ namespace Zyggy.Core.Jobs.Hook;
 /// The job hook's answer for one tool call (spec 15): allowed, or denied under one of four rules with a one-line detail.
 /// </summary>
 /// <param name="Allowed">Whether the call may run.</param>
-/// <param name="Rule">Empty when allowed; else <see cref="NotAllowedRule"/>, <see cref="WriteOutsideRule"/>, <see cref="NetworkRule"/> or <see cref="HookErrorRule"/>.</param>
+/// <param name="Rule">Empty when allowed; else <see cref="NotAllowedRule"/>, <see cref="WriteOutsideRule"/>, <see cref="NetworkRule"/>, <see cref="ReadOutsideRule"/>, <see cref="OutlookActionRule"/> or <see cref="HookErrorRule"/>.</param>
 /// <param name="Detail">The command or path the decision is about, one line, at most <see cref="MaxDetail"/> characters.</param>
 internal sealed record HookDecision(bool Allowed, string Rule, string Detail)
 {
@@ -18,6 +18,9 @@ internal sealed record HookDecision(bool Allowed, string Rule, string Detail)
     public const string ReadOutsideRule = "read outside the read root";
 
     public const string HookErrorRule = "hook error";
+
+    /// <summary>The rule of a shell command that names an outlook action (spec 58 slice 7, AC-11): never in a job, whatever the rules say.</summary>
+    public const string OutlookActionRule = "outlook action in a job";
 
     public const int MaxDetail = 120;
 

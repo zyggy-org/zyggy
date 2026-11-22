@@ -49,7 +49,28 @@ internal interface IOutlookAccess
     /// <param name="entryId">The item reference.</param>
     /// <returns>The plain-text body.</returns>
     string ReadBody(string storeId, string entryId);
+
+    /// <summary>
+    /// Sends one plain-text message from the profile's default account (spec 58 slice 7): To and Cc as given, no Bcc, no attachment,
+    /// no other account, sender or reply-to — the members exist only for what the guard passed. Sent Items keeps the copy.
+    /// </summary>
+    /// <param name="message">The message, exactly as the guard checked it and the prompt showed it.</param>
+    void Send(OutlookOutgoing message);
+
+    /// <summary>Moves one mail of <paramref name="storeId"/> to a folder of the same store (spec 58 slice 7); never deletes.</summary>
+    /// <param name="storeId">The store id (the default store).</param>
+    /// <param name="entryId">The item reference.</param>
+    /// <param name="folder">The destination folder, as for <see cref="Items"/>.</param>
+    /// <returns>Whether the mail was moved; <see langword="false"/> when the item or the folder is not in that store.</returns>
+    bool Move(string storeId, string entryId, string folder);
 }
+
+/// <summary>One plain-text message to send (spec 58 "Send"): nothing else a send could carry is representable.</summary>
+/// <param name="To">The To addresses.</param>
+/// <param name="Cc">The Cc addresses.</param>
+/// <param name="Subject">The subject.</param>
+/// <param name="Body">The whole plain-text body, the quoted history of a reply included.</param>
+internal sealed record OutlookOutgoing(IReadOnlyList<string> To, IReadOnlyList<string> Cc, string Subject, string Body);
 
 /// <summary>One mail item as Outlook gives it, before any rule is applied.</summary>
 /// <param name="EntryId">Outlook's entry id: the stable item reference.</param>
