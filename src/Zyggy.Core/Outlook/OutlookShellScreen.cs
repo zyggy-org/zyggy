@@ -8,8 +8,10 @@ namespace Zyggy.Core.Outlook;
 /// point 1, spec 58 slice 7). The guard reads a plain <c>zyggy outlook send|move …</c> call itself; this screen refuses what could get
 /// around that reading in one call: a command naming the pass file, its folder or the approval key; an outlook action that is not one
 /// plain call; <c>zyggy</c> run through a variable, substitution, escape, glob, alias or <c>eval</c>; an interpreter handed inline code
-/// naming Outlook; or a script file that runs Outlook (or that the guard cannot read). It refuses more than it must; a name built
-/// wholly at run time, or code that drives Outlook without naming it, is the residual risk of spec 58 Q24.
+/// naming Outlook; a pipe or redirect into a shell or interpreter; a path that resolves into the state folder (full paths, verify
+/// 01M81XMXM722ESMJ8M0Y6VBP6N); or a script file that runs Outlook (or that the guard cannot read). It refuses more than it must; a
+/// name built wholly at run time, or code that drives Outlook without naming it, is the residual risk of spec 58 Q24, which the
+/// session's settings keep on the owner's prompt (<see cref="OutlookSessionSettings"/>).
 /// </summary>
 internal static partial class OutlookShellScreen
 {
@@ -19,8 +21,9 @@ internal static partial class OutlookShellScreen
     /// <param name="command">The command text.</param>
     /// <param name="stateDirectory">The laptop's outlook state directory (the pass file and the approval keys).</param>
     /// <param name="readScript">Reads a script file named in the command, as written (relative to the session's directory); <see langword="null"/> when it cannot be read.</param>
+    /// <param name="resolve">Makes a full path of a path the command names (see <see cref="OutlookPaths.Resolve"/>); <see langword="null"/> compares as written.</param>
     /// <returns>Why the command is refused, or <see langword="null"/> when it passes.</returns>
-    public static string? Check(string command, string stateDirectory, Func<string, string?> readScript)
+    public static string? Check(string command, string stateDirectory, Func<string, string?> readScript, Func<string, string>? resolve = null)
     {
         ArgumentNullException.ThrowIfNull(command);
         ArgumentNullException.ThrowIfNull(stateDirectory);
@@ -37,6 +40,23 @@ internal static partial class OutlookShellScreen
         if (paths.Contains(PathForm(stateDirectory), StringComparison.Ordinal) || StateNamed().IsMatch(paths) || Tokens(paths).Any(NearState))
         {
             return NamesState;
+        }
+
+        // Verify 01M81XMXM722ESMJ8M0Y6VBP6N: a path that leads into the state folder under another spelling (.., \\?\, a share, an 8.3
+        // name, a junction, a link), compared as the full path the file system opens.
+        if (resolve is not null)
+        {
+            string resolvedState = resolve(stateDirectory);
+            if (PathTokens(decoded).Select(resolve).Any(p => OutlookPaths.IsUnder(p, resolvedState) || OutlookPaths.IsUnder(p, stateDirectory)))
+            {
+                return NamesState;
+            }
+        }
+
+        // A pipe or a redirect into a shell or an interpreter runs code that is not on the line.
+        if (PipedInterpreter().IsMatch(paths) || RedirectedInterpreter().IsMatch(paths))
+        {
+            return "a pipe or redirect into a shell or interpreter";
         }
 
         if (OutlookShellCall.MayWriteOutlook(command))
@@ -60,14 +80,52 @@ internal static partial class OutlookShellScreen
     /// <summary>Screens a path a tool reads or writes (<c>file_path</c>, <c>path</c>, <c>notebook_path</c>).</summary>
     /// <param name="path">The path.</param>
     /// <param name="stateDirectory">The laptop's outlook state directory.</param>
+    /// <param name="resolve">Makes a full path (see <see cref="OutlookPaths.Resolve"/>); <see langword="null"/> compares as written.</param>
     /// <returns>Why the call is refused, or <see langword="null"/>.</returns>
-    public static string? CheckPath(string path, string stateDirectory)
+    public static string? CheckPath(string path, string stateDirectory, Func<string, string>? resolve = null)
     {
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(stateDirectory);
         string value = PathForm(path).TrimEnd('/');
         string state = PathForm(stateDirectory).TrimEnd('/');
-        return value == state || value.StartsWith(state + "/", StringComparison.Ordinal) ? NamesState : null;
+        if (value == state || value.StartsWith(state + "/", StringComparison.Ordinal))
+        {
+            return NamesState;
+        }
+
+        if (resolve is null)
+        {
+            return null;
+        }
+
+        string resolved = resolve(path);
+        return OutlookPaths.IsUnder(resolved, resolve(stateDirectory)) || OutlookPaths.IsUnder(resolved, stateDirectory) ? NamesState : null;
+    }
+
+    // The words of a command that name a path (a separator, ~, . or ..), each cut before its first glob character.
+    private static IEnumerable<string> PathTokens(string decoded)
+    {
+        string plain = string.Concat(decoded.Where(c => c is not ('\'' or '"' or '`' or '^')));
+        foreach (string token in Separators().Split(plain))
+        {
+            if (!(token.Contains('/', StringComparison.Ordinal) || token.Contains('\\', StringComparison.Ordinal) || token.StartsWith('~') || token is "." or ".."))
+            {
+                continue;
+            }
+
+            int glob = token.IndexOfAny(['*', '?', '[']);
+            if (glob < 0)
+            {
+                yield return token;
+                continue;
+            }
+
+            int separator = token.LastIndexOfAny(['/', '\\'], glob);
+            if (separator > 0)
+            {
+                yield return token[..separator];
+            }
+        }
     }
 
     // Lowercase, quotes and carets gone, '$' gone (so $env:X and "$X" read as names), backslashes as '/', runs of '/' as one.
@@ -203,6 +261,17 @@ internal static partial class OutlookShellScreen
 
     [GeneratedRegex(@"(?:^|[\s;&|(/])(?:python[0-9.]*|py|node|deno|bun|perl|ruby|php|pwsh|powershell|cscript|wscript|mshta|osascript|bash|sh|zsh|cmd|csi)(?:\.exe)?(?=\s|$)", RegexOptions.CultureInvariant)]
     private static partial Regex Interpreter();
+
+    // In the path form (lowercase, quotes gone, '\' as '/'): '|' or '|&' (not '||'), optional runners and NAME=value words, then a shell
+    // or interpreter by name or path.
+    [GeneratedRegex(@"(?<!\|)\|&?(?!\|)\s*(?:(?:sudo|doas|env|exec|command|nohup|time|nice|xargs|stdbuf)(?:\s+-\S+|\s+[\w-]+=\S*)*\s+)*(?:[^\s|;&]*/)?" + Interpreters + @"(?:\.exe)?(?![\w.-])", RegexOptions.CultureInvariant)]
+    private static partial Regex PipedInterpreter();
+
+    // A shell or interpreter whose own segment holds a '<' (a file, a here-document, a here-string or a process substitution as input).
+    [GeneratedRegex(@"(?:^|[\s;&|(/])" + Interpreters + @"(?:\.exe)?(?![\w.-])[^;&|\n]*<", RegexOptions.CultureInvariant)]
+    private static partial Regex RedirectedInterpreter();
+
+    private const string Interpreters = @"(?:bash|sh|zsh|ksh|dash|fish|csh|tcsh|pwsh|powershell|cmd|python[0-9.]*|py|node|deno|bun|perl|ruby|php|lua|tclsh|osascript|cscript|wscript|mshta|csi|iex|invoke-expression)";
 
     [GeneratedRegex(@"\A(?:python[0-9.]*|py|node|deno|bun|perl|ruby|php|pwsh|powershell|cscript|wscript|bash|sh|zsh|ksh|dash|source|\.)(?:\.exe)?\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex InterpreterWord();

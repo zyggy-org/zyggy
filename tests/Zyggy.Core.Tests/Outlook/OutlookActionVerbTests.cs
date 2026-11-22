@@ -256,6 +256,24 @@ public sealed class OutlookActionVerbTests : IDisposable
         HookOutput(console.Stdout).Decision.Should().Be("deny");
     }
 
+    [Theory]
+    [InlineData("Read", "file_path", "../outlook/approval-2026-11-22.key")]
+    [InlineData("Write", "file_path", "./../outlook/./pending.jsonl")]
+    [InlineData("Glob", "path", "..\\outlook")]
+    [InlineData("Bash", "command", "cp -r ../outlook /tmp/x")]
+    public async Task Guard_WorkMachine_RelativePathIntoTheStateFolder_Denied(string tool, string property, string value)
+    {
+        // Arrange: the session sits next to the state folder (verify 01M81XMXM722ESMJ8M0Y6VBP6N): the guard compares full paths.
+        string cwd = Path.Combine(NodeDir, "work", "acme", "brief");
+        Directory.CreateDirectory(cwd);
+
+        // Act
+        var (_, console) = await GuardInputAsync(tool, new JsonObject { [property] = value }, cwd);
+
+        // Assert
+        HookOutput(console.Stdout).Decision.Should().Be("deny");
+    }
+
     [Fact]
     public async Task Guard_WorkMachine_ScriptFileRunningOutlook_Denied()
     {
@@ -308,6 +326,77 @@ public sealed class OutlookActionVerbTests : IDisposable
 
         // Assert
         (exit, console.Stderr.StartsWith("outlook-guard: ", StringComparison.Ordinal)).Should().Be((2, true));
+    }
+
+    // ---- the session's settings (spec 58 Q24): every tool beyond Read and the read verbs stays on the owner's prompt ----
+
+    [Fact]
+    public async Task Guard_RecommendedProjectSettings_Asks()
+    {
+        // Arrange
+        WriteSettings(Project, "settings.json", """{ "permissions": { "defaultMode": "default", "allow": ["Read", "Bash(zyggy outlook brief *)"], "deny": ["Write", "Edit", "NotebookEdit"] } }""");
+
+        // Act
+        var (_, console) = await GuardAsync(Command(Reply));
+
+        // Assert
+        HookOutput(console.Stdout).Decision.Should().Be("ask");
+    }
+
+    [Theory]
+    [InlineData("acceptEdits")]
+    [InlineData("bypassPermissions")]
+    public async Task Guard_SessionNotInDefaultMode_DeniedWithOneRow(string mode)
+    {
+        // Act
+        var (_, console) = await GuardAsync(Command(Reply), mode: mode);
+
+        // Assert
+        (HookOutput(console.Stdout).Decision, HookOutput(console.Stdout).Reason.Contains("permission mode", StringComparison.Ordinal), Outcomes(), _access.Sent.Count)
+            .Should().Be(("deny", true, "refused", 0));
+    }
+
+    [Theory]
+    [InlineData("home", "settings.json", "Bash")]
+    [InlineData("project", "settings.local.json", "PowerShell")]
+    [InlineData("project", "settings.json", "Write")]
+    [InlineData("home", "settings.json", "Edit")]
+    public async Task Guard_SettingsAutoAllowCode_MoveDenied(string where, string file, string rule)
+    {
+        // Arrange
+        WriteSettings(where == "home" ? Home : Project, file, "{ \"permissions\": { \"allow\": [\"" + rule + "\"] } }");
+
+        // Act
+        var (_, console) = await GuardAsync(Command("move", "m1", "--to", "Deleted Items"));
+
+        // Assert
+        (HookOutput(console.Stdout).Decision, HookOutput(console.Stdout).Reason.Contains(rule, StringComparison.Ordinal), Outcomes()).Should().Be(("deny", true, "refused"));
+    }
+
+    [Fact]
+    public async Task Guard_SettingsFileNotJson_Denied()
+    {
+        // Arrange
+        WriteSettings(Project, "settings.local.json", "{ not json");
+
+        // Act
+        var (_, console) = await GuardAsync(Command(Reply));
+
+        // Assert
+        HookOutput(console.Stdout).Decision.Should().Be("deny");
+    }
+
+    [Fact]
+    public async Task Guard_ReadVerbWithCodeAutoAllowed_StillSilent()
+    {
+        // Arrange: the settings check is for send and move; a read verb is not the guard's.
+        WriteSettings(Home, "settings.json", """{ "permissions": { "allow": ["Bash"] } }""");
+
+        // Act
+        var (exit, console) = await GuardAsync("zyggy outlook brief");
+
+        // Assert
+        (exit, console.Stdout).Should().Be((0, string.Empty));
     }
 
     // ---- send: only what the guard passed, exactly once, then one row (AC-12) ----
@@ -759,6 +848,17 @@ public sealed class OutlookActionVerbTests : IDisposable
 
     private string StateDir => Path.Combine(NodeDir, "work", "acme", "outlook");
 
+    // The session's home (user settings in .claude/settings.json) and its project folder (.claude/settings.json, settings.local.json).
+    private string Home => Path.Combine(_root, "home");
+
+    private string Project => Path.Combine(_root, "project");
+
+    private static void WriteSettings(string folder, string file, string json)
+    {
+        Directory.CreateDirectory(Path.Combine(folder, ".claude"));
+        File.WriteAllText(Path.Combine(folder, ".claude", file), json);
+    }
+
     private Task<(int Exit, VerbConsole Console)> GuardInputAsync(string tool, JsonObject input, string? cwd = null)
     {
         string hook = new JsonObject
@@ -766,6 +866,7 @@ public sealed class OutlookActionVerbTests : IDisposable
             ["session_id"] = "s1",
             ["hook_event_name"] = "PreToolUse",
             ["cwd"] = cwd ?? _root,
+            ["permission_mode"] = "default",
             ["tool_name"] = tool,
             ["tool_input"] = input,
             ["tool_use_id"] = "toolu_1",
@@ -773,12 +874,14 @@ public sealed class OutlookActionVerbTests : IDisposable
         return RunAsync(["guard"], stdin: hook);
     }
 
-    private Task<(int Exit, VerbConsole Console)> GuardAsync(string command, Dictionary<string, string?>? extra = null, string tool = "Bash")
+    private Task<(int Exit, VerbConsole Console)> GuardAsync(string command, Dictionary<string, string?>? extra = null, string tool = "Bash", string mode = "default")
     {
         string hook = new JsonObject
         {
             ["session_id"] = "s1",
             ["hook_event_name"] = "PreToolUse",
+            ["cwd"] = Project,
+            ["permission_mode"] = mode,
             ["tool_name"] = tool,
             ["tool_input"] = new JsonObject { ["command"] = command, ["description"] = "send the reply" },
             ["tool_use_id"] = "toolu_1",
@@ -804,7 +907,7 @@ public sealed class OutlookActionVerbTests : IDisposable
     private async Task<(int Exit, VerbConsole Console)> RunAsync(string[] args, Dictionary<string, string?>? extra = null, string? stdin = null)
     {
         var console = new VerbConsole(stdin);
-        var environment = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { ["LOCALAPPDATA"] = AppData, ["XDG_CONFIG_HOME"] = AppData };
+        var environment = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { ["LOCALAPPDATA"] = AppData, ["XDG_CONFIG_HOME"] = AppData, ["USERPROFILE"] = Home, ["HOME"] = Home };
         foreach (var (key, value) in extra ?? [])
         {
             environment[key] = value;

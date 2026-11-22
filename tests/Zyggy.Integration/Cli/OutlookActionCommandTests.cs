@@ -135,10 +135,13 @@ public sealed class OutlookActionCommandTests : IAsyncLifetime
 
     private static string Command(string[] args) => "zyggy outlook " + string.Join(' ', args.Select(a => "'" + a.Replace("'", "'\\''", StringComparison.Ordinal) + "'"));
 
-    private static string Hook(string command) => new JsonObject
+    // An attended session in the default permission mode, in a project folder without settings (spec 58 Q24).
+    private string Hook(string command) => new JsonObject
     {
         ["session_id"] = "s1",
         ["hook_event_name"] = "PreToolUse",
+        ["cwd"] = _appData,
+        ["permission_mode"] = "default",
         ["tool_name"] = "Bash",
         ["tool_input"] = new JsonObject { ["command"] = command },
     }.ToJsonString();
@@ -152,6 +155,8 @@ public sealed class OutlookActionCommandTests : IAsyncLifetime
         {
             ["LOCALAPPDATA"] = _appData,
             ["XDG_CONFIG_HOME"] = _appData,
+            ["USERPROFILE"] = _appData,
+            ["HOME"] = _appData,
         };
         return _harness.RunAsync(
             ["outlook", .. args],

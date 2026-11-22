@@ -202,6 +202,17 @@ internal sealed class OutlookActions(IReadOnlyDictionary<string, string?> enviro
                 return 0;
             }
 
+            // Spec 58 Q24: the session that sends or moves keeps every tool beyond Read and the read verbs on the owner's prompt — the
+            // default permission mode, and no settings file auto-allowing more. Otherwise a pass could be met by code that ran unasked.
+            JsonElement mode = hook.RootElement.TryGetProperty("permission_mode", out JsonElement m) ? m : default;
+            string? session = OutlookSessionSettings.Problem(mode.ValueKind == JsonValueKind.String ? mode.GetString() : null, SettingsLayers(hook.RootElement));
+            if (session is not null)
+            {
+                context.Log.Append(request!.Row(now, OutlookActionOutcome.Refused, session));
+                await io.Out.WriteAsync(HookOutput("deny", GuardPrefix + "refused: " + session)).ConfigureAwait(false);
+                return 0;
+            }
+
             // The pass's nonce: random, handed to Claude Code only inside the command it runs on Allow (updatedInput); the file keeps
             // its hash. The command was read as one plain call, so one more plain option at its end is still one plain call.
             string nonce = RandomNumberGenerator.GetHexString(64, lowercase: true);
@@ -226,18 +237,74 @@ internal sealed class OutlookActions(IReadOnlyDictionary<string, string?> enviro
     // The screen of one call that names no outlook action: its command, and the paths it reads or writes.
     private string? Screen(JsonElement hook, JsonElement toolInput, string command, string stateDirectory)
     {
+        string cwd = Cwd(hook);
+        Func<string, string> resolve = path => OutlookPaths.Resolve(path, cwd, environment);
         foreach (string property in (string[])["file_path", "path", "notebook_path"])
         {
             if (toolInput.ValueKind == JsonValueKind.Object && toolInput.TryGetProperty(property, out JsonElement p) && p.ValueKind == JsonValueKind.String
-                && OutlookShellScreen.CheckPath(p.GetString()!, stateDirectory) is { } problem)
+                && OutlookShellScreen.CheckPath(p.GetString()!, stateDirectory, resolve) is { } problem)
             {
                 return problem;
             }
         }
 
-        string cwd = hook.TryGetProperty("cwd", out JsonElement c) && c.ValueKind == JsonValueKind.String ? c.GetString()! : Directory.GetCurrentDirectory();
-        return OutlookShellScreen.Check(command, stateDirectory, path => ReadScript(cwd, path));
+        return OutlookShellScreen.Check(command, stateDirectory, path => ReadScript(cwd, path), resolve);
     }
+
+    private static string Cwd(JsonElement hook) =>
+        hook.TryGetProperty("cwd", out JsonElement c) && c.ValueKind == JsonValueKind.String ? c.GetString()! : Directory.GetCurrentDirectory();
+
+    // Every Claude Code settings file the session reads: the user's (CLAUDE_CONFIG_DIR or ~/.claude), the project's and its local file
+    // (CLAUDE_PROJECT_DIR and the session's directory), and the managed file. A file that exists but cannot be read is Unreadable.
+    private List<SettingsLayer> SettingsLayers(JsonElement hook)
+    {
+        var files = new List<string>();
+        string? home = Variable("USERPROFILE") ?? Variable("HOME");
+        if (Variable("CLAUDE_CONFIG_DIR") is { } configDirectory)
+        {
+            files.Add(Path.Join(configDirectory, "settings.json"));
+        }
+        else if (home is not null)
+        {
+            files.Add(Path.Join(home, ".claude", "settings.json"));
+        }
+        else
+        {
+            return [new SettingsLayer("the user settings (no home folder)", null, Unreadable: true)];
+        }
+
+        foreach (string project in new[] { Variable("CLAUDE_PROJECT_DIR"), Cwd(hook) }.OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            files.Add(Path.Join(project, ".claude", "settings.json"));
+            files.Add(Path.Join(project, ".claude", "settings.local.json"));
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            files.AddRange(new[] { Variable("ProgramFiles"), Variable("ProgramData") }.OfType<string>().Select(root => Path.Join(root, "ClaudeCode", "managed-settings.json")));
+        }
+        else
+        {
+            files.Add(OperatingSystem.IsMacOS() ? "/Library/Application Support/ClaudeCode/managed-settings.json" : "/etc/claude-code/managed-settings.json");
+        }
+
+        var layers = new List<SettingsLayer>();
+        foreach (string file in files)
+        {
+            try
+            {
+                layers.Add(new SettingsLayer(file, File.Exists(file) ? File.ReadAllText(file) : null));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                layers.Add(new SettingsLayer(file, null, Unreadable: true));
+            }
+        }
+
+        return layers;
+    }
+
+    private string? Variable(string name) => environment.GetValueOrDefault(name) is { Length: > 0 } value ? value : null;
 
     // A script named in a command, read as the shell would find it (relative to the session's directory, ~ for home); a file too
     // large to be a script reads as binary; one that cannot be read is null.
