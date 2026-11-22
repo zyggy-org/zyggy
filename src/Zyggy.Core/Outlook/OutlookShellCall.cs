@@ -109,7 +109,7 @@ internal sealed partial record OutlookShellCall(OutlookShellCallKind Kind, IRead
     }
 
     // Decodes the escapes bash ($'…', printf, echo -e) and PowerShell spell a character with.
-    private static string Decode(string command) => Escape().Replace(command, m =>
+    internal static string Decode(string command) => Escape().Replace(command, m =>
     {
         string hex = m.Groups["hex"].Success ? m.Groups["hex"].Value : string.Empty;
         int code = m.Groups["oct"].Success
@@ -127,7 +127,7 @@ internal sealed partial record OutlookShellCall(OutlookShellCallKind Kind, IRead
     // What builds a word at run time: expansions and substitutions ($, backtick, %VAR%), escapes, and the commands and operators
     // that decode, reverse or assemble text.
     [GeneratedRegex(@"[$`%*?]|\\[0-7xuUc]|\[char\]|-join|-replace|-f\s|\b(?:eval|iex|invoke-expression|base64|frombase64string|printf|xxd|rev|tr|sed|awk|perl|python3?|node)\b", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
-    private static partial Regex Built();
+    internal static partial Regex Built();
 
     private static OutlookShellCall Refused(string problem, string action) => new(OutlookShellCallKind.Refused, [], problem, action);
 

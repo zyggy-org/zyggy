@@ -98,4 +98,113 @@ public sealed class OutlookActionPendingTests : IDisposable
         // Assert
         winners.Should().AllSatisfy(w => w.Should().Be(1));
     }
+
+    // ---- authenticated pass lines (verify 01M81W8C4K81GE119A7WH3228D point 2) ----
+
+    [Fact]
+    public void Add_WritesAMacPerLine_UnderTheDaysKeyFile()
+    {
+        // Act
+        var pending = new OutlookActionPending(_root);
+        pending.Add(Key, Nonce, Row, T);
+
+        // Assert
+        string line = File.ReadAllLines(pending.FilePath).Single();
+        (System.Text.RegularExpressions.Regex.IsMatch(line, "\"mac\":\"[0-9a-f]{64}\""), File.Exists(pending.KeyPath(T)), Path.GetFileName(pending.KeyPath(T)))
+            .Should().Be((true, true, "approval-2026-11-22.key"));
+    }
+
+    [Fact]
+    public void Take_HandWrittenLineWithoutMac_False()
+    {
+        // Arrange: a same-user process appends a line in the guard's format, with the hash of its own nonce.
+        var pending = new OutlookActionPending(_root);
+        pending.Add("other-key", "other-nonce", Row, T);
+        File.AppendAllText(pending.FilePath, Forged(mac: null) + "\n");
+
+        // Act
+        bool taken = pending.Take(Key, Nonce, T);
+
+        // Assert
+        taken.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Take_HandWrittenLineWithAMadeUpMac_False()
+    {
+        // Arrange
+        var pending = new OutlookActionPending(_root);
+        pending.Add("other-key", "other-nonce", Row, T);
+        File.AppendAllText(pending.FilePath, Forged(mac: new string('a', 64)) + "\n");
+
+        // Act
+        bool taken = pending.Take(Key, Nonce, T);
+
+        // Assert
+        taken.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Take_GuardsLineEditedToAnotherRequest_False()
+    {
+        // Arrange: the guard's own line, its key swapped for another request's.
+        var pending = new OutlookActionPending(_root);
+        pending.Add(Key, Nonce, Row, T);
+        File.WriteAllText(pending.FilePath, File.ReadAllText(pending.FilePath).Replace(Key, "key-2", StringComparison.Ordinal));
+
+        // Act
+        bool taken = pending.Take("key-2", Nonce, T);
+
+        // Assert
+        taken.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Take_KeyFileReplaced_False()
+    {
+        // Arrange
+        var pending = new OutlookActionPending(_root);
+        pending.Add(Key, Nonce, Row, T);
+        File.WriteAllText(pending.KeyPath(T), new string('b', 64));
+
+        // Act
+        bool taken = pending.Take(Key, Nonce, T);
+
+        // Assert
+        taken.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Take_PassFromBeforeMidnight_TakenAfterIt_True()
+    {
+        // Arrange: the day's key changes at midnight; a pass keeps the key of its own day.
+        var before = new DateTimeOffset(2026, 11, 22, 23, 55, 0, TimeSpan.Zero);
+        var pending = new OutlookActionPending(_root);
+        pending.Add(Key, Nonce, Row, before);
+
+        // Act
+        bool taken = pending.Take(Key, Nonce, before.AddMinutes(10));
+
+        // Assert
+        taken.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Settle_HandWrittenLine_NoDeniedRow()
+    {
+        // Arrange
+        var pending = new OutlookActionPending(_root);
+        pending.Add(Key, Nonce, Row, T);
+        File.AppendAllText(pending.FilePath, Forged(mac: null) + "\n");
+
+        // Act
+        var rows = pending.Settle(T, all: true);
+
+        // Assert
+        rows.Count.Should().Be(1);
+    }
+
+    private static string Forged(string? mac) =>
+        "{\"key\":\"" + Key + "\",\"nonce\":\"" + OutlookActionPending.NonceHash(Nonce) + "\",\"ts\":\"2026-11-22T09:00:00.0000000Z\",\"action\":\"send\",\"to\":[\"a@example.test\"],\"subject\":\"s\""
+        + (mac is null ? string.Empty : ",\"mac\":\"" + mac + "\"") + "}";
 }

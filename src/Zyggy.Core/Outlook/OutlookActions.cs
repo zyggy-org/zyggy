@@ -148,6 +148,14 @@ internal sealed class OutlookActions(IReadOnlyDictionary<string, string?> enviro
             // Any tool that carries a command naming an action (Bash, PowerShell, a monitor, …) is the guard's; only Bash may pass.
             if (named is null)
             {
+                // On a work machine, in an attended session, every other call is screened too (verify 01M81W8C4K81GE119A7WH3228D
+                // point 1): what names the pass file or the key, or runs zyggy or Outlook in a way the guard cannot read, is refused.
+                if (context is { WorkMachine: true, Attended: true } && Screen(hook.RootElement, toolInput, command, context.StateDirectory) is { } problem)
+                {
+                    context.Log.Append(new OutlookActionLogRow(now, OutlookAction.Send, OutlookActionOutcome.Refused, problem, null, [], null, null));
+                    await io.Out.WriteAsync(HookOutput("deny", GuardPrefix + "refused: " + problem)).ConfigureAwait(false);
+                }
+
                 return 0;
             }
 
@@ -212,6 +220,39 @@ internal sealed class OutlookActions(IReadOnlyDictionary<string, string?> enviro
 #pragma warning restore CA1031
         {
             return await HookFailAsync(io, ex is OutlookPromptTimeoutException ? "Outlook asked for access" : "internal error").ConfigureAwait(false);
+        }
+    }
+
+    // The screen of one call that names no outlook action: its command, and the paths it reads or writes.
+    private string? Screen(JsonElement hook, JsonElement toolInput, string command, string stateDirectory)
+    {
+        foreach (string property in (string[])["file_path", "path", "notebook_path"])
+        {
+            if (toolInput.ValueKind == JsonValueKind.Object && toolInput.TryGetProperty(property, out JsonElement p) && p.ValueKind == JsonValueKind.String
+                && OutlookShellScreen.CheckPath(p.GetString()!, stateDirectory) is { } problem)
+            {
+                return problem;
+            }
+        }
+
+        string cwd = hook.TryGetProperty("cwd", out JsonElement c) && c.ValueKind == JsonValueKind.String ? c.GetString()! : Directory.GetCurrentDirectory();
+        return OutlookShellScreen.Check(command, stateDirectory, path => ReadScript(cwd, path));
+    }
+
+    // A script named in a command, read as the shell would find it (relative to the session's directory, ~ for home); a file too
+    // large to be a script reads as binary; one that cannot be read is null.
+    private string? ReadScript(string cwd, string path)
+    {
+        try
+        {
+            string home = environment.GetValueOrDefault("USERPROFILE") ?? environment.GetValueOrDefault("HOME") ?? string.Empty;
+            string resolved = path.StartsWith("~/", StringComparison.Ordinal) ? Path.Join(home, path[2..]) : Path.GetFullPath(path, cwd);
+            var file = new FileInfo(resolved);
+            return !file.Exists ? null : file.Length > 1024 * 1024 ? "\0" : File.ReadAllText(resolved);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return null;
         }
     }
 
@@ -297,7 +338,9 @@ internal sealed class OutlookActions(IReadOnlyDictionary<string, string?> enviro
             OutlookRunContext.FromEnvironment(environment),
             new OutlookActionLog(stateDirectory),
             new OutlookActionPending(stateDirectory),
-            OutlookDrafts.StatePath(node.EffectiveNodeDir, node.Tenant));
+            OutlookDrafts.StatePath(node.EffectiveNodeDir, node.Tenant),
+            settings.Enabled,
+            stateDirectory);
     }
 
     /// <summary>One run's policy, settings, attendance, log, passes and the laptop's drafts.</summary>
@@ -308,9 +351,20 @@ internal sealed class OutlookActions(IReadOnlyDictionary<string, string?> enviro
         OutlookRunContext run,
         OutlookActionLog log,
         OutlookActionPending pending,
-        string draftsPath)
+        string draftsPath,
+        bool workMachine,
+        string stateDirectory)
     {
         private IOutlookAccess? _access;
+
+        /// <summary>Gets a value indicating whether this is a work machine (<c>outlook.enabled</c> true).</summary>
+        public bool WorkMachine => workMachine;
+
+        /// <summary>Gets a value indicating whether the run is attended.</summary>
+        public bool Attended => run.Attended;
+
+        /// <summary>Gets the outlook state directory (the pass file and the approval keys).</summary>
+        public string StateDirectory => stateDirectory;
 
         public OutlookActionLog Log => log;
 

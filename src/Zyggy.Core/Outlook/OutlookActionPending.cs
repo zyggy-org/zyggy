@@ -16,7 +16,10 @@ namespace Zyggy.Core.Outlook;
 /// once; every read-change-write holds <c>pending.lock</c>, so two processes cannot both take one pass. A pass that is never taken was
 /// denied at the prompt (or never answered): <c>zyggy outlook settle</c> (the session's Stop hook) or the session's next guarded call
 /// turns it into one <c>denied</c> row, as does any action once it expired. Claude Code tells no hook about a denied prompt; this is
-/// how the row is written anyway. The file holds the log row's fields only, never a body.
+/// how the row is written anyway. The file holds the log row's fields only, never a body. Each line carries an HMAC-SHA256 (<c>mac</c>)
+/// under the day's approval key (<see cref="KeyPath"/>); a line whose HMAC does not verify — written by hand, edited, or under a
+/// replaced key — is no pass and is dropped (verify 01M81W8C4K81GE119A7WH3228D point 2). A same-user process that reads the key can
+/// still forge a line: the guard hook refuses shell calls naming the key file, and spec 58 Q24 holds the residual.
 /// </summary>
 /// <param name="stateDirectory">The laptop's outlook state directory (the action log's).</param>
 internal sealed class OutlookActionPending(string stateDirectory)
@@ -40,6 +43,16 @@ internal sealed class OutlookActionPending(string stateDirectory)
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(nonce)));
     }
 
+    /// <summary>
+    /// Gets the path of the approval key of <paramref name="time"/>'s UTC day: <c>approval-yyyy-MM-dd.key</c>, 32 random bytes as
+    /// hex, created by the guard with its first pass of the day and never written again. Each pass line carries an HMAC-SHA256 of its
+    /// other fields under the key of its own day (verify 01M81W8C4K81GE119A7WH3228D point 2).
+    /// </summary>
+    /// <param name="time">The time of the pass.</param>
+    /// <returns>The path.</returns>
+    public string KeyPath(DateTimeOffset time) =>
+        Path.Join(stateDirectory, "approval-" + time.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ".key");
+
     /// <summary>Gets the lock file's path: every read-change-write of the passes holds it.</summary>
     public string LockPath => Path.Join(stateDirectory, "pending.lock");
 
@@ -55,6 +68,7 @@ internal sealed class OutlookActionPending(string stateDirectory)
         ArgumentNullException.ThrowIfNull(row);
         Locked(() =>
         {
+            CreateKey(now);
             var entries = Load();
             entries.Add(new Entry(key, NonceHash(nonce), now, row));
             Save(entries);
@@ -137,6 +151,63 @@ internal sealed class OutlookActionPending(string stateDirectory)
         }
     }
 
+    // The day's key: created once (CreateNew, owner-only on Unix), never rewritten; keys older than yesterday are removed (a pass
+    // lives 15 minutes, so a pass from just before midnight still finds its day's key).
+    private void CreateKey(DateTimeOffset now)
+    {
+        string path = KeyPath(now);
+        if (!File.Exists(path))
+        {
+            var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None };
+            if (!OperatingSystem.IsWindows())
+            {
+                options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            }
+
+            try
+            {
+                using var stream = new FileStream(path, options);
+                stream.Write(Encoding.ASCII.GetBytes(RandomNumberGenerator.GetHexString(64, lowercase: true)));
+            }
+            catch (IOException) when (File.Exists(path))
+            {
+                // Another guard created it first: that key is the day's key.
+            }
+        }
+
+        string oldest = Path.GetFileName(KeyPath(now.AddDays(-1)));
+        foreach (string old in Directory.EnumerateFiles(stateDirectory, "approval-*.key"))
+        {
+            if (string.CompareOrdinal(Path.GetFileName(old), oldest) < 0)
+            {
+                File.Delete(old);
+            }
+        }
+    }
+
+    private byte[]? ReadKey(DateTimeOffset time, Dictionary<string, byte[]?> cache)
+    {
+        string path = KeyPath(time);
+        if (!cache.TryGetValue(path, out byte[]? key))
+        {
+            try
+            {
+                string text = File.Exists(path) ? File.ReadAllText(path).Trim() : string.Empty;
+                key = text.Length == 64 ? Convert.FromHexString(text) : null;
+            }
+            catch (FormatException)
+            {
+                key = null;
+            }
+
+            cache[path] = key;
+        }
+
+        return key;
+    }
+
+    private static string Mac(byte[] key, Entry entry) => Convert.ToHexStringLower(HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(entry.Write(mac: null))));
+
     private List<Entry> Load()
     {
         if (!File.Exists(FilePath))
@@ -144,15 +215,24 @@ internal sealed class OutlookActionPending(string stateDirectory)
             return [];
         }
 
+        var keys = new Dictionary<string, byte[]?>(StringComparer.Ordinal);
         var entries = new List<Entry>();
         foreach (string line in File.ReadAllLines(FilePath))
         {
             try
             {
                 using var document = JsonDocument.Parse(line);
-                entries.Add(Entry.Read(document.RootElement));
+                Entry entry = Entry.Read(document.RootElement);
+
+                // A line without a valid HMAC under its day's key was not written by the guard: it is no pass, and it is dropped.
+                string? mac = document.RootElement.TryGetProperty("mac", out JsonElement m) && m.ValueKind == JsonValueKind.String ? m.GetString() : null;
+                if (mac is not null && ReadKey(entry.Time, keys) is { } key
+                    && CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(Mac(key, entry)), Encoding.ASCII.GetBytes(mac)))
+                {
+                    entries.Add(entry);
+                }
             }
-            catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException or FormatException)
+            catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException or FormatException or ArgumentException)
             {
                 // A line this program did not write is no pass.
             }
@@ -164,7 +244,18 @@ internal sealed class OutlookActionPending(string stateDirectory)
     private void Save(List<Entry> entries)
     {
         Directory.CreateDirectory(stateDirectory);
-        MemoryFileWriter.WriteAtomically(FilePath, string.Concat(entries.Select(e => e.Write() + "\n")));
+        var keys = new Dictionary<string, byte[]?>(StringComparer.Ordinal);
+        var text = new StringBuilder();
+        foreach (Entry entry in entries)
+        {
+            // Every entry kept was verified (Load) or just added (Add created its day's key); one without a key is dropped.
+            if (ReadKey(entry.Time, keys) is { } key)
+            {
+                text.Append(entry.Write(Mac(key, entry))).Append('\n');
+            }
+        }
+
+        MemoryFileWriter.WriteAtomically(FilePath, text.ToString());
     }
 
     private sealed record Entry(string Key, string NonceHash, DateTimeOffset Time, OutlookActionLogRow Row)
@@ -182,7 +273,7 @@ internal sealed class OutlookActionPending(string stateDirectory)
                 new OutlookActionLogRow(time, action, OutlookActionOutcome.Denied, null, Text(e, "reference"), to, Text(e, "subject"), Text(e, "destination")));
         }
 
-        public string Write()
+        public string Write(string? mac)
         {
             using var buffer = new MemoryStream();
             using (var writer = new Utf8JsonWriter(buffer))
@@ -202,6 +293,7 @@ internal sealed class OutlookActionPending(string stateDirectory)
                 writer.WriteEndArray();
                 Optional(writer, "subject", Row.Subject);
                 Optional(writer, "destination", Row.Destination);
+                Optional(writer, "mac", mac);
                 writer.WriteEndObject();
             }
 

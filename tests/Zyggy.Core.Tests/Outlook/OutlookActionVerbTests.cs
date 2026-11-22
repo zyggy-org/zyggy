@@ -230,6 +230,76 @@ public sealed class OutlookActionVerbTests : IDisposable
         (exit, console.Stdout, Rows().Count).Should().Be((0, string.Empty, 0));
     }
 
+    // ---- every shell call screened on a work machine (verify 01M81W8C4K81GE119A7WH3228D point 1) ----
+
+    [Fact]
+    public async Task Guard_WorkMachine_VerifierAttack_Denied_WithARow()
+    {
+        // Act
+        var (exit, console) = await GuardAsync(OutlookShellScreenTests.VerifierAttack);
+
+        // Assert
+        (exit, HookOutput(console.Stdout).Decision, Outcomes()).Should().Be((0, "deny", "refused"));
+    }
+
+    [Theory]
+    [InlineData("PowerShell", "command", "Get-Content $env:LOCALAPPDATA\\zyggy\\node\\work\\acme\\outlook\\approval-2026-11-22.key")]
+    [InlineData("Write", "file_path", "{state}/pending.jsonl")]
+    [InlineData("Read", "file_path", "{state}/approval-2026-11-22.key")]
+    [InlineData("Edit", "file_path", "{state}/pending.jsonl")]
+    public async Task Guard_WorkMachine_ToolNamingTheStateFolder_Denied(string tool, string property, string value)
+    {
+        // Act
+        var (_, console) = await GuardInputAsync(tool, new JsonObject { [property] = value.Replace("{state}", StateDir, StringComparison.Ordinal) });
+
+        // Assert
+        HookOutput(console.Stdout).Decision.Should().Be("deny");
+    }
+
+    [Fact]
+    public async Task Guard_WorkMachine_ScriptFileRunningOutlook_Denied()
+    {
+        // Arrange: the script was written by an earlier call; the hook reads it relative to the session's directory.
+        string cwd = Path.Combine(_root, "project");
+        Directory.CreateDirectory(cwd);
+        File.WriteAllText(Path.Combine(cwd, "s.sh"), "#!/bin/sh\nZ=zyggy\n\"$Z\" outlook send --draft 1\n");
+
+        // Act
+        var (_, console) = await GuardInputAsync("Bash", new JsonObject { ["command"] = "bash s.sh" }, cwd);
+
+        // Assert
+        HookOutput(console.Stdout).Decision.Should().Be("deny");
+    }
+
+    [Fact]
+    public async Task Guard_NotAWorkMachine_DisguisedCommand_Silent()
+    {
+        // Arrange
+        WriteNodeJson("""{ "enabled": false }""");
+
+        // Act
+        var (exit, console) = await GuardAsync(OutlookShellScreenTests.VerifierAttack);
+
+        // Assert
+        (exit, console.Stdout).Should().Be((0, string.Empty));
+    }
+
+    [Fact]
+    public async Task Send_ForgedPassLineWithOwnNonce_RefusedNothingSent()
+    {
+        // Arrange: the attack's second half — a hand-written line for this exact request and the hash of the attacker's own nonce.
+        string key = OutlookActionCall.Parse(Reply, out _)!.Request!.Key;
+        string file = Path.Combine(StateDir, "pending.jsonl");
+        Directory.CreateDirectory(StateDir);
+        File.WriteAllText(file, "{\"key\":\"" + key + "\",\"nonce\":\"" + OutlookActionPending.NonceHash("mine") + "\",\"ts\":\"2026-11-22T09:00:00.0000000Z\",\"action\":\"send\",\"to\":[\"colleague@example.test\"],\"subject\":\"RE: Planning\"}\n");
+
+        // Act
+        var (exit, _) = await ActAsync(Reply, "mine");
+
+        // Assert
+        (exit, _access.Sent.Count).Should().Be((5, 0));
+    }
+
     [Fact]
     public async Task Guard_BadHookInput_ExitTwo_BlocksTheCall()
     {
@@ -686,6 +756,22 @@ public sealed class OutlookActionVerbTests : IDisposable
         File.Exists(LogPath) ? [.. File.ReadAllLines(LogPath).Select(l => JsonNode.Parse(l)!.AsObject())] : [];
 
     private string Outcomes() => string.Join(' ', Rows().Select(r => r["outcome"]!.GetValue<string>()));
+
+    private string StateDir => Path.Combine(NodeDir, "work", "acme", "outlook");
+
+    private Task<(int Exit, VerbConsole Console)> GuardInputAsync(string tool, JsonObject input, string? cwd = null)
+    {
+        string hook = new JsonObject
+        {
+            ["session_id"] = "s1",
+            ["hook_event_name"] = "PreToolUse",
+            ["cwd"] = cwd ?? _root,
+            ["tool_name"] = tool,
+            ["tool_input"] = input,
+            ["tool_use_id"] = "toolu_1",
+        }.ToJsonString();
+        return RunAsync(["guard"], stdin: hook);
+    }
 
     private Task<(int Exit, VerbConsole Console)> GuardAsync(string command, Dictionary<string, string?>? extra = null, string tool = "Bash")
     {
