@@ -332,10 +332,21 @@ internal static partial class DreamChecks
             {
                 return Fail(DreamCheck.FormatInvalid, $"{where}: name {entry.Name.Length} chars, description {entry.Description.Length} chars");
             }
+
+            // Verify 01M81J9G3WE85TQ5H04GMA0B7Y (2), D-Q18: the sidecar's name and description pass the same full strip check as the
+            // archived text — a postal address, phone number or e-mail address the strip would remove refuses the batch.
+            if (ContainsPrivateDetail(entry.Name) || ContainsPrivateDetail(entry.Description))
+            {
+                return Fail(DreamCheck.ContactDetail, $"name or description of {where}");
+            }
         }
 
         return null;
     }
+
+    // Whether the private-detail strip would remove something from the text (it leaves more removal marks than the text held).
+    private static bool ContainsPrivateDetail(string text) =>
+        PrivateDetails.Strip(text).Split(PrivateDetails.Removed).Length > text.Split(PrivateDetails.Removed).Length;
 
     // <side>/<category>/<slug>.md for the given side and slug.
     private static bool IsSideFileOf(string relative, string side, string slug)

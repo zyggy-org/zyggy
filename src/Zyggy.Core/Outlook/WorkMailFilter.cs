@@ -2,6 +2,8 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
+using Zyggy.Core.Memory;
+
 namespace Zyggy.Core.Outlook;
 
 /// <summary>What the sensitive-data filter decided for one mail (spec 58 slice 4).</summary>
@@ -39,11 +41,12 @@ internal sealed partial class WorkMailFilter
         Terms = terms;
 
         // Each word of a normalised term starts a word of the normalised text and may run on (plurals, inflections: "patient" also
-        // matches "patients", "patiënten"); the words of a term follow each other with one space, as the text is collapsed.
+        // matches "patients", "patiënten"); the words of a term follow each other with spaces, '-', '_' or '/' between them
+        // ("medisch dossier", "medisch-dossier"), as the text is collapsed.
         var patterns = terms
             .Select(t => Normalise(t).Split(' ', StringSplitOptions.RemoveEmptyEntries))
             .Where(words => words.Length > 0)
-            .Select(words => string.Join(' ', words.Select(w => Regex.Escape(w) + @"[\p{L}\p{N}]*")))
+            .Select(words => string.Join(@"[ \-_/]+", words.Select(w => Regex.Escape(w) + @"[\p{L}\p{N}]*")))
             .Distinct(StringComparer.Ordinal)
             .ToList();
         _terms = patterns.Count == 0
@@ -83,7 +86,7 @@ internal sealed partial class WorkMailFilter
     public static bool HasNationalRegisterNumber(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
-        foreach (Match match in NationalRegisterNumber().Matches(AsciiDigits(text)))
+        foreach (Match match in NationalRegisterNumber().Matches(AsciiDigits(FormatCharacters.Remove(text))))
         {
             long first = 0;
             for (var g = 1; g <= 4; g++)
@@ -119,7 +122,7 @@ internal sealed partial class WorkMailFilter
     }
 
     /// <summary>
-    /// The form terms and text are compared in: NFKD, combining marks dropped, lower-case invariant, every whitespace run one space,
+    /// The form terms and text are compared in: format characters removed (<see cref="FormatCharacters"/>), NFKD, combining marks dropped, lower-case invariant, every whitespace run one space,
     /// trimmed.
     /// </summary>
     /// <param name="text">The text.</param>
@@ -127,7 +130,7 @@ internal sealed partial class WorkMailFilter
     internal static string Normalise(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
-        string decomposed = text.Normalize(NormalizationForm.FormKD);
+        string decomposed = FormatCharacters.Remove(text).Normalize(NormalizationForm.FormKD);
         var result = new StringBuilder(decomposed.Length);
         bool space = false;
         foreach (char c in decomposed)
@@ -212,19 +215,15 @@ internal sealed partial class WorkMailFilter
 
     // NFKC, then every Unicode decimal digit (full-width, Arabic-Indic, Devanagari, …) as its ASCII digit, every full-width ASCII
     // form (．－／) as its ASCII character and every Unicode dash (hyphen, non-breaking hyphen, figure dash, en-dash, em-dash,
-    // horizontal bar, minus) as '-' — spelled out because string.Normalize does not map them under InvariantGlobalization. Zero-width
-    // characters (U+200B–U+200D, U+FEFF) are dropped, so they neither separate nor break a number.
+    // horizontal bar, minus) as '-' — spelled out because string.Normalize does not map them under InvariantGlobalization. Format
+    // characters (zero-width, soft hyphen, word joiner, …) are already gone (FormatCharacters.Remove), so they neither separate nor
+    // break a number.
     private static string AsciiDigits(string text)
     {
         string composed = text.Normalize(NormalizationForm.FormKC);
         var result = new StringBuilder(composed.Length);
         foreach (char c in composed)
         {
-            if (c is >= '​' and <= '‍' or '﻿')
-            {
-                continue;
-            }
-
             int value = CharUnicodeInfo.GetDecimalDigitValue(c);
             result.Append(value is >= 0 and <= 9 && !char.IsAsciiDigit(c) ? (char)('0' + value)
                 : c is >= '！' and <= '～' ? (char)(c - 0xFEE0)

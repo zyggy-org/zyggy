@@ -31,6 +31,27 @@ public sealed class PrivateDetailsTests
         stripped.Should().Be(expected);
     }
 
+    // Verify 01M81J9G3WE85TQ5H04GMA0B7Y (1): a number right after '.', '/', '-', ':' or '+' that follows a letter label.
+    [Theory]
+    [InlineData("T.0475 12 34 56", "T.[private detail removed]")]
+    [InlineData("T.+32 2 123 45 67", "T.[private detail removed]")]
+    [InlineData("GSM/0475123456", "GSM/[private detail removed]")]
+    [InlineData("Tel:+32 2 123 45 67", "Tel:[private detail removed]")]
+    [InlineData("tél. 02/123.45.67", "tél. [private detail removed]")]
+    [InlineData("tél.02/123.45.67", "tél.[private detail removed]")]
+    [InlineData("0032 2 123 45 67", "[private detail removed]")]
+    [InlineData("M-0475 12 34 56", "M-[private detail removed]")]
+    [InlineData("F.+32 2 123 45 68", "F.[private detail removed]")]
+    [InlineData("Tel.:0475/12.34.56", "Tel.:[private detail removed]")]
+    public void Strip_PhoneAfterLetterLabel_Removed(string text, string expected)
+    {
+        // Act
+        var stripped = PrivateDetails.Strip(text);
+
+        // Assert
+        stripped.Should().Be(expected);
+    }
+
     [Theory]
     [InlineData("Jan Peeters, project lead at Acme, asks to confirm the Q4 budget by Friday.")]
     [InlineData("The meeting of 01/02/2026 at 09:00 moved to 2026-11-21.")]

@@ -161,6 +161,28 @@ public sealed class WorkMailFilingTests : IDisposable
             .Should().Be((true, "Jan Peeters, project lead at Acme, asks to confirm the Q4 budget; call him on [private detail removed] or [private detail removed], mail [private detail removed], home [private detail removed].\n", (long?)System.Text.Encoding.UTF8.GetByteCount(item ?? string.Empty)));
     }
 
+    // Verify 01M81J9G3WE85TQ5H04GMA0B7Y (2): the sidecar's name and description pass the same full strip check as the archived text.
+    [Theory]
+    [InlineData("Mail from Kerkstraat 12", "The client's Q4 budget request")]
+    [InlineData("Q4 budget mail", "Sent from rue de la Loi 16, 1000 Bruxelles")]
+    [InlineData("Q4 budget mail", "Ask Jan, GSM/0475123456")]
+    [InlineData("Q4 budget mail", "Ask Jan on T.+32 2 123 45 67")]
+    [InlineData("Mail of jän@exämple.test", "The client's Q4 budget request")]
+    [InlineData("Q4 budget mail", "From 12 Baker Street")]
+    public async Task FileBatch_ArchiveNameOrDescriptionWithPrivateDetail_AbortsContactDetail(string name, string description)
+    {
+        // Arrange
+        var proposal = TestProposals.New().Disposition("L1", "filed", "business/areas/q4-budget.md")
+            .Edit("business/areas/q4-budget.md", append: [WorkMail, IndexLine])
+            .Archive("L1", "q4-budget", "budget-mail-2026-11-21", name, description);
+
+        // Act
+        var (outcome, set) = await FileAsync(proposal);
+
+        // Assert
+        ((outcome as BatchAborted)?.Check, set.ChangedPaths.Any()).Should().Be(((DreamCheck?)DreamCheck.ContactDetail, false));
+    }
+
     [Fact]
     public async Task FileBatch_WorkMailArchivedForAPrivateProject_AbortsPathRefused()
     {
