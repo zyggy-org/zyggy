@@ -8,6 +8,8 @@ argument-hint: "The spec and the slice, e.g. 'discovery registry slice 3' or 'ne
 
 Build **one slice** of an approved spec, following `CLAUDE.md` § Delivery workflow (Workflow rules, Red-Green-Refactor-Proof loop, Human Review Gates) and the founding spec's §9 design rules. This skill adds what is specific to building from a spec; the Templates below are a **reference catalog** — look up the pieces the slice needs.
 
+**In a Zyggy job run** (`ZYGGY_JOB` set) follow `CLAUDE.md` § Job runs wherever this skill says stop, wait, ask or "when the owner approves": the job's TASK is the approval for what it asks (a ⚠️ approach the TASK approves is built without plan mode; one it does not approve ends the job with the approach in the REPORT). A finished slice is committed on the feature branch and the branch pushed; the slice report goes into the REPORT as ASCII. A TASK that asks for the whole feature builds slice after slice, runs `spec-reviewer` after the last, and ships when the TASK asks for the release too.
+
 ## Before changing files
 
 1. **Read the spec** `_specs/<NN>-<short-name>.md`. Its Status must show it approved by the owner and Open questions must hold nothing that changes behavior; if not, stop and say so. The next slice is the first one in Slices without a "done" line in Status.

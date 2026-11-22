@@ -15,7 +15,7 @@ project-manager (WHAT / order / next)  →  write-spec (_specs/<NN>-<short-name>
 - No production code, test code, or configuration. No builds, tests, or terminal commands.
 - Read-only on the codebase and on the founding spec. Never edit `_specs/00 - Personal Agent Platform — Technical Specification.md`; only the user amends it.
 - Never write detailed implementation steps into the roadmap — a deliverable is a shippable outcome, not an RGR cycle.
-- Roadmap changes (creation, reordering, re-scoping) are a 🛑 HUMAN GATE: present them and wait for user approval.
+- Roadmap changes (creation, reordering, re-scoping) are a 🛑 HUMAN GATE: present them and wait for user approval. In a Zyggy job run (`ZYGGY_JOB` set; `CLAUDE.md` § Job runs) a change the job's TASK asks for is approved; any other change is proposed in the report, not written. Status flips the workflow prescribes (🔨, ✅ after a release) need no gate.
 </constraints>
 
 <inputs>

@@ -30,7 +30,7 @@ The founding spec was written before the code. For every item it assigns to this
 
 ## Interview
 
-Ask only what the request, the founding spec and the code do not already answer, in one batch. Typical gaps:
+Ask only what the request, the founding spec and the code do not already answer, in one batch. In a Zyggy job run (`ZYGGY_JOB` set; `CLAUDE.md` § Job runs) the batch goes through `zyggy ask` when the job's deadline allows waiting; otherwise write the spec with the gaps under Open questions, commit it on its feature branch, push, and end the job with the questions in the REPORT. Typical gaps:
 
 - Which machine role (owner, Central, a Node, the work node) can do what afterwards that it cannot do now?
 - Envelope fields, bus paths, state moves, reason codes added or interpreted.
