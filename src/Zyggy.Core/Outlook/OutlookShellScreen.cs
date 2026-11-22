@@ -1,0 +1,370 @@
+using System.Text;
+using System.Text.RegularExpressions;
+
+namespace Zyggy.Core.Outlook;
+
+/// <summary>
+/// The outlook guard hook's screen of every tool call in an attended session on a work machine (verify 01M81W8C4K81GE119A7WH3228D
+/// point 1, spec 58 slice 7). The guard reads a plain <c>zyggy outlook send|move …</c> call itself; this screen refuses what could get
+/// around that reading in one call: a command naming the pass file, its folder or the approval key; an outlook action that is not one
+/// plain call; <c>zyggy</c> run through a variable, substitution, escape, glob, alias or <c>eval</c>; an interpreter handed inline code
+/// naming Outlook; a pipe or redirect into a shell or interpreter; a path that resolves into the state folder (full paths, verify
+/// 01M81XMXM722ESMJ8M0Y6VBP6N); or a script file that runs Outlook (or that the guard cannot read). It refuses more than it must; a
+/// name built wholly at run time, or code that drives Outlook without naming it, is the residual risk of spec 58 Q24, which the
+/// session's settings keep on the owner's prompt (<see cref="OutlookSessionSettings"/>).
+/// </summary>
+internal static partial class OutlookShellScreen
+{
+    private const string NamesState = "names the outlook pass file, its folder or the approval key";
+
+    /// <summary>Screens one shell command (Bash, PowerShell, or any tool carrying a <c>command</c>).</summary>
+    /// <param name="command">The command text.</param>
+    /// <param name="stateDirectory">The laptop's outlook state directory (the pass file and the approval keys).</param>
+    /// <param name="readScript">Reads a script file named in the command, as written (relative to the session's directory); <see langword="null"/> when it cannot be read.</param>
+    /// <param name="resolve">Makes a full path of a path the command names (see <see cref="OutlookPaths.Resolve"/>); <see langword="null"/> compares as written.</param>
+    /// <returns>Why the command is refused, or <see langword="null"/> when it passes.</returns>
+    public static string? Check(string command, string stateDirectory, Func<string, string?> readScript, Func<string, string>? resolve = null)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(stateDirectory);
+        ArgumentNullException.ThrowIfNull(readScript);
+        if (string.IsNullOrWhiteSpace(command) || OutlookShellCall.Read(command).Kind == OutlookShellCallKind.Action)
+        {
+            // Empty, or exactly one plain outlook call: the guard itself reads and judges that one.
+            return null;
+        }
+
+        string decoded = OutlookShellCall.Decode(command);
+        string paths = PathForm(decoded);
+        string words = WordForm(decoded);
+        if (paths.Contains(PathForm(stateDirectory), StringComparison.Ordinal) || StateNamed().IsMatch(paths) || Tokens(paths).Any(NearState))
+        {
+            return NamesState;
+        }
+
+        // Verify 01M81XMXM722ESMJ8M0Y6VBP6N: a path that leads into the state folder under another spelling (.., \\?\, a share, an 8.3
+        // name, a junction, a link), compared as the full path the file system opens.
+        // Verify 01M81Z8AHR6ZWCDWQS92TYSA54: a glob's fixed part that is the state folder or any parent of it can reach it.
+        if (resolve is not null)
+        {
+            string[] states = [resolve(stateDirectory), stateDirectory];
+            if (PathTokens(decoded).Any(t => t.Globbed ? Reaches(resolve(t.Path), states) : states.Any(s => OutlookPaths.IsUnder(resolve(t.Path), s))))
+            {
+                return NamesState;
+            }
+        }
+
+        // A pipe or a redirect into a shell or an interpreter runs code that is not on the line.
+        if (PipedInterpreter().IsMatch(paths) || RedirectedInterpreter().IsMatch(paths))
+        {
+            return "a pipe or redirect into a shell or interpreter";
+        }
+
+        if (OutlookShellCall.MayWriteOutlook(command))
+        {
+            return "an outlook action that is not one plain zyggy outlook call";
+        }
+
+        if (RunsZyggy(words, paths) && (OutlookShellCall.Built().IsMatch(command) || Indirect().IsMatch(words)))
+        {
+            return "zyggy run through a variable, substitution, escape, glob, alias or eval";
+        }
+
+        if (Interpreter().IsMatch(paths) && Letters(decoded).Contains("outlook", StringComparison.Ordinal))
+        {
+            return "an interpreter with code naming outlook";
+        }
+
+        return Scripts(command, readScript);
+    }
+
+    /// <summary>Screens a path a tool reads or writes (<c>file_path</c>, <c>path</c>, <c>notebook_path</c>).</summary>
+    /// <param name="path">The path.</param>
+    /// <param name="stateDirectory">The laptop's outlook state directory.</param>
+    /// <param name="resolve">Makes a full path (see <see cref="OutlookPaths.Resolve"/>); <see langword="null"/> compares as written.</param>
+    /// <returns>Why the call is refused, or <see langword="null"/>.</returns>
+    public static string? CheckPath(string path, string stateDirectory, Func<string, string>? resolve = null)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(stateDirectory);
+        string value = PathForm(path).TrimEnd('/');
+        string state = PathForm(stateDirectory).TrimEnd('/');
+        if (value == state || value.StartsWith(state + "/", StringComparison.Ordinal))
+        {
+            return NamesState;
+        }
+
+        if (resolve is null)
+        {
+            return null;
+        }
+
+        string resolved = resolve(path);
+        return OutlookPaths.IsUnder(resolved, resolve(stateDirectory)) || OutlookPaths.IsUnder(resolved, stateDirectory) ? NamesState : null;
+    }
+
+    /// <summary>
+    /// Screens a search (Grep, Glob; verify 01M81Z8AHR6ZWCDWQS92TYSA54): its root may not be the state folder, inside it or any parent of
+    /// it, and each glob (Grep's <c>glob</c>, Glob's <c>pattern</c>) is read as a path from that root, its fixed part checked the same way.
+    /// </summary>
+    /// <param name="root">The folder the search starts in (its <c>path</c>, else the session's directory).</param>
+    /// <param name="globs">The globs the search matches files with.</param>
+    /// <param name="stateDirectory">The laptop's outlook state directory.</param>
+    /// <param name="resolve">Makes a full path (see <see cref="OutlookPaths.Resolve"/>); <see langword="null"/> compares as written.</param>
+    /// <returns>Why the call is refused, or <see langword="null"/>.</returns>
+    public static string? CheckSearch(string root, IReadOnlyList<string> globs, string stateDirectory, Func<string, string>? resolve = null)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        ArgumentNullException.ThrowIfNull(globs);
+        ArgumentNullException.ThrowIfNull(stateDirectory);
+        resolve ??= path => path;
+        string[] states = [resolve(stateDirectory), stateDirectory];
+        if (Reaches(resolve(Lexical(root)), states))
+        {
+            return NamesState;
+        }
+
+        foreach (string glob in globs)
+        {
+            string form = PathForm(glob);
+            if (StateNamed().IsMatch(form) || NearState(form))
+            {
+                return NamesState;
+            }
+
+            var (fixedPart, globbed) = FixedPart(glob);
+            string full = resolve(Lexical(IsRooted(fixedPart) ? fixedPart : root.TrimEnd('/', '\\') + "/" + fixedPart));
+            if (globbed ? Reaches(full, states) : states.Any(s => OutlookPaths.IsUnder(full, s)))
+            {
+                return NamesState;
+            }
+        }
+
+        return null;
+    }
+
+    // Whether a path is a state folder, inside it, or any parent of it (a file-system root included).
+    private static bool Reaches(string path, string[] states) =>
+        path.Replace('\\', '/').TrimEnd('/').Length == 0 || states.Any(s => OutlookPaths.IsUnder(path, s) || OutlookPaths.IsUnder(s, path));
+
+    // The part of a path before its first glob character, cut after the last separator before it ("." when there is none).
+    private static (string Path, bool Globbed) FixedPart(string token)
+    {
+        int glob = token.IndexOfAny(['*', '?', '[', '{']);
+        if (glob < 0)
+        {
+            return (token, false);
+        }
+
+        int separator = token.LastIndexOfAny(['/', '\\'], glob);
+        return (separator < 0 ? "." : token[..(separator + 1)], true);
+    }
+
+    private static bool IsRooted(string path) =>
+        path.StartsWith('/') || path.StartsWith('\\') || path.StartsWith('~') || path.StartsWith('$') || path.StartsWith('%')
+        || (path.Length >= 2 && char.IsAsciiLetter(path[0]) && path[1] == ':');
+
+    // "." and ".." segments taken out as written (the resolver does this for a real path; a fake one in a test may not).
+    private static string Lexical(string path)
+    {
+        string p = path.Replace('\\', '/');
+        string[] segments = p.Split('/');
+        if (!segments.Any(s => s is "." or ".."))
+        {
+            return path;
+        }
+
+        var kept = new List<string>();
+        foreach (string segment in segments.Skip(1))
+        {
+            if (segment is "" or ".")
+            {
+                continue;
+            }
+
+            if (segment == ".." && kept.Count > 0 && kept[^1] != "..")
+            {
+                kept.RemoveAt(kept.Count - 1);
+                continue;
+            }
+
+            kept.Add(segment);
+        }
+
+        string first = segments[0] is "." ? "." : segments[0];
+        return first == ".." ? "../" + string.Join('/', kept) : first + "/" + string.Join('/', kept);
+    }
+
+    // The words of a command that name a path (a separator, ~, . or ..) or hold a glob, each glob cut to its fixed part.
+    private static IEnumerable<(string Path, bool Globbed)> PathTokens(string decoded)
+    {
+        string plain = string.Concat(decoded.Where(c => c is not ('\'' or '"' or '`' or '^')));
+        foreach (string token in Separators().Split(plain))
+        {
+            bool globbed = token.IndexOfAny(['*', '?', '[']) >= 0;
+            if (token.Length == 0 || !(globbed || token.Contains('/', StringComparison.Ordinal) || token.Contains('\\', StringComparison.Ordinal) || token.StartsWith('~') || token is "." or ".."))
+            {
+                continue;
+            }
+
+            yield return FixedPart(token);
+        }
+    }
+
+    // Lowercase, quotes and carets gone, '$' gone (so $env:X and "$X" read as names), backslashes as '/', runs of '/' as one.
+    private static string PathForm(string text)
+    {
+        var form = new StringBuilder(text.Length);
+        foreach (char c in text.ToLowerInvariant())
+        {
+            char d = c == '\\' ? '/' : c;
+            if (d is '\'' or '"' or '`' or '^' or '$' || (d == '/' && form.Length > 0 && form[^1] == '/'))
+            {
+                continue;
+            }
+
+            form.Append(d);
+        }
+
+        return form.ToString();
+    }
+
+    // As bash reads a word: quotes, escapes, carets and '$' dropped, so z\yggy and z''yggy read zyggy.
+    private static string WordForm(string text) =>
+        string.Concat(text.ToLowerInvariant().Where(c => c is not ('\'' or '"' or '`' or '^' or '$' or '\\')));
+
+    private static string Letters(string text) => string.Concat(text.Where(char.IsLetter).Select(char.ToLowerInvariant));
+
+    private static IEnumerable<string> Tokens(string text) => Separators().Split(text).Where(t => t.Length > 0);
+
+    // A glob next to the state folder's names: work/*/out*/*, pend*, approval*.key.
+    private static bool NearState(string token) =>
+        token.IndexOfAny(['*', '?', '[']) >= 0
+        && (token.Contains("work/", StringComparison.Ordinal) || token.Contains("outl", StringComparison.Ordinal) || token.Contains("pend", StringComparison.Ordinal)
+            || token.Contains("appr", StringComparison.Ordinal) || token.Contains(".key", StringComparison.Ordinal));
+
+    // zyggy as a program: the word zyggy or zyggy.exe (not a folder or a file like Zyggy.slnx), or a glob that matches it.
+    private static bool RunsZyggy(string words, string paths) =>
+        Program().IsMatch(words) || Tokens(paths).Any(t => t.IndexOfAny(['*', '?', '[']) >= 0 && GlobMatchesZyggy(t[(t.LastIndexOf('/') + 1)..]));
+
+    private static bool GlobMatchesZyggy(string glob)
+    {
+        var pattern = new StringBuilder("^");
+        foreach (char c in glob)
+        {
+            pattern.Append(c switch
+            {
+                '*' => ".*",
+                '?' => ".",
+                '[' or ']' or '!' or '-' => c.ToString(),
+                _ => Regex.Escape(c.ToString()),
+            });
+        }
+
+        try
+        {
+            var regex = new Regex(pattern.Append('$').ToString(), RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+            return regex.IsMatch("zyggy") || regex.IsMatch("zyggy.exe");
+        }
+        catch (ArgumentException)
+        {
+            // A glob the guard cannot read could be anything.
+            return true;
+        }
+    }
+
+    // A script the command runs: its first word when that is a script path, or the first plain word after an interpreter.
+    private static string? Scripts(string command, Func<string, string?> readScript)
+    {
+        string unquoted = string.Concat(command.Where(c => c is not ('\'' or '"')));
+        foreach (string segment in Segments().Split(unquoted))
+        {
+            string[] parts = segment.Split([' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0)
+            {
+                continue;
+            }
+
+            string? script = null;
+            var mustRead = false;
+            if (IsScriptPath(parts[0]))
+            {
+                (script, mustRead) = (parts[0], true);
+            }
+            else if (InterpreterWord().IsMatch(Path.GetFileName(parts[0].Replace('\\', '/'))))
+            {
+                script = parts.Skip(1).FirstOrDefault(p => !p.StartsWith('-') && !p.StartsWith('/'));
+                mustRead = script is not null && IsScriptPath(script);
+            }
+
+            if (script is null || IsZyggyName(script))
+            {
+                continue;
+            }
+
+            string? content = readScript(script);
+            if (content is null)
+            {
+                if (mustRead)
+                {
+                    return "a script file the guard cannot read";
+                }
+
+                continue;
+            }
+
+            if (!content.Contains('\0', StringComparison.Ordinal)
+                && (Letters(OutlookShellCall.Decode(content)).Contains("outlook", StringComparison.Ordinal) || OutlookShellCall.MayWriteOutlook(content)))
+            {
+                return "a script file that runs outlook";
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsScriptPath(string word) =>
+        word.StartsWith("./", StringComparison.Ordinal) || word.StartsWith("../", StringComparison.Ordinal) || word.StartsWith(".\\", StringComparison.Ordinal)
+        || ScriptExtension().IsMatch(word);
+
+    private static bool IsZyggyName(string word)
+    {
+        string name = Path.GetFileName(word.Replace('\\', '/')).ToLowerInvariant();
+        return name is "zyggy" or "zyggy.exe";
+    }
+
+    [GeneratedRegex(@"work/[^/\s]+/outlook(?![\w.-])|pending\.(?:jsonl|lock)|pending\.?[*?\[]|approval[^\s/]*\.key|approval[-_]?[*?\[]|(?:^|[\s;&|(])(?:cd|pushd|chdir|set-location|sl)\s+outlook(?![\w.-])", RegexOptions.CultureInvariant)]
+    private static partial Regex StateNamed();
+
+    [GeneratedRegex(@"zyggy(?:\.exe)?(?![\w./-])", RegexOptions.CultureInvariant)]
+    private static partial Regex Program();
+
+    [GeneratedRegex(@"(?<![\w/.\\-])(?:alias|function|source|eval|exec|xargs|env|command|iex|invoke-expression|invoke-command|start-process|set-alias|new-alias|get-command|call|start|sudo|nohup)(?![\w/.\\-])|(?:^|[\s;&|])\.\s", RegexOptions.CultureInvariant)]
+    private static partial Regex Indirect();
+
+    [GeneratedRegex(@"(?:^|[\s;&|(/])(?:python[0-9.]*|py|node|deno|bun|perl|ruby|php|pwsh|powershell|cscript|wscript|mshta|osascript|bash|sh|zsh|cmd|csi)(?:\.exe)?(?=\s|$)", RegexOptions.CultureInvariant)]
+    private static partial Regex Interpreter();
+
+    // In the path form (lowercase, quotes gone, '\' as '/'): '|' or '|&' (not '||'), optional runners and NAME=value words, then a shell
+    // or interpreter by name or path.
+    [GeneratedRegex(@"(?<!\|)\|&?(?!\|)\s*(?:(?:sudo|doas|env|exec|command|nohup|time|nice|xargs|stdbuf)(?:\s+-\S+|\s+[\w-]+=\S*)*\s+)*(?:[^\s|;&]*/)?" + Interpreters + @"(?:\.exe)?(?![\w.-])", RegexOptions.CultureInvariant)]
+    private static partial Regex PipedInterpreter();
+
+    // A shell or interpreter whose own segment holds a '<' (a file, a here-document, a here-string or a process substitution as input).
+    [GeneratedRegex(@"(?:^|[\s;&|(/])" + Interpreters + @"(?:\.exe)?(?![\w.-])[^;&|\n]*<", RegexOptions.CultureInvariant)]
+    private static partial Regex RedirectedInterpreter();
+
+    private const string Interpreters = @"(?:bash|sh|zsh|ksh|dash|fish|csh|tcsh|pwsh|powershell|cmd|python[0-9.]*|py|node|deno|bun|perl|ruby|php|lua|tclsh|osascript|cscript|wscript|mshta|csi|iex|invoke-expression)";
+
+    [GeneratedRegex(@"\A(?:python[0-9.]*|py|node|deno|bun|perl|ruby|php|pwsh|powershell|cscript|wscript|bash|sh|zsh|ksh|dash|source|\.)(?:\.exe)?\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    private static partial Regex InterpreterWord();
+
+    [GeneratedRegex(@"\.(?:sh|bash|zsh|ksh|ps1|psm1|cmd|bat|py|js|mjs|cjs|ts|pl|rb|vbs|php)\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    private static partial Regex ScriptExtension();
+
+    [GeneratedRegex(@"[\s;&|()<>=,]+", RegexOptions.CultureInvariant)]
+    private static partial Regex Separators();
+
+    [GeneratedRegex(@"[;&|()\r\n]+", RegexOptions.CultureInvariant)]
+    private static partial Regex Segments();
+}

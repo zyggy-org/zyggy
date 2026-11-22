@@ -208,6 +208,13 @@ public sealed partial class P1_WalkingSkeleton : IAsyncLifetime
         report.Header.InReplyTo.Should().Be(EnvelopeId.Parse(id));
         report.Report!.Status.Should().Be(ReportStatus.Done);
 
+        // The host publishes its registry file on its own timer, independent of the report: wait until it is on the bus
+        // before the read-out, so `zyggy status` never races the first publish (CI run 45059549966).
+        await NodeHostHarness.WaitUntilAsync(
+            async () => await _harness.RegistryOnMainAsync(NodeHostHarness.HomeLaptop, ct) is not null,
+            TimeSpan.FromSeconds(30),
+            ct);
+
         // Act (c): the read-out — `zyggy status` from home-laptop against the live health endpoint
         var (statusExit, status) = await CliAsync(["status"], _harness.NodeJsonPath, healthUrl, ct);
 

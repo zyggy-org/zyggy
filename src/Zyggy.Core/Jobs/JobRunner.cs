@@ -134,6 +134,17 @@ public sealed partial class JobRunner
             return await CommandAsync(job, fields, ((PreFlightResult.Ok)preFlight).ProjectPath, policy, started, ct).ConfigureAwait(false);
         }
 
+        // Spec 58 decision B: on a work machine no job may both read work mail and run code; refused before the hook, the lock and the
+        // model, on the rules the hook would get (the job's, else the node's default, else the code default).
+        var allowedTools = fields.AllowedTools is { Count: > 0 } tools ? tools : policy.DefaultAllowedTools;
+        IReadOnlyList<string> hookRules = allowedTools.Count > 0 ? allowedTools : CodeDefaultAllowedTools;
+        if (policy.WorkMail && Outlook.WorkMailToolMix.Refusal(hookRules) is { } mix)
+        {
+            var workMailCodeMix = RunFailureReasonWire.ToWire(RunFailureReason.WorkMailCodeMix);
+            LogWorkMailCodeMix(id);
+            return Reply(ReportStatus.Rejected, workMailCodeMix, $"{workMailCodeMix}: {mix}\n", started);
+        }
+
         // Spec 15: a hook that cannot start lets every tool call through (Claude Code treats it as a non-blocking error), so a job
         // whose hook binary is missing, or does not refuse an empty call, never starts — checked before the lock and the worktree, so
         // nothing is left behind.
@@ -190,7 +201,6 @@ public sealed partial class JobRunner
             defaultBranch = ((PrepareResult.Prepared)prepared).DefaultBranch;
         }
 
-        var allowedTools = fields.AllowedTools is { Count: > 0 } tools ? tools : policy.DefaultAllowedTools;
         var minutes = fields.TimeoutMinutes ?? policy.DefaultTimeoutMinutes;
 
         // Spec 15: the rules travel as hook arguments, never through a file the model can reach; the blocked-calls file starts empty.
@@ -198,9 +208,15 @@ public sealed partial class JobRunner
         Directory.CreateDirectory(Path.GetDirectoryName(blockedFile)!);
         File.Delete(blockedFile);
         List<string> hookArgs = ["hook", "pre-tool-use", "--root", runDirectory, "--blocked-file", blockedFile];
-        foreach (var rule in allowedTools.Count > 0 ? allowedTools : CodeDefaultAllowedTools)
+        foreach (var rule in hookRules)
         {
             hookArgs.AddRange(["--allow", rule]);
+        }
+
+        // Spec 58 decision B: on a work machine the hook refuses every command that names an outlook action.
+        if (policy.WorkMail)
+        {
+            hookArgs.Add("--work-mail");
         }
 
         // Spec 06 "ModelRunRequest for a job": no tool set, extra directory, schema, model or system prompt; the project's own
@@ -219,13 +235,17 @@ public sealed partial class JobRunner
             PreToolUseHook = new ModelHookCommand(hookExecutable, hookArgs),
             // Founding spec §6 Invocation (amended by deliverable 12, D5): a job run is unattended — the memory and context writers do nothing.
             // Deliverable 18: the run also learns which job it is, in which project, and when it times out, so `zyggy ask` can name it and stop waiting in time.
-            Environment = WithHooksOff(_options.ModelEnvironment, job.Header.Id, ProjectName.Derive(WorkHookInput.LastSegment(project)), _clock.GetUtcNow() + timeout),
+            // Spec 58 slice 5: and where its work mail marker lives (this node's directory), so the outlook tools cannot be pointed elsewhere.
+            Environment = WithHooksOff(_options.ModelEnvironment, job.Header.Id, ProjectName.Derive(WorkHookInput.LastSegment(project)), _clock.GetUtcNow() + timeout, Outlook.OutlookJobRun.MarkerPath(nodeDir, job.Header.Tenant, job.Header.Id)),
             TranscriptPath = TranscriptPaths.For(nodeDir, job.Header.Tenant, job.Header.Id),
         };
 
         LogStarted(id, runDirectory, fields.Agent ?? "none", minutes);
         var result = await _model.RunAsync(request, ct).ConfigureAwait(false);
         var reply = Map(id, result, minutes, started);
+
+        // Spec 58 slice 5: a job that read work mail has its report screened on this laptop before it is written to the bus.
+        reply = Outlook.WorkMailReportScreen.Apply(reply, nodeDir, job.Header.Tenant, job.Header.Id);
         var hasResultLines = false;
         var description = string.IsNullOrEmpty(fields.Description) ? null : fields.Description;
         string? behindLine = null;
@@ -589,13 +609,14 @@ public sealed partial class JobRunner
     /// The model environment with <c>ZYGGY_HOOKS=off</c> and the job's id, project and end time set last, so no configured value can
     /// switch the hooks back on (spec 12 A5) or name another job (deliverable 18).
     /// </summary>
-    private static Dictionary<string, string> WithHooksOff(IReadOnlyDictionary<string, string> environment, EnvelopeId job, string project, DateTimeOffset ends) =>
+    private static Dictionary<string, string> WithHooksOff(IReadOnlyDictionary<string, string> environment, EnvelopeId job, string project, DateTimeOffset ends, string workMailMarker) =>
         new(environment, StringComparer.Ordinal)
         {
             ["ZYGGY_HOOKS"] = "off",
             ["ZYGGY_JOB"] = job.Value,
             ["ZYGGY_JOB_PROJECT"] = project,
             ["ZYGGY_JOB_ENDS"] = ends.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
+            [Outlook.OutlookJobRun.MarkerVariable] = workMailMarker,
         };
 
     private static int? Clamp(long? tokens) => tokens is { } value ? (int)Math.Clamp(value, 0, int.MaxValue) : null;
@@ -654,6 +675,9 @@ public sealed partial class JobRunner
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: rejected: branch_refused ({Rule})")]
     private partial void LogBranchRefused(string id, string rule);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: rejected: work_mail_code_mix (allowed_tools can read work mail and run code on this work machine)")]
+    private partial void LogWorkMailCodeMix(string id);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: worktree git step failed: {Step}")]
     private partial void LogWorktreeFailed(string id, string step);

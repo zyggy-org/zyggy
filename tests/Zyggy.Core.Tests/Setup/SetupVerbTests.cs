@@ -206,6 +206,27 @@ public sealed class SetupVerbTests : IDisposable
             "node.json", "zyggy-core", "settings", "settings", "skill remember", "skill archive", "skill bus", "skill discover", "signing key acme/1", "github-pat");
     }
 
+    // Spec 58 D-Q7: with --instance-path the record is copied right after node.json, into the completed file's node directory.
+    [Fact]
+    public async Task RunAsync_InstancePath_WorkBoundaryLineAfterNodeJson_CopiedIntoTheNodeDirectory()
+    {
+        // Arrange
+        InMemorySecretStore store = await AllPresentAsync();
+        string instance = Path.Combine(_files.Root, "instance");
+        Directory.CreateDirectory(instance);
+        File.WriteAllText(Path.Combine(instance, "work-boundary.json"), "{ \"mail\": { \"policyConfirmed\": { \"date\": \"2026-11-21\", \"scope\": [\"read\"] } } }");
+        var console = new VerbConsole();
+
+        // Act
+        int exit = await Verb(store).RunAsync(_files.Request() with { InstancePath = instance }, console.Io, Ct);
+
+        // Assert
+        string nodeDir = _storeRequests.Single().EffectiveNodeDir;
+        exit.Should().Be(SetupExit.Ok, console.Stdout);
+        console.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => l.Split(':')[1].Trim()).Take(3).Should().Equal("node.json", "work-boundary", "zyggy-core");
+        File.Exists(Path.Combine(nodeDir, "work-boundary.json")).Should().BeTrue();
+    }
+
     [Fact]
     public async Task RunAsync_CheckoutWithoutBusAndDiscover_ThoseTwoLeftAsIs_ExitZero()
     {

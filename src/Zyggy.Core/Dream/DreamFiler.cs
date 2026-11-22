@@ -107,6 +107,7 @@ internal sealed class DreamFiler(IModelRunner model, DreamPrompts prompts, TimeP
 
             var candidate = set.Clone();
             var applied = ProposalApplier.Apply(proposal, snapshot, candidate, context.RunDate);
+            WorkMailArchiver.Apply(proposal, batch, candidate, context.RunDate);
             if (DreamChecks.CheckBatch(batch, proposal, set, candidate, applied, context) is { } check)
             {
                 return new BatchAborted(check.Check, result.CostUsd, result.NumTurns, result.Duration) { Detail = check.Detail };

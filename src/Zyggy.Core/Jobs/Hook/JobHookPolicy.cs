@@ -21,13 +21,19 @@ internal sealed class JobHookPolicy
     private readonly StringComparison _pathComparison;
     private readonly Regex _protected;
     private readonly IReadOnlyList<string> _readRoots;
+    private readonly bool _workMail;
 
     /// <param name="root">The run directory: the worktree for a worktree job, else the project folder; absolute.</param>
     /// <param name="rules">The effective <c>allowed_tools</c>.</param>
     /// <param name="ignoreCase">Whether paths compare without case (Windows, macOS).</param>
     /// <param name="readRoots">The read roots (deliverable 18): absolute folders or files; empty or <see langword="null"/> leaves reads unrestricted.</param>
-    public JobHookPolicy(string root, IEnumerable<string> rules, bool ignoreCase, IEnumerable<string>? readRoots = null)
+    /// <param name="workMail">
+    /// Whether the job runs on a work machine (<c>outlook.enabled</c>, the runner's <c>--work-mail</c>, spec 58 decision B): only there does
+    /// the hook refuse every command that names an outlook action. Elsewhere <c>zyggy</c> itself refuses every send and move from a job.
+    /// </param>
+    public JobHookPolicy(string root, IEnumerable<string> rules, bool ignoreCase, IEnumerable<string>? readRoots = null, bool workMail = false)
     {
+        _workMail = workMail;
         _readRoots = [.. (readRoots ?? []).Select(r => Path.TrimEndingDirectorySeparator(Path.GetFullPath(r)))];
         _root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
         _rules = [.. rules.Select(ToolRule.Parse).OfType<ToolRule>()];
@@ -48,6 +54,16 @@ internal sealed class JobHookPolicy
         var shell = tool is "Bash" or "PowerShell";
         var command = shell ? Text(input, "command") ?? string.Empty : string.Empty;
         var path = PathOf(tool, input);
+
+        // Spec 58 slice 7 (AC-11): on a work machine a send or a move of work mail never runs in a job, whatever the job's allowed_tools
+        // say, however the command is quoted, escaped or assembled, or what it does to its environment first (verify
+        // 01M81R40G1YGA46142HYTV5H7T: any command naming outlook with a write verb, or with a construct that can build one). Decision B
+        // narrows the check to work machines (--work-mail), so jobs elsewhere may name outlook send or move in a test filter or a commit
+        // message; on every machine the outlook tools refuse a send or a move from a job.
+        if (shell && _workMail && (Outlook.OutlookShellCall.ActionNamed(command) is not null || Outlook.OutlookShellCall.MayWriteOutlook(command)))
+        {
+            return HookDecision.Deny(HookDecision.OutlookActionRule, command);
+        }
 
         // A pattern rule vouches only for a simple command; one that is not simple is matched, and scanned, as a whole.
         var notSimple = shell ? ShellCommand.WhyNotSimple(command, ShellCommand.DialectOf(tool)) : null;

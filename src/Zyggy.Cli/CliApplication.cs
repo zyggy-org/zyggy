@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 using Zyggy.Cli.Commands;
 using Zyggy.Core.Memory;
+using Zyggy.Core.Outlook;
 using Zyggy.Core.Secrets;
 using Zyggy.Core.Verbs;
 
@@ -21,6 +22,13 @@ internal static class CliApplication
     /// </summary>
     public static async Task<int> RunAsync(string[] args, CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure, CancellationToken cancellationToken)
     {
+        // Spec 58 slice 5: once a job has read work mail, only the outlook tools run until it ends (nothing it read leaves by another verb).
+        if (OutlookJobRun.GateRefusal(args, environment.Variables) is { } refused)
+        {
+            await io.Error.WriteLineAsync(refused);
+            return ExitCodes.Refused;
+        }
+
         if (RawVerbs.TryDispatch(args, environment, out var raw))
         {
             return await raw;
@@ -38,6 +46,12 @@ internal static class CliApplication
             return await SettingsCommand.RunAsync(settings, environment, io, configure, cancellationToken);
         }
 
+        // Spec 58: its own parser, the injected console and the service hook for the Outlook access of the tests.
+        if (args is ["outlook", .. var outlook])
+        {
+            return await OutlookCommand.RunAsync(outlook, environment, io, configure, cancellationToken);
+        }
+
         // Listed for --help only: RawVerbs runs it with its own argument parser.
         var remember = new Command("remember", "Keep a fact the owner stated in the memory inbox (remember skill).");
         var archive = new Command("archive", "Keep, list, remove or offload to OneDrive a project's archived file beside its facts (zyggy memory archive add|list|remove|offload ...).");
@@ -52,7 +66,7 @@ internal static class CliApplication
             memory, DreamCommand.Create(environment), m365, brief, linkedin, hub, ProbeCommand.Create(environment, configure), SecretCommand.Create(environment, io, configure),
             SubmitCommand.Create(environment, io, configure), ContextCommand.Create(environment, io, configure), ArchiveCommand.Create(environment, io, configure), StatusCommand.Create(environment, io, configure),
             ReportCommand.Create(environment, io, configure), WorkCommand.Create(environment, io, configure), AskCommand.Create(environment, io, configure), DecideCommand.Create(environment, io, configure), DecideCommand.CreateList(environment, io, configure), RegistryCommand.Create(environment, io, configure), VerifyCommand.Create(environment, io, configure), SetupCommand.Create(environment, io, configure), DiscoverCommand.Create(environment, io, configure),
-            SweepCommand.Create(environment, io, configure), MandateCommand.Create(environment, io, configure), SuperviseCommand.Create(environment, io, configure), SettingsCommand.Create(),
+            SweepCommand.Create(environment, io, configure), MandateCommand.Create(environment, io, configure), SuperviseCommand.Create(environment, io, configure), SettingsCommand.Create(), OutlookCommand.Create(),
         };
         var parseResult = root.Parse(args);
         if (parseResult.Errors.Count > 0)

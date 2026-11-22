@@ -130,10 +130,9 @@ public sealed class ReportWaitCommandTests : IAsyncLifetime
         var ct = TestContext.Current.CancellationToken;
         var job = EnvelopeId.New(T.AddMinutes(-10));
         Task<(int Exit, VerbConsole Console)> waiting = WaitAsync(job, ["--timeout", "5"], ct);
-        await PastFirstLookAsync(waiting, ct);
 
         // Act
-        IDisposable? held = await BusCheckoutLock.AcquireAsync(_harness.Bus.CloneDir, BusCheckoutLock.WriteLockName, TimeSpan.Zero, TimeProvider.System, ct);
+        IDisposable? held = await AcquireOnceTheFirstLookReleasesAsync(waiting, ct);
         _clock.Advance(TimeSpan.FromSeconds(30));
         await Task.Delay(TimeSpan.FromMilliseconds(500), ct);
         held?.Dispose();
@@ -181,6 +180,27 @@ public sealed class ReportWaitCommandTests : IAsyncLifetime
     {
         await Task.WhenAny(running, Task.Delay(TimeSpan.FromSeconds(2), ct));
         running.IsCompleted.Should().BeFalse("the verb waits for a report that is not there");
+    }
+
+    /// <summary>
+    /// Retries the zero-timeout acquire of the checkout's write lock for up to 15 real seconds, until the verb's first pull and look
+    /// have released it (a slow machine can still hold it after a fixed pause); <see langword="null"/> when it never came free.
+    /// </summary>
+    private async Task<IDisposable?> AcquireOnceTheFirstLookReleasesAsync(Task running, CancellationToken ct)
+    {
+        DateTimeOffset giveUp = DateTimeOffset.UtcNow.AddSeconds(15);
+        IDisposable? held = null;
+        while (held is null && !running.IsCompleted && DateTimeOffset.UtcNow < giveUp)
+        {
+            held = await BusCheckoutLock.AcquireAsync(_harness.Bus.CloneDir, BusCheckoutLock.WriteLockName, TimeSpan.Zero, TimeProvider.System, ct);
+            if (held is null)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(100), ct);
+            }
+        }
+
+        running.IsCompleted.Should().BeFalse("the verb waits for a report that is not there");
+        return held;
     }
 
     /// <summary>Moves the fake clock in 20-second steps while the verb waits; each step is followed by a short real pause for the verb's git calls.</summary>

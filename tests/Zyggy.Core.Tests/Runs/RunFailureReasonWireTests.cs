@@ -21,6 +21,9 @@ public sealed class RunFailureReasonWireTests
 
         // AC-4 (spec 59, Q3): a command job's process exited non-zero.
         { RunFailureReason.CommandFailed, "command_failed" },
+
+        // Spec 58 decision B: a work machine's job whose tools can both read work mail and run code.
+        { RunFailureReason.WorkMailCodeMix, "work_mail_code_mix" },
     };
 
     [Theory]
@@ -64,6 +67,6 @@ public sealed class RunFailureReasonWireTests
     public void EveryMember_HasATestRow()
     {
         // Assert
-        Reasons.Count.Should().Be(Enum.GetValues<RunFailureReason>().Length).And.Be(11);
+        Reasons.Count.Should().Be(Enum.GetValues<RunFailureReason>().Length).And.Be(12);
     }
 }

@@ -59,7 +59,7 @@ public sealed partial class InstallScriptTests
         var names = Regex.Matches(block, @"\]\s*\$(?<name>[A-Za-z]+)").Select(m => m.Groups["name"].Value).Distinct(StringComparer.Ordinal).ToList();
 
         // Assert
-        names.Should().Equal("Tenant", "Machine", "SignWith", "BusLocalPath", "CorePath", "Source", "NodeJson", "Uninstall");
+        names.Should().Equal("Tenant", "Machine", "SignWith", "BusLocalPath", "CorePath", "InstancePath", "Source", "NodeJson", "Uninstall");
         block.Should().MatchRegex(@"\[Parameter\(Mandatory\)\]\s*\[string\]\s*\$Tenant");
         block.Should().MatchRegex(@"\[Parameter\(Mandatory\)\]\s*\[string\]\s*\$Machine");
         block.Should().Contain("$BusLocalPath = 'C:\\agents\\bus'");

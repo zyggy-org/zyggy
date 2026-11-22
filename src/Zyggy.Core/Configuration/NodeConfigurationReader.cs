@@ -265,8 +265,16 @@ public static partial class NodeConfigurationReader
             AgentCore = agentCore,
             Commands = commands,
             FetchMaxBytes = fetchMaxBytes,
+            Outlook = OutlookSection(root),
         });
     }
+
+    /// <summary>
+    /// The <c>outlook</c> section (spec 58): kept as a cloned element for the outlook tools, which read it with their own defaults
+    /// and never refuse the file; absent, <c>null</c> or not an object means no section.
+    /// </summary>
+    private static JsonElement? OutlookSection(JsonElement root) =>
+        root.TryGetProperty("outlook", out JsonElement section) && section.ValueKind == JsonValueKind.Object ? section.Clone() : null;
 
     /// <summary>
     /// The <c>jobs</c> section (spec 59): absent or <c>null</c> means the defaults; <c>fetchMaxBytes</c> a positive integer, absent or

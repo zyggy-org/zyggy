@@ -13,6 +13,7 @@ internal sealed class TestProposals
     private readonly JsonArray _newCategories = [];
     private readonly JsonArray _creates = [];
     private readonly JsonArray _edits = [];
+    private JsonArray? _archives;
 
     public static TestProposals New() => new();
 
@@ -81,15 +82,31 @@ internal sealed class TestProposals
         return this;
     }
 
-    public JsonElement Build() =>
-        JsonSerializer.SerializeToElement(new JsonObject
+    // Spec 58 D-Q15: a work mail line kept whole in the business archive.
+    public TestProposals Archive(string line, string project, string slug, string name, string description)
+    {
+        _archives ??= [];
+        _archives.Add(new JsonObject { ["line"] = line, ["project"] = project, ["slug"] = slug, ["name"] = name, ["description"] = description });
+        return this;
+    }
+
+    public JsonElement Build()
+    {
+        var proposal = new JsonObject
         {
             ["dispositions"] = _dispositions.DeepClone(),
             ["new_categories"] = _newCategories.DeepClone(),
             ["creates"] = _creates.DeepClone(),
             ["edits"] = _edits.DeepClone(),
             ["notes"] = "test proposal",
-        });
+        };
+        if (_archives is not null)
+        {
+            proposal["archives"] = _archives.DeepClone();
+        }
+
+        return JsonSerializer.SerializeToElement(proposal);
+    }
 }
 
 /// <summary>Model results a substituted <see cref="IModelRunner"/> returns.</summary>

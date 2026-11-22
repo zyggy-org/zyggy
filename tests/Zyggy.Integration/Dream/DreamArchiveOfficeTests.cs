@@ -18,12 +18,14 @@ public sealed class DreamArchiveOfficeTests : IAsyncLifetime
     private const string Sidecar = "acme/alice/archive/zyggy/roof-offer.md";
 
     // SHA-256 of the committed prompt files (sha256sum, 2026-10-12): AC-16 pins that 39 changes no prompt and no prompt-version.
+    // filing.prompt.md re-pinned 2026-11-22 for spec 58 slice 4 (prompt-version 4, the work mail rule), and again with
+    // filing.schema.json for the work mail archive (prompt-version 5, the optional `archives` member, verify 01M81EVW8T5BWSRAQ7Z03KPPX3).
     private static readonly Dictionary<string, string> PromptHashes = new(StringComparer.Ordinal)
     {
         ["compression.prompt.md"] = "430027177e0f8f570d9a753d7975a3c78ddd3723afaa8094ba1b675210284dc5",
         ["compression.schema.json"] = "b4711f75799c6c58b68e0b50743eeae5e2524696011a511d200260b8e13c1fdf",
-        ["filing.prompt.md"] = "03e23f2c8dda0a6e87922962abebd0302b78cfa9361ca48549a0a777b3c9e07a",
-        ["filing.schema.json"] = "2ea1f84fb4c994916bf1332740b993c32c14eaea963ae33bb0a06fce71b222fd",
+        ["filing.prompt.md"] = "bfdcd56521b7571e431d03bf5c14f5194ded1de498193a8974c69af2dd10abe7",
+        ["filing.schema.json"] = "2de0e0b5d78bec3696f8f6bb0d7788da1a63db3a8134681dcf58e5ea963ad96b",
         ["migration.prompt.md"] = "25d30879a1e232a8a61cffdf61318a9aaf62c99398ccbf3d9beb6e566e40eac7",
         ["migration.schema.json"] = "5ae39b7ca0a6ebe67f8322123146b4e5c037dc4c2cd69d3d370a7f9fc7fab58e",
     };

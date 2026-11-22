@@ -32,6 +32,7 @@ internal sealed class NodeJsonPolicySource : IPolicySource
         {
             Commands = configuration.Commands,
             FetchMaxBytes = configuration.FetchMaxBytes,
+            WorkMail = Outlook.OutlookSettings.FromNodeJson(configuration.Outlook).Enabled,
         };
     }
 

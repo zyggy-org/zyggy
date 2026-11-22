@@ -121,7 +121,8 @@ internal static class TestHost
         HookedProcessRunner? hooks = null,
         ILoggerProvider? logging = null,
         bool jobRunnerAfterBus = false,
-        bool withDispatcher = false)
+        bool withDispatcher = false,
+        Action<IServiceCollection>? extend = null)
     {
         // Plan 07 Step 8: the production composition root; the test's overrides follow (last registration wins for the store, the options are merged).
         var services = new ServiceCollection()
@@ -166,6 +167,7 @@ internal static class TestHost
             o.GitEnvironment = bus.GitEnvironment;
             o.Jitter = () => 0;
         });
+        extend?.Invoke(services);
         return services.BuildServiceProvider();
     }
 

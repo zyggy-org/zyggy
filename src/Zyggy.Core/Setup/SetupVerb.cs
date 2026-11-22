@@ -97,6 +97,12 @@ public sealed class SetupVerb
             return SetupExit.Worst(lines);
         }
 
+        // Spec 58 D-Q7: the policy record for the outlook tools, only when the installer names the instance checkout.
+        if (WorkBoundaryCopy.Apply(request.InstancePath, configuration.EffectiveNodeDir) is { } workBoundary)
+        {
+            await PrintAsync(io, lines, [workBoundary], signWith).ConfigureAwait(false);
+        }
+
         SetupLine core = await _checkout.ApplyAsync(request.CorePath, request.CoreRemote, ct).ConfigureAwait(false);
         await PrintAsync(io, lines, [core], signWith).ConfigureAwait(false);
 
