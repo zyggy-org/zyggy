@@ -134,6 +134,74 @@ public sealed class OutlookBriefTests : IDisposable
         Shape(console.Stdout).Should().Be("since=2026-11-15T09:00:00+01:00 until=2026-11-21T08:05:00+01:00 more=True items=m2:Hello");
     }
 
+    // Verify 01M81CXC5D9VKYW16HQ734DWAS: a capped brief briefed the newest; brief-done must not skip the older mail it left out.
+    [Fact]
+    public async Task BriefDone_AfterACappedBrief_NextBriefPicksUpTheOlderMail()
+    {
+        // Arrange
+        Mail();
+        Allowed();
+        await RunAsync("brief --max 1");
+        await RunAsync("brief-done --until 2026-11-21T08:05:00+01:00");
+
+        // Act
+        var (_, console) = await RunAsync("brief");
+
+        // Assert
+        Shape(console.Stdout).Should().Be("since=2026-11-15T09:00:00+01:00 until=2026-11-20T14:30:00+01:00 more=False items=m1:Body one");
+    }
+
+    [Fact]
+    public async Task BriefDone_AfterTheBacklogBrief_NextBriefStartsAfterTheNewestBriefed()
+    {
+        // Arrange
+        Mail();
+        Allowed();
+        await RunAsync("brief --max 1");
+        await RunAsync("brief-done --until 2026-11-21T08:05:00+01:00");
+        await RunAsync("brief");
+        await RunAsync("brief-done --until 2026-11-20T14:30:00+01:00");
+
+        // Act
+        var (_, console) = await RunAsync("brief");
+
+        // Assert
+        Shape(console.Stdout).Should().Be("since=2026-11-21T08:05:01+01:00 until=2026-11-21T08:05:01+01:00 more=False items=");
+    }
+
+    [Fact]
+    public async Task BriefDone_BacklogBriefCappedAgain_KeepsTheRestForTheNextBrief()
+    {
+        // Arrange
+        Mail();
+        _access.Add(FakeOutlookAccess.DefaultStore, "Inbox", FakeOutlookAccess.Item("m0", Local(2026, 11, 19, 10), subject: "Zero"), body: "Body zero");
+        Allowed();
+        await RunAsync("brief --max 1");
+        await RunAsync("brief-done --until 2026-11-21T08:05:00+01:00");
+        await RunAsync("brief --max 1");
+        await RunAsync("brief-done --until 2026-11-20T14:30:00+01:00");
+
+        // Act
+        var (_, console) = await RunAsync("brief");
+
+        // Assert
+        Shape(console.Stdout).Should().Be("since=2026-11-15T09:00:00+01:00 until=2026-11-19T10:00:00+01:00 more=False items=m0:Body zero");
+    }
+
+    [Fact]
+    public async Task Brief_Capped_DoesNotMoveTheRecordedBrief()
+    {
+        // Arrange
+        Mail();
+        Allowed();
+
+        // Act
+        await RunAsync("brief --max 1");
+
+        // Assert
+        File.Exists(StateFile).Should().BeFalse();
+    }
+
     [Fact]
     public async Task Brief_ExplicitSince_WinsOverTheBriefedState()
     {
@@ -284,6 +352,7 @@ public sealed class OutlookBriefTests : IDisposable
     [Theory]
     [InlineData("See https://intranet.example.test/page for details.", "draft 1 holds a link")]
     [InlineData("Details on www.example.test.", "draft 1 holds a link")]
+    [InlineData("Fill in example.com/x please.", "draft 1 holds a link")]
     [InlineData("Please write to someone@example.test instead.", "draft 1 holds an address")]
     [InlineData("   ", "draft 1 has no text")]
     public async Task BriefDone_DraftTextWithALinkAnAddressOrNoText_RefusedNothingKept(string text, string reason)
@@ -445,6 +514,10 @@ public sealed class OutlookBriefTests : IDisposable
     [InlineData("Thanks, see you Monday at 10:00.", null)]
     [InlineData("Ping me at http://x.test", "holds a link")]
     [InlineData("mailto:someone", "holds a link")]
+    [InlineData("See example.com/x for the form.", "holds a link")]
+    [InlineData("It is on intranet.example.test/page/2 now.", "holds a link")]
+    [InlineData("Use EXAMPLE.BE/form", "holds a link")]
+    [InlineData("Yes and/or no, version 1.5/2, at 10:00. Done.", null)]
     [InlineData("Ask a.b-c@d.example.test", "holds an address")]
     [InlineData("", "has no text")]
     public void WrittenTextProblem_LinksAndAddressesAreRefused(string text, string? expected)

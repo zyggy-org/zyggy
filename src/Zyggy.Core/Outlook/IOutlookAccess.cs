@@ -25,8 +25,12 @@ internal interface IOutlookAccess
     /// <param name="folder"><c>Inbox</c>, <c>Drafts</c>, or a folder path of that store (<c>Inbox/Projects</c>).</param>
     /// <param name="sinceLocal">The lower bound in the local time of the Outlook session.</param>
     /// <param name="max">The most mail items to read (<c>outlook.read.maxItems</c>, or fewer when the caller asks fewer).</param>
+    /// <param name="beforeLocal">
+    /// An exclusive upper bound in the same local time, or <see langword="null"/> for none: items received at or after it are skipped
+    /// and do not count toward <paramref name="max"/> (the backlog of a capped brief).
+    /// </param>
     /// <returns>The items, or <see langword="null"/> when the folder does not exist in that store.</returns>
-    IEnumerable<OutlookRawItem>? Items(string storeId, string folder, DateTime sinceLocal, int max);
+    IEnumerable<OutlookRawItem>? Items(string storeId, string folder, DateTime sinceLocal, int max, DateTime? beforeLocal = null);
 
     /// <summary>Counts the items of a folder of <paramref name="storeId"/>.</summary>
     /// <param name="storeId">The store id.</param>

@@ -127,6 +127,12 @@ internal static partial class DreamChecks
             return Fail(DreamCheck.ProvenanceMissing, unsourced.Where);
         }
 
+        // path_refused, spec 58 D-Q16: a line carrying work mail is written on the business side only, never under private/.
+        if (parsed.FirstOrDefault(a => a.Path.Side == "private" && a.Parsed.Provenance.Any(IsWorkMailToken)) is { Where: not null } privateWorkMail)
+        {
+            return Fail(DreamCheck.PathRefused, privateWorkMail.Where + ": work mail on the private side");
+        }
+
         // tag_upgrade
         var statedDates = batch.Lines.Where(l => l.Class == DreamLineClass.StatedInbox)
             .Select(l => MemoryLine.Parse(l.Text).Date)
@@ -208,9 +214,23 @@ internal static partial class DreamChecks
             return Fail(DreamCheck.StatedDropped, $"{dropped.Line} ({Safe(dropped.DropReason ?? "no reason")})");
         }
 
+        // fact_not_found, spec 58 D-Q16: work mail is never dropped as not_owner_data for being work data.
+        if (proposal.Dispositions.FirstOrDefault(d => d.Outcome == "dropped" && d.DropReason == "not_owner_data" && IsWorkMailLine(batch.Find(d.Line))) is { } workDropped)
+        {
+            return Fail(DreamCheck.FactNotFound, $"{workDropped.Line} work mail dropped as not_owner_data");
+        }
+
         // fact_not_found
         foreach (var disposition in proposal.Dispositions.Where(d => d.Outcome is "filed" or "merged" or "duplicate"))
         {
+            // Spec 58 D-Q16: a work mail line lands on the business side, never in a private/ target.
+            if (IsWorkMailLine(batch.Find(disposition.Line))
+                && paths.TryResolve(disposition.Target ?? string.Empty) is { Succeeded: true, RelativePath: { } workTarget }
+                && workTarget.StartsWith("private/", StringComparison.Ordinal))
+            {
+                return Fail(DreamCheck.FactNotFound, $"{disposition.Line} work mail {disposition.Outcome} into {Safe(workTarget)}");
+            }
+
             if (disposition.Target is null)
             {
                 return Fail(DreamCheck.FactNotFound, $"{disposition.Line} {disposition.Outcome} without a target");
@@ -261,6 +281,14 @@ internal static partial class DreamChecks
         line is { Class: DreamLineClass.StatedInbox or DreamLineClass.ObservedInbox }
         && MemoryLine.Parse(line.Text).Fact is { } fact
         && fact.StartsWith(RoutingPrefix, StringComparison.Ordinal);
+
+    // Spec 58: the provenance source the work laptop's `zyggy outlook share` gives every work mail line ("work-mail <date>").
+    private static bool IsWorkMailToken(string token) =>
+        token == "work-mail" || token.StartsWith("work-mail ", StringComparison.Ordinal);
+
+    // An inbox line whose provenance names work mail.
+    private static bool IsWorkMailLine(DreamBatchLine? line) =>
+        line is { Class: DreamLineClass.ObservedInbox or DreamLineClass.StatedInbox } && MemoryLine.Parse(line.Text).Provenance.Any(IsWorkMailToken);
 
     private static string Ids(List<string> ids) => ids.Count == 0 ? "none" : string.Join(',', ids.Take(10)) + (ids.Count > 10 ? ",…" : string.Empty);
 

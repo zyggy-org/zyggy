@@ -27,6 +27,11 @@ internal static class OutlookDates
     /// <returns>The ISO 8601 text.</returns>
     public static string Write(DateTime local, TimeZoneInfo zone) => FromLocal(local, zone).ToString(Format, CultureInfo.InvariantCulture);
 
+    /// <summary>Parses a date this component wrote in <see cref="Format"/>.</summary>
+    /// <param name="text">The text.</param>
+    /// <returns>The instant.</returns>
+    public static DateTimeOffset ParseWritten(string text) => DateTimeOffset.ParseExact(text, Format, CultureInfo.InvariantCulture, DateTimeStyles.None);
+
     /// <summary>Parses a since-date given to a tool: <c>yyyy-MM-dd</c> (midnight in <paramref name="zone"/>) or ISO 8601 with an offset.</summary>
     /// <param name="text">The text.</param>
     /// <param name="zone">The session's time zone.</param>

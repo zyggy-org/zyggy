@@ -70,8 +70,9 @@ internal sealed class OutlookReader(IOutlookAccess access, OutlookPolicyDecision
     /// <param name="folder">The folder (<c>Inbox</c> or a folder the owner names).</param>
     /// <param name="since">The lower bound.</param>
     /// <param name="max">The most items wanted; never more than <c>outlook.read.maxItems</c>.</param>
+    /// <param name="before">An exclusive upper bound (a capped brief's backlog), or <see langword="null"/>.</param>
     /// <returns>The items, or the refusal.</returns>
-    public OutlookResult<IReadOnlyList<OutlookMailSummary>> List(string folder, DateTimeOffset since, int? max = null)
+    public OutlookResult<IReadOnlyList<OutlookMailSummary>> List(string folder, DateTimeOffset since, int? max = null, DateTimeOffset? before = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(folder);
         var cap = Math.Min(max is > 0 ? max.Value : settings.ReadMaxItems, settings.ReadMaxItems);
@@ -79,7 +80,8 @@ internal sealed class OutlookReader(IOutlookAccess access, OutlookPolicyDecision
         {
             var store = access.DefaultStoreId();
             var sinceLocal = TimeZoneInfo.ConvertTime(since, zone).DateTime;
-            var items = access.Items(store, folder, sinceLocal, cap);
+            DateTime? beforeLocal = before is { } b ? TimeZoneInfo.ConvertTime(b, zone).DateTime : null;
+            var items = access.Items(store, folder, sinceLocal, cap, beforeLocal);
             if (items is null)
             {
                 return Refused<IReadOnlyList<OutlookMailSummary>>(OutlookRefusal.FolderNotFound);
@@ -87,7 +89,7 @@ internal sealed class OutlookReader(IOutlookAccess access, OutlookPolicyDecision
 
             var listed = items
                 .Select(item => (Item: item, Received: OutlookDates.FromLocal(item.ReceivedLocal, zone)))
-                .Where(x => x.Received >= since)
+                .Where(x => x.Received >= since && (before is null || x.Received < before))
                 .OrderByDescending(x => x.Received)
                 .ThenBy(x => x.Item.EntryId, StringComparer.Ordinal)
                 .Take(cap)
@@ -99,8 +101,10 @@ internal sealed class OutlookReader(IOutlookAccess access, OutlookPolicyDecision
 
     /// <summary>Reads one item of the default store by its reference.</summary>
     /// <param name="reference">The item reference.</param>
+    /// <param name="wholeBody">Whether the body is kept whole instead of cut at <c>outlook.read.bodyMaxChars</c> (the sensitive-data
+    /// filter judges the whole mail; nothing of it is printed).</param>
     /// <returns>The mail, or the refusal.</returns>
-    public OutlookResult<OutlookMail> Read(string reference)
+    public OutlookResult<OutlookMail> Read(string reference, bool wholeBody = false)
     {
         ArgumentException.ThrowIfNullOrEmpty(reference);
         return Guarded(() =>
@@ -117,7 +121,7 @@ internal sealed class OutlookReader(IOutlookAccess access, OutlookPolicyDecision
             if (!item.IsProtected)
             {
                 var full = access.ReadBody(store, item.EntryId);
-                truncated = full.Length > settings.ReadBodyMaxChars;
+                truncated = !wholeBody && full.Length > settings.ReadBodyMaxChars;
                 body = truncated ? full[..settings.ReadBodyMaxChars] : full;
             }
 

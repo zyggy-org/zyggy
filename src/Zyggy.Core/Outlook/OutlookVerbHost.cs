@@ -5,7 +5,11 @@ using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 
 using Zyggy.Core.Configuration;
+using Zyggy.Core.Envelope;
 using Zyggy.Core.Verbs;
+
+using ContextRequest = Zyggy.Core.Bus.ContextRequest;
+using MemoryLine = Zyggy.Core.Memory.MemoryLine;
 
 namespace Zyggy.Core.Outlook;
 
@@ -28,7 +32,7 @@ public sealed class OutlookVerbHost
 {
     private const string Prefix = "outlook: ";
     private const string Usage = " (usage: zyggy outlook policy | count [--folder <name>]... | list [--folder <name>] [--since <date>] [--max <n>] | read <reference>"
-        + " | brief [--since <date>] [--max <n>] | brief-done --until <date> [< drafts.json] | drafts [<n>]; each [--config <node.json>])";
+        + " | brief [--since <date>] [--max <n>] | brief-done --until <date> [< drafts.json] | drafts [<n>] | share [< mails.json]; each [--config <node.json>])";
     private const string ReadScope = "read";
 
     private static readonly TimeSpan DefaultSince = TimeSpan.FromDays(7);
@@ -57,6 +61,13 @@ public sealed class OutlookVerbHost
         _zone = zone;
         _access = access ?? RealAccess;
     }
+
+    /// <summary>
+    /// Gets the context path <c>zyggy outlook share</c> hands its filtered lines to (spec 58 slice 4): the CLI's signed context
+    /// envelope to Central through the bus (the <c>zyggy context</c> path), which renders its own outcome and returns the exit code.
+    /// Without it, <c>share</c> refuses with exit 3.
+    /// </summary>
+    public Func<NodeConfiguration, ContextRequest, VerbIo, CancellationToken, Task<int>>? ContextSender { get; set; }
 
     /// <summary>
     /// Creates the host from a host's services: the <see cref="TimeProvider"/> when one is registered, and the Outlook access a test
@@ -120,6 +131,11 @@ public sealed class OutlookVerbHost
         if (parsed.Verb == "drafts")
         {
             return await DraftsAsync(statePath, parsed.Number, io).ConfigureAwait(false);
+        }
+
+        if (parsed.Verb == "share")
+        {
+            return await ShareAsync(node, decision, settings, io, cancellationToken).ConfigureAwait(false);
         }
 
         IReadOnlyList<DraftRequest>? requests = null;
@@ -249,10 +265,14 @@ public sealed class OutlookVerbHost
     private async Task<int> BriefAsync(OutlookReader reader, Arguments parsed, string statePath, OutlookSettings settings, VerbIo io)
     {
         OutlookBriefState state = OutlookDrafts.Load(statePath);
+
+        // Older mail a capped brief left out comes first (verify 01M81CXC5D9VKYW16HQ734DWAS); an explicit --since reads its own window.
+        OutlookBacklog? backlog = parsed.Since is null ? state.Backlog : null;
         DateTimeOffset since = parsed.Since
+            ?? backlog?.Since
             ?? (state.BriefedUntil is { } until ? until.AddSeconds(1) : TimeZoneInfo.ConvertTime(_clock.GetUtcNow() - DefaultSince, _zone));
         int cap = Math.Min(parsed.Max ?? settings.ReadMaxItems, settings.ReadMaxItems);
-        OutlookResult<IReadOnlyList<OutlookMailSummary>> listed = reader.List("Inbox", since, cap);
+        OutlookResult<IReadOnlyList<OutlookMailSummary>> listed = reader.List("Inbox", since, cap, backlog?.Before);
         if (listed.Value is not { } summaries)
         {
             return await RefusedAsync(listed, io).ConfigureAwait(false);
@@ -271,13 +291,21 @@ public sealed class OutlookVerbHost
         }
 
         string sinceText = since.ToString(OutlookDates.Format, CultureInfo.InvariantCulture);
+        string untilText = mails.Count == 0 ? sinceText : mails[0].Summary.Received;
+        bool more = mails.Count >= cap;
+        OutlookDrafts.SaveOffer(OutlookDrafts.OfferPath(statePath), new OutlookBriefOffer(
+            since,
+            OutlookDates.ParseWritten(untilText),
+            mails.Count == 0 ? null : OutlookDates.ParseWritten(mails[^1].Summary.Received),
+            more,
+            backlog is not null));
         await WriteJsonAsync(io, writer =>
         {
             writer.WriteStartObject();
             writer.WriteString("folder", "Inbox");
             writer.WriteString("since", sinceText);
-            writer.WriteString("until", mails.Count == 0 ? sinceText : mails[0].Summary.Received);
-            writer.WriteBoolean("more", mails.Count >= cap);
+            writer.WriteString("until", untilText);
+            writer.WriteBoolean("more", more);
             writer.WriteStartArray("items");
             foreach (OutlookMail mail in mails)
             {
@@ -323,11 +351,133 @@ public sealed class OutlookVerbHost
             drafts.Add(new OutlookDraft(i + 1, summary.Reference, summary.SenderName, summary.SenderAddress, OutlookDrafts.ReplySubject(summary.Subject), requests[i].Text, OutlookDrafts.Quote(mail)));
         }
 
-        OutlookDrafts.Save(statePath, new OutlookBriefState(until, drafts));
+        // Only what the last brief showed counts as briefed: a capped brief's older mail stays for the next brief.
+        string offerPath = OutlookDrafts.OfferPath(statePath);
+        OutlookDrafts.Save(statePath, OutlookDrafts.Record(OutlookDrafts.Load(statePath), OutlookDrafts.LoadOffer(offerPath), until, drafts));
+        File.Delete(offerPath);
         await io.Out.WriteAsync(string.Create(
             CultureInfo.InvariantCulture,
             $"{Prefix}brief recorded until {until.ToString(OutlookDates.Format, CultureInfo.InvariantCulture)}; {drafts.Count} reply drafts kept on this laptop (zyggy outlook drafts)\n")).ConfigureAwait(false);
         return 0;
+    }
+
+    // Spec 58 slice 4: the session's facts about briefed mail cross to Central's business side through the sensitive-data filter, which
+    // runs here, on the laptop, before anything is handed to the context path. Every fact is checked before Outlook is read; a mail on the
+    // never-list or in doubt yields no line and is counted; past days' counts cross once as one summary line each (D-Q8).
+    private async Task<int> ShareAsync(NodeConfiguration node, OutlookPolicyDecision decision, OutlookSettings settings, VerbIo io, CancellationToken cancellationToken)
+    {
+        string? stdin = io.InputRedirected ? await io.In.ReadToEndAsync(cancellationToken).ConfigureAwait(false) : null;
+        List<WorkMailShareRequest>? requests = WorkMailShare.Parse(stdin, out string? stdinError);
+        if (requests is null)
+        {
+            await io.Error.WriteAsync(Prefix + "mails on stdin: " + stdinError + " (expected { \"mails\": [ { \"reference\": \"…\", \"facts\": [\"…\"], \"doubt\": false } ] })\n").ConfigureAwait(false);
+            return 2;
+        }
+
+        DateOnly today = DateOnly.FromDateTime(_clock.GetUtcNow().UtcDateTime);
+        for (var m = 0; m < requests.Count; m++)
+        {
+            for (var f = 0; f < requests[m].Facts.Count; f++)
+            {
+                if (WorkMailShare.Line(today, today, requests[m].Facts[f]).Length > MemoryLine.MaxLength)
+                {
+                    await io.Error.WriteAsync(string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"{Prefix}mail {m + 1} fact {f + 1} is longer than a memory line ({MemoryLine.MaxLength} characters with its prefix); split it\n")).ConfigureAwait(false);
+                    return 2;
+                }
+            }
+        }
+
+        if (decision.RefusalFor(ReadScope) is { } refusal)
+        {
+            await io.Error.WriteAsync(Prefix + "refused: " + OutlookReader.Describe(refusal) + "\n").ConfigureAwait(false);
+            return 5;
+        }
+
+        string termsPath = Path.Join(node.EffectiveNodeDir, WorkMailShare.TermsFileName);
+        if (!File.Exists(termsPath))
+        {
+            await io.Error.WriteAsync(Prefix + "refused: no " + WorkMailShare.TermsFileName + " in the node directory (the shared sensitive term list); nothing shared\n").ConfigureAwait(false);
+            return 3;
+        }
+
+        if (ContextSender is null)
+        {
+            await io.Error.WriteAsync(Prefix + "configuration error: no context path to Central in this host; nothing shared\n").ConfigureAwait(false);
+            return 3;
+        }
+
+        var filter = WorkMailFilter.Parse(await File.ReadAllTextAsync(termsPath, cancellationToken).ConfigureAwait(false));
+        var reader = new OutlookReader(_access(), decision, settings, _zone);
+        var lines = new List<string>();
+        int sharedMails = 0, keptMails = 0;
+        try
+        {
+            for (var m = 0; m < requests.Count; m++)
+            {
+                OutlookResult<OutlookMail> read = reader.Read(requests[m].Reference, wholeBody: true);
+                if (read.Value is not { } mail)
+                {
+                    if (read.Refusal == OutlookRefusal.ItemNotFound)
+                    {
+                        await io.Error.WriteAsync(Prefix + "mail " + (m + 1).ToString(CultureInfo.InvariantCulture) + ": " + read.Message + "; nothing shared\n").ConfigureAwait(false);
+                        return 1;
+                    }
+
+                    return await RefusedAsync(read, io).ConfigureAwait(false);
+                }
+
+                if (filter.Check(mail, requests[m].Facts, requests[m].Doubt) != WorkMailVerdict.Share)
+                {
+                    keptMails++;
+                    continue;
+                }
+
+                sharedMails++;
+                DateOnly received = DateOnly.FromDateTime(OutlookDates.ParseWritten(mail.Summary.Received).DateTime);
+                lines.AddRange(requests[m].Facts.Select(fact => WorkMailShare.Line(today, received, fact)));
+            }
+        }
+        catch (OutlookPromptTimeoutException ex)
+        {
+            await io.Error.WriteAsync(Prefix + "Outlook asked for access: " + ex.Message + "; answer the prompt in Outlook or stop\n").ConfigureAwait(false);
+            return 6;
+        }
+
+        string keptPath = WorkMailShare.KeptPath(node.EffectiveNodeDir, node.Tenant);
+        SortedDictionary<DateOnly, int> kept = WorkMailShare.LoadKept(keptPath);
+        if (keptMails > 0)
+        {
+            kept[today] = (kept.TryGetValue(today, out int before) ? before : 0) + keptMails;
+        }
+
+        var pastDays = kept.Where(k => k.Key < today).ToList();
+        lines.AddRange(pastDays.Select(k => WorkMailShare.CountLine(k.Key, k.Value)));
+        int keptToday = kept.TryGetValue(today, out int todayCount) ? todayCount : 0;
+        if (lines.Count == 0)
+        {
+            WorkMailShare.SaveKept(keptPath, kept);
+            await io.Out.WriteAsync(string.Create(CultureInfo.InvariantCulture, $"{Prefix}nothing to share; {keptToday} mails kept on this laptop today\n")).ConfigureAwait(false);
+            return 0;
+        }
+
+        await io.Out.WriteAsync(string.Create(
+            CultureInfo.InvariantCulture,
+            $"{Prefix}sharing {lines.Count - pastDays.Count} lines from {sharedMails} mails; {keptToday} mails kept on this laptop today\n")).ConfigureAwait(false);
+        var request = new ContextRequest(new ContextScope(ContextScopeKind.General, null), lines);
+        int exit = await ContextSender(node, request, io, cancellationToken).ConfigureAwait(false);
+        if (exit is 0 or 7)
+        {
+            // The past days' counts crossed (pushed or committed for the next push); a failed send keeps them for the next share.
+            foreach (var (day, _) in pastDays)
+            {
+                kept.Remove(day);
+            }
+        }
+
+        WorkMailShare.SaveKept(keptPath, kept);
+        return exit;
     }
 
     private static async Task<int> DraftsAsync(string statePath, int? number, VerbIo io)
@@ -409,7 +559,7 @@ public sealed class OutlookVerbHost
     /// <summary>The parsed arguments: the verb, its options and <c>--config</c>.</summary>
     private sealed record Arguments(string Verb, string? Config, IReadOnlyList<string> Folders, DateTimeOffset? Since, int? Max, string? Reference)
     {
-        private static readonly HashSet<string> Verbs = new(["policy", "count", "list", "read", "brief", "brief-done", "drafts"], StringComparer.Ordinal);
+        private static readonly HashSet<string> Verbs = new(["policy", "count", "list", "read", "brief", "brief-done", "drafts", "share"], StringComparer.Ordinal);
 
         /// <summary>Gets <c>--until</c> of <c>brief-done</c>.</summary>
         public DateTimeOffset? Until { get; init; }

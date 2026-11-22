@@ -51,7 +51,7 @@ internal sealed class OutlookAccessUnavailable(string reason) : IOutlookAccess
     public string DefaultStoreId() => throw new OutlookUnavailableException(reason);
 
     /// <inheritdoc/>
-    public IEnumerable<OutlookRawItem>? Items(string storeId, string folder, DateTime sinceLocal, int max) => throw new OutlookUnavailableException(reason);
+    public IEnumerable<OutlookRawItem>? Items(string storeId, string folder, DateTime sinceLocal, int max, DateTime? beforeLocal = null) => throw new OutlookUnavailableException(reason);
 
     /// <inheritdoc/>
     public int? Count(string storeId, string folder) => throw new OutlookUnavailableException(reason);
@@ -95,7 +95,7 @@ internal sealed class OutlookComAccess(TimeSpan callTimeout, Func<object> create
     public string DefaultStoreId() => Invoke(app => (string)app.Session.DefaultStore.StoreID);
 
     /// <inheritdoc/>
-    public IEnumerable<OutlookRawItem>? Items(string storeId, string folder, DateTime sinceLocal, int max) => Invoke<IEnumerable<OutlookRawItem>?>(app =>
+    public IEnumerable<OutlookRawItem>? Items(string storeId, string folder, DateTime sinceLocal, int max, DateTime? beforeLocal = null) => Invoke<IEnumerable<OutlookRawItem>?>(app =>
     {
         dynamic? target = FindFolder(app, storeId, folder);
         if (target is null)
@@ -121,6 +121,12 @@ internal sealed class OutlookComAccess(TimeSpan callTimeout, Func<object> create
             if (received < sinceLocal)
             {
                 break;
+            }
+
+            // A backlog read skips the newer mail already briefed; it does not count toward the cap.
+            if (beforeLocal is { } before && received >= before)
+            {
+                continue;
             }
 
             listed.Add(Map(item));

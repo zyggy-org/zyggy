@@ -22,14 +22,35 @@ namespace Zyggy.Core.Outlook;
 /// <param name="Quoted">The quoted plain-text history.</param>
 internal sealed record OutlookDraft(int Number, string Reference, string ToName, string To, string Subject, string Text, string Quoted);
 
+/// <summary>
+/// Older mail a capped brief left out: received at or after <paramref name="Since"/> and before <paramref name="Before"/> (the oldest
+/// mail that brief showed). The next brief takes it first, before any mail after the recorded brief.
+/// </summary>
+/// <param name="Since">The capped brief's lower bound.</param>
+/// <param name="Before">The received time of the oldest mail it showed (exclusive).</param>
+internal sealed record OutlookBacklog(DateTimeOffset Since, DateTimeOffset Before);
+
 /// <summary>What was briefed and the drafts of the last brief (spec 58 "What was briefed is remembered on the laptop").</summary>
 /// <param name="BriefedUntil">The received time of the newest briefed mail; the next brief starts after it.</param>
 /// <param name="Drafts">The drafts of the last brief.</param>
-internal sealed record OutlookBriefState(DateTimeOffset? BriefedUntil, IReadOnlyList<OutlookDraft> Drafts)
+/// <param name="Backlog">Older mail a capped brief left out, or <see langword="null"/>.</param>
+internal sealed record OutlookBriefState(DateTimeOffset? BriefedUntil, IReadOnlyList<OutlookDraft> Drafts, OutlookBacklog? Backlog = null)
 {
     /// <summary>Gets the state before any brief.</summary>
     public static OutlookBriefState None { get; } = new(null, []);
 }
+
+/// <summary>
+/// What the last <c>zyggy outlook brief</c> showed, so <c>brief-done</c> records only what was briefed: its window, the newest and oldest
+/// mail it showed, whether it was capped, and whether it was a backlog brief. Kept in <c>offer.json</c> beside the brief state; it is
+/// not the recorded brief.
+/// </summary>
+/// <param name="Since">The brief's lower bound.</param>
+/// <param name="Until">The brief's <c>until</c> (the newest mail shown, or the since when none).</param>
+/// <param name="Oldest">The oldest mail shown, or <see langword="null"/> when none.</param>
+/// <param name="More">Whether the cap was reached.</param>
+/// <param name="FromBacklog">Whether the brief read a backlog window.</param>
+internal sealed record OutlookBriefOffer(DateTimeOffset Since, DateTimeOffset Until, DateTimeOffset? Oldest, bool More, bool FromBacklog);
 
 /// <summary>
 /// The rules of a reply draft and the laptop-local brief state (spec 58 slice 3): the reply subject, the written-text check (the
@@ -118,9 +139,10 @@ internal static partial class OutlookDrafts
         {
             using var document = JsonDocument.Parse(File.ReadAllText(path));
             var root = document.RootElement;
-            DateTimeOffset? until = root.TryGetProperty("briefedUntil", out var u) && u.ValueKind == JsonValueKind.String
-                && DateTimeOffset.TryParseExact(u.GetString(), OutlookDates.Format, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
-                ? parsed
+            DateTimeOffset? until = Date(root, "briefedUntil");
+            OutlookBacklog? backlog = root.TryGetProperty("backlog", out var b) && b.ValueKind == JsonValueKind.Object
+                && Date(b, "since") is { } backlogSince && Date(b, "before") is { } backlogBefore
+                ? new OutlookBacklog(backlogSince, backlogBefore)
                 : null;
             var drafts = new List<OutlookDraft>();
             if (root.TryGetProperty("drafts", out var list) && list.ValueKind == JsonValueKind.Array)
@@ -138,7 +160,7 @@ internal static partial class OutlookDrafts
                 }
             }
 
-            return new OutlookBriefState(until, drafts);
+            return new OutlookBriefState(until, drafts, backlog);
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException or KeyNotFoundException or FormatException)
         {
@@ -146,6 +168,103 @@ internal static partial class OutlookDrafts
             return OutlookBriefState.None;
         }
     }
+
+    /// <summary>Returns the path of the last brief's offer, beside the brief state.</summary>
+    /// <param name="statePath">The brief state file.</param>
+    /// <returns>The path.</returns>
+    public static string OfferPath(string statePath)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(statePath);
+        return Path.Join(Path.GetDirectoryName(statePath), "offer.json");
+    }
+
+    /// <summary>Reads the last brief's offer; <see langword="null"/> when there is none or it cannot be read.</summary>
+    /// <param name="path">The offer file.</param>
+    /// <returns>The offer.</returns>
+    public static OutlookBriefOffer? LoadOffer(string path)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            var root = document.RootElement;
+            return Date(root, "since") is { } since && Date(root, "until") is { } until
+                ? new OutlookBriefOffer(since, until, Date(root, "oldest"), root.GetProperty("more").GetBoolean(), root.GetProperty("fromBacklog").GetBoolean())
+                : null;
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or KeyNotFoundException or FormatException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Writes the last brief's offer atomically.</summary>
+    /// <param name="path">The offer file.</param>
+    /// <param name="offer">The offer.</param>
+    public static void SaveOffer(string path, OutlookBriefOffer offer)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        ArgumentNullException.ThrowIfNull(offer);
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer, Indented))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("since", Text(offer.Since));
+            writer.WriteString("until", Text(offer.Until));
+            if (offer.Oldest is { } oldest)
+            {
+                writer.WriteString("oldest", Text(oldest));
+            }
+            else
+            {
+                writer.WriteNull("oldest");
+            }
+
+            writer.WriteBoolean("more", offer.More);
+            writer.WriteBoolean("fromBacklog", offer.FromBacklog);
+            writer.WriteEndObject();
+        }
+
+        MemoryFileWriter.WriteAtomically(path, Encoding.UTF8.GetString(buffer.ToArray()) + "\n");
+    }
+
+    /// <summary>
+    /// The state <c>brief-done --until</c> records (verify 01M81CXC5D9VKYW16HQ734DWAS): when the last brief's offer has that
+    /// <c>until</c>, only what it showed counts as briefed — a capped brief leaves its older mail as the backlog, a backlog brief
+    /// never moves the recorded brief back and narrows or clears the backlog. Without a matching offer the given until is recorded
+    /// and any backlog kept.
+    /// </summary>
+    /// <param name="state">The state before.</param>
+    /// <param name="offer">The last brief's offer, or <see langword="null"/>.</param>
+    /// <param name="until">The <c>--until</c> given.</param>
+    /// <param name="drafts">The new drafts.</param>
+    /// <returns>The state to save.</returns>
+    public static OutlookBriefState Record(OutlookBriefState state, OutlookBriefOffer? offer, DateTimeOffset until, IReadOnlyList<OutlookDraft> drafts)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(drafts);
+        if (offer is null || offer.Until != until)
+        {
+            return new OutlookBriefState(until, drafts, state.Backlog);
+        }
+
+        OutlookBacklog? backlog = offer.More && offer.Oldest is { } oldest ? new OutlookBacklog(offer.Since, oldest) : null;
+        DateTimeOffset recorded = offer.FromBacklog && state.BriefedUntil is { } before && before > until ? before : until;
+        return new OutlookBriefState(recorded, drafts, backlog);
+    }
+
+    private static DateTimeOffset? Date(JsonElement element, string name) =>
+        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+        && DateTimeOffset.TryParseExact(value.GetString(), OutlookDates.Format, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
+            ? parsed
+            : null;
+
+    private static string Text(DateTimeOffset value) => value.ToString(OutlookDates.Format, CultureInfo.InvariantCulture);
 
     /// <summary>Writes the brief state atomically, replacing the last brief's drafts.</summary>
     /// <param name="path">The state file.</param>
@@ -177,6 +296,14 @@ internal static partial class OutlookDrafts
                 writer.WriteNull("briefedUntil");
             }
 
+            if (state.Backlog is { } backlog && only is null)
+            {
+                writer.WriteStartObject("backlog");
+                writer.WriteString("since", Text(backlog.Since));
+                writer.WriteString("before", Text(backlog.Before));
+                writer.WriteEndObject();
+            }
+
             writer.WriteStartArray("drafts");
             foreach (var draft in state.Drafts.Where(d => only is null || d.Number == only))
             {
@@ -198,8 +325,9 @@ internal static partial class OutlookDrafts
         return Encoding.UTF8.GetString(buffer.ToArray()) + "\n";
     }
 
-    // A scheme link, mailto:, or a bare www. host.
-    [GeneratedRegex(@"(?i)\b(?:[a-z][a-z0-9+.-]*://|mailto:|www\.)", RegexOptions.CultureInvariant)]
+    // A scheme link, mailto:, a bare www. host, or a bare domain with a path (example.com/x): a dotted host ending in a top-level
+    // label of two or more letters, directly followed by a slash.
+    [GeneratedRegex(@"(?i)\b(?:[a-z][a-z0-9+.-]*://|mailto:|www\.|(?:[a-z0-9-]+\.)+[a-z]{2,}/)", RegexOptions.CultureInvariant)]
     private static partial Regex Link();
 
     // Anything shaped like an e-mail address.

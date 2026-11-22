@@ -170,6 +170,23 @@ public sealed class OutlookComAccessTests
         (items.Select(i => i.EntryId).ToList(), folder.Fetched).Should().BeEquivalentTo((new List<string> { "m0" }, 2));
     }
 
+    // Verify 01M81CXC5D9VKYW16HQ734DWAS: a backlog read skips the newer mail already briefed without counting it toward the cap.
+    [Fact]
+    public void Items_BeforeBound_NewerMailSkippedAndNotCounted()
+    {
+        // Arrange
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "the COM access runs on an STA thread, Windows only");
+        var at = new DateTime(2026, 11, 21, 12, 0, 0);
+        var folder = Folder(Mail("new0", at), Mail("new1", at.AddMinutes(-1)), Mail("m0", at.AddMinutes(-2)), Mail("m1", at.AddMinutes(-3)), Mail("m2", at.AddMinutes(-4)));
+        var sut = new OutlookComAccess(Long, () => Application(folder));
+
+        // Act
+        var items = sut.Items(Store, "Inbox", new DateTime(2026, 11, 1), max: 2, beforeLocal: at.AddMinutes(-1))!;
+
+        // Assert
+        items.Select(i => i.EntryId).Should().Equal("m0", "m1");
+    }
+
     // ---- the fake late-bound Outlook ----
 
     private static FakeFolder Folder(params ExpandoObject[] mail) => new(mail);

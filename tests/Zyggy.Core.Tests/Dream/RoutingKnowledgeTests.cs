@@ -108,7 +108,7 @@ public sealed class RoutingKnowledgeTests : IDisposable
         Disk().Should().Equal(disk);
     }
 
-    // AC-15: the filing prompt carries the rule, and its version went up by one (2 → 3).
+    // AC-15: the filing prompt carries the rule, and its version went up by one (2 → 3; spec 58 raised it to 4).
     [Fact]
     public void FilingPrompt_StatesRoutingRule_VersionRaised()
     {
@@ -116,7 +116,7 @@ public sealed class RoutingKnowledgeTests : IDisposable
         var prompt = new DreamPrompts().FilingPrompt;
 
         // Assert
-        prompt.Should().StartWith("prompt-version: 3\n");
+        prompt.Should().StartWith("prompt-version: 4\n");
         prompt.Should().Contain("`Routing:`").And.Contain("`" + RoutingFile + "`");
     }
 

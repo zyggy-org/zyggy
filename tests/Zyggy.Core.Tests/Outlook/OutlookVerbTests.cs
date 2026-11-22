@@ -448,7 +448,7 @@ public sealed class OutlookVerbTests : IDisposable
     {
         public string DefaultStoreId() => throw new OutlookPromptTimeoutException(waited);
 
-        public IEnumerable<OutlookRawItem>? Items(string storeId, string folder, DateTime sinceLocal, int max) => throw new OutlookPromptTimeoutException(waited);
+        public IEnumerable<OutlookRawItem>? Items(string storeId, string folder, DateTime sinceLocal, int max, DateTime? beforeLocal = null) => throw new OutlookPromptTimeoutException(waited);
 
         public int? Count(string storeId, string folder) => throw new OutlookPromptTimeoutException(waited);
 
