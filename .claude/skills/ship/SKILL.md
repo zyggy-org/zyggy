@@ -8,6 +8,8 @@ argument-hint: "What is being released, e.g. 'the discovery registry' or 'fix fo
 
 The owner's approval is the go for the whole chain (`CLAUDE.md` § Release after approval). Do every step you can yourself, in order, without asking again. Stop at the first red step, report it with its output, and fix it through the normal workflow (`bugfix` agent, then a PATCH release). Hand the owner a step only when you cannot do it (a refused command, a missing permission, branch protection, another machine), with the exact commands prefixed by machine and user (`[central/<vm-admin>]`, `[home-laptop/user PowerShell]`), then continue after they confirm.
 
+**In a Zyggy job run** (`ZYGGY_JOB` set; `CLAUDE.md` § Job runs) the job's TASK asking for the release is the owner's approval, and every step below runs without a prompt. There is no one to confirm a hand-off: put each step you cannot do into the REPORT as exact commands and carry on with the steps after it that do not depend on it. Never stop or restart the Node running the job; upgrade this machine last, started detached after the report (step 5), and the REPORT says it is scheduled.
+
 This repository is public: release notes, scripts and commits carry placeholders only; machine names, the VM, resource group and instance values come from the private instance repository and auto-memory, never from this file.
 
 ## Never
@@ -52,6 +54,7 @@ Follow `zyggy-core/runbooks/install-node.md` "Upgrade" and the operating facts i
 - **Central**: write the upgrade script to the scratchpad (download the release on the VM itself with `curl` + `SHA256SUMS`, stop `zyggy-node`, install under `/opt/zyggy/<version>/` with `docs/`, switch the symlinks, any new unit or drop-in the release needs, start), run it as the VM admin through `az vm run-command invoke --scripts @<file>`, then `git pull --ff-only` the instance checkout as the `zyggy` user. Verify: `curl -s http://localhost:4711/health` shows the new `version`, `zyggy --version`. A refused or failing run → hand the script to the owner.
 - **This laptop**: download and unpack `zyggy-win-x64.zip` into a new folder, run `.\deploy\windows\install.ps1` with the `-Tenant`, `-Machine` and `-SignWith` values from the existing `node.json`. Verify `zyggy --version` and `/health`. Settings the release makes mandatory (a new `node.json` key) are added before the restart; say which.
 - **Other laptops**: give the owner the one command and what to check.
+- **In a job run**, the machine running the job is never stopped mid-job: write its upgrade (the Central script, or `install.ps1` with its values) to a file in the scratch folder and start it detached two minutes ahead — Linux `systemd-run --on-active=120 /bin/bash <script>` (as the VM admin through `az vm run-command` when the job runs on Central as `zyggy`), Windows a one-time Scheduled Task (`Register-ScheduledTask` with a `-Once -At (Get-Date).AddMinutes(2)` trigger) — then finish steps 6.1–6.4 with what is already live. The next job checks `zyggy --version` and `/health` on that machine and records it.
 
 ## 6. Prove it live and record
 

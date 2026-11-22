@@ -64,6 +64,8 @@ Ask for approval with a visual approval report (`CLAUDE.md` § Visual approval r
 
 Do not commit yet. When the owner approves the fix, commit it on `fix/<short-name>` and run the `ship` skill (a PATCH release) end to end without asking again.
 
+In a Zyggy job run (`ZYGGY_JOB` set; `CLAUDE.md` § Job runs) the job's TASK is the approval for what it asks: commit the fix on `fix/<short-name>` and push it; ship the PATCH when the TASK asks for the release too, otherwise end with the report above (ASCII diagram) as the approval request.
+
 ## Rules
 
 - Never skip the regression test. RED before GREEN.

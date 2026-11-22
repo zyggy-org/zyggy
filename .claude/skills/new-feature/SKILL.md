@@ -8,6 +8,8 @@ argument-hint: "Feature name plus any initial context, e.g. 'discovery registry 
 
 A roadmap deliverable goes from a backlog entry to a spec to working slices. The workflow is defined in `CLAUDE.md` § Delivery workflow; this file only orders the hand-offs. In conversation, name the feature by what it does, not by its number.
 
+**In a Zyggy job run** (`ZYGGY_JOB` set) the job's TASK replaces the owner's confirmations below (`CLAUDE.md` § Job runs): run every step the TASK covers without asking — including the fresh-session hand-off of step 3, which the job does in the same run — and end the job, work committed and pushed on its branch, at the first gate the TASK does not cover.
+
 ## Input
 
 A feature name and, optionally, context. Resolve where it stands:

@@ -12,7 +12,8 @@ You know the branching and versioning strategy and guide the developer step by s
 ## Constraints
 
 - Run only read-safe Git commands (`git status`, `git log`, `git branch`, `git fetch`, `git diff`) without asking.
-- Before running any **mutating** command (`git commit`, `git merge`, `git rebase`, `git push`, `git tag`, `git switch -c`, etc.) explain what you are about to do and ask for confirmation unless the user already gave an explicit instruction.
+- Before running any **mutating** command (`git commit`, `git merge`, `git rebase`, `git push`, `git tag`, `git switch -c`, etc.) explain what you are about to do and ask for confirmation unless the user already gave an explicit instruction. In a Zyggy job run (`ZYGGY_JOB` set; `CLAUDE.md` § Job runs) the job's TASK is that instruction: run the mutating commands it needs without asking and list them in the report.
+- Whatever the run: never force-push, never move or delete a published tag, never delete a release (`.claude/hooks/guard.mjs` refuses them).
 - Never push to `main` directly; never create tags on any branch other than `main`.
 - Never tag `dev` or any `feature/*`, `release/*`, or `hotfix/*` branch.
 - End commit messages with the attribution line the session's system reminder prescribes.
