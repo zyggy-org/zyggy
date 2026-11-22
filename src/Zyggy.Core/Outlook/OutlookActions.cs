@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 using Zyggy.Core.Configuration;
 using Zyggy.Core.M365;
@@ -19,13 +20,14 @@ namespace Zyggy.Core.Outlook;
 /// the guard hook reads that command (<see cref="OutlookShellCall"/>), runs the guard — not attended, policy record scope,
 /// <c>outlook.actions</c>, the send or move rules — and either denies it with the reason and one <c>refused</c> row, or answers
 /// <c>ask</c> with the full message (or the mail and the folder) so Claude Code shows the owner one permission prompt with exactly
-/// what will happen, whatever the session's allow rules say. The pass is recorded (<see cref="OutlookActionPending"/>). On Allow the
-/// tool runs: it takes the pass of exactly this request, runs the guard again, acts once in Outlook and writes one <c>done</c> or
-/// <c>failed</c> row; without a pass it refuses. On Deny the tool never runs; the pass becomes one <c>denied</c> row at the session's
-/// Stop hook (or once it expired).
+/// what will happen, whatever the session's allow rules say. The pass is recorded (<see cref="OutlookActionPending"/>, the hash of a
+/// random nonce) and the nonce goes into the command Claude Code runs on Allow (<c>updatedInput</c>, <c>--nonce</c>). On Allow the
+/// tool runs: it takes the pass of exactly this request and this nonce (atomically), runs the guard again, acts once in Outlook and
+/// writes one <c>done</c> or <c>failed</c> row; without the pass it refuses. On Deny the tool never runs; the pass becomes one
+/// <c>denied</c> row at the session's next guarded call or its Stop hook.
 /// </para>
 /// <para>
-/// The tools read the node's own <c>node.json</c> only (no <c>--config</c>). Exit codes: 0 done · 1 draft, item or folder not found
+/// The tools read the node's own <c>node.json</c> at the default path only (no <c>--config</c>, <c>ZYGGY_NODE_JSON</c> ignored). Exit codes: 0 done · 1 draft, item or folder not found
 /// in Outlook · 2 usage · 3 configuration · 5 refused · 6 Outlook failed or asked for access. The guard hook prints its decision and
 /// exits 0; any failure of its own is exit 2 (Claude Code blocks the call). A row never holds a body.
 /// </para>
@@ -86,8 +88,9 @@ internal sealed class OutlookActions(IReadOnlyDictionary<string, string?> enviro
             return 5;
         }
 
-        // The pass is taken before the guard runs again, so a call refused now gets one row only (never a later "denied" too).
-        bool passed = context.Pending.Take(request.Key, clock.GetUtcNow());
+        // The pass is taken before the guard runs again, so a call refused now gets one row only (never a later "denied" too). Only
+        // the command Claude Code runs on Allow carries the pass's nonce; the same call without it (another process) takes nothing.
+        bool passed = context.Pending.Take(request.Key, call.Nonce, clock.GetUtcNow());
         OutlookGuardDecision decision = context.Check(request);
         if (!decision.Passed)
         {
@@ -127,19 +130,32 @@ internal sealed class OutlookActions(IReadOnlyDictionary<string, string?> enviro
             string tool = hook.RootElement.GetProperty("tool_name").GetString()!;
             JsonElement toolInput = hook.RootElement.GetProperty("tool_input");
             string command = toolInput.TryGetProperty("command", out JsonElement c) && c.ValueKind == JsonValueKind.String ? c.GetString()! : string.Empty;
+            string? named = OutlookShellCall.ActionNamed(command);
+            Context? context = Load(out string? configError);
+            DateTimeOffset now = clock.GetUtcNow();
+
+            // Claude Code runs a Bash call's hook, prompt and tool before the next call's hook: when the guard sees any call, a pass
+            // still pending was not taken on Allow — it was denied (or never answered). It becomes its "denied" row now, so its nonce,
+            // known from the prompt, sends nothing afterwards. Without a node.json no action can run, so there is nothing to settle.
+            if (context is not null)
+            {
+                foreach (OutlookActionLogRow row in context.Pending.Settle(now, all: true))
+                {
+                    context.Log.Append(row);
+                }
+            }
+
             // Any tool that carries a command naming an action (Bash, PowerShell, a monitor, …) is the guard's; only Bash may pass.
-            if (OutlookShellCall.ActionNamed(command) is not { } named)
+            if (named is null)
             {
                 return 0;
             }
 
-            if (Load(out string? configError) is not { } context)
+            if (context is null)
             {
                 return await HookFailAsync(io, "configuration error: " + configError).ConfigureAwait(false);
             }
 
-            DateTimeOffset now = clock.GetUtcNow();
-            context.SettleExpired(now);
             OutlookAction action = named == "move" ? OutlookAction.Move : OutlookAction.Send;
             string? refused = null, rowReason = null;
             OutlookActionCall? call = null;
@@ -155,6 +171,12 @@ internal sealed class OutlookActions(IReadOnlyDictionary<string, string?> enviro
             {
                 // The usage text may quote an argument; the row keeps a fixed reason (a refusal never echoes a request value).
                 (refused, rowReason) = (usage, "not a valid outlook call");
+            }
+            else if (call.Nonce is not null)
+            {
+                // A nonce comes from this hook only, into the command Claude Code runs on Allow; a call that brings one (the prompt's
+                // command retried after a Deny) is refused, and its pass was settled above.
+                refused = "a nonce comes from the guard only (run the call without " + OutlookActionCall.NonceOption + ")";
             }
 
             if (refused is not null)
@@ -172,8 +194,13 @@ internal sealed class OutlookActions(IReadOnlyDictionary<string, string?> enviro
                 return 0;
             }
 
-            context.Pending.Add(request!.Key, request.Row(now, OutlookActionOutcome.Denied, null), now);
-            await io.Out.WriteAsync(HookOutput("ask", GuardPrefix + context.PromptText(request))).ConfigureAwait(false);
+            // The pass's nonce: random, handed to Claude Code only inside the command it runs on Allow (updatedInput); the file keeps
+            // its hash. The command was read as one plain call, so one more plain option at its end is still one plain call.
+            string nonce = RandomNumberGenerator.GetHexString(64, lowercase: true);
+            context.Pending.Add(request!.Key, nonce, request.Row(now, OutlookActionOutcome.Denied, null), now);
+            var updated = JsonNode.Parse(toolInput.GetRawText())!.AsObject();
+            updated["command"] = command + " " + OutlookActionCall.NonceOption + " " + nonce;
+            await io.Out.WriteAsync(HookOutput("ask", GuardPrefix + context.PromptText(request), updated)).ConfigureAwait(false);
             return 0;
         }
         catch (OperationCanceledException)
@@ -213,7 +240,7 @@ internal sealed class OutlookActions(IReadOnlyDictionary<string, string?> enviro
         return 2;
     }
 
-    private static string HookOutput(string decision, string reason)
+    private static string HookOutput(string decision, string reason, JsonObject? updatedInput = null)
     {
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer))
@@ -223,6 +250,12 @@ internal sealed class OutlookActions(IReadOnlyDictionary<string, string?> enviro
             writer.WriteString("hookEventName", "PreToolUse");
             writer.WriteString("permissionDecision", decision);
             writer.WriteString("permissionDecisionReason", reason);
+            if (updatedInput is not null)
+            {
+                writer.WritePropertyName("updatedInput");
+                updatedInput.WriteTo(writer);
+            }
+
             writer.WriteEndObject();
             writer.WriteEndObject();
         }
@@ -233,7 +266,19 @@ internal sealed class OutlookActions(IReadOnlyDictionary<string, string?> enviro
     private Context? Load(out string? error)
     {
         error = null;
-        string path = NodeConfigurationReader.ResolvePath(null, environment);
+
+        // The node's own node.json at the default path only (verify 01M81R40G1YGA46142HYTV5H7T): ZYGGY_NODE_JSON is ignored, as
+        // --config is refused, so no other file can widen the policy, switch the actions on or move the passes elsewhere.
+        var defaults = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, value) in environment)
+        {
+            if (!string.Equals(name, NodeConfigurationReader.PathVariable, StringComparison.OrdinalIgnoreCase))
+            {
+                defaults[name] = value;
+            }
+        }
+
+        string path = NodeConfigurationReader.ResolvePath(null, defaults);
         NodeConfigurationResult result = NodeConfigurationReader.Read(path);
         if (result.Configuration is not { } node)
         {
@@ -457,10 +502,16 @@ internal sealed record ActionRequest(OutlookSendRequest? Send, OutlookMoveReques
 /// <param name="Draft">The draft number of <c>send --draft</c>, or <see langword="null"/>.</param>
 internal sealed record OutlookActionCall(ActionRequest? Request, int? Draft)
 {
+    /// <summary>The option the guard appends with the pass's nonce (never part of the request's key).</summary>
+    public const string NonceOption = "--nonce";
+
     private static readonly HashSet<string> SendLists = new(["--to", "--cc", "--bcc", "--attach", "--reply-to"], StringComparer.Ordinal);
     private static readonly HashSet<string> SendValues = new(["--subject", "--body", "--from", "--account", "--draft"], StringComparer.Ordinal);
 
-    /// <summary>Parses the arguments after <c>outlook</c>: <c>send …</c> or <c>move …</c>.</summary>
+    /// <summary>Gets the nonce the command carries (<c>--nonce</c>), or <see langword="null"/>.</summary>
+    public string? Nonce { get; init; }
+
+    /// <summary>Parses the arguments after <c>outlook</c>: <c>send …</c> or <c>move …</c>, with at most one <c>--nonce</c>.</summary>
     /// <param name="args">The arguments, the verb first.</param>
     /// <param name="error">The usage error, when the result is <see langword="null"/>.</param>
     /// <returns>The call, or <see langword="null"/>.</returns>
@@ -480,10 +531,39 @@ internal sealed record OutlookActionCall(ActionRequest? Request, int? Draft)
             return null;
         }
 
-        return args[0] == "send" ? ParseSend(args, out error) : ParseMove(args, out error);
+        // The nonce is taken out first (an option of the pass, not of the message). Walked by position: an option's value is copied
+        // with its option, so a body or subject that reads "--nonce" stays the body or subject.
+        var rest = new List<string>(args.Count) { args[0] };
+        string? nonce = null;
+        for (var i = 1; i < args.Count; i++)
+        {
+            if (args[i] == NonceOption)
+            {
+                if (nonce is not null || i + 1 >= args.Count)
+                {
+                    error = NonceOption + " needs one value";
+                    return null;
+                }
+
+                nonce = args[++i];
+                continue;
+            }
+
+            rest.Add(args[i]);
+            if (TakesValue(args[0], args[i]) && i + 1 < args.Count)
+            {
+                rest.Add(args[++i]);
+            }
+        }
+
+        OutlookActionCall? call = rest[0] == "send" ? ParseSend(rest, out error) : ParseMove(rest, out error);
+        return call is null ? null : call with { Nonce = nonce };
     }
 
-    private static OutlookActionCall? ParseSend(IReadOnlyList<string> args, out string? error)
+    private static bool TakesValue(string verb, string option) =>
+        verb == "send" ? SendLists.Contains(option) || SendValues.Contains(option) : option is "--to" or "--store";
+
+    private static OutlookActionCall? ParseSend(List<string> args, out string? error)
     {
         error = null;
         var lists = SendLists.ToDictionary(k => k, _ => new List<string>(), StringComparer.Ordinal);
@@ -557,7 +637,7 @@ internal sealed record OutlookActionCall(ActionRequest? Request, int? Draft)
         return new OutlookActionCall(ActionRequest.ForSend(send), null);
     }
 
-    private static OutlookActionCall? ParseMove(IReadOnlyList<string> args, out string? error)
+    private static OutlookActionCall? ParseMove(List<string> args, out string? error)
     {
         error = null;
         string? reference = null, destination = null, store = null;

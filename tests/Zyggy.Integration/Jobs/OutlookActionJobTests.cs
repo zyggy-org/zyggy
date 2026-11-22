@@ -52,6 +52,8 @@ public sealed class OutlookActionJobTests : IAsyncLifetime
 
     private string NodeDir => Path.Combine(_scratch.Path, "node");
 
+    private string AppData => Path.Combine(_scratch.Path, "appdata");
+
     public async ValueTask InitializeAsync()
     {
         await _bus.InitializeAsync();
@@ -59,8 +61,10 @@ public sealed class OutlookActionJobTests : IAsyncLifetime
         _store = await TestHost.StoreAsync(Acme, CancellationToken.None);
         _project = await ScratchProject.CreateAsync(_bus, CancellationToken.None);
         Directory.CreateDirectory(NodeDir);
+        // The node's own node.json at the default path (the action tools ignore ZYGGY_NODE_JSON).
+        Directory.CreateDirectory(Path.Combine(AppData, "zyggy"));
         _config = NodeJson.Write(
-            _scratch.File("config-work-laptop"),
+            Path.Combine(AppData, "zyggy"),
             Acme,
             WorkLaptop,
             TestKeys.Acme1,
@@ -90,7 +94,7 @@ public sealed class OutlookActionJobTests : IAsyncLifetime
         await RunJobAsync(model, TestContext.Current.CancellationToken);
 
         // Assert
-        model.HookExits.Should().Equal(2, 2, 2);
+        model.HookExits.Should().Equal(2, 2, 2, 2);
     }
 
     // The tool itself, run with the job's environment, refuses "not attended" with a row; nothing sent or moved.
@@ -163,6 +167,8 @@ public sealed class OutlookActionJobTests : IAsyncLifetime
     private Task<(int Exit, VerbConsole Console)> ZyggyAsync(Dictionary<string, string?> environment, string[] args, CancellationToken ct)
     {
         environment["ZYGGY_NODE_JSON"] = _config;
+        environment["LOCALAPPDATA"] = AppData;
+        environment["XDG_CONFIG_HOME"] = AppData;
         return ZyggyCliInProcess.RunAsync(args, environment, s => s.AddSingleton<IOutlookAccess>(_access), null, ct);
     }
 
@@ -198,7 +204,7 @@ public sealed class OutlookActionJobTests : IAsyncLifetime
             Dictionary<string, string?> Job() => request.Environment.ToDictionary(e => e.Key, e => (string?)e.Value, StringComparer.OrdinalIgnoreCase);
 
             // The node's own hook, with the job's rules (Bash: everything), on three action commands.
-            foreach (string command in new[] { "zyggy outlook send --draft 1", "ZYGGY_JOB= ZYGGY_HOOKS= zyggy outlook send --to a@example.test --subject s --body b", "zyggy outlook move b1 --to 'Deleted Items'" })
+            foreach (string command in new[] { "zyggy outlook send --draft 1", "ZYGGY_JOB= ZYGGY_HOOKS= zyggy outlook send --to a@example.test --subject s --body b", "zyggy outlook move b1 --to 'Deleted Items'", "v=send; zyggy $'\\x6futlook' $v --draft 1" })
             {
                 var console = new VerbConsole(new JsonObject { ["tool_name"] = "Bash", ["tool_input"] = new JsonObject { ["command"] = command } }.ToJsonString());
                 HookExits.Add(await new JobHookVerb(ignoreCase: true).RunAsync(request.PreToolUseHook!.Args.Skip(1).ToList(), console.Io, cancellationToken));

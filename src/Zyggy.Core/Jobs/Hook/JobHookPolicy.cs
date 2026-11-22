@@ -50,8 +50,9 @@ internal sealed class JobHookPolicy
         var path = PathOf(tool, input);
 
         // Spec 58 slice 7 (AC-11): a send or a move of work mail never runs in a job, whatever the job's allowed_tools say, however
-        // the command is quoted or what it does to its environment first. The outlook tools refuse it themselves too.
-        if (shell && Outlook.OutlookShellCall.ActionNamed(command) is not null)
+        // the command is quoted, escaped or assembled, or what it does to its environment first (verify 01M81R40G1YGA46142HYTV5H7T:
+        // any command naming outlook with a write verb, or with a construct that can build one). The outlook tools refuse it too.
+        if (shell && (Outlook.OutlookShellCall.ActionNamed(command) is not null || Outlook.OutlookShellCall.MayWriteOutlook(command)))
         {
             return HookDecision.Deny(HookDecision.OutlookActionRule, command);
         }

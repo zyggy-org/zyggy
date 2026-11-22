@@ -37,6 +37,7 @@ public sealed class OutlookActionVerbTests : IDisposable
     {
         Directory.CreateDirectory(_root);
         Directory.CreateDirectory(NodeDir);
+        Directory.CreateDirectory(Path.GetDirectoryName(Config)!);
         WriteNodeJson("""{ "enabled": true, "actions": ["send", "move"], "move": { "excludedFolders": ["Private"] } }""");
         File.WriteAllText(Path.Combine(NodeDir, "work-boundary.json"), "{ \"mail\": { \"policyConfirmed\": " + Record + " } }");
     }
@@ -45,7 +46,11 @@ public sealed class OutlookActionVerbTests : IDisposable
 
     private string NodeDir => Path.Combine(_root, "node");
 
-    private string Config => Path.Combine(_root, "node.json");
+    // The node's own node.json at the default path (LOCALAPPDATA or XDG_CONFIG_HOME of the test's environment): the only one the
+    // action tools read (verify 01M81R40G1YGA46142HYTV5H7T).
+    private string AppData => Path.Combine(_root, "appdata");
+
+    private string Config => Path.Combine(AppData, "zyggy", "node.json");
 
     private string LogPath => Path.Combine(NodeDir, "work", "acme", "outlook", "actions.jsonl");
 
@@ -241,23 +246,162 @@ public sealed class OutlookActionVerbTests : IDisposable
     public async Task Send_AfterTheGuardPassed_SendsExactlyTheShownMessageOnce()
     {
         // Arrange
-        await GuardAsync(Command(Reply));
+        string nonce = await PassAsync(Reply);
 
         // Act
-        var (exit, _) = await RunAsync(Reply);
+        var (exit, _) = await ActAsync(Reply, nonce);
 
         // Assert
         (exit, _access.Sent).Should().BeEquivalentTo((0, new[] { new OutlookOutgoing(["colleague@example.test"], [], "RE: Planning", Reply[6]) }));
+    }
+
+    // ---- the pass's nonce (verify 01M81R40G1YGA46142HYTV5H7T point 1) ----
+
+    [Fact]
+    public async Task Guard_Ask_UpdatesTheCommandWithARandomNonce_KeepingTheOtherInput()
+    {
+        // Act
+        var (_, console) = await GuardAsync(Command(Reply));
+
+        // Assert
+        var updated = JsonNode.Parse(console.Stdout)!["hookSpecificOutput"]!["updatedInput"]!;
+        string command = updated["command"]!.GetValue<string>();
+        (command.StartsWith(Command(Reply) + " --nonce ", StringComparison.Ordinal), System.Text.RegularExpressions.Regex.IsMatch(Nonce(console.Stdout), "^[0-9a-f]{64}$"), updated["description"]!.GetValue<string>())
+            .Should().Be((true, true, "send the reply"));
+    }
+
+    [Fact]
+    public async Task Guard_TwoPasses_TwoDifferentNonces()
+    {
+        // Arrange
+        string first = await PassAsync(Reply);
+
+        // Act
+        string second = await PassAsync(Reply);
+
+        // Assert
+        second.Should().NotBe(first);
+    }
+
+    [Fact]
+    public async Task Guard_PendingFileKeepsTheNonceHashOnly()
+    {
+        // Act
+        string nonce = await PassAsync(Reply);
+
+        // Assert
+        string pending = File.ReadAllText(Path.Combine(NodeDir, "work", "acme", "outlook", "pending.jsonl"));
+        (pending.Contains(nonce, StringComparison.Ordinal), pending.Contains(OutlookActionPending.NonceHash(nonce), StringComparison.Ordinal)).Should().Be((false, true));
+    }
+
+    [Fact]
+    public async Task Send_SameCommandWithoutTheNonce_RefusedNothingSent_ThePassStays()
+    {
+        // Arrange: another process runs the very command the owner was shown, without the nonce.
+        string nonce = await PassAsync(Reply);
+        var (other, _) = await RunAsync(Reply);
+
+        // Act: the owner's Allow still sends.
+        var (owner, _) = await ActAsync(Reply, nonce);
+
+        // Assert
+        (other, owner, _access.Sent.Count).Should().Be((5, 0, 1));
+    }
+
+    [Fact]
+    public async Task Send_WrongNonce_RefusedNothingSent()
+    {
+        // Arrange
+        await PassAsync(Reply);
+
+        // Act
+        var (exit, _) = await ActAsync(Reply, new string('0', 64));
+
+        // Assert
+        (exit, _access.Sent.Count).Should().Be((5, 0));
+    }
+
+    [Fact]
+    public async Task Send_AfterDeny_TheNextGuardedCallInvalidatesThePass()
+    {
+        // Arrange: the owner denies (the tool never runs); the session goes on with another shell call.
+        string nonce = await PassAsync(Reply);
+        await GuardAsync("git status");
+
+        // Act: the nonce, known from the prompt, no longer sends.
+        var (exit, _) = await ActAsync(Reply, nonce);
+
+        // Assert
+        (exit, _access.Sent.Count, Outcomes()).Should().Be((5, 0, "denied refused"));
+    }
+
+    [Fact]
+    public async Task Guard_CommandCarryingANonce_DeniedAndThePassIsGone()
+    {
+        // Arrange: after a Deny the session retries the command it was shown, nonce and all.
+        string nonce = await PassAsync(Reply);
+        var (_, retry) = await GuardAsync(Command([.. Reply, "--nonce", nonce]));
+
+        // Act
+        var (exit, _) = await ActAsync(Reply, nonce);
+
+        // Assert
+        (HookOutput(retry.Stdout).Decision, exit, _access.Sent.Count).Should().Be(("deny", 5, 0));
+    }
+
+    [Fact]
+    public async Task Send_ABodyThatReadsNonce_IsTheBody_SentWithThePassOnly()
+    {
+        // Arrange: "--nonce" as an option's value is that value, not a nonce.
+        string[] call = ["send", "--to", "colleague@example.test", "--subject", "--nonce", "--body", "--nonce"];
+        string nonce = await PassAsync(call);
+
+        // Act
+        var (exit, _) = await ActAsync(call, nonce);
+
+        // Assert
+        (exit, _access.Sent).Should().BeEquivalentTo((0, new[] { new OutlookOutgoing(["colleague@example.test"], [], "--nonce", "--nonce") }));
+    }
+
+    // ---- the node's own node.json only (verify 01M81R40G1YGA46142HYTV5H7T point 2) ----
+
+    [Fact]
+    public async Task Guard_ZyggyNodeJsonNamesAnotherFile_TheDefaultNodeJsonIsRead()
+    {
+        // Arrange: a node.json elsewhere with the actions off; the node's own has them on.
+        string decoy = Path.Combine(_root, "decoy.json");
+        File.WriteAllText(decoy, File.ReadAllText(Config).Replace("\"enabled\": true", "\"enabled\": false", StringComparison.Ordinal));
+
+        // Act
+        var (_, console) = await GuardAsync(Command(Reply), new() { ["ZYGGY_NODE_JSON"] = decoy });
+
+        // Assert
+        HookOutput(console.Stdout).Decision.Should().Be("ask");
+    }
+
+    [Fact]
+    public async Task Send_ZyggyNodeJsonNamesAnotherNodeDir_ThePassOfTheNodesOwnStateIsTaken()
+    {
+        // Arrange: a node.json elsewhere whose node directory holds no pass.
+        string nonce = await PassAsync(Reply);
+        string decoy = Path.Combine(_root, "decoy.json");
+        File.WriteAllText(decoy, File.ReadAllText(Config).Replace(NodeDir.Replace('\\', '/'), Path.Combine(_root, "other").Replace('\\', '/'), StringComparison.Ordinal));
+
+        // Act
+        var (exit, _) = await ActAsync(Reply, nonce, new() { ["ZYGGY_NODE_JSON"] = decoy });
+
+        // Assert
+        (exit, _access.Sent.Count).Should().Be((0, 1));
     }
 
     [Fact]
     public async Task Send_AfterTheGuardPassed_OneDoneRowWithoutTheBody()
     {
         // Arrange
-        await GuardAsync(Command(Reply));
+        string nonce = await PassAsync(Reply);
 
         // Act
-        await RunAsync(Reply);
+        await ActAsync(Reply, nonce);
 
         // Assert
         (Outcomes(), File.ReadAllText(LogPath).Contains(BodyCanary, StringComparison.Ordinal), Rows().Single()["subject"]!.GetValue<string>())
@@ -278,11 +422,11 @@ public sealed class OutlookActionVerbTests : IDisposable
     public async Task Send_ADifferentMessageThanTheGuardPassed_Refused()
     {
         // Arrange
-        await GuardAsync(Command(Reply));
+        string nonce = await PassAsync(Reply);
         string[] other = [.. Reply[..5], "--body", "Something else entirely."];
 
         // Act
-        var (exit, _) = await RunAsync(other);
+        var (exit, _) = await ActAsync(other, nonce);
 
         // Assert
         (exit, _access.Sent.Count).Should().Be((5, 0));
@@ -292,11 +436,11 @@ public sealed class OutlookActionVerbTests : IDisposable
     public async Task Send_PassedTwiceSentOnce_SecondRunRefused()
     {
         // Arrange
-        await GuardAsync(Command(Reply));
-        await RunAsync(Reply);
+        string nonce = await PassAsync(Reply);
+        await ActAsync(Reply, nonce);
 
         // Act
-        var (exit, _) = await RunAsync(Reply);
+        var (exit, _) = await ActAsync(Reply, nonce);
 
         // Assert
         (exit, _access.Sent.Count).Should().Be((5, 1));
@@ -308,10 +452,10 @@ public sealed class OutlookActionVerbTests : IDisposable
     public async Task Send_Unattended_RefusedNotAttended_NothingSent(string variable, string value)
     {
         // Arrange: a pass from an attended session does not carry into an unattended run.
-        await GuardAsync(Command(Reply));
+        string nonce = await PassAsync(Reply);
 
         // Act
-        var (exit, console) = await RunAsync(Reply, new() { [variable] = value });
+        var (exit, console) = await ActAsync(Reply, nonce, new() { [variable] = value });
 
         // Assert
         (exit, console.Stderr, _access.Sent.Count).Should().Be((5, "outlook: refused: not attended\n", 0));
@@ -321,11 +465,11 @@ public sealed class OutlookActionVerbTests : IDisposable
     public async Task Send_PassOlderThanTheLifetime_Refused_AndThePassSettledAsDenied()
     {
         // Arrange
-        await GuardAsync(Command(Reply));
+        string nonce = await PassAsync(Reply);
         _clock.Advance(OutlookActionPending.Lifetime + TimeSpan.FromSeconds(1));
 
         // Act
-        var (exit, _) = await RunAsync(Reply);
+        var (exit, _) = await ActAsync(Reply, nonce);
 
         // Assert
         (exit, _access.Sent.Count, Outcomes()).Should().Be((5, 0, "denied refused"));
@@ -335,11 +479,11 @@ public sealed class OutlookActionVerbTests : IDisposable
     public async Task Send_OutlookFails_ExitSix_OneFailedRow()
     {
         // Arrange
-        await GuardAsync(Command(Reply));
+        string nonce = await PassAsync(Reply);
         _access.ActionsFail = true;
 
         // Act
-        var (exit, _) = await RunAsync(Reply);
+        var (exit, _) = await ActAsync(Reply, nonce);
 
         // Assert
         (exit, Outcomes(), Rows().Single()["reason"]!.GetValue<string>()).Should().Be((6, "failed", "Outlook not available"));
@@ -362,10 +506,10 @@ public sealed class OutlookActionVerbTests : IDisposable
     {
         // Arrange
         KeepDraft();
-        await GuardAsync(Command("send", "--draft", "1"));
+        string nonce = await PassAsync(["send", "--draft", "1"]);
 
         // Act
-        var (exit, _) = await RunAsync(["send", "--draft", "1"]);
+        var (exit, _) = await ActAsync(["send", "--draft", "1"], nonce);
 
         // Assert
         (exit, _access.Sent).Should().BeEquivalentTo((0, new[] { new OutlookOutgoing(["m1@example.test"], [], "RE: Subject", "I confirm.\n\n-----Original Message-----\nquoted as received") }));
@@ -389,11 +533,11 @@ public sealed class OutlookActionVerbTests : IDisposable
     {
         // Arrange
         KeepDraft();
-        await GuardAsync(Command("send", "--draft", "1"));
+        string nonce = await PassAsync(["send", "--draft", "1"]);
         KeepDraft(text: "I decline.");
 
         // Act
-        var (exit, _) = await RunAsync(["send", "--draft", "1"]);
+        var (exit, _) = await ActAsync(["send", "--draft", "1"], nonce);
 
         // Assert
         (exit, _access.Sent.Count).Should().Be((5, 0));
@@ -438,8 +582,8 @@ public sealed class OutlookActionVerbTests : IDisposable
     public async Task Settle_AfterTheSend_NoSecondRow()
     {
         // Arrange
-        await GuardAsync(Command(Reply));
-        await RunAsync(Reply);
+        string nonce = await PassAsync(Reply);
+        await ActAsync(Reply, nonce);
 
         // Act
         await RunAsync(["settle"]);
@@ -451,14 +595,13 @@ public sealed class OutlookActionVerbTests : IDisposable
     [Fact]
     public async Task TwoSendsInOneSentence_TwoPromptsTwoRows()
     {
-        // Arrange
+        // Arrange: Claude Code runs each Bash call through its hook, its prompt and the tool before the next one.
         string[] second = [.. Reply[..5], "--body", "Second reply."];
-        await GuardAsync(Command(Reply));
-        await GuardAsync(Command(second));
-        await RunAsync(Reply);
+        await ActAsync(Reply, await PassAsync(Reply));
+        string nonce = await PassAsync(second);
 
         // Act
-        await RunAsync(second);
+        await ActAsync(second, nonce);
 
         // Assert
         (_access.Sent.Count, Outcomes()).Should().Be((2, "done done"));
@@ -470,10 +613,10 @@ public sealed class OutlookActionVerbTests : IDisposable
     public async Task Move_ToDeletedItems_TheMailIsInDeletedItems_OneDoneRow()
     {
         // Arrange
-        await GuardAsync(Command("move", "m1", "--to", "Deleted Items"));
+        string nonce = await PassAsync(["move", "m1", "--to", "Deleted Items"]);
 
         // Act
-        var (exit, _) = await RunAsync(["move", "m1", "--to", "Deleted Items"]);
+        var (exit, _) = await ActAsync(["move", "m1", "--to", "Deleted Items"], nonce);
 
         // Assert
         (exit, _access.FolderOf("m1"), Outcomes(), Rows().Single()["destination"]!.GetValue<string>()).Should().Be((0, "Deleted Items", "done", "Deleted Items"));
@@ -483,10 +626,10 @@ public sealed class OutlookActionVerbTests : IDisposable
     public async Task Move_ToAProjectFolder_MovesExactlyThatMail()
     {
         // Arrange
-        await GuardAsync(Command("move", "m1", "--to", "Inbox/Projects"));
+        string nonce = await PassAsync(["move", "m1", "--to", "Inbox/Projects"]);
 
         // Act
-        await RunAsync(["move", "m1", "--to", "Inbox/Projects"]);
+        await ActAsync(["move", "m1", "--to", "Inbox/Projects"], nonce);
 
         // Assert
         (_access.FolderOf("m1"), _access.Calls.Count(c => c.StartsWith("Move ", StringComparison.Ordinal))).Should().Be(("Inbox/Projects", 1));
@@ -514,6 +657,23 @@ public sealed class OutlookActionVerbTests : IDisposable
         return (output["permissionDecision"]!.GetValue<string>(), output["permissionDecisionReason"]!.GetValue<string>());
     }
 
+    private static string? UpdatedCommand(string stdout) =>
+        JsonNode.Parse(stdout)!["hookSpecificOutput"]!["updatedInput"]?["command"]?.GetValue<string>();
+
+    // The nonce the guard appended to the command it passed to the prompt (the last word of the updated command).
+    private static string Nonce(string stdout) => UpdatedCommand(stdout)!.Split(' ')[^1];
+
+    // The guard passes the call to the prompt; returns the nonce of the pass.
+    private async Task<string> PassAsync(string[] call)
+    {
+        var (_, console) = await GuardAsync(Command(call));
+        return Nonce(console.Stdout);
+    }
+
+    // The tool as Claude Code runs it after Allow: the command the guard updated, with its nonce.
+    private Task<(int Exit, VerbConsole Console)> ActAsync(string[] call, string nonce, Dictionary<string, string?>? extra = null) =>
+        RunAsync([.. call, "--nonce", nonce], extra);
+
     private void KeepDraft(string text = "I confirm.")
     {
         var draft = new OutlookDraft(1, "m1", "Sender m1", "m1@example.test", "RE: Subject", text, "-----Original Message-----\nquoted as received");
@@ -534,7 +694,7 @@ public sealed class OutlookActionVerbTests : IDisposable
             ["session_id"] = "s1",
             ["hook_event_name"] = "PreToolUse",
             ["tool_name"] = tool,
-            ["tool_input"] = new JsonObject { ["command"] = command },
+            ["tool_input"] = new JsonObject { ["command"] = command, ["description"] = "send the reply" },
             ["tool_use_id"] = "toolu_1",
         }.ToJsonString();
         return RunAsync(["guard"], extra, hook);
@@ -558,7 +718,7 @@ public sealed class OutlookActionVerbTests : IDisposable
     private async Task<(int Exit, VerbConsole Console)> RunAsync(string[] args, Dictionary<string, string?>? extra = null, string? stdin = null)
     {
         var console = new VerbConsole(stdin);
-        var environment = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { ["ZYGGY_NODE_JSON"] = Config };
+        var environment = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { ["LOCALAPPDATA"] = AppData, ["XDG_CONFIG_HOME"] = AppData };
         foreach (var (key, value) in extra ?? [])
         {
             environment[key] = value;

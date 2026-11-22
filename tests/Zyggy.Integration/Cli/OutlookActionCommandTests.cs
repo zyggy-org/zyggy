@@ -31,6 +31,8 @@ public sealed class OutlookActionCommandTests : IAsyncLifetime
 
     private string _config = null!;
 
+    private string _appData = null!;
+
     private string LogPath => Path.Combine(_harness.NodeDirOf("actions"), "work", "acme", "outlook", "actions.jsonl");
 
     public async ValueTask InitializeAsync()
@@ -39,8 +41,11 @@ public sealed class OutlookActionCommandTests : IAsyncLifetime
         _access = new FakeOutlookAccess()
             .Add(FakeOutlookAccess.DefaultStore, "Inbox", FakeOutlookAccess.Item("m1", new DateTime(2026, 11, 21, 9, 0, 0, DateTimeKind.Unspecified)), body: "Can you confirm?")
             .AddFolder(FakeOutlookAccess.DefaultStore, "Deleted Items");
+        // The node's own node.json at the default path: the only one the action tools read (ZYGGY_NODE_JSON is ignored).
+        _appData = _harness.Scratch.File("appdata");
+        Directory.CreateDirectory(Path.Combine(_appData, "zyggy"));
         _config = NodeJson.Write(
-            _harness.Scratch.File("config-actions"),
+            Path.Combine(_appData, "zyggy"),
             CliHarness.Acme,
             CliHarness.WorkLaptop,
             TestKeys.Acme1,
@@ -62,8 +67,8 @@ public sealed class OutlookActionCommandTests : IAsyncLifetime
         // Arrange
         var (_, guard) = await RunAsync(["guard"], Hook(Command(Reply)));
 
-        // Act
-        var (exit, _) = await RunAsync(Reply);
+        // Act: Claude Code runs the command the guard updated, with its nonce.
+        var (exit, _) = await RunAsync([.. Reply, "--nonce", Nonce(guard.Stdout)]);
 
         // Assert
         (guard.Stdout.Contains("\"permissionDecision\":\"ask\"", StringComparison.Ordinal), exit, _access.Sent.Count, _access.Sent[0].Body, Outcomes(), File.ReadAllText(LogPath).Contains(BodyCanary, StringComparison.Ordinal))
@@ -90,10 +95,10 @@ public sealed class OutlookActionCommandTests : IAsyncLifetime
     {
         // Arrange
         string[] move = ["move", "m1", "--to", "Deleted Items"];
-        await RunAsync(["guard"], Hook(Command(move)));
+        var (_, guard) = await RunAsync(["guard"], Hook(Command(move)));
 
         // Act
-        var (exit, _) = await RunAsync(move);
+        var (exit, _) = await RunAsync([.. move, "--nonce", Nonce(guard.Stdout)]);
 
         // Assert
         (exit, _access.FolderOf("m1"), Outcomes()).Should().Be((0, "Deleted Items", "done"));
@@ -110,6 +115,24 @@ public sealed class OutlookActionCommandTests : IAsyncLifetime
         (guard.Stdout.Contains("outlook-guard: refused: not attended", StringComparison.Ordinal), Outcomes(), _access.Sent.Count).Should().Be((true, "refused", 0));
     }
 
+    // A pass can be used only with the nonce the guard put into the updated command; another process running the shown command
+    // without it takes nothing (verify 01M81R40G1YGA46142HYTV5H7T).
+    [Fact]
+    public async Task GuardThenSend_SameCommandWithoutTheNonce_RefusedNothingSent()
+    {
+        // Arrange
+        await RunAsync(["guard"], Hook(Command(Reply)));
+
+        // Act
+        var (exit, _) = await RunAsync(Reply);
+
+        // Assert
+        (exit, _access.Sent.Count).Should().Be((5, 0));
+    }
+
+    private static string Nonce(string guardStdout) =>
+        JsonNode.Parse(guardStdout)!["hookSpecificOutput"]!["updatedInput"]!["command"]!.GetValue<string>().Split(' ')[^1];
+
     private static string Command(string[] args) => "zyggy outlook " + string.Join(' ', args.Select(a => "'" + a.Replace("'", "'\\''", StringComparison.Ordinal) + "'"));
 
     private static string Hook(string command) => new JsonObject
@@ -123,12 +146,19 @@ public sealed class OutlookActionCommandTests : IAsyncLifetime
     private string Outcomes() =>
         File.Exists(LogPath) ? string.Join(' ', File.ReadAllLines(LogPath).Select(l => JsonNode.Parse(l)!["outcome"]!.GetValue<string>())) : string.Empty;
 
-    private Task<(int Exit, VerbConsole Console)> RunAsync(string[] args, string? stdin = null, IReadOnlyDictionary<string, string?>? environment = null) =>
-        _harness.RunAsync(
+    private Task<(int Exit, VerbConsole Console)> RunAsync(string[] args, string? stdin = null, IReadOnlyDictionary<string, string?>? environment = null)
+    {
+        var extra = new Dictionary<string, string?>(environment ?? new Dictionary<string, string?>(), StringComparer.OrdinalIgnoreCase)
+        {
+            ["LOCALAPPDATA"] = _appData,
+            ["XDG_CONFIG_HOME"] = _appData,
+        };
+        return _harness.RunAsync(
             ["outlook", .. args],
             _config,
             stdin: stdin,
-            extraEnvironment: environment,
+            extraEnvironment: extra,
             more: s => s.AddSingleton<IOutlookAccess>(_access),
             ct: TestContext.Current.CancellationToken);
+    }
 }

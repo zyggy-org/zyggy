@@ -80,6 +80,55 @@ internal sealed partial record OutlookShellCall(OutlookShellCallKind Kind, IRead
         return match.Success ? match.Groups["a"].Value.ToLowerInvariant() : null;
     }
 
+    /// <summary>
+    /// The job hook's wider test (verify 01M81R40G1YGA46142HYTV5H7T point 4): whether a shell command may be an outlook write in any
+    /// form. Escapes are decoded first (<c>\xHH</c>, <c>\uHHHH</c>, <c>\UHHHHHHHH</c>, octal <c>\NNN</c>, PowerShell <c>`u{HHHH}</c>);
+    /// then only the letters count, lowercased, so quotes, concatenation and blanks split nothing. It may be one when it mentions
+    /// <c>outlook</c> followed anywhere by <c>send</c> or <c>move</c>; or mentions <c>outlook</c> together with anything that can build
+    /// a word at run time (a variable or substitution, an escape, <c>[char]</c>, <c>eval</c>, <c>base64</c>, …); or mentions
+    /// <c>zyggy</c> with <c>send</c> or <c>move</c> and such a construct. It refuses more than it must, never less for those forms; a
+    /// name hidden wholly (in a script file, or built without any of those words) is the known limit, closed by the tool's own
+    /// refusal in a job and by the guard's nonce.
+    /// </summary>
+    /// <param name="command">The command text.</param>
+    /// <returns>Whether the job hook refuses the command.</returns>
+    public static bool MayWriteOutlook(string command)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        string letters = string.Concat(Decode(command).Where(char.IsLetter).Select(char.ToLowerInvariant));
+        int outlook = letters.IndexOf("outlook", StringComparison.Ordinal);
+        bool zyggy = letters.Contains("zyggy", StringComparison.Ordinal);
+        if (outlook < 0 && !zyggy)
+        {
+            return false;
+        }
+
+        bool built = Built().IsMatch(command);
+        bool verb = WriteVerb().IsMatch(letters);
+        return (outlook >= 0 && (built || WriteVerb().IsMatch(letters[outlook..]))) || (zyggy && verb && built);
+    }
+
+    // Decodes the escapes bash ($'…', printf, echo -e) and PowerShell spell a character with.
+    private static string Decode(string command) => Escape().Replace(command, m =>
+    {
+        string hex = m.Groups["hex"].Success ? m.Groups["hex"].Value : string.Empty;
+        int code = m.Groups["oct"].Success
+            ? Convert.ToInt32(m.Groups["oct"].Value, 8)
+            : int.Parse(hex, System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture);
+        return code is > 0 and <= 0x10FFFF and not (>= 0xD800 and <= 0xDFFF) ? char.ConvertFromUtf32(code) : string.Empty;
+    });
+
+    [GeneratedRegex(@"\\(?:x(?<hex>[0-9A-Fa-f]{1,2})|u(?<hex>[0-9A-Fa-f]{1,4})|U(?<hex>[0-9A-Fa-f]{1,8})|(?<oct>0?[0-7]{1,3}))|`u\{(?<hex>[0-9A-Fa-f]{1,6})\}", RegexOptions.CultureInvariant)]
+    private static partial Regex Escape();
+
+    [GeneratedRegex(@"send|move", RegexOptions.CultureInvariant)]
+    private static partial Regex WriteVerb();
+
+    // What builds a word at run time: expansions and substitutions ($, backtick, %VAR%), escapes, and the commands and operators
+    // that decode, reverse or assemble text.
+    [GeneratedRegex(@"[$`%*?]|\\[0-7xuUc]|\[char\]|-join|-replace|-f\s|\b(?:eval|iex|invoke-expression|base64|frombase64string|printf|xxd|rev|tr|sed|awk|perl|python3?|node)\b", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    private static partial Regex Built();
+
     private static OutlookShellCall Refused(string problem, string action) => new(OutlookShellCallKind.Refused, [], problem, action);
 
     private static bool IsZyggy(string program)
