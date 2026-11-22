@@ -217,6 +217,26 @@ public sealed class OutlookBriefTests : IDisposable
         Shape(console.Stdout).Should().Be("since=2026-11-20T00:00:00+01:00 until=2026-11-21T08:05:00+01:00 more=False items=m2:Hello|m1:Body one");
     }
 
+    // Verify 01M81EVW8T5BWSRAQ7Z03KPPX3 (4): an explicit --since brief recorded by brief-done must not delete a waiting backlog.
+    [Fact]
+    public async Task BriefDone_AfterAnExplicitSinceBrief_KeepsTheWaitingBacklog()
+    {
+        // Arrange
+        Mail();
+        _access.Add(FakeOutlookAccess.DefaultStore, "Inbox", FakeOutlookAccess.Item("m0", Local(2026, 11, 19, 10), subject: "Zero"), body: "Body zero");
+        Allowed();
+        await RunAsync("brief --max 1");
+        await RunAsync("brief-done --until 2026-11-21T08:05:00+01:00");
+        await RunAsync("brief --since 2026-11-21");
+        await RunAsync("brief-done --until 2026-11-21T08:05:00+01:00");
+
+        // Act
+        var (_, console) = await RunAsync("brief");
+
+        // Assert
+        Shape(console.Stdout).Should().Be("since=2026-11-15T09:00:00+01:00 until=2026-11-20T14:30:00+01:00 more=False items=m1:Body one|m0:Body zero");
+    }
+
     [Fact]
     public async Task Brief_ProtectedMail_ListedWithoutItsBody_BodyNeverAsked()
     {

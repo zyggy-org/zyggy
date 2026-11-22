@@ -35,6 +35,8 @@
     <InternalsVisibleTo Include="Zyggy.Integration" />
     <!-- Deliverable 08 (plan A9, owner-approved): the Node serialises the shared /health body with Core's internal JSON context, byte-identical to 07. -->
     <InternalsVisibleTo Include="zyggy-node" />
+    <!-- Spec 58 slice 4 (Central's decision): the CLI sets OutlookVerbHost.ContextSender, its context path to Central; not a public Core surface. -->
+    <InternalsVisibleTo Include="zyggy" />
     <!-- NSubstitute proxies for internal types. -->
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>

@@ -9,7 +9,15 @@ internal sealed record DreamProposal(
     IReadOnlyList<NewCategory> NewCategories,
     IReadOnlyList<CreateFile> Creates,
     IReadOnlyList<EditFile> Edits,
-    string Notes);
+    string Notes,
+    IReadOnlyList<ArchiveWorkMail>? Archives = null);
+
+/// <summary>
+/// A work mail line kept whole in the business archive (spec 58 D-Q15): the program writes the line's fact as
+/// <c>archive/&lt;project&gt;/&lt;slug&gt;.txt</c> with its sidecar; the model names only the line, the project, the slug, a name and a
+/// description, never the content.
+/// </summary>
+internal sealed record ArchiveWorkMail(string Line, string Project, string Slug, string Name, string Description);
 
 /// <summary>What happened to one input line.</summary>
 internal sealed record Disposition(string Line, string Outcome, string? Target = null, string? DropReason = null);

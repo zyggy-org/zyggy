@@ -65,9 +65,10 @@ public sealed class OutlookVerbHost
     /// <summary>
     /// Gets the context path <c>zyggy outlook share</c> hands its filtered lines to (spec 58 slice 4): the CLI's signed context
     /// envelope to Central through the bus (the <c>zyggy context</c> path), which renders its own outcome and returns the exit code.
-    /// Without it, <c>share</c> refuses with exit 3.
+    /// Without it, <c>share</c> refuses with exit 3. Internal (Central's decision on verify 01M81EVW8T5BWSRAQ7Z03KPPX3): only the CLI
+    /// (<c>InternalsVisibleTo</c> <c>zyggy</c>) and the tests set it.
     /// </summary>
-    public Func<NodeConfiguration, ContextRequest, VerbIo, CancellationToken, Task<int>>? ContextSender { get; set; }
+    internal Func<NodeConfiguration, ContextRequest, VerbIo, CancellationToken, Task<int>>? ContextSender { get; set; }
 
     /// <summary>
     /// Creates the host from a host's services: the <see cref="TimeProvider"/> when one is registered, and the Outlook access a test

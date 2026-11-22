@@ -116,7 +116,7 @@ public sealed class RoutingKnowledgeTests : IDisposable
         var prompt = new DreamPrompts().FilingPrompt;
 
         // Assert
-        prompt.Should().StartWith("prompt-version: 4\n");
+        prompt.Should().StartWith("prompt-version: 5\n");
         prompt.Should().Contain("`Routing:`").And.Contain("`" + RoutingFile + "`");
     }
 

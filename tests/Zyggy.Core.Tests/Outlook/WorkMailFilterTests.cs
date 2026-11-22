@@ -33,7 +33,60 @@ public sealed class WorkMailFilterTests
         found.Should().Be(expected);
     }
 
+    // Verify 01M81EVW8T5BWSRAQ7Z03KPPX3 (2): up to three separators of [space, NBSP, . - /] between groups, and non-ASCII digits
+    // (full-width, Arabic-Indic) read as their ASCII value; a match is still only a valid check digit.
+    [Theory]
+    [InlineData("85 07 30 033 28", true)]
+    [InlineData("85..07..30--033..28", true)]
+    [InlineData("85 / 07 / 30 - 033 . 28", true)]
+    [InlineData("85/07/30/033/28", true)]
+    [InlineData("８５.０７.３０-０３３.２８", true)]
+    [InlineData("٨٥٠٧٣٠٠٣٣٢٨", true)]
+    [InlineData("۸۵.۰۷.۳۰-۰۳۳.۲۸", true)]
+    [InlineData("８５．０７．３０－０３３．２８", true)]
+    [InlineData("８５.０７.３０-０３３.２９", false)]
+    [InlineData("85 .  / 07.30-033.28", false)]
+    [InlineData("1 85.07.30-033.28", true)]
+    public void HasNationalRegisterNumber_SeparatorsAndNonAsciiDigits(string text, bool expected)
+    {
+        // Act
+        var found = WorkMailFilter.HasNationalRegisterNumber(text);
+
+        // Assert
+        found.Should().Be(expected);
+    }
+
     // ---- the term list ----
+
+    // Verify 01M81EVW8T5BWSRAQ7Z03KPPX3 (1): terms and text are both normalised (NFKD, combining marks stripped, case-folded, any
+    // whitespace run one space) and a word of a term matches as a word prefix (plurals, inflections).
+    [Theory]
+    [InlineData("the medical file", true)]
+    [InlineData("le MÉDICAL suivi", true)]
+    [InlineData("the médical file", true)]
+    [InlineData("the patiënt called", true)]
+    [InlineData("the patiënten waited", true)]
+    [InlineData("two patients called", true)]
+    [InlineData("the Diagnoses are in", true)]
+    [InlineData("the medisch\ndossier is ready", true)]
+    [InlineData("the medisch\r\n  dossier is ready", true)]
+    [InlineData("the medisch\tdossier is ready", true)]
+    [InlineData("the medisch  dossier is ready", true)]
+    [InlineData("the medisch dossier is ready", true)]
+    [InlineData("the medische dossiers are ready", true)]
+    [InlineData("outpatients are elsewhere", false)]
+    [InlineData("the medisch team and the dossier", false)]
+    public void HasTerm_NormalisedPrefixMatch(string text, bool expected)
+    {
+        // Arrange
+        var filter = WorkMailFilter.Parse("patient\nDiagnose\nmedisch   dossier\nmédical\n");
+
+        // Act
+        var found = filter.HasTerm(text);
+
+        // Assert
+        found.Should().Be(expected);
+    }
 
     [Theory]
     [InlineData("The patient called back.", true)]

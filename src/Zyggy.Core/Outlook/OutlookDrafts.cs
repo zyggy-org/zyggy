@@ -236,8 +236,8 @@ internal static partial class OutlookDrafts
     /// <summary>
     /// The state <c>brief-done --until</c> records (verify 01M81CXC5D9VKYW16HQ734DWAS): when the last brief's offer has that
     /// <c>until</c>, only what it showed counts as briefed — a capped brief leaves its older mail as the backlog, a backlog brief
-    /// never moves the recorded brief back and narrows or clears the backlog. Without a matching offer the given until is recorded
-    /// and any backlog kept.
+    /// never moves the recorded brief back and narrows or clears the backlog, and a brief that did not read the backlog (an explicit
+    /// <c>--since</c>) never deletes it. Without a matching offer the given until is recorded and any backlog kept.
     /// </summary>
     /// <param name="state">The state before.</param>
     /// <param name="offer">The last brief's offer, or <see langword="null"/>.</param>
@@ -254,6 +254,16 @@ internal static partial class OutlookDrafts
         }
 
         OutlookBacklog? backlog = offer.More && offer.Oldest is { } oldest ? new OutlookBacklog(offer.Since, oldest) : null;
+
+        // A brief that did not read the backlog (an explicit --since) leaves a waiting backlog in place (verify 01M81EVW8T5BWSRAQ7Z03KPPX3);
+        // when it was capped too, the two windows become one that covers both: mail may be briefed again, never skipped.
+        if (!offer.FromBacklog && state.Backlog is { } waiting)
+        {
+            backlog = backlog is null
+                ? waiting
+                : new OutlookBacklog(Min(waiting.Since, backlog.Since), Max(waiting.Before, backlog.Before));
+        }
+
         DateTimeOffset recorded = offer.FromBacklog && state.BriefedUntil is { } before && before > until ? before : until;
         return new OutlookBriefState(recorded, drafts, backlog);
     }
@@ -263,6 +273,10 @@ internal static partial class OutlookDrafts
         && DateTimeOffset.TryParseExact(value.GetString(), OutlookDates.Format, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
             ? parsed
             : null;
+
+    private static DateTimeOffset Min(DateTimeOffset a, DateTimeOffset b) => a <= b ? a : b;
+
+    private static DateTimeOffset Max(DateTimeOffset a, DateTimeOffset b) => a >= b ? a : b;
 
     private static string Text(DateTimeOffset value) => value.ToString(OutlookDates.Format, CultureInfo.InvariantCulture);
 

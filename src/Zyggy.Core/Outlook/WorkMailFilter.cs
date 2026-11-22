@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Zyggy.Core.Outlook;
@@ -19,7 +20,8 @@ internal enum WorkMailVerdict
 /// <summary>
 /// The sensitive-data filter of the work laptop (spec 58 slice 4, AC-9; the client's never-list): before anything of a mail reaches
 /// the bus, a mail whose subject, sender, whole body or any fact the session wrote holds a national register number with a valid
-/// check digit, or a whole-word term of the shared sensitive list (<c>sensitive-terms.txt</c>, D-Q9), is kept on the laptop; so is a
+/// check digit (in any digit script and with any common separators), or a term of the shared sensitive list (<c>sensitive-terms.txt</c>,
+/// D-Q9; accents, case and whitespace normalised, words matched as prefixes for plurals and inflections), is kept on the laptop; so is a
 /// mail the session marked in doubt, a protected mail (its body was never read, so it cannot be judged), a mail without facts, and a
 /// mail whose facts name one of its attachments (attachments never cross). Best-effort, as the owner accepted (2026-11-21): unusual
 /// wording can pass. It never returns the matched value.
@@ -31,11 +33,20 @@ internal sealed partial class WorkMailFilter
     private WorkMailFilter(IReadOnlyList<string> terms)
     {
         Terms = terms;
-        _terms = terms.Count == 0
+
+        // Each word of a normalised term starts a word of the normalised text and may run on (plurals, inflections: "patient" also
+        // matches "patients", "patiënten"); the words of a term follow each other with one space, as the text is collapsed.
+        var patterns = terms
+            .Select(t => Normalise(t).Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .Where(words => words.Length > 0)
+            .Select(words => string.Join(' ', words.Select(w => Regex.Escape(w) + @"[\p{L}\p{N}]*")))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        _terms = patterns.Count == 0
             ? null
             : new Regex(
-                @"(?<![\p{L}\p{N}])(?:" + string.Join('|', terms.Select(Regex.Escape)) + @")(?![\p{L}\p{N}])",
-                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+                @"(?<![\p{L}\p{N}])(?:" + string.Join('|', patterns) + @")(?![\p{L}\p{N}])",
+                RegexOptions.CultureInvariant,
                 TimeSpan.FromSeconds(1));
     }
 
@@ -56,20 +67,31 @@ internal sealed partial class WorkMailFilter
     }
 
     /// <summary>
-    /// Whether <paramref name="text"/> holds a Belgian national register number: 11 digits (optionally grouped as
-    /// <c>YY.MM.DD-NNN.CC</c> with dots, dashes or spaces) whose check digits are <c>97 − (first nine mod 97)</c>, or the same over
-    /// <c>2</c> and the first nine for a birth from 2000.
+    /// Whether <paramref name="text"/> holds a Belgian national register number: 11 digits, grouped <c>YY MM DD NNN CC</c> with up to
+    /// three separators (whitespace, NBSP, <c>.</c>, <c>-</c>, <c>/</c>) between groups, whose check digits are
+    /// <c>97 − (first nine mod 97)</c>, or the same over <c>2</c> and the first nine for a birth from 2000. Non-ASCII digits
+    /// (full-width, Arabic-Indic, …) are read as their value first (NFKC, then every Unicode decimal digit), so only ASCII
+    /// <c>[0-9]</c> is matched. Every start position is tried, so an earlier near-miss cannot hide a number. Never throws on any
+    /// text and never returns or prints a digit of a candidate.
     /// </summary>
     /// <param name="text">The text.</param>
     /// <returns>Whether one was found.</returns>
     public static bool HasNationalRegisterNumber(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
-        foreach (Match match in NationalRegisterNumber().Matches(text))
+        foreach (Match match in NationalRegisterNumber().Matches(AsciiDigits(text)))
         {
-            string digits = string.Concat(match.Groups[1].Value, match.Groups[2].Value, match.Groups[3].Value, match.Groups[4].Value);
-            long first = long.Parse(digits, NumberStyles.None, CultureInfo.InvariantCulture);
-            int check = int.Parse(match.Groups[5].Value, NumberStyles.None, CultureInfo.InvariantCulture);
+            long first = 0;
+            for (var g = 1; g <= 4; g++)
+            {
+                foreach (char c in match.Groups[g].ValueSpan)
+                {
+                    first = (first * 10) + (c - '0');
+                }
+            }
+
+            string checkText = match.Groups[5].Value;
+            int check = ((checkText[0] - '0') * 10) + (checkText[1] - '0');
             if (97 - (first % 97) == check || 97 - ((2_000_000_000L + first) % 97) == check)
             {
                 return true;
@@ -79,13 +101,102 @@ internal sealed partial class WorkMailFilter
         return false;
     }
 
-    /// <summary>Whether <paramref name="text"/> holds a term of the list as a whole word, ignoring case.</summary>
+    /// <summary>
+    /// Whether <paramref name="text"/> holds a term of the list. Terms and text are both normalised (NFKD, combining marks dropped,
+    /// case-folded, every run of whitespace — line breaks, tabs, NBSP included — one space), and each word of a term matches the start
+    /// of a word of the text, so plurals and inflections match too ("patient" → "patients", "patiënten").
+    /// </summary>
     /// <param name="text">The text.</param>
     /// <returns>Whether one was found.</returns>
     public bool HasTerm(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
-        return _terms is not null && _terms.IsMatch(text);
+        return _terms is not null && _terms.IsMatch(Normalise(text));
+    }
+
+    /// <summary>
+    /// The form terms and text are compared in: NFKD, combining marks dropped, lower-case invariant, every whitespace run one space,
+    /// trimmed.
+    /// </summary>
+    /// <param name="text">The text.</param>
+    /// <returns>The normalised text.</returns>
+    internal static string Normalise(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        string decomposed = text.Normalize(NormalizationForm.FormKD);
+        var result = new StringBuilder(decomposed.Length);
+        bool space = false;
+        foreach (char c in decomposed)
+        {
+            UnicodeCategory category = CharUnicodeInfo.GetUnicodeCategory(c);
+            if (category is UnicodeCategory.NonSpacingMark or UnicodeCategory.SpacingCombiningMark or UnicodeCategory.EnclosingMark)
+            {
+                continue;
+            }
+
+            if (char.IsWhiteSpace(c))
+            {
+                space = result.Length > 0;
+                continue;
+            }
+
+            if (space)
+            {
+                result.Append(' ');
+                space = false;
+            }
+
+            result.Append(Fold(c));
+        }
+
+        return result.ToString();
+    }
+
+    // The NFKD base of a precomposed Latin letter (U+00C0–U+017F) or a full-width ASCII form, lower-cased: the repository runs with
+    // InvariantGlobalization, where string.Normalize does not decompose, so the decomposition the filter needs is spelled out here.
+    // '_' = unchanged, '*' = two letters.
+    private static string Fold(char c)
+    {
+        const string Latin =
+            "aaaaaa*ceeeeiiii" + "dnooooo_ouuuuy_*" + "aaaaaa*ceeeeiiii" + "dnooooo_ouuuuy_y"
+            + "aaaaaaccccccccdd" + "ddeeeeeeeeeegggg" + "gggghhhhiiiiiiii" + "ii**jjkkklllllll"
+            + "lllnnnnnnnnnoooo" + "oo**rrrrrrssssss" + "ssttttttuuuuuuuu" + "uuuuwwyyyzzzzzzs";
+        if (c is >= '！' and <= '～')
+        {
+            c = (char)(c - 0xFEE0);
+        }
+
+        if (c is < 'À' or > 'ſ' || Latin[c - 0xC0] == '_')
+        {
+            return char.ToLowerInvariant(c).ToString();
+        }
+
+        return Latin[c - 0xC0] != '*'
+            ? Latin[c - 0xC0].ToString()
+            : c switch
+            {
+                'Æ' or 'æ' => "ae",
+                'ß' => "ss",
+                'Ĳ' or 'ĳ' => "ij",
+                _ => "oe",
+            };
+    }
+
+    // NFKC, then every Unicode decimal digit (full-width, Arabic-Indic, Devanagari, …) as its ASCII digit and every full-width ASCII
+    // form (．－／) as its ASCII character — spelled out because string.Normalize does not map them under InvariantGlobalization.
+    private static string AsciiDigits(string text)
+    {
+        string composed = text.Normalize(NormalizationForm.FormKC);
+        var result = new StringBuilder(composed.Length);
+        foreach (char c in composed)
+        {
+            int value = CharUnicodeInfo.GetDecimalDigitValue(c);
+            result.Append(value is >= 0 and <= 9 && !char.IsAsciiDigit(c) ? (char)('0' + value)
+                : c is >= '！' and <= '～' ? (char)(c - 0xFEE0)
+                : c);
+        }
+
+        return result.ToString();
     }
 
     /// <summary>Judges one mail and the facts the session wrote about it.</summary>
@@ -98,16 +209,25 @@ internal sealed partial class WorkMailFilter
         ArgumentNullException.ThrowIfNull(mail);
         ArgumentNullException.ThrowIfNull(facts);
         string[] texts = [mail.Summary.Subject, mail.Summary.SenderName, mail.Body ?? string.Empty, .. facts];
-        if (texts.Any(t => HasNationalRegisterNumber(t) || HasTerm(t)))
+        try
         {
-            return WorkMailVerdict.KeepSensitive;
+            if (texts.Any(t => HasNationalRegisterNumber(t) || HasTerm(t)))
+            {
+                return WorkMailVerdict.KeepSensitive;
+            }
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            // A text the term match could not judge in time is in doubt; the exception (which may carry the text) goes nowhere.
+            return WorkMailVerdict.KeepInDoubt;
         }
 
         bool namesAttachment = facts.Any(f => mail.AttachmentNames.Any(a => a.Length > 0 && f.Contains(a, StringComparison.OrdinalIgnoreCase)));
         return doubt || mail.Body is null || facts.Count == 0 || namesAttachment ? WorkMailVerdict.KeepInDoubt : WorkMailVerdict.Share;
     }
 
-    // Eleven digits, optionally grouped YY.MM.DD-NNN.CC with one dot, dash or space between groups, not inside a longer number.
-    [GeneratedRegex(@"(?<!\d)(\d{2})[.\- ]?(\d{2})[.\- ]?(\d{2})[.\- ]?(\d{3})[.\- ]?(\d{2})(?!\d)", RegexOptions.CultureInvariant)]
+    // Eleven ASCII digits grouped 2-2-2-3-2 with up to three separators (whitespace, NBSP, . - /) between groups, not inside a longer
+    // number. A zero-width lookahead captures, so every start position is tried (matches may overlap).
+    [GeneratedRegex(@"(?<![0-9])(?=([0-9]{2})[\s .\-/]{0,3}([0-9]{2})[\s .\-/]{0,3}([0-9]{2})[\s .\-/]{0,3}([0-9]{3})[\s .\-/]{0,3}([0-9]{2})(?![0-9]))", RegexOptions.CultureInvariant)]
     private static partial Regex NationalRegisterNumber();
 }

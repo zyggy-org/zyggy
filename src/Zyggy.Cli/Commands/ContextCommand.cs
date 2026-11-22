@@ -7,6 +7,8 @@ using Zyggy.Core.Configuration;
 using Zyggy.Core.Memory;
 using Zyggy.Core.Verbs;
 
+using ContextRequest = Zyggy.Core.Bus.ContextRequest;
+
 namespace Zyggy.Cli.Commands;
 
 /// <summary>

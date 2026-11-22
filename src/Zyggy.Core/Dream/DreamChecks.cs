@@ -133,6 +133,13 @@ internal static partial class DreamChecks
             return Fail(DreamCheck.PathRefused, privateWorkMail.Where + ": work mail on the private side");
         }
 
+        // Spec 58 D-Q15: the dream's one archive write — a work mail line kept whole in the business archive.
+        var archives = proposal.Archives ?? [];
+        if (CheckArchives(archives, batch, proposal, before, after, parsed.Select(a => (a.Path, a.Line)).ToList()) is { } archiveProblem)
+        {
+            return archiveProblem;
+        }
+
         // tag_upgrade
         var statedDates = batch.Lines.Where(l => l.Class == DreamLineClass.StatedInbox)
             .Select(l => MemoryLine.Parse(l.Text).Date)
@@ -165,6 +172,7 @@ internal static partial class DreamChecks
             .Concat(descriptions)
             .Concat(proposal.Creates.SelectMany(c => c.Aliases.Append(c.Name).Select(x => (Text: x, Where: "name or alias of " + Safe(c.Path)))))
             .Concat(proposal.Edits.SelectMany(e => (e.Aliases ?? []).Select(x => (Text: x, Where: "alias of " + Safe(e.Path)))))
+            .Concat(archives.SelectMany((a, i) => new[] { a.Name, a.Description }.Select(x => (Text: x, Where: $"name or description of archive #{i + 1}"))))
             .ToList();
 
         // secret_pattern
@@ -265,6 +273,7 @@ internal static partial class DreamChecks
             .Concat(edits.Select(e => e.Path.Relative!))
             .Concat(proposal.Dispositions.Select(d => d.Target).OfType<string>()
                 .Select(t => paths.TryResolve(t)).Where(r => r.Succeeded).Select(r => r.RelativePath!))
+            .Concat(archives.Select(a => WorkMailArchiver.Resolve(paths, a)).OfType<WorkMailArchiveWrite>().SelectMany(w => new[] { w.ItemPath, w.SidecarPath }))
             .Distinct(StringComparer.Ordinal);
         if (targets.FirstOrDefault(t => context.CarriedPaths.Contains(t) || ChangedOnDisk(before.Snapshot, t)) is { } busy)
         {
@@ -276,6 +285,65 @@ internal static partial class DreamChecks
 
     private static DreamCheckResult Fail(DreamCheck check, string detail) => new(check, detail);
 
+    // Spec 58 D-Q15 (template rule change 6): an archive entry names a work mail line of the batch that is filed, not dropped; a
+    // valid project and slug not yet taken; a project whose memory file is on the business side and not on the private side; and an
+    // added line of that business file names the item's path (the index). Anything else stays refused: the dream never writes
+    // archive/ for any other source, nor for the private side.
+    private static DreamCheckResult? CheckArchives(IReadOnlyList<ArchiveWorkMail> archives, DreamBatch batch, DreamProposal proposal, WorkingSet before,
+        WorkingSet after, List<(ProposedPath Path, string Line)> added)
+    {
+        var paths = before.Snapshot.Paths;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < archives.Count; i++)
+        {
+            var entry = archives[i];
+            var where = $"archive #{i + 1}";
+            if (!IsWorkMailLine(batch.Find(entry.Line)))
+            {
+                return Fail(DreamCheck.PathRefused, $"{where} of {Safe(entry.Line)}: not a work mail line");
+            }
+
+            if (WorkMailArchiver.Resolve(paths, entry) is not { } write)
+            {
+                return Fail(DreamCheck.SlugInvalid, $"{where}: project or slug");
+            }
+
+            if (!seen.Add(write.ItemPath) || WorkMailArchiver.Taken(before, write))
+            {
+                return Fail(DreamCheck.SlugDuplicate, $"{where}: {Safe(write.ItemPath)}");
+            }
+
+            if (proposal.Dispositions.Any(d => d.Line == entry.Line && d.Outcome == "dropped"))
+            {
+                return Fail(DreamCheck.FactNotFound, $"{where}: {Safe(entry.Line)} archived but dropped");
+            }
+
+            if (!after.Paths.Any(p => IsSideFileOf(p, "business", entry.Project)) || after.Paths.Any(p => IsSideFileOf(p, "private", entry.Project)))
+            {
+                return Fail(DreamCheck.PathRefused, $"{where}: project {Safe(entry.Project)} is not on the business side");
+            }
+
+            if (!added.Any(a => a.Path.Side == "business" && a.Path.Slug == entry.Project && a.Line.Contains(write.ItemPath, StringComparison.Ordinal)))
+            {
+                return Fail(DreamCheck.PathRefused, $"{where}: {Safe(write.ItemPath)} not indexed in the business project file");
+            }
+
+            if (entry.Name.Trim().Length == 0 || entry.Name.Length > 100 || entry.Description.Trim().Length == 0 || entry.Description.Length >= 150)
+            {
+                return Fail(DreamCheck.FormatInvalid, $"{where}: name {entry.Name.Length} chars, description {entry.Description.Length} chars");
+            }
+        }
+
+        return null;
+    }
+
+    // <side>/<category>/<slug>.md for the given side and slug.
+    private static bool IsSideFileOf(string relative, string side, string slug)
+    {
+        var s = relative.Split('/');
+        return s.Length == 3 && s[0] == side && s[2] == slug + ".md";
+    }
+
     // An inbox line (stated or observed) whose fact starts with the routing word; a daily line is never a routing sentence.
     private static bool IsRoutingLine(DreamBatchLine? line) =>
         line is { Class: DreamLineClass.StatedInbox or DreamLineClass.ObservedInbox }
@@ -283,11 +351,11 @@ internal static partial class DreamChecks
         && fact.StartsWith(RoutingPrefix, StringComparison.Ordinal);
 
     // Spec 58: the provenance source the work laptop's `zyggy outlook share` gives every work mail line ("work-mail <date>").
-    private static bool IsWorkMailToken(string token) =>
+    internal static bool IsWorkMailToken(string token) =>
         token == "work-mail" || token.StartsWith("work-mail ", StringComparison.Ordinal);
 
     // An inbox line whose provenance names work mail.
-    private static bool IsWorkMailLine(DreamBatchLine? line) =>
+    internal static bool IsWorkMailLine(DreamBatchLine? line) =>
         line is { Class: DreamLineClass.ObservedInbox or DreamLineClass.StatedInbox } && MemoryLine.Parse(line.Text).Provenance.Any(IsWorkMailToken);
 
     private static string Ids(List<string> ids) => ids.Count == 0 ? "none" : string.Join(',', ids.Take(10)) + (ids.Count > 10 ? ",…" : string.Empty);

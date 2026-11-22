@@ -24,6 +24,9 @@ public sealed class OutlookShareTests : IDisposable
 
     private static readonly DateTimeOffset T = new(2026, 11, 22, 9, 0, 0, TimeSpan.FromHours(1));
 
+    // The groups of the candidate 85.07.30-033.28, in ASCII and in two other scripts.
+    private static readonly string[] CandidateGroups = ["85", "07", "30", "033", "28", "８", "٨"];
+
     private readonly string _root = Path.Combine(Path.GetTempPath(), "zyggy-ut", Guid.NewGuid().ToString("N"));
     private readonly FakeTimeProvider _clock = new(T);
     private readonly FakeOutlookAccess _access = new();
@@ -116,6 +119,41 @@ public sealed class OutlookShareTests : IDisposable
 
         // Assert
         _sent.Should().BeEmpty();
+    }
+
+    // Verify 01M81EVW8T5BWSRAQ7Z03KPPX3 (2): every written form of a register number is kept, and no digit of it reaches stdout or
+    // stderr, on the kept path or an error path.
+    [Theory]
+    [InlineData("85 07 30 033 28", "Asks for a call")]
+    [InlineData("85..07..30--033..28", "Asks for a call")]
+    [InlineData("８５.０７.３０-０３３.２８", "Asks for a call")]
+    [InlineData("٨٥٠٧٣٠٠٣٣٢٨", "Asks for a call")]
+    [InlineData("85.07.30-033.28", "Mentions 85.07.30-033.28")]
+    public async Task Share_RegisterNumberInAnyForm_KeptAndNoDigitPrinted(string number, string fact)
+    {
+        // Arrange
+        _access.Add(FakeOutlookAccess.DefaultStore, "Inbox", FakeOutlookAccess.Item("r1", Local(2026, 11, 21, 9)), body: "Please register " + number + " today.");
+        Allowed();
+
+        // Act
+        var (_, console) = await RunAsync(Share(("r1", false, [fact])));
+
+        // Assert
+        (_sent.Count, Printed(console)).Should().Be((0, false));
+    }
+
+    [Fact]
+    public async Task Share_RegisterNumberInATooLongFact_ErrorPrintsNoDigitOfIt()
+    {
+        // Arrange
+        Mail();
+        Allowed();
+
+        // Act
+        var (exit, console) = await RunAsync(Share(("n1", false, ["85.07.30-033.28 " + new string('a', 400)])));
+
+        // Assert
+        (exit, Printed(console)).Should().Be((2, false));
     }
 
     [Fact]
@@ -273,6 +311,17 @@ public sealed class OutlookShareTests : IDisposable
         exit.Should().Be(3);
     }
 
+    // Verify 01M81EVW8T5BWSRAQ7Z03KPPX3 (6, Central's decision): the context path is no public Core surface; only the CLI sets it.
+    [Fact]
+    public void ContextSender_IsNotPublic()
+    {
+        // Act
+        var property = typeof(OutlookVerbHost).GetProperty(nameof(OutlookVerbHost.ContextSender), System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+
+        // Assert
+        property.Should().BeNull();
+    }
+
     // ---- helpers ----
 
     private void Mail() =>
@@ -313,6 +362,10 @@ public sealed class OutlookShareTests : IDisposable
 
     private static string Share(params (string Reference, bool Doubt, string[] Facts)[] mails) =>
         System.Text.Json.JsonSerializer.Serialize(new { mails = mails.Select(m => new { reference = m.Reference, doubt = m.Doubt, facts = m.Facts }) });
+
+    // Whether any group of the candidate was printed.
+    private static bool Printed(VerbConsole console) =>
+        CandidateGroups.Any(g => (console.Stdout + console.Stderr).Contains(g, StringComparison.Ordinal));
 
     private string Lines() => string.Join('|', _sent.SelectMany(r => r.Lines));
 
