@@ -1,10 +1,7 @@
 using System.Globalization;
-using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-
-using Microsoft.CSharp.RuntimeBinder;
 
 namespace Zyggy.Core.Outlook;
 
@@ -54,7 +51,7 @@ internal sealed class OutlookAccessUnavailable(string reason) : IOutlookAccess
     public string DefaultStoreId() => throw new OutlookUnavailableException(reason);
 
     /// <inheritdoc/>
-    public IEnumerable<OutlookRawItem>? Items(string storeId, string folder, DateTime sinceLocal) => throw new OutlookUnavailableException(reason);
+    public IEnumerable<OutlookRawItem>? Items(string storeId, string folder, DateTime sinceLocal, int max) => throw new OutlookUnavailableException(reason);
 
     /// <inheritdoc/>
     public int? Count(string storeId, string folder) => throw new OutlookUnavailableException(reason);
@@ -74,8 +71,9 @@ internal sealed class OutlookAccessUnavailable(string reason) : IOutlookAccess
 /// rule: <see cref="OutlookReader"/> filters, orders, caps and cuts.
 /// </summary>
 /// <param name="callTimeout">How long one call may wait for Outlook.</param>
+/// <param name="createApplication">Creates the <c>Outlook.Application</c> object on the call's thread (a fake late-bound object in tests).</param>
 [SupportedOSPlatform("windows")]
-internal sealed class OutlookComAccess(TimeSpan callTimeout) : IOutlookAccess
+internal sealed class OutlookComAccess(TimeSpan callTimeout, Func<object> createApplication) : IOutlookAccess
 {
     /// <summary>The wait before a call is reported as Outlook's unanswered prompt.</summary>
     public static readonly TimeSpan DefaultCallTimeout = TimeSpan.FromSeconds(120);
@@ -84,11 +82,20 @@ internal sealed class OutlookComAccess(TimeSpan callTimeout) : IOutlookAccess
     private const int OlMail = 43;
     private const string SmtpAddressProperty = "http://schemas.microsoft.com/mapi/proptag/0x5D01001F";
 
+    /// <summary>Initializes a new instance of the <see cref="OutlookComAccess"/> class over the real Outlook, waiting <see cref="DefaultCallTimeout"/> per call.</summary>
+    public OutlookComAccess()
+        : this(DefaultCallTimeout, CreateOutlook)
+    {
+    }
+
+    /// <summary>Gets how long one call waits for Outlook before it is reported as Outlook's unanswered prompt.</summary>
+    public TimeSpan CallTimeout => callTimeout;
+
     /// <inheritdoc/>
     public string DefaultStoreId() => Invoke(app => (string)app.Session.DefaultStore.StoreID);
 
     /// <inheritdoc/>
-    public IEnumerable<OutlookRawItem>? Items(string storeId, string folder, DateTime sinceLocal) => Invoke<IEnumerable<OutlookRawItem>?>(app =>
+    public IEnumerable<OutlookRawItem>? Items(string storeId, string folder, DateTime sinceLocal, int max) => Invoke<IEnumerable<OutlookRawItem>?>(app =>
     {
         dynamic? target = FindFolder(app, storeId, folder);
         if (target is null)
@@ -96,12 +103,13 @@ internal sealed class OutlookComAccess(TimeSpan callTimeout) : IOutlookAccess
             return null;
         }
 
-        // Newest first, stop at the first item before the bound: no Restrict filter, whose date text would depend on the session's locale.
+        // Newest first, stop at the first item before the bound or once max mail items are read: no Restrict filter, whose date
+        // text would depend on the session's locale, and never the whole date window when the cap is smaller.
         dynamic items = target.Items;
         items.Sort("[ReceivedTime]", true);
         int count = items.Count;
         var listed = new List<OutlookRawItem>();
-        for (var i = 1; i <= count; i++)
+        for (var i = 1; i <= count && listed.Count < max; i++)
         {
             dynamic item = items.Item(i);
             if ((int)item.Class != OlMail)
@@ -255,24 +263,22 @@ internal sealed class OutlookComAccess(TimeSpan callTimeout) : IOutlookAccess
             object? app = null;
             try
             {
-                Type type = Type.GetTypeFromProgID(ProgId) ?? throw new OutlookUnavailableException("Outlook is not installed");
-                app = Activator.CreateInstance(type) ?? throw new OutlookUnavailableException("Outlook could not be started");
+                app = createApplication();
                 result = work(app);
-            }
-            catch (Exception ex) when (ex is COMException or InvalidCastException or RuntimeBinderException or InvalidOperationException or TargetInvocationException)
-            {
-                failure = ExceptionDispatchInfo.Capture(new OutlookUnavailableException(Reason(ex), ex));
             }
             catch (OutlookUnavailableException ex)
             {
                 failure = ExceptionDispatchInfo.Capture(ex);
             }
+            catch (Exception ex)
+            {
+                // Nothing may escape this thread: an unhandled exception on it ends the whole process. Access denied
+                // (UnauthorizedAccessException), any COM error and any other failure become "Outlook not available" (exit 6).
+                failure = ExceptionDispatchInfo.Capture(new OutlookUnavailableException(Reason(ex), ex));
+            }
             finally
             {
-                if (app is not null)
-                {
-                    Marshal.FinalReleaseComObject(app);
-                }
+                Release(app);
             }
         })
         {
@@ -288,6 +294,29 @@ internal sealed class OutlookComAccess(TimeSpan callTimeout) : IOutlookAccess
 
         failure?.Throw();
         return result;
+    }
+
+    private static void Release(object? app)
+    {
+        if (app is null || !Marshal.IsComObject(app))
+        {
+            return;
+        }
+
+        try
+        {
+            Marshal.FinalReleaseComObject(app);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidComObjectException)
+        {
+            // Already released or not a runtime callable wrapper: nothing left to free.
+        }
+    }
+
+    private static object CreateOutlook()
+    {
+        Type type = Type.GetTypeFromProgID(ProgId) ?? throw new OutlookUnavailableException("Outlook is not installed");
+        return Activator.CreateInstance(type) ?? throw new OutlookUnavailableException("Outlook could not be started");
     }
 
     private static string Reason(Exception ex) => ex switch

@@ -17,14 +17,16 @@ internal interface IOutlookAccess
     string DefaultStoreId();
 
     /// <summary>
-    /// Returns the items of a folder of <paramref name="storeId"/> received at or after <paramref name="sinceLocal"/>, in any
-    /// order; an implementation may return more (the reader filters again), never fewer.
+    /// Returns the items of a folder of <paramref name="storeId"/> received at or after <paramref name="sinceLocal"/>: the newest
+    /// <paramref name="max"/> of them, the cap applied while reading so a wide date window is never read whole. A fake may return
+    /// more in any order (the reader filters, orders and caps again); the COM access stops after <paramref name="max"/> mail items.
     /// </summary>
     /// <param name="storeId">The store id.</param>
     /// <param name="folder"><c>Inbox</c>, <c>Drafts</c>, or a folder path of that store (<c>Inbox/Projects</c>).</param>
     /// <param name="sinceLocal">The lower bound in the local time of the Outlook session.</param>
+    /// <param name="max">The most mail items to read (<c>outlook.read.maxItems</c>, or fewer when the caller asks fewer).</param>
     /// <returns>The items, or <see langword="null"/> when the folder does not exist in that store.</returns>
-    IEnumerable<OutlookRawItem>? Items(string storeId, string folder, DateTime sinceLocal);
+    IEnumerable<OutlookRawItem>? Items(string storeId, string folder, DateTime sinceLocal, int max);
 
     /// <summary>Counts the items of a folder of <paramref name="storeId"/>.</summary>
     /// <param name="storeId">The store id.</param>

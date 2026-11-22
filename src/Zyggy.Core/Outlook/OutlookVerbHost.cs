@@ -16,14 +16,19 @@ namespace Zyggy.Core.Outlook;
 /// touches Outlook only once both allow a read. Output is JSON on stdout with invariant ISO 8601 dates; mail is printed as data.
 /// </summary>
 /// <remarks>
-/// Exit codes: 0 · 1 folder or item not found · 2 usage · 3 configuration · 5 refused (<c>policy not confirmed</c>, <c>outlook not
-/// enabled</c>) · 6 Outlook not available, or Outlook asked for access (its security prompt was not answered within the timeout).
-/// Reads are not actions (D-Q6): a bus job or an unattended run may call them.
+/// Slice 3 adds the work mail brief: <c>brief</c> prints the Inbox mail since the last brief with bodies (records nothing),
+/// <c>brief-done --until</c> records what was briefed and keeps the reply drafts read from stdin on this laptop
+/// (<c>&lt;nodeDir&gt;/work/&lt;tenant&gt;/outlook/brief.json</c>), <c>drafts [&lt;n&gt;]</c> shows them by number. No verb saves anything
+/// in Outlook.
+/// Exit codes: 0 · 1 folder, item or draft not found · 2 usage · 3 configuration · 5 refused (<c>policy not confirmed</c>, <c>outlook not
+/// enabled</c>, a draft text with a link or an address) · 6 Outlook not available, or Outlook asked for access (its security prompt was
+/// not answered within the timeout). Reads are not actions (D-Q6): a bus job or an unattended run may call them.
 /// </remarks>
 public sealed class OutlookVerbHost
 {
     private const string Prefix = "outlook: ";
-    private const string Usage = " (usage: zyggy outlook policy | count [--folder <name>]... | list [--folder <name>] [--since <date>] [--max <n>] | read <reference>; each [--config <node.json>])";
+    private const string Usage = " (usage: zyggy outlook policy | count [--folder <name>]... | list [--folder <name>] [--since <date>] [--max <n>] | read <reference>"
+        + " | brief [--since <date>] [--max <n>] | brief-done --until <date> [< drafts.json] | drafts [<n>]; each [--config <node.json>])";
     private const string ReadScope = "read";
 
     private static readonly TimeSpan DefaultSince = TimeSpan.FromDays(7);
@@ -104,6 +109,31 @@ public sealed class OutlookVerbHost
             return 0;
         }
 
+        // The brief verbs read the laptop-local state; it is mail-derived, so the read policy guards it as it guards Outlook.
+        string statePath = OutlookDrafts.StatePath(node.EffectiveNodeDir, node.Tenant);
+        if (parsed.Verb is "brief-done" or "drafts" && decision.RefusalFor(ReadScope) is { } refusal)
+        {
+            await io.Error.WriteAsync(Prefix + "refused: " + OutlookReader.Describe(refusal) + "\n").ConfigureAwait(false);
+            return 5;
+        }
+
+        if (parsed.Verb == "drafts")
+        {
+            return await DraftsAsync(statePath, parsed.Number, io).ConfigureAwait(false);
+        }
+
+        IReadOnlyList<DraftRequest>? requests = null;
+        if (parsed.Verb == "brief-done")
+        {
+            string? stdin = io.InputRedirected ? await io.In.ReadToEndAsync(cancellationToken).ConfigureAwait(false) : null;
+            requests = DraftRequest.Parse(stdin, out string? stdinError);
+            if (requests is null)
+            {
+                await io.Error.WriteAsync(Prefix + "drafts on stdin: " + stdinError + " (expected { \"drafts\": [ { \"reference\": \"…\", \"text\": \"…\" } ] })\n").ConfigureAwait(false);
+                return 2;
+            }
+        }
+
         // The policy is checked before the access exists (AC-5): the COM object is created only inside a read the policy allowed.
         var reader = new OutlookReader(_access(), decision, settings, _zone);
         try
@@ -112,6 +142,8 @@ public sealed class OutlookVerbHost
             {
                 "count" => await CountAsync(reader, parsed, io).ConfigureAwait(false),
                 "list" => await ListAsync(reader, parsed, io).ConfigureAwait(false),
+                "brief" => await BriefAsync(reader, parsed, statePath, settings, io).ConfigureAwait(false),
+                "brief-done" => await BriefDoneAsync(reader, parsed.Until!.Value, requests!, statePath, io).ConfigureAwait(false),
                 _ => await ReadAsync(reader, parsed, io).ConfigureAwait(false),
             };
         }
@@ -123,7 +155,7 @@ public sealed class OutlookVerbHost
     }
 
     private static IOutlookAccess RealAccess() =>
-        OperatingSystem.IsWindows() ? new OutlookComAccess(OutlookComAccess.DefaultCallTimeout) : new OutlookAccessUnavailable("Outlook runs on Windows only");
+        OperatingSystem.IsWindows() ? new OutlookComAccess() : new OutlookAccessUnavailable("Outlook runs on Windows only");
 
     private static string PolicyText(OutlookPolicyDecision decision, string copy)
     {
@@ -208,31 +240,132 @@ public sealed class OutlookVerbHost
             return await RefusedAsync(result, io).ConfigureAwait(false);
         }
 
+        await WriteJsonAsync(io, writer => WriteMail(writer, mail)).ConfigureAwait(false);
+        return 0;
+    }
+
+    // The mail since the last brief (or --since), newest first, each with its body as read: the material of the session's brief.
+    // Records nothing; brief-done records what was briefed once the owner has seen it.
+    private async Task<int> BriefAsync(OutlookReader reader, Arguments parsed, string statePath, OutlookSettings settings, VerbIo io)
+    {
+        OutlookBriefState state = OutlookDrafts.Load(statePath);
+        DateTimeOffset since = parsed.Since
+            ?? (state.BriefedUntil is { } until ? until.AddSeconds(1) : TimeZoneInfo.ConvertTime(_clock.GetUtcNow() - DefaultSince, _zone));
+        int cap = Math.Min(parsed.Max ?? settings.ReadMaxItems, settings.ReadMaxItems);
+        OutlookResult<IReadOnlyList<OutlookMailSummary>> listed = reader.List("Inbox", since, cap);
+        if (listed.Value is not { } summaries)
+        {
+            return await RefusedAsync(listed, io).ConfigureAwait(false);
+        }
+
+        var mails = new List<OutlookMail>();
+        foreach (OutlookMailSummary summary in summaries)
+        {
+            OutlookResult<OutlookMail> read = reader.Read(summary.Reference);
+            if (read.Value is not { } mail)
+            {
+                return await RefusedAsync(read, io).ConfigureAwait(false);
+            }
+
+            mails.Add(mail);
+        }
+
+        string sinceText = since.ToString(OutlookDates.Format, CultureInfo.InvariantCulture);
         await WriteJsonAsync(io, writer =>
         {
             writer.WriteStartObject();
-            WriteSummary(writer, mail.Summary);
-            writer.WriteStartArray("attachments");
-            foreach (string name in mail.AttachmentNames)
+            writer.WriteString("folder", "Inbox");
+            writer.WriteString("since", sinceText);
+            writer.WriteString("until", mails.Count == 0 ? sinceText : mails[0].Summary.Received);
+            writer.WriteBoolean("more", mails.Count >= cap);
+            writer.WriteStartArray("items");
+            foreach (OutlookMail mail in mails)
             {
-                writer.WriteStringValue(name);
+                WriteMail(writer, mail);
             }
 
             writer.WriteEndArray();
-            writer.WriteNumber("attachmentCount", mail.AttachmentCount);
-            if (mail.Body is null)
-            {
-                writer.WriteNull("body");
-            }
-            else
-            {
-                writer.WriteString("body", mail.Body);
-            }
-
-            writer.WriteBoolean("bodyTruncated", mail.BodyTruncated);
             writer.WriteEndObject();
         }).ConfigureAwait(false);
         return 0;
+    }
+
+    // Records what was briefed and keeps the brief's reply drafts on this laptop, replacing the last brief's: each answers the sender
+    // of its mail, with the quoted history as received. Every written text is checked before Outlook is read; nothing is saved in
+    // Outlook (no such call exists).
+    private static async Task<int> BriefDoneAsync(OutlookReader reader, DateTimeOffset until, IReadOnlyList<DraftRequest> requests, string statePath, VerbIo io)
+    {
+        for (var i = 0; i < requests.Count; i++)
+        {
+            if (OutlookDrafts.WrittenTextProblem(requests[i].Text) is { } problem)
+            {
+                await io.Error.WriteAsync(Prefix + "refused: draft " + (i + 1).ToString(CultureInfo.InvariantCulture) + " " + problem + "\n").ConfigureAwait(false);
+                return 5;
+            }
+        }
+
+        var drafts = new List<OutlookDraft>();
+        for (var i = 0; i < requests.Count; i++)
+        {
+            OutlookResult<OutlookMail> read = reader.Read(requests[i].Reference);
+            if (read.Value is not { } mail)
+            {
+                if (read.Refusal == OutlookRefusal.ItemNotFound)
+                {
+                    await io.Error.WriteAsync(Prefix + "draft " + (i + 1).ToString(CultureInfo.InvariantCulture) + ": " + read.Message + "\n").ConfigureAwait(false);
+                    return 1;
+                }
+
+                return await RefusedAsync(read, io).ConfigureAwait(false);
+            }
+
+            OutlookMailSummary summary = mail.Summary;
+            drafts.Add(new OutlookDraft(i + 1, summary.Reference, summary.SenderName, summary.SenderAddress, OutlookDrafts.ReplySubject(summary.Subject), requests[i].Text, OutlookDrafts.Quote(mail)));
+        }
+
+        OutlookDrafts.Save(statePath, new OutlookBriefState(until, drafts));
+        await io.Out.WriteAsync(string.Create(
+            CultureInfo.InvariantCulture,
+            $"{Prefix}brief recorded until {until.ToString(OutlookDates.Format, CultureInfo.InvariantCulture)}; {drafts.Count} reply drafts kept on this laptop (zyggy outlook drafts)\n")).ConfigureAwait(false);
+        return 0;
+    }
+
+    private static async Task<int> DraftsAsync(string statePath, int? number, VerbIo io)
+    {
+        OutlookBriefState state = OutlookDrafts.Load(statePath);
+        if (number is { } n && state.Drafts.All(d => d.Number != n))
+        {
+            await io.Error.WriteAsync(Prefix + "draft not found\n").ConfigureAwait(false);
+            return 1;
+        }
+
+        await io.Out.WriteAsync(OutlookDrafts.Write(state, number)).ConfigureAwait(false);
+        return 0;
+    }
+
+    private static void WriteMail(Utf8JsonWriter writer, OutlookMail mail)
+    {
+        writer.WriteStartObject();
+        WriteSummary(writer, mail.Summary);
+        writer.WriteStartArray("attachments");
+        foreach (string name in mail.AttachmentNames)
+        {
+            writer.WriteStringValue(name);
+        }
+
+        writer.WriteEndArray();
+        writer.WriteNumber("attachmentCount", mail.AttachmentCount);
+        if (mail.Body is null)
+        {
+            writer.WriteNull("body");
+        }
+        else
+        {
+            writer.WriteString("body", mail.Body);
+        }
+
+        writer.WriteBoolean("bodyTruncated", mail.BodyTruncated);
+        writer.WriteEndObject();
     }
 
     private static void WriteSummary(Utf8JsonWriter writer, OutlookMailSummary item)
@@ -276,7 +409,13 @@ public sealed class OutlookVerbHost
     /// <summary>The parsed arguments: the verb, its options and <c>--config</c>.</summary>
     private sealed record Arguments(string Verb, string? Config, IReadOnlyList<string> Folders, DateTimeOffset? Since, int? Max, string? Reference)
     {
-        private static readonly HashSet<string> Verbs = new(["policy", "count", "list", "read"], StringComparer.Ordinal);
+        private static readonly HashSet<string> Verbs = new(["policy", "count", "list", "read", "brief", "brief-done", "drafts"], StringComparer.Ordinal);
+
+        /// <summary>Gets <c>--until</c> of <c>brief-done</c>.</summary>
+        public DateTimeOffset? Until { get; init; }
+
+        /// <summary>Gets the draft number of <c>drafts &lt;n&gt;</c>.</summary>
+        public int? Number { get; init; }
 
         public static Arguments? Parse(IReadOnlyList<string> args, TimeZoneInfo zone, out string? error)
         {
@@ -299,6 +438,8 @@ public sealed class OutlookVerbHost
             DateTimeOffset? since = null;
             int? max = null;
             string? reference = null;
+            DateTimeOffset? until = null;
+            int? number = null;
             for (var i = 1; i < args.Count; i++)
             {
                 string arg = args[i];
@@ -309,6 +450,7 @@ public sealed class OutlookVerbHost
                     case "--folder":
                     case "--since":
                     case "--max":
+                    case "--until":
                         if (string.IsNullOrEmpty(value))
                         {
                             error = arg + " needs a value";
@@ -324,8 +466,32 @@ public sealed class OutlookVerbHost
                             continue;
                         }
 
+                        if (verb == "drafts" && number is null && !arg.StartsWith("--", StringComparison.Ordinal))
+                        {
+                            if (!int.TryParse(arg, NumberStyles.None, CultureInfo.InvariantCulture, out int parsedNumber) || parsedNumber < 1)
+                            {
+                                error = "drafts takes a draft number (1, 2, …)";
+                                return null;
+                            }
+
+                            number = parsedNumber;
+                            continue;
+                        }
+
                         error = $"unexpected argument '{ShellText.Prefix(arg, 40)}'";
                         return null;
+                }
+
+                if (arg == "--until")
+                {
+                    if (verb != "brief-done" || !OutlookDates.TryParseSince(value!, zone, out DateTimeOffset parsedUntil))
+                    {
+                        error = "--until takes the brief's until (an ISO 8601 date with offset), for brief-done";
+                        return null;
+                    }
+
+                    until = parsedUntil;
+                    continue;
                 }
 
                 switch (arg)
@@ -343,18 +509,18 @@ public sealed class OutlookVerbHost
                         folders.Add(value!);
                         break;
                     case "--since":
-                        if (verb != "list" || !OutlookDates.TryParseSince(value!, zone, out DateTimeOffset parsedSince))
+                        if (verb is not ("list" or "brief") || !OutlookDates.TryParseSince(value!, zone, out DateTimeOffset parsedSince))
                         {
-                            error = "--since takes YYYY-MM-DD or an ISO 8601 date with offset, for list";
+                            error = "--since takes YYYY-MM-DD or an ISO 8601 date with offset, for list and brief";
                             return null;
                         }
 
                         since = parsedSince;
                         break;
                     default:
-                        if (verb != "list" || !int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int parsedMax) || parsedMax < 1)
+                        if (verb is not ("list" or "brief") || !int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int parsedMax) || parsedMax < 1)
                         {
-                            error = "--max takes a positive integer, for list";
+                            error = "--max takes a positive integer, for list and brief";
                             return null;
                         }
 
@@ -375,7 +541,60 @@ public sealed class OutlookVerbHost
                 return null;
             }
 
-            return new Arguments(verb, config, folders, since, max, reference);
+            if (verb == "brief-done" && until is null)
+            {
+                error = "brief-done needs --until <the brief's until>";
+                return null;
+            }
+
+            return new Arguments(verb, config, folders, since, max, reference) { Until = until, Number = number };
+        }
+    }
+
+    /// <summary>One reply draft as the session hands it to <c>brief-done</c> on stdin: the mail it answers and the written text.</summary>
+    private sealed record DraftRequest(string Reference, string Text)
+    {
+        // No stdin (not redirected) or blank stdin is a brief without drafts; anything else must be { "drafts": [ { reference, text } ] }.
+        public static List<DraftRequest>? Parse(string? stdin, out string? error)
+        {
+            error = null;
+            if (string.IsNullOrWhiteSpace(stdin))
+            {
+                return [];
+            }
+
+            try
+            {
+                using var document = JsonDocument.Parse(stdin);
+                if (document.RootElement.ValueKind != JsonValueKind.Object
+                    || !document.RootElement.TryGetProperty("drafts", out JsonElement drafts)
+                    || drafts.ValueKind != JsonValueKind.Array)
+                {
+                    error = "no drafts array";
+                    return null;
+                }
+
+                var requests = new List<DraftRequest>();
+                foreach (JsonElement draft in drafts.EnumerateArray())
+                {
+                    if (draft.ValueKind != JsonValueKind.Object
+                        || !draft.TryGetProperty("reference", out JsonElement reference) || reference.ValueKind != JsonValueKind.String || string.IsNullOrEmpty(reference.GetString())
+                        || !draft.TryGetProperty("text", out JsonElement text) || text.ValueKind != JsonValueKind.String)
+                    {
+                        error = "draft " + (requests.Count + 1).ToString(CultureInfo.InvariantCulture) + " needs a reference and a text";
+                        return null;
+                    }
+
+                    requests.Add(new DraftRequest(reference.GetString()!, text.GetString()!));
+                }
+
+                return requests;
+            }
+            catch (JsonException)
+            {
+                error = "not JSON";
+                return null;
+            }
         }
     }
 }

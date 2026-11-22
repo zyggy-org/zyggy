@@ -54,9 +54,14 @@ internal sealed class FakeOutlookAccess : IOutlookAccess
         return DefaultStore;
     }
 
-    // Returns every item of the folder, unordered and unfiltered: the reader owns the since filter, the order and the cap.
-    public IEnumerable<OutlookRawItem>? Items(string storeId, string folder, DateTime sinceLocal)
+    /// <summary>Gets the <c>max</c> of the last <see cref="Items"/> call.</summary>
+    public int? MaxAsked { get; private set; }
+
+    // Returns every item of the folder, unordered and unfiltered: the reader owns the since filter, the order and the cap (it
+    // records the cap it was given, which the COM access applies inside its loop).
+    public IEnumerable<OutlookRawItem>? Items(string storeId, string folder, DateTime sinceLocal, int max)
     {
+        MaxAsked = max;
         Record($"Items {storeId} {folder}");
         return _folders.TryGetValue((storeId, folder), out var items) ? [.. items.OrderBy(i => i.EntryId, StringComparer.Ordinal)] : null;
     }

@@ -55,6 +55,23 @@ public sealed class OutlookReaderTests
         result.Value!.Select(m => m.Reference).Should().Equal("c-new", "b-mid");
     }
 
+    [Theory]
+    [InlineData(null, 2)]
+    [InlineData(10, 2)]
+    [InlineData(1, 1)]
+    public void List_Cap_IsPassedToTheAccessSoItStopsReading(int? asked, int expectedMax)
+    {
+        // Arrange
+        var access = TwoStores();
+        var sut = Reader(access, settings: Settings(maxItems: 2));
+
+        // Act
+        sut.List("Inbox", Since(2026, 11, 1), max: asked);
+
+        // Assert
+        access.MaxAsked.Should().Be(expectedMax);
+    }
+
     [Fact]
     public void List_CallerAsksFewerThanTheMaximum_ReturnsTheCallersCount()
     {

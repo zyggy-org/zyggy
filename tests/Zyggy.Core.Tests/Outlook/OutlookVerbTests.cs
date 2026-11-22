@@ -357,6 +357,22 @@ public sealed class OutlookVerbTests : IDisposable
     }
 
     [Fact]
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public async Task Count_OutlookRefusesAccessOnTheComThread_ExitSix_NoCrash()
+    {
+        // Arrange
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "the COM access runs on an STA thread, Windows only");
+        Allowed();
+        var denied = new OutlookComAccess(TimeSpan.FromSeconds(30), () => throw new UnauthorizedAccessException("Access is denied"));
+
+        // Act
+        var (exit, console) = await RunAsync("count", denied);
+
+        // Assert
+        (exit, console.Stderr).Should().Be((6, "outlook: Outlook not available (UnauthorizedAccessException: Access is denied)\n"));
+    }
+
+    [Fact]
     public async Task Count_NoNodeJson_ExitThree_ConfigurationError()
     {
         // Act
@@ -432,7 +448,7 @@ public sealed class OutlookVerbTests : IDisposable
     {
         public string DefaultStoreId() => throw new OutlookPromptTimeoutException(waited);
 
-        public IEnumerable<OutlookRawItem>? Items(string storeId, string folder, DateTime sinceLocal) => throw new OutlookPromptTimeoutException(waited);
+        public IEnumerable<OutlookRawItem>? Items(string storeId, string folder, DateTime sinceLocal, int max) => throw new OutlookPromptTimeoutException(waited);
 
         public int? Count(string storeId, string folder) => throw new OutlookPromptTimeoutException(waited);
 

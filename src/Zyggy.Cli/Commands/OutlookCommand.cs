@@ -16,7 +16,7 @@ internal static class OutlookCommand
 {
     /// <summary>The <c>--help</c> entry; <see cref="RunAsync"/> runs the verb with its own parser.</summary>
     public static Command Create() =>
-        new("outlook", "The work mailbox on the work laptop, read through classic Outlook (zyggy outlook policy | count | list | read ...); refuses without the policy record.");
+        new("outlook", "The work mailbox on the work laptop, read through classic Outlook (zyggy outlook policy | count | list | read | brief | brief-done | drafts ...); refuses without the policy record; never saves anything in Outlook.");
 
     /// <summary>Runs the verb with the arguments after <c>outlook</c>.</summary>
     public static async Task<int> RunAsync(IReadOnlyList<string> args, CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure, CancellationToken ct)

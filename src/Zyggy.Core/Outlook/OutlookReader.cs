@@ -79,7 +79,7 @@ internal sealed class OutlookReader(IOutlookAccess access, OutlookPolicyDecision
         {
             var store = access.DefaultStoreId();
             var sinceLocal = TimeZoneInfo.ConvertTime(since, zone).DateTime;
-            var items = access.Items(store, folder, sinceLocal);
+            var items = access.Items(store, folder, sinceLocal, cap);
             if (items is null)
             {
                 return Refused<IReadOnlyList<OutlookMailSummary>>(OutlookRefusal.FolderNotFound);
