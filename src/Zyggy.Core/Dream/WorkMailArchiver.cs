@@ -54,13 +54,16 @@ internal static class WorkMailArchiver
             || File.Exists(Path.Join(root, write.ItemPath)) || File.Exists(Path.Join(root, write.SidecarPath));
     }
 
-    /// <summary>The item's text: the work mail line's fact, one line.</summary>
+    /// <summary>
+    /// The item's text: the work mail line's fact, one line, with third parties' private contact details (phone numbers, e-mail and
+    /// postal addresses) removed first (D-Q18, <see cref="PrivateDetails"/>); name, role and organisation stay.
+    /// </summary>
     /// <param name="line">The work mail inbox line.</param>
     /// <returns>The text.</returns>
     public static string ItemText(DreamBatchLine line)
     {
         ArgumentNullException.ThrowIfNull(line);
-        return (MemoryLine.Parse(line.Text).Fact ?? string.Empty) + "\n";
+        return PrivateDetails.Strip(MemoryLine.Parse(line.Text).Fact ?? string.Empty) + "\n";
     }
 
     /// <summary>Writes every entry that names a work mail line of the batch and resolves, into the working set (in memory only).</summary>

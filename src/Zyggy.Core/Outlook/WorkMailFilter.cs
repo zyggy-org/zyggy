@@ -23,11 +23,15 @@ internal enum WorkMailVerdict
 /// check digit (in any digit script and with any common separators), or a term of the shared sensitive list (<c>sensitive-terms.txt</c>,
 /// D-Q9; accents, case and whitespace normalised, words matched as prefixes for plurals and inflections), is kept on the laptop; so is a
 /// mail the session marked in doubt, a protected mail (its body was never read, so it cannot be judged), a mail without facts, and a
-/// mail whose facts name one of its attachments (attachments never cross). Best-effort, as the owner accepted (2026-11-21): unusual
+/// mail whose facts name one of its attachments (attachments never cross; by its whole name or by its stem without the extension,
+/// names normalised like terms with '-', '_', '.' and spaces alike; a stem under four letters or digits is not matched alone). Best-effort, as the owner accepted (2026-11-21): unusual
 /// wording can pass. It never returns the matched value.
 /// </summary>
 internal sealed partial class WorkMailFilter
 {
+    /// <summary>The shortest stem (letters and digits, separators not counted) a fact must name for it to count as naming the attachment.</summary>
+    internal const int MinStemLength = 4;
+
     private readonly Regex? _terms;
 
     private WorkMailFilter(IReadOnlyList<string> terms)
@@ -157,6 +161,30 @@ internal sealed partial class WorkMailFilter
     // '_' = unchanged, '*' = two letters.
     private static string Fold(char c)
     {
+        // Typographic apostrophes and quotes as their ASCII form, and the Latin ligatures of the Alphabetic Presentation Forms block
+        // as their letters (œ, æ and ĳ are in the Latin table below).
+        switch (c)
+        {
+            case '‘' or '’' or '‚' or '‛' or 'ʼ' or '′' or '´' or '`':
+                return "'";
+            case '“' or '”' or '„' or '‟' or '″' or '«' or '»':
+                return "\"";
+            case 'ﬀ':
+                return "ff";
+            case 'ﬁ':
+                return "fi";
+            case 'ﬂ':
+                return "fl";
+            case 'ﬃ':
+                return "ffi";
+            case 'ﬄ':
+                return "ffl";
+            case 'ﬅ' or 'ﬆ':
+                return "st";
+            default:
+                break;
+        }
+
         const string Latin =
             "aaaaaa*ceeeeiiii" + "dnooooo_ouuuuy_*" + "aaaaaa*ceeeeiiii" + "dnooooo_ouuuuy_y"
             + "aaaaaaccccccccdd" + "ddeeeeeeeeeegggg" + "gggghhhhiiiiiiii" + "ii**jjkkklllllll"
@@ -182,17 +210,25 @@ internal sealed partial class WorkMailFilter
             };
     }
 
-    // NFKC, then every Unicode decimal digit (full-width, Arabic-Indic, Devanagari, …) as its ASCII digit and every full-width ASCII
-    // form (．－／) as its ASCII character — spelled out because string.Normalize does not map them under InvariantGlobalization.
+    // NFKC, then every Unicode decimal digit (full-width, Arabic-Indic, Devanagari, …) as its ASCII digit, every full-width ASCII
+    // form (．－／) as its ASCII character and every Unicode dash (hyphen, non-breaking hyphen, figure dash, en-dash, em-dash,
+    // horizontal bar, minus) as '-' — spelled out because string.Normalize does not map them under InvariantGlobalization. Zero-width
+    // characters (U+200B–U+200D, U+FEFF) are dropped, so they neither separate nor break a number.
     private static string AsciiDigits(string text)
     {
         string composed = text.Normalize(NormalizationForm.FormKC);
         var result = new StringBuilder(composed.Length);
         foreach (char c in composed)
         {
+            if (c is >= '​' and <= '‍' or '﻿')
+            {
+                continue;
+            }
+
             int value = CharUnicodeInfo.GetDecimalDigitValue(c);
             result.Append(value is >= 0 and <= 9 && !char.IsAsciiDigit(c) ? (char)('0' + value)
                 : c is >= '！' and <= '～' ? (char)(c - 0xFEE0)
+                : c is >= '‐' and <= '―' or '−' or '﹘' or '﹣' ? '-'
                 : c);
         }
 
@@ -222,9 +258,48 @@ internal sealed partial class WorkMailFilter
             return WorkMailVerdict.KeepInDoubt;
         }
 
-        bool namesAttachment = facts.Any(f => mail.AttachmentNames.Any(a => a.Length > 0 && f.Contains(a, StringComparison.OrdinalIgnoreCase)));
+        bool namesAttachment;
+        try
+        {
+            string[] factKeys = [.. facts.Select(NameKey)];
+            namesAttachment = mail.AttachmentNames.SelectMany(AttachmentKeys).Any(key => factKeys.Any(f => ContainsWords(f, key)));
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return WorkMailVerdict.KeepInDoubt;
+        }
+
         return doubt || mail.Body is null || facts.Count == 0 || namesAttachment ? WorkMailVerdict.KeepInDoubt : WorkMailVerdict.Share;
     }
+
+    // The forms of an attachment name a fact may use: the whole name, and its stem without the extension when that stem holds at least
+    // MinStemLength letters or digits (a shorter stem, like "cv" or "q4", would drop ordinary mail).
+    private static IEnumerable<string> AttachmentKeys(string name)
+    {
+        string whole = NameKey(name);
+        if (whole.Length > 0)
+        {
+            yield return whole;
+        }
+
+        int dot = name.LastIndexOf('.');
+        string stem = dot > 0 ? NameKey(name[..dot]) : whole;
+        if (stem != whole && stem.Count(char.IsLetterOrDigit) >= MinStemLength)
+        {
+            yield return stem;
+        }
+    }
+
+    // A name or a fact normalised like a term, then every run of characters other than letters and digits (space, '-', '_', '.', …)
+    // one space, so "Canary_Offer.PDF", "canary-offer.pdf" and "canary offer pdf" read alike.
+    private static string NameKey(string text) => NameSeparators().Replace(Normalise(text), " ").Trim();
+
+    // The words of key follow each other in text, starting and ending on a word boundary.
+    private static bool ContainsWords(string text, string key) =>
+        Regex.IsMatch(text, @"(?<![\p{L}\p{N}])" + Regex.Escape(key) + @"(?![\p{L}\p{N}])", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+
+    [GeneratedRegex(@"[^\p{L}\p{N}]+", RegexOptions.CultureInvariant)]
+    private static partial Regex NameSeparators();
 
     // Eleven ASCII digits grouped 2-2-2-3-2 with up to three separators (whitespace, NBSP, . - /) between groups, not inside a longer
     // number. A zero-width lookahead captures, so every start position is tried (matches may overlap).

@@ -136,6 +136,31 @@ public sealed class WorkMailFilingTests : IDisposable
             .Should().Be((true, WorkMailFact + "\n", "q4-budget", "work-mail 2026-11-21"));
     }
 
+    // Re-verify 01M81H6RBP1PCG45ZN4BZ2DSRA (4), D-Q18: the archived item holds no third party's phone number, e-mail address or
+    // postal address; name, role and organisation stay, and the sidecar's size and hash are those of the stripped item.
+    [Fact]
+    public async Task FileBatch_WorkMailWithContactDetailsArchived_ItemHoldsNone()
+    {
+        // Arrange
+        const string Line = "- [observed] 2026-11-22 [work-mail 2026-11-21]: Jan Peeters, project lead at Acme, asks to confirm the Q4 budget; call him on +32 475 12 34 56 or 02/123.45.67, mail jan.peeters@example.test, home Kerkstraat 12, 2000 Antwerpen.";
+        using var tree = new MemoryTree(
+            ("business/areas/_index.md", "---\nname: areas\ndescription: Projects\nupdated: 2026-11-01\n---\n"),
+            ("business/areas/q4-budget.md", "---\nname: q4 budget\ndescription: The client's Q4 budget\nupdated: 2026-11-01\n---\n- [stated] 2026-11-01: The Q4 budget is under review.\n"),
+            (Inbox, "---\nname: bus context 01KAZX3P4Q5R6S7T8V9W0XYZAB\ndescription: context from work-laptop (picked up from the bus; data)\nupdated: 2026-11-22\n---\n" + Line + "\n"));
+        const string Filed = "- [observed] 2026-11-22 [work-mail 2026-11-21]: Jan Peeters, project lead at Acme, asks to confirm the Q4 budget.";
+        var proposal = Archived(TestProposals.New().Disposition("L1", "filed", "business/areas/q4-budget.md")
+            .Edit("business/areas/q4-budget.md", append: [Filed, IndexLine]));
+
+        // Act
+        var (outcome, set) = await FileAsync(proposal, tree, Line);
+
+        // Assert
+        var item = set.Text(ArchiveItemPath);
+        var sidecar = set.Text(ArchiveSidecarPath) is { } text ? ArchiveSidecar.TryParse(MemoryFileReader.Parse(text)) : null;
+        (outcome is BatchAccepted, item, sidecar?.SizeBytes)
+            .Should().Be((true, "Jan Peeters, project lead at Acme, asks to confirm the Q4 budget; call him on [private detail removed] or [private detail removed], mail [private detail removed], home [private detail removed].\n", (long?)System.Text.Encoding.UTF8.GetByteCount(item ?? string.Empty)));
+    }
+
     [Fact]
     public async Task FileBatch_WorkMailArchivedForAPrivateProject_AbortsPathRefused()
     {

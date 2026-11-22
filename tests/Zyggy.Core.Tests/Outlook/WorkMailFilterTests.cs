@@ -56,7 +56,70 @@ public sealed class WorkMailFilterTests
         found.Should().Be(expected);
     }
 
+    // Re-verify 01M81H6RBP1PCG45ZN4BZ2DSRA (2): en-dash and em-dash (and the other Unicode dashes) separate groups like '-';
+    // zero-width characters (U+200B–U+200D, U+FEFF) are ignored wherever they stand.
+    [Theory]
+    [InlineData("85–07–30–033–28", true)]
+    [InlineData("85.07.30—033.28", true)]
+    [InlineData("85 — 07 — 30 — 033 — 28", true)]
+    [InlineData("85‑07‐30−033.28", true)]
+    [InlineData("8507​3003328", true)]
+    [InlineData("85﻿07‌30‍033​28", true)]
+    [InlineData("85.​07.30-033.28", true)]
+    [InlineData("85–07–30–033–29", false)]
+    [InlineData("8507​3003329", false)]
+    public void HasNationalRegisterNumber_UnicodeDashesAndZeroWidth(string text, bool expected)
+    {
+        // Act
+        var found = WorkMailFilter.HasNationalRegisterNumber(text);
+
+        // Assert
+        found.Should().Be(expected);
+    }
+
     // ---- the term list ----
+
+    // Re-verify 01M81H6RBP1PCG45ZN4BZ2DSRA (3): typographic apostrophes and quotes read as ' and ", and the ligatures œ, æ, ĳ, ﬁ, ﬂ
+    // as their letters, in terms and text alike.
+    [Theory]
+    [InlineData("call l’hôpital today", true)]
+    [InlineData("call L‘HOPITAL today", true)]
+    [InlineData("call lʼhopital today", true)]
+    [InlineData("the “rode vlag” was raised", true)]
+    [InlineData("the „rode vlag“ was raised", true)]
+    [InlineData("the fœtus scan", true)]
+    [InlineData("the FŒTUS scan", true)]
+    [InlineData("an ætiologie question", true)]
+    [InlineData("a bĳwerking was seen", true)]
+    [InlineData("the ﬁbrose test", true)]
+    [InlineData("the inﬂuenza wave", true)]
+    [InlineData("the rode vlag was raised", false)]
+    public void HasTerm_TypographicPunctuationAndLigatures(string text, bool expected)
+    {
+        // Arrange
+        var filter = WorkMailFilter.Parse("l'hôpital\n\"rode vlag\"\nfoetus\naetiologie\nbijwerking\nfibrose\ninfluenza\n");
+
+        // Act
+        var found = filter.HasTerm(text);
+
+        // Assert
+        found.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("call l'hôpital today", true)]
+    [InlineData("the de “rode vlag” was raised", true)]
+    public void HasTerm_TypographicTermMatchesPlainText(string text, bool expected)
+    {
+        // Arrange
+        var filter = WorkMailFilter.Parse("l’hôpital\nde “rode vlag”\n");
+
+        // Act
+        var found = filter.HasTerm(text);
+
+        // Assert
+        found.Should().Be(expected);
+    }
 
     // Verify 01M81EVW8T5BWSRAQ7Z03KPPX3 (1): terms and text are both normalised (NFKD, combining marks stripped, case-folded, any
     // whitespace run one space) and a word of a term matches as a word prefix (plurals, inflections).
@@ -170,6 +233,40 @@ public sealed class WorkMailFilterTests
 
         // Assert
         verdict.Should().Be(WorkMailVerdict.KeepInDoubt);
+    }
+
+    // Re-verify 01M81H6RBP1PCG45ZN4BZ2DSRA (1): a fact names an attachment also by its stem without extension, and with accent,
+    // case, space, hyphen or underscore variants (names normalised like terms); a stem shorter than 4 characters is ignored.
+    [Theory]
+    [InlineData("canary-offer.pdf", "Sends the canary-offer for review")]
+    [InlineData("canary-offer.pdf", "Sends the Canary Offer for review")]
+    [InlineData("canary-offer.pdf", "Sends the CANARY_OFFER for review")]
+    [InlineData("canary-offer.pdf", "Sends the canary  offer.PDF for review")]
+    [InlineData("canary_offer.pdf", "Sends the canary-offer for review")]
+    [InlineData("Offre-détaillée.docx", "Sends the offre detaillee for review")]
+    [InlineData("Offre detaillee.docx", "Sends the OFFRE-DÉTAILLÉE for review")]
+    [InlineData("contract.v2.pdf", "Sends contract v2 for review")]
+    [InlineData("cv.pdf", "Sends cv.pdf for review")]
+    public void Check_FactNamesAnAttachmentByAVariant_KeptInDoubt(string attachment, string fact)
+    {
+        // Act
+        var verdict = Filter.Check(Mail(body: "See attached.", attachments: [attachment]), [fact], doubt: false);
+
+        // Assert
+        verdict.Should().Be(WorkMailVerdict.KeepInDoubt);
+    }
+
+    [Theory]
+    [InlineData("cv.pdf", "The cv of the new hire is in")]
+    [InlineData("q4.xlsx", "Asks to confirm the Q4 budget")]
+    [InlineData("canary-offer.pdf", "Asks to confirm the canary budget")]
+    public void Check_ShortStemOrNoName_Shared(string attachment, string fact)
+    {
+        // Act
+        var verdict = Filter.Check(Mail(body: "See attached.", attachments: [attachment]), [fact], doubt: false);
+
+        // Assert
+        verdict.Should().Be(WorkMailVerdict.Share);
     }
 
     [Fact]
