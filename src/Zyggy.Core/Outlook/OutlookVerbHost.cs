@@ -129,6 +129,19 @@ public sealed class OutlookVerbHost
             return 5;
         }
 
+        // Spec 58 slice 5: in a run the node started, the read tools screen every mail at the source before anything of it is printed.
+        JobScreen? screen = null;
+        if (OutlookJobRun.IsJob(_environment, out string jobValue))
+        {
+            _environment.TryGetValue(OutlookJobRun.MarkerVariable, out string? namedMarker);
+            (screen, string? refusalLine, int exit) = await JobScreenAsync(jobValue, parsed, namedMarker, node, cancellationToken).ConfigureAwait(false);
+            if (refusalLine is not null)
+            {
+                await io.Error.WriteAsync(Prefix + refusalLine + "\n").ConfigureAwait(false);
+                return exit;
+            }
+        }
+
         if (parsed.Verb == "drafts")
         {
             return await DraftsAsync(statePath, parsed.Number, io).ConfigureAwait(false);
@@ -155,13 +168,16 @@ public sealed class OutlookVerbHost
         var reader = new OutlookReader(_access(), decision, settings, _zone);
         try
         {
+            // A job brief keeps its own watermark, so an attended brief still shows every mail (the kept ones included); its drafts
+            // replace the last brief's drafts in the attended state, where an attended session sends them by number (D-Q17).
+            string briefPath = screen is null ? statePath : OutlookJobRun.JobStatePath(node.EffectiveNodeDir, node.Tenant);
             return parsed.Verb switch
             {
                 "count" => await CountAsync(reader, parsed, io).ConfigureAwait(false),
-                "list" => await ListAsync(reader, parsed, io).ConfigureAwait(false),
-                "brief" => await BriefAsync(reader, parsed, statePath, settings, io).ConfigureAwait(false),
-                "brief-done" => await BriefDoneAsync(reader, parsed.Until!.Value, requests!, statePath, io).ConfigureAwait(false),
-                _ => await ReadAsync(reader, parsed, io).ConfigureAwait(false),
+                "list" => await ListAsync(reader, parsed, screen, io).ConfigureAwait(false),
+                "brief" => await BriefAsync(reader, parsed, briefPath, settings, screen, io).ConfigureAwait(false),
+                "brief-done" => await BriefDoneAsync(reader, parsed.Until!.Value, requests!, briefPath, statePath, io).ConfigureAwait(false),
+                _ => await ReadAsync(reader, parsed, screen, io).ConfigureAwait(false),
             };
         }
         catch (OutlookPromptTimeoutException ex)
@@ -169,6 +185,83 @@ public sealed class OutlookVerbHost
             await io.Error.WriteAsync(Prefix + "Outlook asked for access: " + ex.Message + "; answer the prompt in Outlook or stop\n").ConfigureAwait(false);
             return 6;
         }
+    }
+
+    // Spec 58 slice 5: what a job run needs before any read — a job id that names a file safely, no worktree (a worktree job's branch
+    // is pushed off the laptop without the filter), the shared term list for the verbs that print mail; drafts stay for an attended
+    // session. Nothing here touches Outlook.
+    private static async Task<(JobScreen? Screen, string? Refusal, int Exit)> JobScreenAsync(string jobValue, Arguments parsed, string? namedMarker, NodeConfiguration node, CancellationToken cancellationToken)
+    {
+        string verb = parsed.Verb;
+        if (!EnvelopeId.TryParse(jobValue, out EnvelopeId? job))
+        {
+            return (null, "refused: ZYGGY_JOB is not a job id; a job reads no work mail", 5);
+        }
+
+        if (verb == "drafts")
+        {
+            return (null, "refused: drafts are shown in an attended session on this laptop", 5);
+        }
+
+        // The node's own node.json only: another one would put the marker (and the term list) where the runner never looks, and the
+        // job's report would leave unscreened.
+        if (parsed.Config is not null)
+        {
+            return (null, "refused: in a job the outlook tools read the node's own node.json (no --config)", 5);
+        }
+
+        string marker = OutlookJobRun.MarkerPath(node.EffectiveNodeDir, node.Tenant, job);
+        if (!OutlookJobRun.IsOwnMarker(namedMarker, marker))
+        {
+            return (null, "refused: this node.json is not the node's that runs the job", 5);
+        }
+        if (verb is not ("list" or "read" or "brief"))
+        {
+            return (new JobScreen(null, marker), null, 0);
+        }
+
+        if (Directory.Exists(Jobs.TranscriptPaths.WorktreeFor(node.EffectiveNodeDir, node.Tenant, job)))
+        {
+            return (null, "refused: a worktree job reads no work mail (its branch leaves the laptop without the filter)", 5);
+        }
+
+        string terms = Path.Join(node.EffectiveNodeDir, WorkMailShare.TermsFileName);
+        if (!File.Exists(terms))
+        {
+            return (null, "refused: no " + WorkMailShare.TermsFileName + " in the node directory (the shared sensitive term list); a job reads no work mail without it", 3);
+        }
+
+        var filter = WorkMailFilter.Parse(await File.ReadAllTextAsync(terms, cancellationToken).ConfigureAwait(false));
+        return (new JobScreen(filter, marker), null, 0);
+    }
+
+    // Screens the listed mails of a job run: each is read with its whole body and judged; the kept ones are recorded in the job's
+    // marker (which also says the job read work mail) before anything is printed. Returns the summaries that passed, or the refusal
+    // of a read that failed.
+    private static (List<OutlookMailSummary>? Shown, int Kept, OutlookResult<OutlookMail>? Failed) ScreenAll(OutlookReader reader, JobScreen screen, IReadOnlyList<OutlookMailSummary> summaries)
+    {
+        var shown = new List<OutlookMailSummary>();
+        var kept = new List<string>();
+        foreach (OutlookMailSummary summary in summaries)
+        {
+            OutlookResult<OutlookMail> whole = reader.Read(summary.Reference, wholeBody: true);
+            if (whole.Value is not { } mail)
+            {
+                return (null, 0, whole);
+            }
+
+            if (screen.Filter!.Screen(mail) == WorkMailVerdict.Share)
+            {
+                shown.Add(summary);
+            }
+            else
+            {
+                kept.Add(summary.Reference);
+            }
+        }
+
+        OutlookJobRun.Record(screen.Marker, kept);
+        return (shown, kept.Count, null);
     }
 
     private static IOutlookAccess RealAccess() =>
@@ -220,14 +313,27 @@ public sealed class OutlookVerbHost
         return 0;
     }
 
-    private async Task<int> ListAsync(OutlookReader reader, Arguments parsed, VerbIo io)
+    private async Task<int> ListAsync(OutlookReader reader, Arguments parsed, JobScreen? screen, VerbIo io)
     {
         string folder = parsed.Folders.Count == 0 ? "Inbox" : parsed.Folders[0];
         DateTimeOffset since = parsed.Since ?? TimeZoneInfo.ConvertTime(_clock.GetUtcNow() - DefaultSince, _zone);
         OutlookResult<IReadOnlyList<OutlookMailSummary>> result = reader.List(folder, since, parsed.Max);
-        if (result.Value is not { } items)
+        if (result.Value is not { } listed)
         {
             return await RefusedAsync(result, io).ConfigureAwait(false);
+        }
+
+        IReadOnlyList<OutlookMailSummary> items = listed;
+        int? kept = null;
+        if (screen is not null)
+        {
+            var (shown, keptCount, failed) = ScreenAll(reader, screen, listed);
+            if (shown is null)
+            {
+                return await RefusedAsync(failed!, io).ConfigureAwait(false);
+            }
+
+            (items, kept) = (shown, keptCount);
         }
 
         await WriteJsonAsync(io, writer =>
@@ -235,6 +341,11 @@ public sealed class OutlookVerbHost
             writer.WriteStartObject();
             writer.WriteString("folder", folder);
             writer.WriteString("since", since.ToString(OutlookDates.Format, CultureInfo.InvariantCulture));
+            if (kept is { } keptHere)
+            {
+                writer.WriteNumber("kept", keptHere);
+            }
+
             writer.WriteStartArray("items");
             foreach (OutlookMailSummary item in items)
             {
@@ -249,8 +360,25 @@ public sealed class OutlookVerbHost
         return 0;
     }
 
-    private static async Task<int> ReadAsync(OutlookReader reader, Arguments parsed, VerbIo io)
+    private static async Task<int> ReadAsync(OutlookReader reader, Arguments parsed, JobScreen? screen, VerbIo io)
     {
+        if (screen is not null)
+        {
+            OutlookResult<OutlookMail> whole = reader.Read(parsed.Reference!, wholeBody: true);
+            if (whole.Value is not { } judged)
+            {
+                return await RefusedAsync(whole, io).ConfigureAwait(false);
+            }
+
+            bool passes = screen.Filter!.Screen(judged) == WorkMailVerdict.Share;
+            OutlookJobRun.Record(screen.Marker, passes ? [] : [judged.Summary.Reference]);
+            if (!passes)
+            {
+                await io.Error.WriteAsync(Prefix + "refused: this mail stays on the laptop (sensitive-data filter); it is counted\n").ConfigureAwait(false);
+                return 5;
+            }
+        }
+
         OutlookResult<OutlookMail> result = reader.Read(parsed.Reference!);
         if (result.Value is not { } mail)
         {
@@ -263,7 +391,7 @@ public sealed class OutlookVerbHost
 
     // The mail since the last brief (or --since), newest first, each with its body as read: the material of the session's brief.
     // Records nothing; brief-done records what was briefed once the owner has seen it.
-    private async Task<int> BriefAsync(OutlookReader reader, Arguments parsed, string statePath, OutlookSettings settings, VerbIo io)
+    private async Task<int> BriefAsync(OutlookReader reader, Arguments parsed, string statePath, OutlookSettings settings, JobScreen? screen, VerbIo io)
     {
         OutlookBriefState state = OutlookDrafts.Load(statePath);
 
@@ -279,8 +407,23 @@ public sealed class OutlookVerbHost
             return await RefusedAsync(listed, io).ConfigureAwait(false);
         }
 
+        // In a job run only the mails that pass the source screen are read for the brief; the window (until, oldest, more) still
+        // follows every listed mail, so a kept mail is not offered again to the next job brief.
+        IReadOnlyList<OutlookMailSummary> toRead = summaries;
+        int? kept = null;
+        if (screen is not null)
+        {
+            var (shown, keptCount, failed) = ScreenAll(reader, screen, summaries);
+            if (shown is null)
+            {
+                return await RefusedAsync(failed!, io).ConfigureAwait(false);
+            }
+
+            (toRead, kept) = (shown, keptCount);
+        }
+
         var mails = new List<OutlookMail>();
-        foreach (OutlookMailSummary summary in summaries)
+        foreach (OutlookMailSummary summary in toRead)
         {
             OutlookResult<OutlookMail> read = reader.Read(summary.Reference);
             if (read.Value is not { } mail)
@@ -292,12 +435,13 @@ public sealed class OutlookVerbHost
         }
 
         string sinceText = since.ToString(OutlookDates.Format, CultureInfo.InvariantCulture);
-        string untilText = mails.Count == 0 ? sinceText : mails[0].Summary.Received;
-        bool more = mails.Count >= cap;
+        string untilText = summaries.Count == 0 ? sinceText : summaries[0].Received;
+        bool more = summaries.Count >= cap;
+        Directory.CreateDirectory(Path.GetDirectoryName(statePath)!);
         OutlookDrafts.SaveOffer(OutlookDrafts.OfferPath(statePath), new OutlookBriefOffer(
             since,
             OutlookDates.ParseWritten(untilText),
-            mails.Count == 0 ? null : OutlookDates.ParseWritten(mails[^1].Summary.Received),
+            summaries.Count == 0 ? null : OutlookDates.ParseWritten(summaries[^1].Received),
             more,
             backlog is not null));
         await WriteJsonAsync(io, writer =>
@@ -307,6 +451,11 @@ public sealed class OutlookVerbHost
             writer.WriteString("since", sinceText);
             writer.WriteString("until", untilText);
             writer.WriteBoolean("more", more);
+            if (kept is { } keptHere)
+            {
+                writer.WriteNumber("kept", keptHere);
+            }
+
             writer.WriteStartArray("items");
             foreach (OutlookMail mail in mails)
             {
@@ -322,7 +471,7 @@ public sealed class OutlookVerbHost
     // Records what was briefed and keeps the brief's reply drafts on this laptop, replacing the last brief's: each answers the sender
     // of its mail, with the quoted history as received. Every written text is checked before Outlook is read; nothing is saved in
     // Outlook (no such call exists).
-    private static async Task<int> BriefDoneAsync(OutlookReader reader, DateTimeOffset until, IReadOnlyList<DraftRequest> requests, string statePath, VerbIo io)
+    private static async Task<int> BriefDoneAsync(OutlookReader reader, DateTimeOffset until, IReadOnlyList<DraftRequest> requests, string briefPath, string statePath, VerbIo io)
     {
         for (var i = 0; i < requests.Count; i++)
         {
@@ -352,9 +501,20 @@ public sealed class OutlookVerbHost
             drafts.Add(new OutlookDraft(i + 1, summary.Reference, summary.SenderName, summary.SenderAddress, OutlookDrafts.ReplySubject(summary.Subject), requests[i].Text, OutlookDrafts.Quote(mail)));
         }
 
-        // Only what the last brief showed counts as briefed: a capped brief's older mail stays for the next brief.
-        string offerPath = OutlookDrafts.OfferPath(statePath);
-        OutlookDrafts.Save(statePath, OutlookDrafts.Record(OutlookDrafts.Load(statePath), OutlookDrafts.LoadOffer(offerPath), until, drafts));
+        // Only what the last brief showed counts as briefed: a capped brief's older mail stays for the next brief. A job brief
+        // (briefPath is the job state) records its own watermark; its drafts go to the attended state, the last brief's drafts.
+        string offerPath = OutlookDrafts.OfferPath(briefPath);
+        OutlookBriefState recorded = OutlookDrafts.Record(OutlookDrafts.Load(briefPath), OutlookDrafts.LoadOffer(offerPath), until, drafts);
+        if (briefPath == statePath)
+        {
+            OutlookDrafts.Save(statePath, recorded);
+        }
+        else
+        {
+            OutlookDrafts.Save(briefPath, recorded with { Drafts = [] });
+            OutlookDrafts.Save(statePath, OutlookDrafts.Load(statePath) with { Drafts = drafts });
+        }
+
         File.Delete(offerPath);
         await io.Out.WriteAsync(string.Create(
             CultureInfo.InvariantCulture,
@@ -556,6 +716,9 @@ public sealed class OutlookVerbHost
         await io.Error.WriteAsync(Prefix + line + "\n").ConfigureAwait(false);
         return exit;
     }
+
+    /// <summary>A job run's source screen: the shared term list (for the verbs that print mail) and the job's marker.</summary>
+    private sealed record JobScreen(WorkMailFilter? Filter, string Marker);
 
     /// <summary>The parsed arguments: the verb, its options and <c>--config</c>.</summary>
     private sealed record Arguments(string Verb, string? Config, IReadOnlyList<string> Folders, DateTimeOffset? Since, int? Max, string? Reference)

@@ -234,6 +234,51 @@ internal sealed partial class WorkMailFilter
         return result.ToString();
     }
 
+    /// <summary>
+    /// The source screen of a job run (spec 58 slice 5): judges a mail before anything of it is printed to the model — its subject,
+    /// sender name and address, whole body and attachment names. A register number or a term keeps it; a protected mail (its body was
+    /// never read, so it cannot be judged) is in doubt; a text the term match cannot judge in time is in doubt.
+    /// </summary>
+    /// <param name="mail">The mail, read with its whole body.</param>
+    /// <returns>The verdict.</returns>
+    public WorkMailVerdict Screen(OutlookMail mail)
+    {
+        ArgumentNullException.ThrowIfNull(mail);
+        string[] texts = [mail.Summary.Subject, mail.Summary.SenderName, mail.Summary.SenderAddress, mail.Body ?? string.Empty, .. mail.AttachmentNames];
+        try
+        {
+            if (texts.Any(t => HasNationalRegisterNumber(t) || HasTerm(t)))
+            {
+                return WorkMailVerdict.KeepSensitive;
+            }
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return WorkMailVerdict.KeepInDoubt;
+        }
+
+        return mail.Body is null || mail.Summary.IsProtected ? WorkMailVerdict.KeepInDoubt : WorkMailVerdict.Share;
+    }
+
+    /// <summary>
+    /// Whether a text that is about to leave the laptop (a job's report) holds a national register number or a term of the list; a
+    /// text the term match cannot judge in time counts as sensitive (fail closed).
+    /// </summary>
+    /// <param name="text">The text.</param>
+    /// <returns>Whether it must not leave.</returns>
+    public bool IsSensitiveText(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        try
+        {
+            return HasNationalRegisterNumber(text) || HasTerm(text);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return true;
+        }
+    }
+
     /// <summary>Judges one mail and the facts the session wrote about it.</summary>
     /// <param name="mail">The mail, read with its whole body.</param>
     /// <param name="facts">The facts the session wrote.</param>

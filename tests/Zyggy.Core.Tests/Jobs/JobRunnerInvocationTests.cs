@@ -204,6 +204,21 @@ public sealed class JobRunnerInvocationTests : IDisposable
         ends.Should().BeAfter(started).And.BeOnOrBefore(started.AddHours(24));
     }
 
+    // Spec 58 slice 5: the job's work mail marker is named by the runner, in its own node directory; a configured value cannot move it.
+    [Fact]
+    public async Task RunAsync_AnyJob_ModelEnvironmentNamesTheWorkMailMarkerInTheNodeDirectory()
+    {
+        // Arrange
+        _h.Options.ModelEnvironment = new Dictionary<string, string> { ["ZYGGY_JOB_MARKER"] = "elsewhere" };
+        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root));
+
+        // Act
+        await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        ClaudeSpec().Environment.Should().Contain("ZYGGY_JOB_MARKER", Zyggy.Core.Outlook.OutlookJobRun.MarkerPath(_h.Options.NodeDir!, job.Header.Tenant, job.Header.Id));
+    }
+
     [Fact]
     public async Task RunAsync_ModelEnvironmentNamesZyggyHooksOn_OffStillWins()
     {

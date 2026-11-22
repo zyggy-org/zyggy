@@ -44,6 +44,14 @@ internal static partial class PrivateDetails
             return false;
         }
 
+        // Right after '<digit>-' ("q4-0475123456") a number is taken only in the Belgian phone shape, so a reference number
+        // ("2026-0012345") stays (verify 01M81M00RPG8APHN95NYK3XR1X (1)).
+        if (candidate.Index >= 2 && text[candidate.Index - 1] == '-' && char.IsAsciiDigit(text[candidate.Index - 2])
+            && !BelgianPhone().IsMatch(string.Concat(candidate.Value.Where(char.IsAsciiDigit))))
+        {
+            return false;
+        }
+
         var value = candidate.Value.TrimStart('(');
         if (DateOrRange().IsMatch(value))
         {
@@ -78,12 +86,17 @@ internal static partial class PrivateDetails
     // Starts with '+', '00' or '0' (an international or a national number), optionally in brackets ("(0475) 12 34 56"), then digits
     // with the separators people write (space, '.', '/', '-', the Unicode dashes, brackets), ending on a digit. Not inside a longer
     // number or reference ("2026-0012345", "PO 4500\u2026"), but right after a letter label with or without '.', ':', '/' or '-'
-    // ("T.0475 \u2026", "GSM/0475\u2026", "Tel.:+32 \u2026", "t\u00e9l.02/\u2026", "GSM0475\u2026").
+    // ("T.0475 \u2026", "GSM/0475\u2026", "Tel.:+32 \u2026", "t\u00e9l.02/\u2026", "GSM0475\u2026"), and right after '<digit>-'
+    // ("q4-0475\u2026"), where IsPhoneNumber keeps only the Belgian shape.
     [GeneratedRegex(
-        @"(?:(?<![\p{L}\p{N}\-./+(])|(?<=(?<![\p{L}\p{N}])\p{L}{1,15}\.?\s*[.:/\-]?\s*))"
+        @"(?:(?<![\p{L}\p{N}\-./+(])|(?<=(?<![\p{L}\p{N}])\p{L}{1,15}\.?\s*[.:/\-]?\s*)|(?<=[0-9]-))"
         + @"\(?(?:\+|0)[0-9\s./()\-\u2010-\u2015]{7,}[0-9](?![\p{L}\p{N}])",
         RegexOptions.CultureInvariant)]
     private static partial Regex PhoneCandidate();
+
+    // The digits of a Belgian national number: 0 and eight digits (a fixed line), or a mobile 04 and eight digits.
+    [GeneratedRegex(@"^(?:0[1-9][0-9]{7}|04[0-9]{8})$", RegexOptions.CultureInvariant)]
+    private static partial Regex BelgianPhone();
 
     // A valid date: day 1-31, month 1-12, an optional 2- or 4-digit year.
     private const string Date = @"(?:0?[1-9]|[12][0-9]|3[01])[./\-](?:0?[1-9]|1[0-2])(?:[./\-](?:[0-9]{4}|[0-9]{2}))?";

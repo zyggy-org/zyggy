@@ -52,6 +52,37 @@ public sealed class PrivateDetailsTests
         stripped.Should().Be(expected);
     }
 
+    // Verify 01M81M00RPG8APHN95NYK3XR1X (1): a number right after '<digit>-' is a phone number only in the Belgian shape (0 and eight
+    // digits, or a mobile 04 and eight digits); a reference number of another shape stays.
+    [Theory]
+    [InlineData("q4-0475123456", "q4-[private detail removed]")]
+    [InlineData("file q4-0475 12 34 56.pdf", "file q4-[private detail removed].pdf")]
+    [InlineData("v2-02/123.45.67", "v2-[private detail removed]")]
+    [InlineData("2026-091234567", "2026-[private detail removed]")]
+    public void Strip_BelgianPhoneAfterDigitDash_Removed(string text, string expected)
+    {
+        // Act
+        var stripped = PrivateDetails.Strip(text);
+
+        // Assert
+        stripped.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("Reference 2026-0012345 is open.")]
+    [InlineData("Reference 2026-00123456789 is open.")]
+    [InlineData("Reference 2026-0512345678 is open.")]
+    [InlineData("Reference 2026-01234567890 is open.")]
+    [InlineData("Order 12-0012345678 shipped.")]
+    public void Strip_ReferenceAfterDigitDash_Kept(string text)
+    {
+        // Act
+        var stripped = PrivateDetails.Strip(text);
+
+        // Assert
+        stripped.Should().Be(text);
+    }
+
     [Theory]
     [InlineData("Jan Peeters, project lead at Acme, asks to confirm the Q4 budget by Friday.")]
     [InlineData("The meeting of 01/02/2026 at 09:00 moved to 2026-11-21.")]

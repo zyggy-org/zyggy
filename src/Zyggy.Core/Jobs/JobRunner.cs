@@ -219,13 +219,17 @@ public sealed partial class JobRunner
             PreToolUseHook = new ModelHookCommand(hookExecutable, hookArgs),
             // Founding spec §6 Invocation (amended by deliverable 12, D5): a job run is unattended — the memory and context writers do nothing.
             // Deliverable 18: the run also learns which job it is, in which project, and when it times out, so `zyggy ask` can name it and stop waiting in time.
-            Environment = WithHooksOff(_options.ModelEnvironment, job.Header.Id, ProjectName.Derive(WorkHookInput.LastSegment(project)), _clock.GetUtcNow() + timeout),
+            // Spec 58 slice 5: and where its work mail marker lives (this node's directory), so the outlook tools cannot be pointed elsewhere.
+            Environment = WithHooksOff(_options.ModelEnvironment, job.Header.Id, ProjectName.Derive(WorkHookInput.LastSegment(project)), _clock.GetUtcNow() + timeout, Outlook.OutlookJobRun.MarkerPath(nodeDir, job.Header.Tenant, job.Header.Id)),
             TranscriptPath = TranscriptPaths.For(nodeDir, job.Header.Tenant, job.Header.Id),
         };
 
         LogStarted(id, runDirectory, fields.Agent ?? "none", minutes);
         var result = await _model.RunAsync(request, ct).ConfigureAwait(false);
         var reply = Map(id, result, minutes, started);
+
+        // Spec 58 slice 5: a job that read work mail has its report screened on this laptop before it is written to the bus.
+        reply = Outlook.WorkMailReportScreen.Apply(reply, nodeDir, job.Header.Tenant, job.Header.Id);
         var hasResultLines = false;
         var description = string.IsNullOrEmpty(fields.Description) ? null : fields.Description;
         string? behindLine = null;
@@ -589,13 +593,14 @@ public sealed partial class JobRunner
     /// The model environment with <c>ZYGGY_HOOKS=off</c> and the job's id, project and end time set last, so no configured value can
     /// switch the hooks back on (spec 12 A5) or name another job (deliverable 18).
     /// </summary>
-    private static Dictionary<string, string> WithHooksOff(IReadOnlyDictionary<string, string> environment, EnvelopeId job, string project, DateTimeOffset ends) =>
+    private static Dictionary<string, string> WithHooksOff(IReadOnlyDictionary<string, string> environment, EnvelopeId job, string project, DateTimeOffset ends, string workMailMarker) =>
         new(environment, StringComparer.Ordinal)
         {
             ["ZYGGY_HOOKS"] = "off",
             ["ZYGGY_JOB"] = job.Value,
             ["ZYGGY_JOB_PROJECT"] = project,
             ["ZYGGY_JOB_ENDS"] = ends.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
+            [Outlook.OutlookJobRun.MarkerVariable] = workMailMarker,
         };
 
     private static int? Clamp(long? tokens) => tokens is { } value ? (int)Math.Clamp(value, 0, int.MaxValue) : null;

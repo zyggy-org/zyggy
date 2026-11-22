@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 using Zyggy.Cli.Commands;
 using Zyggy.Core.Memory;
+using Zyggy.Core.Outlook;
 using Zyggy.Core.Secrets;
 using Zyggy.Core.Verbs;
 
@@ -21,6 +22,13 @@ internal static class CliApplication
     /// </summary>
     public static async Task<int> RunAsync(string[] args, CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure, CancellationToken cancellationToken)
     {
+        // Spec 58 slice 5: once a job has read work mail, only the outlook tools run until it ends (nothing it read leaves by another verb).
+        if (OutlookJobRun.GateRefusal(args, environment.Variables) is { } refused)
+        {
+            await io.Error.WriteLineAsync(refused);
+            return ExitCodes.Refused;
+        }
+
         if (RawVerbs.TryDispatch(args, environment, out var raw))
         {
             return await raw;
