@@ -401,6 +401,30 @@ public sealed class SupervisorWakeTests : IAsyncLifetime
         }, Log());
     }
 
+    // Spec 50 AC-11 (slice 5 verify correction): the retry reuses exactly the first attempt's model, even when the owner edits the
+    // table between the two attempts — the event's second run never reads the table again.
+    [Fact]
+    public async Task Wake_TableEditedBetweenAttempts_RetryKeepsTheFirstAttemptsModel()
+    {
+        // Arrange: the first run asks Opus (fake-claude starts claude-fable-5-1: mismatch); during it the table switches to fable
+        var ct = TestContext.Current.CancellationToken;
+        WriteModelTable("""{ "models": ["claude-opus-5-5"], "supervisor": "claude-opus-5-5" }""");
+        EnvelopeId mandate = await SeedMandateAsync(ct);
+        await SeedReportAsync(mandate, ct);
+        Script((_, _) =>
+        {
+            WriteModelTable("""{ "models": ["claude-fable-5-1"], "supervisor": "claude-fable-5-1" }""");
+            return new Step([]);
+        });
+
+        // Act
+        int exit = await _harness.RunUntilAsync(async () => (await DecisionsAsync(ct)).Count == 1, Limit, ct, Services);
+
+        // Assert
+        exit.Should().Be(0, Log());
+        _model.Runs.Select(r => r.Request.Model).Should().Equal(OpusTwice, Log());
+    }
+
     // Spec 50 AC-11: a supervisor model off the allow-list starts no run and is logged once, however many passes see it.
     [Fact]
     public async Task Wake_SupervisorModelNotAllowed_NoRun_LoggedOnce()

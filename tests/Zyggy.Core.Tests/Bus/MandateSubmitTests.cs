@@ -382,6 +382,26 @@ public sealed class MandateSubmitTests : IAsyncLifetime
         new { job.Model, job.JobType }.Should().BeEquivalentTo(new { Model = (string?)null, JobType = "verify" });
     }
 
+    // Spec 50 AC-10 and the edge case "deliver: session task with model" (slice 5 verify correction): a live session's model is the
+    // owner's, so a mandate session task carries no model even when the table has a row for its kind (job_type still names the kind).
+    [Fact]
+    public async Task SubmitAsync_SessionTaskWithATableRowForTheKind_NoModel()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields() with { Sessions = true }, HomeLaptop, ct);
+        DropRegistry(HomeLaptop, supervision: true, model: true);
+        var table = new ModelTable(["claude-opus-5-5"], [new ModelTableRow("build", "claude-opus-5-5")], null);
+
+        // Act
+        MandateSubmitOutcome outcome = await Submission().SubmitAsync(new MandateJobRequest(HomeLaptop, MandateId, MandateJobKind.Build, "slice 2", Session: true), table, ct);
+
+        // Assert
+        var submitted = outcome.Result.Should().BeOfType<Submitted>().Subject;
+        JobFields job = (await new EnvelopeSigner(_store).ParseAndVerifyAsync(_checkout.Read(submitted.RelativePath), Acme, ct)).Envelope!.Job!;
+        new { job.Deliver, job.Model, job.JobType }.Should().BeEquivalentTo(new { Deliver = JobDelivery.Session, Model = (string?)null, JobType = "build" });
+    }
+
     // Spec 50 AC-10 with AC-7: a table model to a node without the capability model is refused, nothing written — never its default.
     [Fact]
     public async Task SubmitAsync_ModelTableRowToANodeWithoutCapabilityModel_RefusedNothingWritten()

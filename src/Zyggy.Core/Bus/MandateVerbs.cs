@@ -315,7 +315,7 @@ public sealed partial class MandateSubmission
         }
 
         string body = MandateJobTemplates.Render(request.Kind, fields.Spec, fields.SpecCommit, request.Step, request.Reference);
-        Models.ModelPick pick = Models.ModelChoice.ForMandate(models, request.Kind);
+        Models.ModelPick pick = Models.ModelChoice.ForMandate(models, request.Kind, request.Session);
         var job = new JobRequest(request.To, project, null, request.Session ? SessionTimeoutMinutes : null, fields.AllowedTools, EnvelopePriority.Normal, Utf8.GetBytes(body))
         {
             Worktree = !request.Session,

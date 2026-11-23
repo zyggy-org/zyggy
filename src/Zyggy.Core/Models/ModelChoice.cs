@@ -112,14 +112,21 @@ internal static class ModelChoice
 
     /// <summary>
     /// The model of <c>zyggy submit --mandate … --kind k</c> (spec 50 Q6): <c>job_type</c> is the kind; the model is the table's row for
-    /// it, else none (the node's default). No per-job choice under a mandate.
+    /// it, else none (the node's default). No per-job choice under a mandate. A session task (<c>deliver: session</c>) never carries a
+    /// model: a live session's model is the owner's, not the job's (spec 50, edge cases).
     /// </summary>
     /// <param name="table">Central's table, or <see langword="null"/>.</param>
     /// <param name="kind">The mandate job's kind.</param>
+    /// <param name="session"><see langword="true"/> for a session task.</param>
     /// <returns>The pick.</returns>
-    public static ModelPick ForMandate(ModelTable? table, MandateJobKind kind)
+    public static ModelPick ForMandate(ModelTable? table, MandateJobKind kind, bool session = false)
     {
         string type = EnvelopeWire.ToWire(kind);
+        if (session)
+        {
+            return new ModelPick(null, type, "model: the session's own (deliver: session)");
+        }
+
         return table?.ModelFor(type) is { } model
             ? new ModelPick(model, type, $"model: {model} (job type {type})")
             : new ModelPick(null, type, NodeDefault);

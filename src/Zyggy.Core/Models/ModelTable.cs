@@ -117,8 +117,15 @@ internal sealed record ModelTable(IReadOnlyList<string> Models, IReadOnlyList<Mo
             JsonElement? models = null;
             JsonElement? jobTypes = null;
             JsonElement? supervisor = null;
+            HashSet<string> seen = new(StringComparer.Ordinal);
             foreach (JsonProperty property in document.RootElement.EnumerateObject())
             {
+                // JSON allows a key twice and the parser keeps the last: refused, so the file never means something other than it reads.
+                if (!seen.Add(property.Name))
+                {
+                    return ModelTableResult.Fail(property.Name, "appears twice");
+                }
+
                 switch (property.Name)
                 {
                     case "models":

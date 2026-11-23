@@ -58,6 +58,9 @@ public sealed class ModelTableTests
     [InlineData("""{ "models": ["claude-opus-5-5"], "supervisor": "default" }""", "supervisor", JobModelRules.ModelRule)]
     [InlineData("""{ "models": ["claude-opus-5-5"], "supervisor": 3 }""", "supervisor", JobModelRules.ModelRule)]
     [InlineData("""{ "models": ["claude-opus-5-5"], "fallback": "claude-opus-5-5" }""", "fallback", "is not a models.json key")]
+    [InlineData("""{ "models": ["claude-opus-5-5"], "models": ["claude-fable-5-2"] }""", "models", "appears twice")]
+    [InlineData("""{ "models": ["claude-opus-5-5"], "jobTypes": {}, "jobTypes": { "spec": "claude-opus-5-5" } }""", "jobTypes", "appears twice")]
+    [InlineData("""{ "models": ["claude-opus-5-5"], "supervisor": null, "supervisor": "claude-opus-5-5" }""", "supervisor", "appears twice")]
     public void Parse_InvalidFile_RefusedNamingTheKey(string json, string key, string message)
     {
         // Act

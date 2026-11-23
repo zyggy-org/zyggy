@@ -92,6 +92,7 @@ internal sealed partial class SupervisorWake : IDisposable
     private readonly CancellationTokenSource _stop = new();
     private readonly Dictionary<string, int> _attempts = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _blocked = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string?> _models = new(StringComparer.Ordinal);
     private Task _run = Task.CompletedTask;
     private bool _running;
     private bool _announced;
@@ -296,7 +297,10 @@ internal sealed partial class SupervisorWake : IDisposable
         }
 
         // Spec 50 (AC-11, Q7): the run's model from the table in Central's own project; an invalid table starts no run, logged once.
-        SupervisorModel model = SupervisorModel.For(directory, ModelTable.ReadFileOrNull);
+        // A retry reuses exactly the first attempt's model: the table is read once per event, so an edit between attempts changes nothing.
+        SupervisorModel model = _models.TryGetValue(next.Id.Value, out string? first)
+            ? new SupervisorModel(first, null)
+            : SupervisorModel.For(directory, ModelTable.ReadFileOrNull);
         if (model.Error is { } tableError)
         {
             if (!string.Equals(_tableLogged, tableError, StringComparison.Ordinal))
@@ -323,6 +327,7 @@ internal sealed partial class SupervisorWake : IDisposable
         _capLogged = false;
         int attempt = Attempts(next) + 1;
         _attempts[next.Id.Value] = attempt;
+        _models[next.Id.Value] = model.Model;
         _running = true;
         CancellationToken stop = _stop.Token;
         _run = Task.Run(() => StepAsync(next, directory, attempt, keys, model.Model, stop), CancellationToken.None);
