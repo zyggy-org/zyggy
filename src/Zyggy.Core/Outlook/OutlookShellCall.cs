@@ -81,6 +81,28 @@ internal sealed partial record OutlookShellCall(OutlookShellCallKind Kind, IRead
     }
 
     /// <summary>
+    /// Whether a shell command calls <c>zyggy outlook</c> with any verb (spec 58, owner correction 2026-11-23: the job hook refuses it in a
+    /// job that is not a mail job). Escapes are decoded and quotes, backslashes, carets, backticks and <c>$</c> ignored, as for
+    /// <see cref="ActionNamed"/>; case does not count. A command that only mentions the outlook tests (a test filter) is not a call.
+    /// </summary>
+    /// <param name="command">The command text.</param>
+    /// <returns>Whether it calls <c>zyggy outlook</c>.</returns>
+    public static bool CallsOutlook(string command)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        var plain = new StringBuilder(command.Length);
+        foreach (char c in Decode(command))
+        {
+            if (c is not ('\'' or '"' or '\\' or '^' or '`' or '$'))
+            {
+                plain.Append(c);
+            }
+        }
+
+        return Called().IsMatch(plain.ToString());
+    }
+
+    /// <summary>
     /// The job hook's wider test (verify 01M81R40G1YGA46142HYTV5H7T point 4): whether a shell command may be an outlook write in any
     /// form. Escapes are decoded first (<c>\xHH</c>, <c>\uHHHH</c>, <c>\UHHHHHHHH</c>, octal <c>\NNN</c>, PowerShell <c>`u{HHHH}</c>);
     /// then only the letters count, lowercased, so quotes, concatenation and blanks split nothing. It may be one when it mentions
@@ -245,4 +267,7 @@ internal sealed partial record OutlookShellCall(OutlookShellCallKind Kind, IRead
 
     [GeneratedRegex(@"(?i)zyggy(?:\.exe)?\s+outlook\s+(?<a>send|move)\b", RegexOptions.CultureInvariant)]
     private static partial Regex Named();
+
+    [GeneratedRegex(@"(?i)zyggy(?:\.exe)?\s+outlook\b", RegexOptions.CultureInvariant)]
+    private static partial Regex Called();
 }

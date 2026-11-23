@@ -8,9 +8,11 @@ using Zyggy.Core.Tests.Infrastructure;
 namespace Zyggy.Core.Tests.Jobs;
 
 /// <summary>
-/// Spec 58 decision B (2026-11-22): on a work machine (<c>outlook.enabled</c> true) the runner refuses, before the hook, the lock and the
-/// model, a job whose effective <c>allowed_tools</c> can both read work mail and run code (<c>rejected</c> / <c>work_mail_code_mix</c>);
-/// the same job on another machine runs. The hook of a work machine's job learns it runs there (<c>--work-mail</c>).
+/// Spec 58 decision B as corrected by the owner (2026-11-23): enabling Outlook on a work machine (<c>outlook.enabled</c> true) does not
+/// affect other work. A code job is accepted exactly as before; only a <b>mail job</b> (its <c>allowed_tools</c> name <c>zyggy outlook</c>)
+/// that holds more than the read verbs and the file reads is refused at intake (<c>rejected</c> / <c>work_mail_code_mix</c>). Separation
+/// is kept at run time: the hook learns it runs on a work machine (<c>--work-mail</c>), and a job that is not a mail job gets no work
+/// mail marker, so the outlook read tools refuse it.
 /// </summary>
 public sealed class JobRunnerWorkMailIntakeTests : IDisposable
 {
@@ -20,9 +22,56 @@ public sealed class JobRunnerWorkMailIntakeTests : IDisposable
 
     public void Dispose() => _project.Dispose();
 
-    // AC-B1: refused at intake on a work machine, the model never started, no lock left behind.
+    // AC-B1 (owner correction 2026-11-23): an ordinary development job on the work laptop runs, with its own tools.
     [Fact]
-    public async Task RunAsync_WorkMachineMailAndCodeRules_RejectedWorkMailCodeMixModelNeverStarted()
+    public async Task RunAsync_WorkMachineCodeJob_AcceptedWithItsTools()
+    {
+        // Arrange
+        _h.NodePolicy = _h.NodePolicy with { WorkMail = true };
+        string[] tools = ["Read", "Edit", "Write", "Bash(src/*)", "Bash(dotnet *)"];
+        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root, AllowedTools: tools));
+
+        // Act
+        await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        _h.Request().AllowedTools.Should().Equal(tools);
+    }
+
+    // AC-B1: a code job that names no tools gets the node's default, bare Bash included, and runs.
+    [Fact]
+    public async Task RunAsync_WorkMachineNodeDefaultWithBareBash_Accepted()
+    {
+        // Arrange
+        _h.NodePolicy = _h.NodePolicy with { WorkMail = true, DefaultAllowedTools = ["Read", "Bash"] };
+        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root));
+
+        // Act
+        await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        _h.Request().AllowedTools.Should().Equal("Read", "Bash");
+    }
+
+    // AC-B2: a code job gets no work mail marker, so the outlook read tools refuse it (no Outlook access).
+    [Fact]
+    public async Task RunAsync_WorkMachineCodeJob_NoWorkMailMarker()
+    {
+        // Arrange
+        _h.NodePolicy = _h.NodePolicy with { WorkMail = true };
+        _h.Options.ModelEnvironment = new Dictionary<string, string> { ["ZYGGY_JOB_MARKER"] = "elsewhere" };
+        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root, AllowedTools: ["Read", "Edit", "Bash(dotnet *)"]));
+
+        // Act
+        await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        _h.Request().Environment.Should().Contain("ZYGGY_JOB_MARKER", string.Empty);
+    }
+
+    // AC-B1: a mail job that can also run code is still refused at intake, the model never started, no lock left behind.
+    [Fact]
+    public async Task RunAsync_WorkMachineMailJobWithCode_RejectedWorkMailCodeMixModelNeverStarted()
     {
         // Arrange
         _h.NodePolicy = _h.NodePolicy with { WorkMail = true };
@@ -44,55 +93,21 @@ public sealed class JobRunnerWorkMailIntakeTests : IDisposable
             });
     }
 
-    // AC-B1: a job that names no tools gets the node's default, and that default is checked too.
-    [Fact]
-    public async Task RunAsync_WorkMachineNodeDefaultMixes_Rejected()
+    // AC-B1: a mail job with Edit or a bare Bash is still refused.
+    [Theory]
+    [InlineData("Edit")]
+    [InlineData("Bash")]
+    public async Task RunAsync_WorkMachineMailJobWithEditOrBareBash_Rejected(string extra)
     {
         // Arrange
-        _h.NodePolicy = _h.NodePolicy with { WorkMail = true, DefaultAllowedTools = ["Read", "Bash"] };
-        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root));
+        _h.NodePolicy = _h.NodePolicy with { WorkMail = true };
+        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root, AllowedTools: ["Read", "Bash(zyggy outlook *)", extra]));
 
         // Act
         var reply = await _h.Build().RunAsync(job, CancellationToken.None);
 
         // Assert
         (reply.Status, reply.Reason).Should().Be((ReportStatus.Rejected, "work_mail_code_mix"));
-    }
-
-    // Q22 (Central, 2026-11-22): on a work machine an MCP rule may read mail, so an MCP rule beside a code runner is refused at intake.
-    [Fact]
-    public async Task RunAsync_WorkMachineMcpAndCodeRules_RejectedWorkMailCodeMix()
-    {
-        // Arrange
-        _h.NodePolicy = _h.NodePolicy with { WorkMail = true };
-        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root, AllowedTools: ["Read", "mcp__github", "Bash(dotnet *)"]));
-
-        // Act
-        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
-
-        // Assert
-        new { reply.Status, reply.Reason, Body = Encoding.UTF8.GetString(reply.Body.Span), ModelCalls = _h.Model.ReceivedCalls().Count() }
-            .Should().BeEquivalentTo(new
-            {
-                Status = ReportStatus.Rejected,
-                Reason = "work_mail_code_mix",
-                Body = "work_mail_code_mix: allowed_tools can read work mail (mcp__github) and run code (Bash(dotnet *)) on a work machine\n",
-                ModelCalls = 0,
-            });
-    }
-
-    // Q22: the same MCP and code rules on another machine run.
-    [Fact]
-    public async Task RunAsync_OtherMachineMcpAndCodeRules_Runs()
-    {
-        // Arrange
-        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root, AllowedTools: ["Read", "mcp__github", "Bash(dotnet *)"]));
-
-        // Act
-        await _h.Build().RunAsync(job, CancellationToken.None);
-
-        // Assert
-        _h.Request().AllowedTools.Should().Contain("mcp__github");
     }
 
     // AC-B1: the mail brief job of Central's timer still runs on the work machine, with the hook told it runs there.

@@ -134,10 +134,13 @@ public sealed partial class JobRunner
             return await CommandAsync(job, fields, ((PreFlightResult.Ok)preFlight).ProjectPath, policy, started, ct).ConfigureAwait(false);
         }
 
-        // Spec 58 decision B: on a work machine no job may both read work mail and run code; refused before the hook, the lock and the
-        // model, on the rules the hook would get (the job's, else the node's default, else the code default).
+        // Spec 58 decision B as corrected by the owner (2026-11-23): Outlook on a work machine changes nothing for other work. Only a mail
+        // job (its rules name zyggy outlook) that holds more than the read verbs and file reads is refused, before the hook, the lock and
+        // the model, on the rules the hook would get (the job's, else the node's default, else the code default). Every other job runs
+        // as before; the hook refuses its zyggy outlook calls and it gets no work mail marker.
         var allowedTools = fields.AllowedTools is { Count: > 0 } tools ? tools : policy.DefaultAllowedTools;
         IReadOnlyList<string> hookRules = allowedTools.Count > 0 ? allowedTools : CodeDefaultAllowedTools;
+        var mailJob = Outlook.WorkMailToolMix.IsMailJob(hookRules);
         if (policy.WorkMail && Outlook.WorkMailToolMix.Refusal(hookRules) is { } mix)
         {
             var workMailCodeMix = RunFailureReasonWire.ToWire(RunFailureReason.WorkMailCodeMix);
@@ -236,7 +239,8 @@ public sealed partial class JobRunner
             // Founding spec §6 Invocation (amended by deliverable 12, D5): a job run is unattended — the memory and context writers do nothing.
             // Deliverable 18: the run also learns which job it is, in which project, and when it times out, so `zyggy ask` can name it and stop waiting in time.
             // Spec 58 slice 5: and where its work mail marker lives (this node's directory), so the outlook tools cannot be pointed elsewhere.
-            Environment = WithHooksOff(_options.ModelEnvironment, job.Header.Id, ProjectName.Derive(WorkHookInput.LastSegment(project)), _clock.GetUtcNow() + timeout, Outlook.OutlookJobRun.MarkerPath(nodeDir, job.Header.Tenant, job.Header.Id)),
+            // A job that is not a mail job gets an empty marker: the outlook read tools refuse it (owner correction 2026-11-23).
+            Environment = WithHooksOff(_options.ModelEnvironment, job.Header.Id, ProjectName.Derive(WorkHookInput.LastSegment(project)), _clock.GetUtcNow() + timeout, mailJob ? Outlook.OutlookJobRun.MarkerPath(nodeDir, job.Header.Tenant, job.Header.Id) : string.Empty),
             TranscriptPath = TranscriptPaths.For(nodeDir, job.Header.Tenant, job.Header.Id),
         };
 
@@ -676,7 +680,7 @@ public sealed partial class JobRunner
     [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: rejected: branch_refused ({Rule})")]
     private partial void LogBranchRefused(string id, string rule);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: rejected: work_mail_code_mix (allowed_tools can read work mail and run code on this work machine)")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: rejected: work_mail_code_mix (a mail job's allowed_tools hold more than the outlook read verbs and file reads on this work machine)")]
     private partial void LogWorkMailCodeMix(string id);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: worktree git step failed: {Step}")]

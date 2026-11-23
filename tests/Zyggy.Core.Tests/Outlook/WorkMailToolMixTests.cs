@@ -3,9 +3,10 @@ using Zyggy.Core.Outlook;
 namespace Zyggy.Core.Tests.Outlook;
 
 /// <summary>
-/// Spec 58 decision B (2026-11-22, verify 01M81R40G1YGA46142HYTV5H7T point 5): on a work machine a job whose <c>allowed_tools</c> can both
-/// read work mail and run code is refused at intake. A job that can read work mail (a rule that can run a <c>zyggy outlook</c> verb, or a
-/// bare shell rule) may hold only <c>Read</c>, <c>Grep</c>, <c>Glob</c> and <c>Bash</c> rules for the <c>zyggy outlook</c> read verbs.
+/// Spec 58 decision B as corrected by the owner (2026-11-23): enabling Outlook on a work machine changes nothing for other work. A job is
+/// a <b>mail job</b> only when its <c>allowed_tools</c> explicitly grant the outlook verbs (a shell rule naming <c>zyggy outlook</c>);
+/// generic rules (<c>Bash(src/*)</c>, <c>Bash(dotnet *)</c>, bare <c>Bash</c>, <c>Edit</c>, <c>Write</c>, an MCP server) never make one. A
+/// mail job may hold only <c>Read</c>, <c>Grep</c>, <c>Glob</c> and the <c>zyggy outlook</c> read verbs; any other job keeps its tools.
 /// </summary>
 public sealed class WorkMailToolMixTests
 {
@@ -17,7 +18,7 @@ public sealed class WorkMailToolMixTests
     [InlineData("Bash(zyggy outlook share *)", "Bash(zyggy outlook drafts)", "Read(notes/**)")]
     [InlineData("Bash(zyggy outlook list:*)")]
     [InlineData("Bash(zyggy.exe outlook brief --since *)")]
-    public void Refusal_MailReadingJobWithReadOnlyRules_Null(params string[] rules)
+    public void Refusal_MailJobWithReadOnlyRules_Null(params string[] rules)
     {
         // Act
         string? refusal = WorkMailToolMix.Refusal(rules);
@@ -26,34 +27,36 @@ public sealed class WorkMailToolMixTests
         refusal.Should().BeNull();
     }
 
-    // AC-B1: a job that does not read work mail keeps its tools, code runners included (an accepted risk, decision B).
+    // AC-B1 (owner correction 2026-11-23): a code job is accepted exactly as before Outlook was enabled, whatever its generic rules.
     [Theory]
     [InlineData("Read", "Grep", "Glob")]
+    [InlineData("Read", "Edit", "Write", "Bash(src/*)", "Bash(dotnet *)")]
     [InlineData("Read", "Edit", "Write", "Bash(dotnet *)", "Bash(git status*)", "Bash(git commit *)")]
-    [InlineData("Bash(python *)", "Write")]
-    [InlineData("WebFetch", "Task")]
-    [InlineData("Bash(dotnet test --filter \"FullyQualifiedName~OutlookAction\")")]
-    public void Refusal_JobThatReadsNoWorkMail_Null(params string[] rules)
-    {
-        // Act
-        string? refusal = WorkMailToolMix.Refusal(rules);
-
-        // Assert
-        refusal.Should().BeNull();
-    }
-
-    // AC-B1: every way a job can both read work mail and run code, or hold anything beside the read verbs, is refused.
-    [Theory]
+    [InlineData("Bash(node *)", "Bash(python *)", "Write")]
     [InlineData("Bash")]
     [InlineData("PowerShell")]
     [InlineData("Bash(*)")]
-    [InlineData("Bash()")]
-    [InlineData("bash")]
-    [InlineData("Bash ")]
+    [InlineData("Bash(zyggy *)")]
+    [InlineData("Read,Bash")]
+    [InlineData("WebFetch", "Task")]
+    [InlineData("mcp__github", "Bash(dotnet *)")]
+    [InlineData("Bash(dotnet test --filter \"FullyQualifiedName~Zyggy.Core.Tests.Outlook\")")]
+    public void Refusal_CodeJobOnAWorkMachine_Null(params string[] rules)
+    {
+        // Act
+        string? refusal = WorkMailToolMix.Refusal(rules);
+
+        // Assert
+        refusal.Should().BeNull();
+    }
+
+    // AC-B1: a mail job that holds anything beside the read verbs and the file reads is still refused.
+    [Theory]
+    [InlineData("Bash(zyggy outlook *)", "Bash")]
+    [InlineData("Bash(zyggy outlook *)", "Edit")]
     [InlineData("Bash(zyggy outlook *)", "Bash(python *)")]
     [InlineData("Bash(zyggy outlook *)", "Bash(dotnet *)")]
-    [InlineData("Bash(zyggy outlook *)", "Bash(node *)")]
-    [InlineData("Bash(zyggy outlook *)", "Bash(./run.sh)")]
+    [InlineData("Bash(zyggy outlook *)", "Bash(src/*)")]
     [InlineData("Bash(zyggy outlook *)", "Write")]
     [InlineData("Bash(zyggy outlook *)", "Edit(**)")]
     [InlineData("Bash(zyggy outlook *)", "PowerShell(Get-ChildItem)")]
@@ -61,13 +64,8 @@ public sealed class WorkMailToolMixTests
     [InlineData("Bash(zyggy outlook *)", "Agent")]
     [InlineData("Bash(zyggy outlook *)", "mcp__outlook")]
     [InlineData("Bash(zyggy outlook *)", "WebFetch")]
-    [InlineData("Bash(zyggy outlook *)", "NotebookEdit")]
     [InlineData("Bash(zyggy outlook *,python *)")]
     [InlineData("Bash(zyggy outlook *),Bash(python *)")]
-    [InlineData("Read,Bash")]
-    [InlineData("Bash(zyggy *)")]
-    [InlineData("Bash(zy*)")]
-    [InlineData("Bash(*outlook*)")]
     [InlineData("Bash(C:/tools/zyggy.exe outlook list)")]
     [InlineData("Bash(ZYGGY_JOB= zyggy outlook *)")]
     [InlineData("Bash(zyggy outlook send *)")]
@@ -77,7 +75,7 @@ public sealed class WorkMailToolMixTests
     [InlineData("Bash(zyggy outlook list; python x.py)")]
     [InlineData("Bash(zyggy outlook list $(python x.py))")]
     [InlineData("Bash(zyggy outlook l*)", "Bash(zyggy outlook mo*)")]
-    public void Refusal_WorkMailWithAnythingButTheReadVerbs_Refused(params string[] rules)
+    public void Refusal_MailJobWithAnythingButTheReadVerbs_Refused(params string[] rules)
     {
         // Act
         string? refusal = WorkMailToolMix.Refusal(rules);
@@ -86,54 +84,23 @@ public sealed class WorkMailToolMixTests
         refusal.Should().NotBeNull();
     }
 
-    // Q22 (Central, 2026-11-22): on a work machine an MCP rule may read work mail; one MCP server alone, or beside file reads, runs.
     [Theory]
-    [InlineData("mcp__github")]
-    [InlineData("mcp__outlook__list_mail", "Read", "Grep", "Glob")]
-    [InlineData("Read(notes/**)", "mcp__graph")]
-    public void Refusal_OneMcpRuleBesideFileReadsOnly_Null(params string[] rules)
+    [InlineData(true, "Bash(zyggy outlook *)")]
+    [InlineData(true, "Read", "bash(Zyggy.exe Outlook list *)")]
+    [InlineData(true, "Bash(ZYGGY_JOB= zyggy outlook *)")]
+    [InlineData(true, "Read,Bash(zyggy outlook brief)")]
+    [InlineData(false, "Read", "Edit", "Write", "Bash(src/*)", "Bash(dotnet *)")]
+    [InlineData(false, "Bash")]
+    [InlineData(false, "Bash(zyggy *)")]
+    [InlineData(false, "mcp__outlook")]
+    [InlineData(false, "Bash(dotnet test --filter Zyggy.Core.Tests.Outlook)")]
+    public void IsMailJob_OnlyAnExplicitOutlookRule_MakesAMailJob(bool expected, params string[] rules)
     {
         // Act
-        string? refusal = WorkMailToolMix.Refusal(rules);
+        bool mailJob = WorkMailToolMix.IsMailJob(rules);
 
         // Assert
-        refusal.Should().BeNull();
-    }
-
-    // Q22 (Central, 2026-11-22): an MCP rule counts as mail-reading, so beside a code runner (or anything but file reads) it is refused.
-    [Theory]
-    [InlineData("mcp__github", "Bash(python *)")]
-    [InlineData("mcp__outlook__list_mail", "Bash(dotnet *)")]
-    [InlineData("Bash(git status*)", "mcp__graph")]
-    [InlineData("mcp__github", "Bash")]
-    [InlineData("mcp__github", "PowerShell(Get-ChildItem)")]
-    [InlineData("mcp__github", "Write")]
-    [InlineData("mcp__github", "Edit(**)")]
-    [InlineData("mcp__github", "Task")]
-    [InlineData("WebFetch", "mcp__github", "Task")]
-    [InlineData("mcp__github", "mcp__filesystem")]
-    [InlineData("mcp__github", "Bash(zyggy outlook *)")]
-    [InlineData("MCP__github", "Bash(python *)")]
-    [InlineData(" mcp__github ", "Bash(python *)")]
-    [InlineData("Read,mcp__github")]
-    [InlineData("mcp__github,Bash(python *)")]
-    public void Refusal_McpRuleWithACodeRunner_Refused(params string[] rules)
-    {
-        // Act
-        string? refusal = WorkMailToolMix.Refusal(rules);
-
-        // Assert
-        refusal.Should().NotBeNull();
-    }
-
-    [Fact]
-    public void Refusal_McpAndCode_NamesTheMcpRuleAndTheCodeRule()
-    {
-        // Act
-        string? refusal = WorkMailToolMix.Refusal(["Read", "mcp__github", "Bash(python *)"]);
-
-        // Assert
-        refusal.Should().Be("allowed_tools can read work mail (mcp__github) and run code (Bash(python *)) on a work machine");
+        mailJob.Should().Be(expected);
     }
 
     [Fact]

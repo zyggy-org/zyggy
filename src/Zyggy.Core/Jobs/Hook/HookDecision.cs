@@ -22,6 +22,12 @@ internal sealed record HookDecision(bool Allowed, string Rule, string Detail)
     /// <summary>The rule of a shell command that names an outlook action (spec 58 slice 7, AC-11): never in a job, whatever the rules say.</summary>
     public const string OutlookActionRule = "outlook action in a job";
 
+    /// <summary>
+    /// The rule of a shell command that calls <c>zyggy outlook</c> in a job that is not a mail job, on a work machine (spec 58, owner
+    /// correction 2026-11-23): only a job whose <c>allowed_tools</c> explicitly grant the outlook verbs may read work mail.
+    /// </summary>
+    public const string OutlookReadRule = "outlook outside a mail job";
+
     public const int MaxDetail = 120;
 
     public static HookDecision Allow { get; } = new(true, string.Empty, string.Empty);

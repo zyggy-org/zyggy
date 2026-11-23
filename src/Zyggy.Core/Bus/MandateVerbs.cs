@@ -47,7 +47,7 @@ public sealed partial class MandateGranter
     /// <param name="to">The machine the mandate is for.</param>
     /// <param name="fields">The mandate's fields; <c>expires</c> is judged against now as the envelope's <c>created</c>.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns><see cref="AskDecidePublished"/>, <see cref="AskDecideRefused"/> naming the field (<c>machine</c> off Central; <c>work_mail_code_mix</c> for a machine of <c>supervision.workMachines</c> whose <c>allowed_tools</c> can both read work mail and run code, spec 58 Q23) or <see cref="AskDecideFailed"/>.</returns>
+    /// <returns><see cref="AskDecidePublished"/>, <see cref="AskDecideRefused"/> naming the field (<c>machine</c> off Central; <c>work_mail_code_mix</c> for a machine of <c>supervision.workMachines</c> whose <c>allowed_tools</c> grant the <c>zyggy outlook</c> verbs beside code, spec 58 Q23 as narrowed 2026-11-23) or <see cref="AskDecideFailed"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
     public async Task<AskDecideResult> GrantAsync(MachineName to, MandateFields fields, CancellationToken ct)
     {

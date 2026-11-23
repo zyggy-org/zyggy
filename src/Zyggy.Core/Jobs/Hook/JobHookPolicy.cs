@@ -22,6 +22,7 @@ internal sealed class JobHookPolicy
     private readonly Regex _protected;
     private readonly IReadOnlyList<string> _readRoots;
     private readonly bool _workMail;
+    private readonly bool _mailJob;
 
     /// <param name="root">The run directory: the worktree for a worktree job, else the project folder; absolute.</param>
     /// <param name="rules">The effective <c>allowed_tools</c>.</param>
@@ -29,11 +30,16 @@ internal sealed class JobHookPolicy
     /// <param name="readRoots">The read roots (deliverable 18): absolute folders or files; empty or <see langword="null"/> leaves reads unrestricted.</param>
     /// <param name="workMail">
     /// Whether the job runs on a work machine (<c>outlook.enabled</c>, the runner's <c>--work-mail</c>, spec 58 decision B): only there does
-    /// the hook refuse every command that names an outlook action. Elsewhere <c>zyggy</c> itself refuses every send and move from a job.
+    /// the hook refuse every command that names an outlook action, and, in a job that is not a mail job (its rules name no
+    /// <c>zyggy outlook</c>, <see cref="Outlook.WorkMailToolMix.IsMailJob"/>), every <c>zyggy outlook</c> call. Elsewhere <c>zyggy</c>
+    /// itself refuses every send and move from a job.
     /// </param>
     public JobHookPolicy(string root, IEnumerable<string> rules, bool ignoreCase, IEnumerable<string>? readRoots = null, bool workMail = false)
     {
         _workMail = workMail;
+        var ruleList = rules.ToList();
+        rules = ruleList;
+        _mailJob = Outlook.WorkMailToolMix.IsMailJob(ruleList);
         _readRoots = [.. (readRoots ?? []).Select(r => Path.TrimEndingDirectorySeparator(Path.GetFullPath(r)))];
         _root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
         _rules = [.. rules.Select(ToolRule.Parse).OfType<ToolRule>()];
@@ -63,6 +69,13 @@ internal sealed class JobHookPolicy
         if (shell && _workMail && (Outlook.OutlookShellCall.ActionNamed(command) is not null || Outlook.OutlookShellCall.MayWriteOutlook(command)))
         {
             return HookDecision.Deny(HookDecision.OutlookActionRule, command);
+        }
+
+        // Owner correction 2026-11-23: on a work machine a job that is not a mail job (its rules name no zyggy outlook) never reads
+        // work mail, however generic its rules (bare Bash, Bash(zyggy *)); the runner gives it no work mail marker either.
+        if (shell && _workMail && !_mailJob && Outlook.OutlookShellCall.CallsOutlook(command))
+        {
+            return HookDecision.Deny(HookDecision.OutlookReadRule, command);
         }
 
         // A pattern rule vouches only for a simple command; one that is not simple is matched, and scanned, as a whole.
