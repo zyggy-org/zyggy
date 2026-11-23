@@ -149,6 +149,28 @@ public sealed class ModelTableWireTests : IAsyncLifetime
             .Should().BeEquivalentTo(new { ModelKey = false, TypeKey = false, Lines = NodeDefaultLine });
     }
 
+    // AC-9: a plain submit (no --type, no --model) never reads the table, so a broken instance/models.json does not block it: the job
+    // is written without model or job_type and the confirmation says the node's default.
+    [Theory]
+    [InlineData("{ \"models\": [\"claude-opus-5-5\"")]
+    [InlineData("{ \"models\": [\"claude-opus-5-5\"], \"supervisor\": \"claude-sonnet-5-5\" }")]
+    public async Task SubmitNeither_TableBroken_SubmittedWithNodeDefaultLine(string json)
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        WriteTable(json);
+
+        // Act
+        var (exit, console) = await SubmitAsync([], ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        string[] lines = console.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Model job = await _harness.ParseOnMainAsync(lines[0].Split('(', ')')[1], ct);
+        new { ModelKey = job.FrontMatter.Entries.ContainsKey("model"), TypeKey = job.FrontMatter.Entries.ContainsKey("job_type"), Lines = lines.Skip(1).ToArray() }
+            .Should().BeEquivalentTo(new { ModelKey = false, TypeKey = false, Lines = NodeDefaultLine });
+    }
+
     // AC-9: on a laptop without the instance file, --model is checked against node.json claude.models.
     [Fact]
     public async Task SubmitModel_NoTableNodeJsonModelsListsIt_Submitted()

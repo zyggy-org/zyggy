@@ -311,12 +311,13 @@ public sealed class MandateGrantCommandTests : IAsyncLifetime
             .Should().BeEquivalentTo(new { Exit = 3, Named = true, Commits = commits }, console.Stderr);
     }
 
-    // Spec 50 slice 6, AC-10: --type or --model with --mandate, or an invalid table, is a usage error (exit 2), nothing written.
+    // Spec 50 slice 6, AC-10: --type or --model with --mandate, or an invalid table, is a usage error (exit 2) with one refusal line
+    // naming the reason, nothing written.
     [Theory]
-    [InlineData(new[] { "--type", "build" }, null)]
-    [InlineData(new[] { "--model", "claude-opus-5-5" }, null)]
-    [InlineData(new string[0], """{ "models": ["claude-opus-5-5"], "jobTypes": { "build": "opus" } }""")]
-    public async Task Submit_TypeOrModelWithMandateOrInvalidTable_ExitTwoNothingWritten(string[] extra, string? table)
+    [InlineData(new[] { "--type", "build" }, null, MandateModelRefusal)]
+    [InlineData(new[] { "--model", "claude-opus-5-5" }, null, MandateModelRefusal)]
+    [InlineData(new string[0], """{ "models": ["claude-opus-5-5"], "jobTypes": { "build": "opus" } }""", "zyggy: instance/models.json: jobTypes.build must be a full Claude Code model id: 1–64 characters of a–z 0–9 . -, starting with a letter, optionally one [label] suffix of a–z 0–9; never an alias\n")]
+    public async Task Submit_TypeOrModelWithMandateOrInvalidTable_ExitTwoRefusalLineNothingWritten(string[] extra, string? table, string stderr)
     {
         // Arrange
         var ct = TestContext.Current.CancellationToken;
@@ -327,8 +328,11 @@ public sealed class MandateGrantCommandTests : IAsyncLifetime
         var (exit, console) = await SubmitRunAsync(id, "slice 1", extra, env: table is null ? null : Table(table), ct: ct);
 
         // Assert
-        new { Exit = exit, Commits = await _harness.CommitCountOnMainAsync(ct) }.Should().BeEquivalentTo(new { Exit = 2, Commits = commits }, console.Stderr);
+        new { Exit = exit, console.Stderr, Commits = await _harness.CommitCountOnMainAsync(ct) }
+            .Should().BeEquivalentTo(new { Exit = 2, Stderr = stderr, Commits = commits });
     }
+
+    private const string MandateModelRefusal = "zyggy: submit: --model and --type are not allowed with --mandate: under a mandate the model comes from the table by kind\n";
 
     [Fact]
     public async Task Submit_FourthJobWithMaxJobsThree_RefusedMaxJobs_ThirdPassed()
