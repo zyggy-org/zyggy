@@ -26,6 +26,15 @@ public sealed record JobReply(ReportStatus Status, string? Reason, ReadOnlyMemor
     /// <summary>Gets the agentic turns (<c>num_turns</c>).</summary>
     public int? NumTurns { get; init; }
 
+    /// <summary>Gets the turn limit the run had (<c>max_turns</c>, spec 60): the job's own when lower than the node's, else the node's.</summary>
+    public int? MaxTurns { get; init; }
+
+    /// <summary>Gets the cache-write tokens (<c>cache_write_tokens</c>, spec 60).</summary>
+    public int? CacheWriteTokens { get; init; }
+
+    /// <summary>Gets the cache-read tokens (<c>cache_read_tokens</c>, spec 60).</summary>
+    public int? CacheReadTokens { get; init; }
+
     /// <summary>Gets the model that ran (<c>model</c>).</summary>
     public string? Model { get; init; }
 

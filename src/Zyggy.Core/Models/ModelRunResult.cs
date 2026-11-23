@@ -36,6 +36,12 @@ public sealed record ModelRunResult(
     /// <summary>Gets the names of the denied tools (<c>permission_denials[].tool_name</c>), in the order reported.</summary>
     public IReadOnlyList<string> PermissionDenialTools { get; init; } = [];
 
+    /// <summary>Gets the cache-write tokens from the result's usage (<c>cache_creation_input_tokens</c>, spec 60), or <see langword="null"/> when absent.</summary>
+    public long? CacheWriteTokens { get; init; }
+
+    /// <summary>Gets the cache-read tokens from the result's usage (<c>cache_read_input_tokens</c>, spec 60), or <see langword="null"/> when absent.</summary>
+    public long? CacheReadTokens { get; init; }
+
     /// <summary>
     /// Gets the text of the stream's last assistant message (at most 2,000 characters), or <see langword="null"/> when none: the §6
     /// summary fallback when a run has no result text (a timeout, a crash).

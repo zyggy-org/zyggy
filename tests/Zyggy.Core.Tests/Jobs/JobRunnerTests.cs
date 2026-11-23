@@ -391,6 +391,57 @@ public sealed class JobRunnerTests : IDisposable
         Encoding.UTF8.GetString(reply.Body.Span).Should().Be("## REPORT\nsummary: fixed\nfiles_changed: []\n");
     }
 
+    // Spec 60 AC-2: the reply carries the cache counts and the node's turn limit.
+    [Fact]
+    public async Task RunAsync_Succeeded_ReplyCarriesCacheTokensAndNodeTurnLimit()
+    {
+        // Arrange
+        _h.NodePolicy = _h.NodePolicy with { MaxTurns = 40 };
+        _h.Model.RunAsync(Arg.Any<ModelRunRequest>(), Arg.Any<CancellationToken>())
+            .Returns(JobRunnerHarness.Succeeded("ok") with { CacheWriteTokens = 25000L, CacheReadTokens = 49279L });
+        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root));
+
+        // Act
+        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        new { reply.NumTurns, reply.MaxTurns, reply.CacheWriteTokens, reply.CacheReadTokens }
+            .Should().BeEquivalentTo(new { NumTurns = 12, MaxTurns = 40, CacheWriteTokens = 25000, CacheReadTokens = 49279 });
+    }
+
+    // Spec 60 AC-2: the job's own lower limit is the one reported; a higher one is capped by the node's.
+    [Theory]
+    [InlineData(20, 20)]
+    [InlineData(500, 60)]
+    public async Task RunAsync_JobMaxTurns_ReplyCarriesTheLimitThatApplied(int jobMaxTurns, int expected)
+    {
+        // Arrange
+        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root, MaxTurns: jobMaxTurns));
+
+        // Act
+        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        reply.MaxTurns.Should().Be(expected);
+    }
+
+    // Spec 60 AC-3: a run cut at the turn limit still reports the turns used, the limit and the tokens.
+    [Fact]
+    public async Task RunAsync_ErrorMaxTurns_ReplyKeepsTurnsUsedLimitAndTokens()
+    {
+        // Arrange
+        _h.Model.RunAsync(Arg.Any<ModelRunRequest>(), Arg.Any<CancellationToken>())
+            .Returns(JobRunnerHarness.Failed(RunFailureReason.ClaudeError, "error_max_turns") with { NumTurns = 61, InputTokens = 90L, OutputTokens = 40L, CacheWriteTokens = 7L, CacheReadTokens = 8L });
+        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root));
+
+        // Act
+        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        new { reply.Status, reply.NumTurns, reply.MaxTurns, reply.InputTokens, reply.OutputTokens, reply.CacheWriteTokens, reply.CacheReadTokens }
+            .Should().BeEquivalentTo(new { Status = ReportStatus.Failed, NumTurns = 61, MaxTurns = 60, InputTokens = 90, OutputTokens = 40, CacheWriteTokens = 7, CacheReadTokens = 8 });
+    }
+
     [Fact]
     public async Task RunAsync_TokensOverIntMax_Clamped()
     {

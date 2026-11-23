@@ -40,6 +40,7 @@ All `schema: 1`, `tenant: acme`, LF line endings unless stated.
 | `mandate` | canonical style | `acme/1` | deliverable 18: `type: mandate`, `central` → `home-laptop`, every field written (`project`, `goal`, `spec` + `spec_commit`, one `branches` item, three `allowed_tools`, the three caps, `expires` three days after `created`, `grants: [accept]`, `sessions: false`), empty body (spec 18 AC-1); produced like the `item-*` cases |
 | `job-mandate` | canonical style | `acme/1` | deliverable 18: a job carrying `mandate` (the `mandate` case's id), `step` and `base`, `worktree: true`, no `deliver` (the default `run` is never written); produced like the `item-*` cases |
 | `report-mandate` | canonical style | `acme/1` | deliverable 18: a `done` report on the `job-mandate` case carrying its `mandate` and `step`, so the job still counts under its mandate once its file is gone; produced like the `item-*` cases |
+| `report-usage` | canonical style | `acme/1` | spec 60: a `done` report with `num_turns: 57`, `max_turns: 60` and the four token counts (`input_tokens`, `output_tokens`, `cache_write_tokens`, `cache_read_tokens`); the factory output for the same fields equals this file (AC-4). Produced like the `item-*` cases, the `sed` and `openssl` steps done by a throwaway .NET file-based script (first line and `sig:` line dropped, `HMACSHA256` under `acme/1`), never by `Zyggy.Core` |
 
 ## How the oracle files are produced — never by the code under test
 

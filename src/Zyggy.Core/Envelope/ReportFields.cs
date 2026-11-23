@@ -20,6 +20,9 @@ namespace Zyggy.Core.Envelope;
 /// exactly when <paramref name="FileSha256"/> is.
 /// </param>
 /// <param name="FileSha256">The <c>file_sha256</c> of the attached file, 64 lowercase hexadecimal characters; signed with the report, so the signature covers the file.</param>
+/// <param name="MaxTurns">The optional <c>max_turns</c> (spec 60): the turn limit the run had, at least 1.</param>
+/// <param name="CacheWriteTokens">The optional <c>cache_write_tokens</c> (spec 60): the result usage's <c>cache_creation_input_tokens</c>.</param>
+/// <param name="CacheReadTokens">The optional <c>cache_read_tokens</c> (spec 60): the result usage's <c>cache_read_input_tokens</c>.</param>
 public sealed record ReportFields(
     ReportStatus Status,
     string? Reason = null,
@@ -36,4 +39,7 @@ public sealed record ReportFields(
     EnvelopeId? Mandate = null,
     string? Step = null,
     string? FileName = null,
-    string? FileSha256 = null);
+    string? FileSha256 = null,
+    int? MaxTurns = null,
+    int? CacheWriteTokens = null,
+    int? CacheReadTokens = null);

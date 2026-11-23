@@ -215,9 +215,32 @@ internal static class ReportCommand
         sb.Append("files_changed: ").Append(fields.FilesChanged is { Count: > 0 } files ? string.Join(", ", files) : None).Append('\n');
         sb.Append("diff_ref: ").Append(fields.DiffRef ?? None).Append('\n');
         sb.Append("cost_usd: ").Append(fields.CostUsd is { } cost ? cost.ToString(CultureInfo.InvariantCulture) : None).Append('\n');
+        sb.Append("turns: ").Append(Turns(fields)).Append('\n');
+        sb.Append("tokens: ").Append(Tokens(fields)).Append('\n');
         sb.Append("from: ").Append(report.Header.From.Value).Append('\n');
         sb.Append("finished: ").Append(fields.Finished is { } finished ? finished.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture) : None).Append('\n');
         sb.Append("body:\n").Append(report.BodyText);
         return sb.ToString();
+    }
+
+    /// <summary>Spec 60: <c>&lt;n&gt; of &lt;max&gt;</c>, <c>&lt;n&gt;</c> without a limit, <c>-</c> without <c>num_turns</c>.</summary>
+    private static string Turns(ReportFields fields) => fields.NumTurns switch
+    {
+        null => None,
+        int used when fields.MaxTurns is { } max => string.Create(CultureInfo.InvariantCulture, $"{used} of {max}"),
+        int used => used.ToString(CultureInfo.InvariantCulture),
+    };
+
+    /// <summary>Spec 60: <c>in a out b cache write c cache read d</c>, <c>-</c> for each absent count; <c>-</c> when all four are absent.</summary>
+    private static string Tokens(ReportFields fields)
+    {
+        if (fields is { InputTokens: null, OutputTokens: null, CacheWriteTokens: null, CacheReadTokens: null })
+        {
+            return None;
+        }
+
+        return $"in {Count(fields.InputTokens)} out {Count(fields.OutputTokens)} cache write {Count(fields.CacheWriteTokens)} cache read {Count(fields.CacheReadTokens)}";
+
+        static string Count(int? value) => value?.ToString(CultureInfo.InvariantCulture) ?? None;
     }
 }

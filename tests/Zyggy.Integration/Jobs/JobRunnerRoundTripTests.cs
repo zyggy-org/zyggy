@@ -118,6 +118,10 @@ public sealed partial class JobRunnerRoundTripTests : IAsyncLifetime
         report.Report.InputTokens.Should().NotBeNull();
         report.Report.OutputTokens.Should().NotBeNull();
         report.Report.Model.Should().NotBeNull();
+
+        // Spec 60 AC-5: the real capture's result usage and the node's turn limit (claude.maxTurns 60) reach the signed report.
+        new { report.Report.NumTurns, report.Report.MaxTurns, report.Report.InputTokens, report.Report.OutputTokens, report.Report.CacheWriteTokens, report.Report.CacheReadTokens }
+            .Should().BeEquivalentTo(new { NumTurns = 4, MaxTurns = 60, InputTokens = 66, OutputTokens = 626, CacheWriteTokens = 25000, CacheReadTokens = 49279 });
     }
 
     [Fact]
