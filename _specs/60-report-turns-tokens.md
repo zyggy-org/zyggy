@@ -4,6 +4,7 @@
 
 - 2026-11-23: spec written and built in one unattended job run (01M8479QSJBT20P911ESXFYM8Y) on the owner's request of 2026-11-23 relayed by Central: the job's TASK is the go for the spec and both slices. Risk area: ⚠️ §4 shared contract (the signed `report` front matter gains three optional fields); `EnvelopeSigner.Canonicalize` is not changed.
 - 2026-11-23: **slices 1 and 2 built** (same job, test first: unit tests failed to compile on the missing members, the three `ReportCommandTests` failed on the missing lines, then green). New golden `report-usage` (canonical bytes and HMAC from a throwaway .NET script, not `Zyggy.Core`). Proof: build 0 warnings, 0 errors; unit 8818 passed / 61 skipped / 0 failed; integration 1216 passed / 58 skipped / 0 failed; format clean; review-check filters 309/0 and 33/0, re-run after the verifier. Decisions: existing §4 names reused, three flat fields added (Decisions table); `max_turns` minimum 1 at parse. Reviewers: `spec-critic` and `slice-verifier` each ran once, but neither delivered its report (both ended without a hand-back, and this job cannot message an agent); the tree was checked unchanged after the verifier. `spec-reviewer` not run for the same reason. Their verdicts are owed before release.
+- 2026-11-23: release job 01M849F2P1VKYXB9DV0XG76JPM: in place of the reviewers, one self-review of `git diff origin/main...HEAD` against AC-1..AC-7 (stream reader null handling, runner `max_turns` = min(job, node) on success and `error_max_turns`, Clamp of the cache counts, writer/parser symmetry with `max_turns` ≥ 1 and node `claude.maxTurns` positive, every other `ReportFields` construction unchanged, CLI lines and READMEs): no defects found. Founding spec §4/§11 wording of Q1 pasted; Q2 deferred.
 
 ## Goal
 
@@ -97,5 +98,5 @@ sequenceDiagram
 
 ## Open questions
 
-- **Q1 (owner, founding spec)**: proposed §4 `report` row optional-field list after `num_turns`: "`max_turns` (the turn limit the run had), `cache_write_tokens`, `cache_read_tokens`". And §11: "Each report carries `cost_usd`, `input_tokens`, `output_tokens`, `cache_write_tokens`, `cache_read_tokens`, `model`, `num_turns` and `max_turns` …". Not pasted: needs the owner's approved wording.
-- **Q2**: `zyggy-core` `PROTOCOL.md` §4 report fields — same three names, to be added in that repository with the release.
+- **Q1 (owner, founding spec)**: proposed §4 `report` row optional-field list after `num_turns`: "`max_turns` (the turn limit the run had), `cache_write_tokens`, `cache_read_tokens`". And §11: "Each report carries `cost_usd`, `input_tokens`, `output_tokens`, `cache_write_tokens`, `cache_read_tokens`, `model`, `num_turns` and `max_turns` …". Not pasted: needs the owner's approved wording. **Answered 2026-11-23** (release job 01M849F2P1VKYXB9DV0XG76JPM, Central's decision on the owner's "release asap"): the wording above pasted exactly into the founding spec §4 `report` row and §11.
+- **Q2**: `zyggy-core` `PROTOCOL.md` §4 report fields — same three names. **Decided 2026-11-23**: a separate follow-up in that repository, not part of this release.
