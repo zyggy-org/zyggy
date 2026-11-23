@@ -111,6 +111,21 @@ public sealed class JobRunnerFailureTests : IAsyncLifetime
         ProjectLock.IsHeld(_project.Path).Should().BeFalse();
     }
 
+    // Spec 60 AC-3: a run cut at the turn limit still reports the turns it used, the limit it had and its tokens.
+    [Fact]
+    public async Task ProcessOnceAsync_ErrorMaxTurns_FailedReportKeepsTurnsUsedLimitAndTokens()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+
+        // Act
+        (Model report, _) = await RunCaseAsync("max-turns", ct);
+
+        // Assert
+        new { report.Report!.Status, report.Report.Reason, First = FirstLine(report), report.Report.NumTurns, report.Report.MaxTurns, report.Report.InputTokens, report.Report.OutputTokens }
+            .Should().BeEquivalentTo(new { Status = ReportStatus.Failed, Reason = "claude_error", First = "claude_error: error_max_turns", NumTurns = 200, MaxTurns = 60, InputTokens = 40, OutputTokens = 20 });
+    }
+
     [Fact]
     public async Task ProcessOnceAsync_NoResultExit143_FailedClaudeErrorNoResult()
     {
@@ -180,6 +195,10 @@ public sealed class JobRunnerFailureTests : IAsyncLifetime
                 break;
             case "error-exit-1":
                 environment["ZYGGY_FAKE_CLAUDE_SCENARIO"] = "error";
+                environment["ZYGGY_FAKE_CLAUDE_EXIT"] = "1";
+                break;
+            case "max-turns":
+                environment["ZYGGY_FAKE_CLAUDE_SCENARIO"] = "max-turns";
                 environment["ZYGGY_FAKE_CLAUDE_EXIT"] = "1";
                 break;
             case "no-result-exit-143":

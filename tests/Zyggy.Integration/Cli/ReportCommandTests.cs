@@ -43,6 +43,8 @@ public sealed class ReportCommandTests : IAsyncLifetime
             + "files_changed: src/a.cs, src/b.cs\n"
             + "diff_ref: 0123456789abcdef0123456789abcdef01234567\n"
             + "cost_usd: 0.25\n"
+            + "turns: 57 of 60\n"
+            + "tokens: in 66 out 626 cache write 25000 cache read 49279\n"
             + "from: home-laptop\n"
             + "finished: 2026-11-14T09:30:05Z\n"
             + "body:\n"
@@ -63,7 +65,25 @@ public sealed class ReportCommandTests : IAsyncLifetime
 
         // Assert
         exit.Should().Be(0, console.Stderr);
-        console.Stdout.Should().Be("status: done\nfiles_changed: -\ndiff_ref: -\ncost_usd: -\nfrom: home-laptop\nfinished: -\nbody:\nREPORT\nsummary: all good\n");
+        console.Stdout.Should().Be("status: done\nfiles_changed: -\ndiff_ref: -\ncost_usd: -\nturns: -\ntokens: -\nfrom: home-laptop\nfinished: -\nbody:\nREPORT\nsummary: all good\n");
+    }
+
+    // Spec 60 AC-6: a report with turns but no limit, and only some token counts (an older node's report), prints what it has.
+    [Fact]
+    public async Task Report_TurnsWithoutLimitAndTwoTokenCounts_PrintsTheKnownValuesAndDashes()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        var job = EnvelopeId.New(DateTimeOffset.UtcNow.AddMinutes(-10));
+        await SeedReportAsync(job, "REPORT\nsummary: older node\n", new ReportFields(ReportStatus.Done, InputTokens: 1200, OutputTokens: 300, NumTurns: 12), DateTimeOffset.UtcNow, ct);
+        await _harness.Bus.PullCloneAsync(ct);
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["report", job.Value], _harness.HomeLaptopNodeJson, ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        console.Stdout.Should().Contain("cost_usd: -\nturns: 12\ntokens: in 1200 out 300 cache write - cache read -\nfrom: ");
     }
 
     [Fact]
@@ -184,6 +204,12 @@ public sealed class ReportCommandTests : IAsyncLifetime
         "claude_error",
         Finished: Finished,
         CostUsd: 0.25m,
+        InputTokens: 66,
+        OutputTokens: 626,
+        NumTurns: 57,
+        MaxTurns: 60,
+        CacheWriteTokens: 25000,
+        CacheReadTokens: 49279,
         FilesChanged: ["src/a.cs", "src/b.cs"],
         DiffRef: "0123456789abcdef0123456789abcdef01234567");
 

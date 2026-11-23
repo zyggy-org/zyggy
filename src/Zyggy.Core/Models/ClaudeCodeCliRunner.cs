@@ -234,5 +234,7 @@ internal sealed partial class ClaudeCodeCliRunner(
         {
             PermissionDenialTools = reader.PermissionDenialTools,
             LastAssistantText = reader.LastAssistantText,
+            CacheWriteTokens = reader.CacheWriteTokens,
+            CacheReadTokens = reader.CacheReadTokens,
         };
 }

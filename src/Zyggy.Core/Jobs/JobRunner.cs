@@ -255,7 +255,7 @@ public sealed partial class JobRunner
 
         LogStarted(id, runDirectory, fields.Agent ?? "none", minutes);
         var result = await _model.RunAsync(request, ct).ConfigureAwait(false);
-        var reply = Map(id, result, minutes, started);
+        var reply = Map(id, result, minutes, started) with { MaxTurns = maxTurns };
 
         // Spec 58 slice 5: a job that read work mail has its report screened on this laptop before it is written to the bus.
         reply = Outlook.WorkMailReportScreen.Apply(reply, nodeDir, job.Header.Tenant, job.Header.Id);
@@ -582,6 +582,8 @@ public sealed partial class JobRunner
             Model = result.Model,
             InputTokens = Clamp(result.InputTokens),
             OutputTokens = Clamp(result.OutputTokens),
+            CacheWriteTokens = Clamp(result.CacheWriteTokens),
+            CacheReadTokens = Clamp(result.CacheReadTokens),
         };
     }
 

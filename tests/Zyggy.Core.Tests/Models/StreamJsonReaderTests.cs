@@ -31,6 +31,35 @@ public sealed class StreamJsonReaderTests
         reader.StructuredOutput!.Value.GetProperty("ok").GetBoolean().Should().BeTrue();
     }
 
+    // Spec 60 AC-1: the cache counts of the result's usage are kept.
+    [Fact]
+    public void Accept_ResultWithCacheUsage_ReadsCacheWriteAndCacheReadTokens()
+    {
+        // Arrange
+        var reader = new StreamJsonReader(1024 * 1024);
+
+        // Act
+        reader.Accept("""{"type":"result","subtype":"error_max_turns","is_error":true,"num_turns":61,"usage":{"input_tokens":66,"cache_creation_input_tokens":25000,"cache_read_input_tokens":49279,"output_tokens":626}}""");
+
+        // Assert
+        new { reader.NumTurns, reader.InputTokens, reader.OutputTokens, reader.CacheWriteTokens, reader.CacheReadTokens }
+            .Should().BeEquivalentTo(new { NumTurns = 61, InputTokens = 66L, OutputTokens = 626L, CacheWriteTokens = 25000L, CacheReadTokens = 49279L });
+    }
+
+    // Spec 60 AC-1: a usage without cache counts leaves them absent.
+    [Fact]
+    public void Accept_ResultWithoutCacheUsage_CacheTokensNull()
+    {
+        // Arrange
+        var reader = new StreamJsonReader(1024 * 1024);
+
+        // Act
+        reader.Accept(StreamLines.Result());
+
+        // Assert
+        new { reader.CacheWriteTokens, reader.CacheReadTokens }.Should().BeEquivalentTo(new { CacheWriteTokens = (long?)null, CacheReadTokens = (long?)null });
+    }
+
     [Fact]
     public void Accept_CostUsdOnly_LeavesCostNull()
     {

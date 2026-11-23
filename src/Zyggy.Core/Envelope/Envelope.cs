@@ -187,6 +187,9 @@ public sealed class Envelope
         AddOptional(entries, "input_tokens", Invariant(report.InputTokens));
         AddOptional(entries, "output_tokens", Invariant(report.OutputTokens));
         AddOptional(entries, "num_turns", Invariant(report.NumTurns));
+        AddOptional(entries, "max_turns", Invariant(report.MaxTurns));
+        AddOptional(entries, "cache_write_tokens", Invariant(report.CacheWriteTokens));
+        AddOptional(entries, "cache_read_tokens", Invariant(report.CacheReadTokens));
         AddOptional(entries, "model", report.Model);
         AddList(entries, "files_changed", report.FilesChanged);
         AddOptional(entries, "diff_ref", report.DiffRef);

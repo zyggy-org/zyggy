@@ -1,0 +1,26 @@
+---
+cache_read_tokens: 49279
+cache_write_tokens: 25000
+cost_usd: 1.85
+created: 2026-11-23T10:05:00Z
+finished: 2026-11-23T10:04:30Z
+from: home-laptop
+id: 01M8479QSJBT20P911ESXFYM90
+in_reply_to: 01M8479QSJBT20P911ESXFYM8Z
+input_tokens: 66
+key_id: acme/1
+max_turns: 60
+model: test-model-1
+num_turns: 57
+output_tokens: 626
+priority: normal
+schema: 1
+sig: hmac-sha256:8e6cb507a99029016cee29e9d55127921c8ef046436d922b79f2bd88f24855ce
+started: 2026-11-23T09:40:00Z
+status: done
+tenant: acme
+to: central
+type: report
+---
+## REPORT
+summary: The benchmark run finished within its turn limit.

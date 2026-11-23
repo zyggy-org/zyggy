@@ -597,6 +597,9 @@ public static class EnvelopeParser
                 || !Int("input_tokens", 0, out int? inputTokens)
                 || !Int("output_tokens", 0, out int? outputTokens)
                 || !Int("num_turns", 0, out int? numTurns)
+                || !Int("max_turns", 1, out int? maxTurns)
+                || !Int("cache_write_tokens", 0, out int? cacheWriteTokens)
+                || !Int("cache_read_tokens", 0, out int? cacheReadTokens)
                 || !Text("model", false, out string? model)
                 || !List("files_changed", out IReadOnlyList<string>? filesChanged)
                 || !Text("diff_ref", false, out string? diffRef)
@@ -626,7 +629,7 @@ public static class EnvelopeParser
                 return Reject(FieldReader.Invalid(fileName is null ? "file_name" : "file_sha256", "file_name and file_sha256 come together"));
             }
 
-            report = new ReportFields(status, reason, started, finished, duration, cost, inputTokens, outputTokens, numTurns, model, filesChanged, diffRef, mandate, step, fileName, fileSha256);
+            report = new ReportFields(status, reason, started, finished, duration, cost, inputTokens, outputTokens, numTurns, model, filesChanged, diffRef, mandate, step, fileName, fileSha256, maxTurns, cacheWriteTokens, cacheReadTokens);
             return true;
         }
 

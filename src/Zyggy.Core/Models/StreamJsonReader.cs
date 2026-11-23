@@ -42,6 +42,12 @@ internal sealed class StreamJsonReader(int maxBytes)
 
     public long? OutputTokens { get; private set; }
 
+    /// <summary>Gets the result usage's <c>cache_creation_input_tokens</c> (spec 60).</summary>
+    public long? CacheWriteTokens { get; private set; }
+
+    /// <summary>Gets the result usage's <c>cache_read_input_tokens</c> (spec 60).</summary>
+    public long? CacheReadTokens { get; private set; }
+
     public int PermissionDenials { get; private set; }
 
     public IReadOnlyList<string> PermissionDenialTools { get; private set; } = [];
@@ -136,6 +142,8 @@ internal sealed class StreamJsonReader(int maxBytes)
             {
                 InputTokens = usage.TryGetProperty("input_tokens", out var input) ? input.GetInt64() : null;
                 OutputTokens = usage.TryGetProperty("output_tokens", out var output) ? output.GetInt64() : null;
+                CacheWriteTokens = usage.TryGetProperty("cache_creation_input_tokens", out var cacheWrite) && cacheWrite.ValueKind != JsonValueKind.Null ? cacheWrite.GetInt64() : null;
+                CacheReadTokens = usage.TryGetProperty("cache_read_input_tokens", out var cacheRead) && cacheRead.ValueKind != JsonValueKind.Null ? cacheRead.GetInt64() : null;
             }
 
             PermissionDenials = root.TryGetProperty("permission_denials", out var denials) && denials.ValueKind == JsonValueKind.Array

@@ -203,7 +203,7 @@ Mandate-specific fields (deliverable 18): `project` (registry name), `goal` (one
 | --- | --- | --- |
 | all | `schema` (positive integer; a node supports exactly `1`), `id` (ULID), `tenant`, `type`, `from`, `to`, `created`, `key_id`, `sig` | `in_reply_to` (`null`; mandatory on `report` and `decision`), `priority` (`normal`) |
 | `job` | `project` | `agent` (none), `worktree` (`false`), `allowed_tools` (empty = `node.json` `claude.defaultAllowedTools`), `report_back` (empty), `timeout_minutes` (`node.json` `claude.defaultTimeoutMinutes`), `deadline` (none), `attempt` (`1`), `branch` (none; only with `worktree: true`), `description` (none), `mandate` (none), `step` (none), `base` (none), `deliver` (`run`) |
-| `report` | `in_reply_to` (the job id, or the item id for Central's report on an item), `status`; `reason` when `status` is not `done` (must be absent when `done`) | `started`, `finished`, `duration_seconds`, `cost_usd`, `input_tokens`, `output_tokens`, `num_turns`, `model`, `files_changed` (empty), `diff_ref`, `mandate`, `step` |
+| `report` | `in_reply_to` (the job id, or the item id for Central's report on an item), `status`; `reason` when `status` is not `done` (must be absent when `done`) | `started`, `finished`, `duration_seconds`, `cost_usd`, `input_tokens`, `output_tokens`, `num_turns`, `max_turns` (the turn limit the run had), `cache_write_tokens`, `cache_read_tokens`, `model`, `files_changed` (empty), `diff_ref`, `mandate`, `step` |
 | `context` | `scope` | — |
 | `item` | `via`, `project`, `slug`, `name`, `description`, `source_name`, `size`, `sha256`; `drive_name` when `via` is `onedrive` | — |
 | `status` | `project`, `session`, `since`, `activity`; `to` must be `central` | `branch`, `head`, `dirty`, `spec`, `step` |
@@ -658,7 +658,7 @@ Alerts are evaluated per tenant and every message names the tenant. Per-tenant n
 
 **Cost tracking**
 
-- Each report carries `cost_usd`, `input_tokens`, `output_tokens`, `model` and `num_turns` from the `IModelRunner` result; informational under the subscription.
+- Each report carries `cost_usd`, `input_tokens`, `output_tokens`, `cache_write_tokens`, `cache_read_tokens`, `model`, `num_turns` and `max_turns` from the `IModelRunner` result; informational under the subscription.
 - `agentbus status --costs 30d` sums reports per machine and project from the bus history. Budget enforcement (`budget_exceeded`) is a §14 item; the reason code stays reserved in the enum and is never emitted in v1.
 
 **Runbooks (`agent-core/runbooks/`)**
