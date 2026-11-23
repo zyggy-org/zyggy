@@ -67,6 +67,23 @@ public sealed class NodeJsonPolicySourceTests
         policy.WorkMail.Should().Be(workMail);
     }
 
+    // Spec 50 AC-3: claude.models reaches the job runner's intake as is; absent stays absent (any well-formed id).
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task GetAsync_ClaudeModels_ProjectedAsIs(bool present)
+    {
+        // Arrange
+        string[]? models = present ? ["claude-opus-5-5"] : null;
+        var configuration = Configuration() with { Claude = new ClaudeSettings() { Models = models } };
+
+        // Act
+        var policy = await new NodeJsonPolicySource(configuration).GetAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        policy.Models.Should().BeEquivalentTo(models);
+    }
+
     [Fact]
     public async Task GetAsync_ProjectsMaxConcurrentJobsAndWorkHours()
     {

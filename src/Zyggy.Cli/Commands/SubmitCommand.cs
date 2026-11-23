@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Zyggy.Core.Bus;
 using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
+using Zyggy.Core.Models;
 using Zyggy.Core.Registry;
 using Zyggy.Core.Tenancy;
 using Zyggy.Core.Verbs;
@@ -40,11 +41,15 @@ internal static class SubmitCommand
         var session = new Option<bool>("--session") { Description = "With --mandate: deliver the task into a live session (the mandate must allow sessions)." };
         var maxTurns = new Option<int?>("--max-turns") { Description = "A model job's own turn limit (at least 1); the node lowers it to its claude.maxTurns and says so." };
         var continueFrom = new Option<string?>("--continue") { Description = "With --worktree: start from branch zyggy/<job-id> of this earlier job on the project's origin (also under a mandate, same step)." };
+        var model = new Option<string?>("--model") { Description = "Override for this job: the full Claude Code model id it must run on (never an alias), on the allow-list (instance/models.json models, else node.json claude.models); the target's node must publish the capability model." };
+        var jobType = new Option<string?>("--type") { Description = "The job type: the job gets job_type and the model of that row of Central's table instance/models.json (zyggy models lists them)." };
         var command = new Command("submit", "Build, sign and publish a job envelope to a machine's inbox on the bus.")
         {
-            to, project, agent, timeout, allowedTools, priority, worktree, branch, description, body, mandate, kind, step, reference, baseBranch, session, fetch, commandName, maxTurns, continueFrom, BusHost.ConfigOption, BusHost.VerboseOption,
+            to, project, agent, timeout, allowedTools, priority, worktree, branch, description, body, mandate, kind, step, reference, baseBranch, session, fetch, commandName, maxTurns, continueFrom, model, jobType, BusHost.ConfigOption, BusHost.VerboseOption,
         };
-        command.SetAction((parseResult, ct) => parseResult.GetValue(mandate) is not null
+        command.SetAction((parseResult, ct) => parseResult.GetValue(mandate) is not null && (parseResult.GetValue(model) is not null || parseResult.GetValue(jobType) is not null)
+            ? RefuseModelUnderMandateAsync(io)
+            : parseResult.GetValue(mandate) is not null
             ? MandateAsync(
                 environment,
                 io,
@@ -80,10 +85,30 @@ internal static class SubmitCommand
             parseResult.GetValue(branch),
             parseResult.GetValue(description),
             new FetchGiven(parseResult.GetValue(fetch), parseResult.GetValue(reference), parseResult.GetValue(commandName)),
-            new ContinueGiven(parseResult.GetValue(continueFrom), parseResult.GetValue(maxTurns)),
+            new ContinueGiven(parseResult.GetValue(continueFrom), parseResult.GetValue(maxTurns), parseResult.GetValue(model), parseResult.GetValue(jobType)),
             parseResult.GetValue(body),
             ct));
         return command;
+    }
+
+    // Spec 50 (Q6): under a mandate the model comes from the owner's table by kind, never from one submit.
+    private static async Task<int> RefuseModelUnderMandateAsync(VerbIo io)
+    {
+        await io.Error.WriteLineAsync("zyggy: submit: --model and --type are not allowed with --mandate: under a mandate the model comes from the table by kind");
+        return ExitCodes.Usage;
+    }
+
+    // Spec 50 (AC-8): Central's table for a verb that needs it; an invalid file is one line naming the key and exit 2, never ignored.
+    private static async Task<(ModelTable? Table, bool Ok)> TableAsync(CliEnvironment environment, VerbIo io)
+    {
+        ModelTableResult result = ModelsCommand.LoadTable(environment);
+        if (result.Error is { } error)
+        {
+            await io.Error.WriteLineAsync("zyggy: " + error);
+            return (null, false);
+        }
+
+        return (result.Table, true);
     }
 
     private static async Task<int> RunAsync(
@@ -205,8 +230,42 @@ internal static class SubmitCommand
             }
         }
 
-        SubmitResult result = await services.GetRequiredService<JobSubmitter>().SubmitAsync(named!, ct);
-        return await RenderAsync(io, configuration, request!.To, result);
+        // Spec 50 (AC-9): --type takes the row of Central's table, --model overrides it and must be on the allow-list (the table's, else
+        // node.json claude.models). The table is read only when one of them is given, so a job without either is today's job.
+        var pick = new ModelPick(null, null, "model: node default");
+        if (continued.Type is not null || continued.Model is not null)
+        {
+            (ModelTable? table, bool ok) = await TableAsync(environment, io);
+            if (!ok)
+            {
+                return ExitCodes.Usage;
+            }
+
+            pick = ModelChoice.ForSubmit(table, configuration.Claude.Models, continued.Type, continued.Model);
+            if (pick.Error is { } refused)
+            {
+                await io.Error.WriteLineAsync($"zyggy: {refused.Field}: {refused.Detail}");
+                return ExitCodes.Usage;
+            }
+        }
+
+        // The job's model, checked after the kind (a fetch or command job runs no model); the capability is the submitter's check.
+        error = named!.TryWithModel(pick.Model, out named);
+        if (error is not null)
+        {
+            await io.Error.WriteLineAsync($"zyggy: {error.Field}: {error.Detail}");
+            return ExitCodes.Usage;
+        }
+
+        named = named! with { JobType = pick.JobType };
+        SubmitResult result = await services.GetRequiredService<JobSubmitter>().SubmitAsync(named, ct);
+        int exit = await RenderAsync(io, configuration, request!.To, result);
+        if (result is Submitted or SubmitDeferred)
+        {
+            await io.Out.WriteLineAsync(pick.Line);
+        }
+
+        return exit;
     }
 
     // Deliverable 18: Central's submit under a mandate. No body, project, tools, agent, timeout, priority or worktree may be given: the
@@ -263,6 +322,13 @@ internal static class SubmitCommand
             return BusHost.ConfigurationError(io, "signWith missing");
         }
 
+        // Spec 50 (AC-10): the kind's row of Central's table is the job's model; an invalid table refuses the submit (exit 2).
+        (ModelTable? table, bool tableOk) = await TableAsync(environment, io);
+        if (!tableOk)
+        {
+            return ExitCodes.Usage;
+        }
+
         await using ServiceProvider services = BusHost.BuildServices(configuration, parseResult.GetValue(BusHost.VerboseOption), environment, configure);
         int checkout = await BusHost.CheckCheckoutAsync(services, configuration, io, ct);
         if (checkout != ExitCodes.Ok)
@@ -273,7 +339,7 @@ internal static class SubmitCommand
         MandateSubmitOutcome outcome;
         try
         {
-            outcome = await services.GetRequiredService<MandateSubmission>().SubmitAsync(new MandateJobRequest(to, mandate, kind, given.Step, reference, given.Base, given.Session, continueFrom, given.MaxTurns), ct);
+            outcome = await services.GetRequiredService<MandateSubmission>().SubmitAsync(new MandateJobRequest(to, mandate, kind, given.Step, reference, given.Base, given.Session, continueFrom, given.MaxTurns), table, ct);
         }
         catch (BusBusyException ex)
         {
@@ -286,7 +352,13 @@ internal static class SubmitCommand
             return ExitCodes.Configuration;
         }
 
-        return await RenderAsync(io, configuration, to, outcome.Result);
+        int exit = await RenderAsync(io, configuration, to, outcome.Result);
+        if (outcome.Result is Submitted or SubmitDeferred)
+        {
+            await io.Out.WriteLineAsync(ModelChoice.ForMandate(table, kind, given.Session).Line);
+        }
+
+        return exit;
     }
 
     private static async Task<int> RenderAsync(VerbIo io, NodeConfiguration configuration, MachineName to, SubmitResult result)
@@ -314,6 +386,10 @@ internal static class SubmitCommand
             case SubmitRefused { Field: "kind" } refused:
                 await io.Error.WriteLineAsync("zyggy: refused: " + refused.Detail);
                 return ExitCodes.Usage;
+            case SubmitRefused { Field: "capability" } refused:
+                // Spec 50 (AC-7): the target's node is too old to run a job with a model; exit 3, as the mandate capability refusal.
+                await io.Error.WriteLineAsync("zyggy: refused: " + refused.Detail);
+                return ExitCodes.Configuration;
             case SubmitRefused refused:
                 await io.Error.WriteLineAsync($"zyggy: refusing to submit: the envelope does not round-trip ({refused.Field})");
                 return ExitCodes.Usage;
@@ -325,7 +401,7 @@ internal static class SubmitCommand
 
     private sealed record FetchGiven(string? Path, string? Reference, string? Command);
 
-    private sealed record ContinueGiven(string? Continue, int? MaxTurns);
+    private sealed record ContinueGiven(string? Continue, int? MaxTurns, string? Model, string? Type);
 
     private sealed record MandateGiven(string? To, string? Mandate, string? Kind, string? Step, string? Reference, string? Base, bool Session, string? Continue, int? MaxTurns, bool FreeFieldGiven);
 

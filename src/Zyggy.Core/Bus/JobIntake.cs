@@ -66,4 +66,7 @@ public sealed record RejectedJob : JobIntake
 
     /// <summary>Gets the job's <c>step</c> when the job was read, copied into the rejection report (deliverable 18).</summary>
     public string? Step { get; init; }
+
+    /// <summary>Gets the job's <c>job_type</c> when the job was read, copied into the rejection report (spec 50).</summary>
+    public string? JobType { get; init; }
 }

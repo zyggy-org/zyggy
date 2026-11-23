@@ -135,7 +135,7 @@ public sealed partial class BusInventory
             }
         }
 
-        EnvelopeSummary? job = hit is null ? null : (await SummariseAsync(hit.Value.Path, id, ct).ConfigureAwait(false)).Summary;
+        (EnvelopeSummary? job, Envelope.Envelope? jobEnvelope) = hit is null ? (null, null) : await SummariseAsync(hit.Value.Path, id, ct).ConfigureAwait(false);
         bool reported = reports.Any(r => r.Verified && r.Status != ReportStatus.Rejected);
         bool rejectedByReport = reports.Any(r => r.Verified && r.Status == ReportStatus.Rejected);
         TraceState? state = reported ? TraceState.Reported
@@ -152,6 +152,7 @@ public sealed partial class BusInventory
         {
             AnsweredAsItem = job is null && newest is not null && PickupItemReport.IsItemReport(newest, body),
             NewestReport = newestReport,
+            JobEnvelope = jobEnvelope?.Type == EnvelopeType.Job ? jobEnvelope : null,
         };
     }
 

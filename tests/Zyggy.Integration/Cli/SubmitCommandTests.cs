@@ -51,7 +51,8 @@ public sealed partial class SubmitCommandTests : IAsyncLifetime
         line.Success.Should().BeTrue(console.Stdout);
         var id = EnvelopeId.Parse(line.Groups["id"].Value);
         string path = BusPaths.EnvelopeFile(BusPaths.Jobs(CliHarness.Acme, CliHarness.HomeLaptop), id);
-        console.Stdout.Should().Be($"submitted {id.Value} to home-laptop ({path})\n");
+        // Spec 50 slice 6 (AC-9): the second line names the model; without --type or --model it is the node's default.
+        console.Stdout.Should().Be($"submitted {id.Value} to home-laptop ({path})\nmodel: node default\n");
         console.Stderr.Should().BeEmpty();
         (await _harness.Bus.ExistsOnMainAsync(path, ct)).Should().BeTrue();
         (await _harness.Bus.LastCommitSubjectAsync(ct)).Should().Be($"acme job {id.Value} central→home-laptop");
@@ -366,7 +367,7 @@ public sealed partial class SubmitCommandTests : IAsyncLifetime
         exit.Should().Be(7);
         Match line = SubmittedLine().Match(console.Stdout);
         line.Success.Should().BeTrue(console.Stdout);
-        console.Stdout.Should().EndWith(" (committed locally, not yet pushed: the next bus write on this machine pushes it)\n");
+        console.Stdout.Should().EndWith(" (committed locally, not yet pushed: the next bus write on this machine pushes it)\nmodel: node default\n");
         (await _harness.Bus.RunGitAsync(_harness.Bus.SenderDir, ["log", "-1", "--format=%s"], ct)).Trim().Should().StartWith("acme job ");
         (await _harness.CommitCountOnMainAsync(ct)).Should().Be(commits);
         (await _harness.PorcelainAsync(_harness.Bus.SenderDir, ct)).Should().BeEmpty();

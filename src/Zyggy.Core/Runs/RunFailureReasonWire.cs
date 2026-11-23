@@ -20,6 +20,7 @@ public static class RunFailureReasonWire
         RunFailureReason.BudgetExceeded => "budget_exceeded",
         RunFailureReason.BranchRefused => "branch_refused",
         RunFailureReason.CommandFailed => "command_failed",
+        RunFailureReason.ModelUnavailable => "model_unavailable",
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 

@@ -42,6 +42,8 @@ public sealed class SupervisorWakeTests : IAsyncLifetime
 
     private static readonly string[] BlockedThenAllowed = ["blocked Write", "allowed Bash"];
 
+    private static readonly string[] OpusTwice = ["claude-opus-5-5", "claude-opus-5-5"];
+
     private NodeHostHarness _harness = null!;
 
     private PickupMemory _memory = null!;
@@ -344,6 +346,114 @@ public sealed class SupervisorWakeTests : IAsyncLifetime
         // Assert
         exit.Should().Be(0, Log());
         new { Runs = _model.Calls, Taken = ReportArrivals.Take(arrivals).Count }.Should().BeEquivalentTo(new { Runs = 1, Taken = 0 }, Log());
+    }
+
+    // Spec 50 AC-11: the table's supervisor model reaches the run, which is held to it; the run decides as before.
+    [Fact]
+    public async Task Wake_SupervisorModelInTheTable_RunAsksItAndIsHeldToIt()
+    {
+        // Arrange: fake-claude's "done" scenario starts claude-fable-5-1, the model the table names
+        var ct = TestContext.Current.CancellationToken;
+        WriteModelTable("""{ "models": ["claude-fable-5-1"], "supervisor": "claude-fable-5-1" }""");
+        EnvelopeId mandate = await SeedMandateAsync(ct);
+        await SeedReportAsync(mandate, ct);
+        Script((_, id) => new Step([Decide(id, mandate, "accept")]));
+
+        // Act
+        int exit = await _harness.RunUntilAsync(async () => (await DecisionsAsync(ct)).Count == 1, Limit, ct, Services);
+
+        // Assert
+        exit.Should().Be(0, Log());
+        new { _model.Runs[0].Request.Model, _model.Runs[0].Request.RequireModel, (await DecisionsAsync(ct)).Single().Decision!.Kind }
+            .Should().BeEquivalentTo(new { Model = "claude-fable-5-1", RequireModel = true, Kind = DecisionKind.Accept }, Log());
+    }
+
+    // Spec 50 AC-11: a run on which Claude Code starts another model fails model_unavailable; it is retried once on the same model,
+    // then the node escalates — never a run on another model.
+    [Fact]
+    public async Task Wake_SupervisorModelUnavailable_RetriedOnceOnTheSameModel_ThenEscalated()
+    {
+        // Arrange: the table asks Opus, fake-claude starts claude-fable-5-1 (no scripted calls: the fake would make them before the kill lands)
+        var ct = TestContext.Current.CancellationToken;
+        WriteModelTable("""{ "models": ["claude-opus-5-5"], "supervisor": "claude-opus-5-5" }""");
+        EnvelopeId mandate = await SeedMandateAsync(ct);
+        EnvelopeId report = await SeedReportAsync(mandate, ct);
+        Script((_, _) => new Step([]));
+
+        // Act
+        int exit = await _harness.RunUntilAsync(async () => (await DecisionsAsync(ct)).Count == 1, Limit, ct, Services);
+
+        // Assert
+        exit.Should().Be(0, Log());
+        Model decision = (await DecisionsAsync(ct)).Single();
+        new
+        {
+            decision.Decision!.Kind,
+            decision.Header.InReplyTo,
+            Models = _model.Runs.Select(r => r.Request.Model).ToArray(),
+            Ended = _harness.LogLines.Count(l => l.Contains("ended: failed model_mismatch", StringComparison.Ordinal)),
+        }.Should().BeEquivalentTo(new
+        {
+            Kind = DecisionKind.Escalate,
+            InReplyTo = (EnvelopeId?)report,
+            Models = OpusTwice,
+            Ended = 2,
+        }, Log());
+    }
+
+    // Spec 50 AC-11 (slice 5 verify correction): the retry reuses exactly the first attempt's model, even when the owner edits the
+    // table between the two attempts — the event's second run never reads the table again.
+    [Fact]
+    public async Task Wake_TableEditedBetweenAttempts_RetryKeepsTheFirstAttemptsModel()
+    {
+        // Arrange: the first run asks Opus (fake-claude starts claude-fable-5-1: mismatch); during it the table switches to fable
+        var ct = TestContext.Current.CancellationToken;
+        WriteModelTable("""{ "models": ["claude-opus-5-5"], "supervisor": "claude-opus-5-5" }""");
+        EnvelopeId mandate = await SeedMandateAsync(ct);
+        await SeedReportAsync(mandate, ct);
+        Script((_, _) =>
+        {
+            WriteModelTable("""{ "models": ["claude-fable-5-1"], "supervisor": "claude-fable-5-1" }""");
+            return new Step([]);
+        });
+
+        // Act
+        int exit = await _harness.RunUntilAsync(async () => (await DecisionsAsync(ct)).Count == 1, Limit, ct, Services);
+
+        // Assert
+        exit.Should().Be(0, Log());
+        _model.Runs.Select(r => r.Request.Model).Should().Equal(OpusTwice, Log());
+    }
+
+    // Spec 50 AC-11: a supervisor model off the allow-list starts no run and is logged once, however many passes see it.
+    [Fact]
+    public async Task Wake_SupervisorModelNotAllowed_NoRun_LoggedOnce()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        WriteModelTable("""{ "models": ["claude-opus-5-5"], "supervisor": "claude-fable-5-2" }""");
+        EnvelopeId mandate = await SeedMandateAsync(ct);
+        await SeedReportAsync(mandate, ct);
+        Script((_, id) => new Step([Decide(id, mandate, "accept")]));
+
+        // Act
+        int exit = await _harness.RunUntilAsync(() => QuietForAsync(TimeSpan.FromSeconds(6)), Limit, ct, Services);
+
+        // Assert
+        exit.Should().Be(0, Log());
+        new
+        {
+            Runs = _model.Calls,
+            Logged = _harness.LogLines.Count(l => l.Contains("supervisor model claude-fable-5-2 not allowed", StringComparison.Ordinal)),
+            Decisions = (await DecisionsAsync(ct)).Count,
+        }.Should().BeEquivalentTo(new { Runs = 0, Logged = 1, Decisions = 0 }, Log());
+    }
+
+    private void WriteModelTable(string json)
+    {
+        string folder = Path.Combine(_harness.ProjectsRoot, Desk, "instance");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "models.json"), json);
     }
 
     private DateTimeOffset? _quietSince;

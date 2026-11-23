@@ -240,7 +240,79 @@ public sealed class OutlookVerbTests : IDisposable
         References(console.Stdout).Should().Equal("m2");
     }
 
+    // AC-2 (spec 58, --until amendment 2026-11-23): list --until reads the window [since, until), newest first, capped.
+    [Fact]
+    public async Task List_SinceAndUntilDates_OnlyTheWindow_UntilPrinted()
+    {
+        // Arrange
+        Mail();
+        Allowed();
+
+        // Act
+        var (exit, console) = await RunAsync("list --since 2026-11-20 --until 2026-11-21");
+
+        // Assert
+        (exit, console.Stdout).Should().Be((0, Json("""
+            {
+              "folder": "Inbox",
+              "since": "2026-11-20T00:00:00+01:00",
+              "until": "2026-11-21T00:00:00+01:00",
+              "items": [
+                { "reference": "m1", "senderName": "Sender m1", "senderAddress": "m1@example.test", "subject": "First", "received": "2026-11-20T14:30:00+01:00", "importance": "normal", "flag": "none", "isRead": false, "hasAttachments": false, "isProtected": false }
+              ]
+            }
+            """)));
+    }
+
+    [Fact]
+    public async Task List_UntilIsoWithOffset_IsExclusive()
+    {
+        // Arrange
+        Mail();
+        Allowed();
+
+        // Act
+        var (_, console) = await RunAsync("list --since 2026-11-01 --until 2026-11-21T07:05:00Z");
+
+        // Assert
+        References(console.Stdout).Should().Equal("m1");
+    }
+
+    [Fact]
+    public async Task List_UntilWithMax_NewestInTheWindowFirst()
+    {
+        // Arrange
+        Mail();
+        Allowed();
+
+        // Act
+        var (_, console) = await RunAsync("list --since 2026-11-01 --until 2026-11-22 --max 1");
+
+        // Assert
+        References(console.Stdout).Should().Equal("m2");
+    }
+
+    [Fact]
+    public async Task List_UntilWithoutSince_SinceIsSevenDaysBeforeUntil()
+    {
+        // Arrange
+        Mail();
+        Allowed();
+
+        // Act
+        var (exit, console) = await RunAsync("list --until 2026-11-21");
+
+        // Assert
+        (exit, SinceOf(console.Stdout), References(console.Stdout).Count).Should().Be((0, "2026-11-14T00:00:00+01:00", 1));
+    }
+
     [Theory]
+    [InlineData("list --until 21/11/2026", "--until")]
+    [InlineData("list --since 2026-11-21 --until 2026-11-21", "--until must be later than --since")]
+    [InlineData("list --since 2026-11-21 --until 2026-11-20", "--until must be later than --since")]
+    [InlineData("list --since 2026-11-21T10:00:00+01:00 --until 2026-11-21T09:00:00Z", "--until must be later than --since")]
+    [InlineData("brief --until 2026-11-21", "--until")]
+    [InlineData("count --until 2026-11-21", "--until")]
     [InlineData("list --since 21/11/2026", "--since")]
     [InlineData("list --max 0", "--max")]
     [InlineData("list --max many", "--max")]
@@ -441,6 +513,12 @@ public sealed class OutlookVerbTests : IDisposable
     {
         using var document = JsonDocument.Parse(stdout);
         return document.RootElement.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("reference").GetString()!).ToList();
+    }
+
+    private static string SinceOf(string stdout)
+    {
+        using var document = JsonDocument.Parse(stdout);
+        return document.RootElement.GetProperty("since").GetString()!;
     }
 
     /// <summary>An access whose every call reports Outlook's unanswered security prompt, as the COM access does after its timeout.</summary>

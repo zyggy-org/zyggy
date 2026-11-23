@@ -176,6 +176,15 @@ public sealed partial class JobRunner
             return Reply(ReportStatus.Failed, RunFailureReasonWire.ToWire(RunFailureReason.Locked), $"locked: {lockPath}\n", started);
         }
 
+        // Spec 50 Behavior 1 (AC-3): after pre-flight and the lock, before any worktree — a model this machine's claude.models does not
+        // list is refused, the model never started. Without the key every id that passed the shape rule is allowed.
+        if (fields.Model is { } asked && policy.Models is { } allowed && !allowed.Contains(asked, StringComparer.Ordinal))
+        {
+            var unavailable = RunFailureReasonWire.ToWire(RunFailureReason.ModelUnavailable);
+            LogModelNotAllowed(id, asked);
+            return Reply(ReportStatus.Rejected, unavailable, $"{unavailable}: model {asked} is not allowed on this machine\n", started);
+        }
+
         var nodeDir = _options.NodeDir ?? TranscriptPaths.DefaultNodeDir();
         SweepTranscripts(TranscriptPaths.TenantDirectory(nodeDir, job.Header.Tenant));
 
@@ -231,8 +240,9 @@ public sealed partial class JobRunner
             hookArgs.Add("--work-mail");
         }
 
-        // Spec 06 "ModelRunRequest for a job": no tool set, extra directory, schema, model or system prompt; the project's own
-        // hooks, skills, MCP servers and memory apply (Isolation.None, ex-Q7).
+        // Spec 06 "ModelRunRequest for a job": no tool set, extra directory, schema or system prompt; the project's own hooks, skills,
+        // MCP servers and memory apply (Isolation.None, ex-Q7). Spec 50: the job's own model when it names one (the parser checked its
+        // shape), else none — never a fallback model.
         var timeout = _options.TimeoutOverride ?? TimeSpan.FromMinutes(minutes);
 
         // Spec 59 slice 6 (AC-9): the job's own turn limit, never above the node's; a lowered value is said in the report body.
@@ -241,6 +251,8 @@ public sealed partial class JobRunner
         var request = new ModelRunRequest(_prompt.Render(job, runDirectory, allowedTools), runDirectory, timeout)
         {
             MaxTurns = maxTurns,
+            Model = fields.Model,
+            RequireModel = fields.Model is not null,
             AllowedTools = allowedTools,
             MaxBudgetUsd = policy.MaxBudgetUsd,
             Isolation = ModelSessionIsolation.None,
@@ -255,7 +267,7 @@ public sealed partial class JobRunner
 
         LogStarted(id, runDirectory, fields.Agent ?? "none", minutes);
         var result = await _model.RunAsync(request, ct).ConfigureAwait(false);
-        var reply = Map(id, result, minutes, started) with { MaxTurns = maxTurns };
+        var reply = Map(id, result, minutes, started, fields.Model) with { MaxTurns = maxTurns };
 
         // Spec 58 slice 5: a job that read work mail has its report screened on this laptop before it is written to the bus.
         reply = Outlook.WorkMailReportScreen.Apply(reply, nodeDir, job.Header.Tenant, job.Header.Id);
@@ -548,8 +560,9 @@ public sealed partial class JobRunner
         return "unknown";
     }
 
-    // The spec's Report mapping table: done with the summary; timeout with the partial text; claude_error for every other failure.
-    private JobReply Map(string id, ModelRunResult result, int minutes, DateTimeOffset started)
+    // The spec's Report mapping table: done with the summary; timeout with the partial text; model_unavailable for a job's model that did
+    // not run (spec 50); claude_error for every other failure.
+    private JobReply Map(string id, ModelRunResult result, int minutes, DateTimeOffset started, string? asked)
     {
         var summary = ReportSummary.Extract(result);
         JobReply reply;
@@ -560,6 +573,16 @@ public sealed partial class JobRunner
         else if (result.Reason == RunFailureReason.Timeout)
         {
             reply = Reply(ReportStatus.Timeout, RunFailureReasonWire.ToWire(RunFailureReason.Timeout), $"timeout after {minutes} min\n\n{summary}\n", started);
+        }
+        else if (result.Reason == RunFailureReason.ModelUnavailable && asked is not null)
+        {
+            // Spec 50 Behavior 3–4: the body names both models on a mismatch, the first line of Claude Code's error on a refusal.
+            var unavailable = RunFailureReasonWire.ToWire(RunFailureReason.ModelUnavailable);
+            var line = result.FailureDetail == ModelFailureDetail.ModelMismatch
+                ? $"asked {asked}, Claude Code started {result.Model ?? "unknown"}"
+                : $"model {asked} refused by Claude Code: {FirstLine(result.ResultText ?? result.LastAssistantText ?? string.Empty) ?? "no error text"}";
+            LogModelUnavailable(id, result.FailureDetail ?? "unknown");
+            reply = Reply(ReportStatus.Failed, unavailable, $"{unavailable}: {line}\n\n{summary}\n", started);
         }
         else
         {
@@ -693,6 +716,12 @@ public sealed partial class JobRunner
 
     [LoggerMessage(Level = LogLevel.Information, Message = "job {Id}: mail job on a work machine: {Dropped} rule(s) beyond the outlook read verbs and file reads dropped")]
     private partial void LogMailJobNarrowed(string id, int dropped);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: rejected: model_unavailable (model {Model} not on claude.models)")]
+    private partial void LogModelNotAllowed(string id, string model);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: model_unavailable ({Detail})")]
+    private partial void LogModelUnavailable(string id, string detail);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: worktree git step failed: {Step}")]
     private partial void LogWorktreeFailed(string id, string step);

@@ -24,6 +24,8 @@ public sealed class EnvelopeWriterTests
     [InlineData("job-branch-only")]
     [InlineData("job-description-quoted")]
     [InlineData("report-usage")]
+    [InlineData("job-model")]
+    [InlineData("report-model")]
     public void Serialize_CanonicalStyleGoldenCase_RoundTripsByteIdentically(string name)
     {
         // Arrange

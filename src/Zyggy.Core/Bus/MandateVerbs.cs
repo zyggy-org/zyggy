@@ -261,7 +261,19 @@ public sealed partial class MandateSubmission
     /// <returns>The outcome.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="request"/> is null.</exception>
     /// <exception cref="BusBusyException">Another zyggy process held the checkout's write lock for the whole wait.</exception>
-    public async Task<MandateSubmitOutcome> SubmitAsync(MandateJobRequest request, CancellationToken ct)
+    public Task<MandateSubmitOutcome> SubmitAsync(MandateJobRequest request, CancellationToken ct) => SubmitAsync(request, null, ct);
+
+    /// <summary>
+    /// Checks <paramref name="request"/> against its mandate and, inside every limit, submits the job with the model Central's table
+    /// gives its kind (spec 50 AC-10, Q6): <c>job_type</c> is the kind; the model is the kind's row, else none.
+    /// </summary>
+    /// <param name="request">The job to submit.</param>
+    /// <param name="models">Central's model table, or <see langword="null"/> when there is no <c>instance/models.json</c>.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The outcome.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="request"/> is null.</exception>
+    /// <exception cref="BusBusyException">Another zyggy process held the checkout's write lock for the whole wait.</exception>
+    internal async Task<MandateSubmitOutcome> SubmitAsync(MandateJobRequest request, Models.ModelTable? models, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -303,6 +315,7 @@ public sealed partial class MandateSubmission
         }
 
         string body = MandateJobTemplates.Render(request.Kind, fields.Spec, fields.SpecCommit, request.Step, request.Reference);
+        Models.ModelPick pick = Models.ModelChoice.ForMandate(models, request.Kind, request.Session);
         var job = new JobRequest(request.To, project, null, request.Session ? SessionTimeoutMinutes : null, fields.AllowedTools, EnvelopePriority.Normal, Utf8.GetBytes(body))
         {
             Worktree = !request.Session,
@@ -314,6 +327,10 @@ public sealed partial class MandateSubmission
             // Spec 59 slice 6 (Q6): a step may continue its earlier job's branch; the step cap counts it as one more job of that step.
             Continue = request.Session ? null : request.Continue,
             MaxTurns = request.MaxTurns,
+
+            // Spec 50 (AC-10): the table's row for the kind; the submitter's capability check keeps it from a node too old to run it.
+            Model = pick.Model,
+            JobType = pick.JobType,
         };
         return new MandateSubmitOutcome(verdict, await _submitter.SubmitAsync(job, ct).ConfigureAwait(false));
     }

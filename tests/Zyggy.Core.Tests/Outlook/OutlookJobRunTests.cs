@@ -171,6 +171,22 @@ public sealed class OutlookJobRunTests : IDisposable
             .Should().Be((true, false, true));
     }
 
+    // AC-2 (spec 58, --until amendment 2026-11-23): the window [since, until) passes the same screen in a job.
+    [Fact]
+    public async Task List_InAJob_WithUntil_OnlyTheWindow_KeptMailsOmitted()
+    {
+        // Arrange
+        Mail();
+        Allowed();
+
+        // Act
+        var (_, console) = await RunAsync(InJob(), "list", "--since", "2026-11-01", "--until", "2026-11-21T09:30:00+01:00");
+
+        // Assert
+        (console.Stdout.Contains("\"m1\"", StringComparison.Ordinal), console.Stdout.Contains("\"t1\"", StringComparison.Ordinal), console.Stdout.Contains("\"kept\": 2", StringComparison.Ordinal))
+            .Should().Be((false, false, true));
+    }
+
     [Fact]
     public async Task Count_InAJob_Allowed_NoContent()
     {

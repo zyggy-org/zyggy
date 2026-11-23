@@ -264,8 +264,43 @@ public sealed class JobRunnerInvocationTests : IDisposable
         ClaudeSpec().Arguments.Should().NotContain(
         [
             "--dangerously-skip-permissions", "--bare", "--resume", "--continue", "--cwd", "--strict-mcp-config",
-            "--disable-slash-commands", "--tools", "--add-dir", "--json-schema", "--model", "--append-system-prompt",
+            "--disable-slash-commands", "--tools", "--add-dir", "--json-schema", "--model", "--fallback-model", "--append-system-prompt",
         ]);
+    }
+
+    // Spec 50 AC-2: a job's model reaches Claude Code as the two list arguments --model <id>, never with --fallback-model.
+    [Fact]
+    public async Task RunAsync_JobWithModel_ModelPassedAsTwoArguments_NoFallbackModel()
+    {
+        // Arrange
+        var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root, AllowedTools: ["Read"], Model: "claude-opus-5-5", JobType: "implementation"));
+
+        // Act
+        await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        var arguments = ClaudeSpec().Arguments.ToList();
+        var at = arguments.IndexOf("--model");
+        new { Value = at >= 0 ? arguments[at + 1] : null, Flags = arguments.Count(a => a.EndsWith("-model", StringComparison.Ordinal)) }
+            .Should().BeEquivalentTo(new { Value = "claude-opus-5-5", Flags = 1 });
+    }
+
+    // Spec 50 AC-2: a job with a model gets today's argument list plus exactly those two arguments.
+    [Fact]
+    public async Task RunAsync_JobWithModel_ArgumentsAreTodaysPlusTheModelPair()
+    {
+        // Arrange
+        var without = await JobRunnerHarness.JobAsync(new JobFields(_project.Root, AllowedTools: ["Read"]));
+        await _h.Build().RunAsync(without, CancellationToken.None);
+        var today = ClaudeSpec().Arguments.Where(a => !a.StartsWith('{')).ToArray();
+        _h.Processes.Calls.Clear();
+        var with = await JobRunnerHarness.JobAsync(new JobFields(_project.Root, AllowedTools: ["Read"], Model: "claude-fable-5-2"));
+
+        // Act
+        await _h.Build().RunAsync(with, CancellationToken.None);
+
+        // Assert
+        ClaudeSpec().Arguments.Where(a => !a.StartsWith('{')).Should().BeEquivalentTo([.. today, "--model", "claude-fable-5-2"]);
     }
 
     [Fact]

@@ -121,7 +121,7 @@ internal static class ReportCommand
             return await WriteAttachmentAsync(io, configuration, trace, fields, file, ct);
         }
 
-        await io.Out.WriteAsync(Render(report, fields));
+        await io.Out.WriteAsync(Render(report, fields, trace.JobEnvelope?.Job?.Model));
         return ExitCodes.Ok;
     }
 
@@ -202,8 +202,12 @@ internal static class ReportCommand
 
     private sealed record FileWanted(string? Out);
 
-    /// <summary>The field lines in the spec's order (<c>reason</c> only when set, <c>-</c> for an absent value), then <c>body:</c> and the body verbatim.</summary>
-    internal static string Render(Envelope report, ReportFields fields)
+    /// <summary>
+    /// The field lines in the spec's order (<c>reason</c> only when set, <c>-</c> for an absent value), then <c>body:</c> and the body
+    /// verbatim. <paramref name="askedModel"/> is the job's <c>model</c> when the job is still on the bus (spec 50): a report naming
+    /// another model gets <c>(asked &lt;id&gt;)</c> on its <c>model:</c> line.
+    /// </summary>
+    internal static string Render(Envelope report, ReportFields fields, string? askedModel = null)
     {
         var sb = new StringBuilder();
         sb.Append("status: ").Append(EnvelopeWire.ToWire(fields.Status)).Append('\n');
@@ -217,11 +221,20 @@ internal static class ReportCommand
         sb.Append("cost_usd: ").Append(fields.CostUsd is { } cost ? cost.ToString(CultureInfo.InvariantCulture) : None).Append('\n');
         sb.Append("turns: ").Append(Turns(fields)).Append('\n');
         sb.Append("tokens: ").Append(Tokens(fields)).Append('\n');
+        sb.Append("model: ").Append(ModelLine(fields.Model, askedModel)).Append('\n');
+        sb.Append("job type: ").Append(fields.JobType ?? None).Append('\n');
         sb.Append("from: ").Append(report.Header.From.Value).Append('\n');
         sb.Append("finished: ").Append(fields.Finished is { } finished ? finished.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture) : None).Append('\n');
         sb.Append("body:\n").Append(report.BodyText);
         return sb.ToString();
     }
+
+    /// <summary>
+    /// Spec 50: the model that ran (<c>-</c> when the report names none), marked <c>(asked &lt;id&gt;)</c> when the job asked for another
+    /// one (equal, or equal plus one <c>[label]</c> suffix, is a match) — the second line against an older node that ran its default.
+    /// </summary>
+    private static string ModelLine(string? ran, string? asked) =>
+        asked is null || JobModelRules.IsSameModel(asked, ran) ? ran ?? None : $"{ran ?? None} (asked {asked})";
 
     /// <summary>Spec 60: <c>&lt;n&gt; of &lt;max&gt;</c>, <c>&lt;n&gt;</c> without a limit, <c>-</c> without <c>num_turns</c>.</summary>
     private static string Turns(ReportFields fields) => fields.NumTurns switch

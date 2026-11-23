@@ -41,6 +41,12 @@ public sealed record NodePolicy(
     /// refuses every outlook action (as corrected by the owner 2026-11-23: no job is refused for its tools). False when absent.
     /// </summary>
     public bool WorkMail { get; init; }
+
+    /// <summary>
+    /// Gets the models a job may name on this machine (<c>node.json</c> <c>claude.models</c>, spec 50 Q3), compared as text;
+    /// <see langword="null"/> when absent, which allows every id that passed the job field's shape rule.
+    /// </summary>
+    public IReadOnlyList<string>? Models { get; init; }
 }
 
 /// <summary>One entry of <c>node.json</c> <c>commands</c> (spec 59 slice 2).</summary>

@@ -311,14 +311,42 @@ public static class EnvelopeParser
                 return false;
             }
 
-            if (!ReadContinue(kind, worktree == true, out int? maxTurns, out EnvelopeId? continueFrom))
+            if (!ReadContinue(kind, worktree == true, out int? maxTurns, out EnvelopeId? continueFrom)
+                || !ReadModel(kind, out string? model)
+                || !JobType(out string? jobType))
             {
                 return false;
             }
 
-            job = new JobFields(project!, agent, worktree ?? false, allowedTools, reportBack, timeout, deadline, attempt ?? 1, branch, description, mandate, step, baseBranch, deliver, kind, fetchPath, fetchRef, command, maxTurns, continueFrom);
+            job = new JobFields(project!, agent, worktree ?? false, allowedTools, reportBack, timeout, deadline, attempt ?? 1, branch, description, mandate, step, baseBranch, deliver, kind, fetchPath, fetchRef, command, maxTurns, continueFrom, model, jobType);
             return true;
         }
+
+        // Spec 50: `model` is a full Claude Code id (never an alias) on a model job only; whether this node allows it is the node's check.
+        private bool ReadModel(JobKind kind, out string? model)
+        {
+            if (!Text("model", false, out model))
+            {
+                return false;
+            }
+
+            if (model is null)
+            {
+                return true;
+            }
+
+            if (kind != JobKind.Model)
+            {
+                return Reject(FieldReader.Invalid("model", "requires kind: model"));
+            }
+
+            return JobModelRules.IsValidModel(model) || Reject(FieldReader.Invalid("model", JobModelRules.ModelRule));
+        }
+
+        // Spec 50: the informational `job_type` label a job carries and its report copies.
+        private bool JobType(out string? jobType) =>
+            Text("job_type", false, out jobType)
+            && (jobType is null || JobModelRules.IsValidJobType(jobType) || Reject(FieldReader.Invalid("job_type", JobModelRules.JobTypeRule)));
 
         // Spec 59 slice 6: `max_turns` (at least 1) and `continue` (a job id, only with `worktree: true`) belong to a model job alone;
         // the node's ceiling on `max_turns` is the node's own check, reported, not a parse rule.
@@ -629,7 +657,12 @@ public static class EnvelopeParser
                 return Reject(FieldReader.Invalid(fileName is null ? "file_name" : "file_sha256", "file_name and file_sha256 come together"));
             }
 
-            report = new ReportFields(status, reason, started, finished, duration, cost, inputTokens, outputTokens, numTurns, model, filesChanged, diffRef, mandate, step, fileName, fileSha256, maxTurns, cacheWriteTokens, cacheReadTokens);
+            if (!JobType(out string? jobType))
+            {
+                return false;
+            }
+
+            report = new ReportFields(status, reason, started, finished, duration, cost, inputTokens, outputTokens, numTurns, model, filesChanged, diffRef, mandate, step, fileName, fileSha256, maxTurns, cacheWriteTokens, cacheReadTokens, jobType);
             return true;
         }
 

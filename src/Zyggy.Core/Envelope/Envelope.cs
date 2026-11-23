@@ -142,6 +142,10 @@ public sealed class Envelope
         // Spec 59 slice 6: a job's own turn limit and the earlier job it continues; absent keys keep every older job's bytes.
         AddOptional(entries, "max_turns", Invariant(job.MaxTurns));
         AddOptional(entries, "continue", job.Continue?.Value);
+
+        // Spec 50: the model the job must run on and the table row it came from; absent keys keep every older job's bytes.
+        AddOptional(entries, "model", job.Model);
+        AddOptional(entries, "job_type", job.JobType);
         return Create(entries, header, body);
     }
 
@@ -197,6 +201,7 @@ public sealed class Envelope
         AddOptional(entries, "step", report.Step);
         AddOptional(entries, "file_name", report.FileName);
         AddOptional(entries, "file_sha256", report.FileSha256);
+        AddOptional(entries, "job_type", report.JobType);
         return Create(entries, header, body);
     }
 

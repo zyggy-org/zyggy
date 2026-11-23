@@ -21,6 +21,9 @@ public sealed class RunFailureReasonWireTests
 
         // AC-4 (spec 59, Q3): a command job's process exited non-zero.
         { RunFailureReason.CommandFailed, "command_failed" },
+
+        // Spec 50 AC-3/4/5: a job's model is not allowed here, another model started, or Claude Code refused it.
+        { RunFailureReason.ModelUnavailable, "model_unavailable" },
     };
 
     [Theory]
@@ -64,6 +67,6 @@ public sealed class RunFailureReasonWireTests
     public void EveryMember_HasATestRow()
     {
         // Assert
-        Reasons.Count.Should().Be(Enum.GetValues<RunFailureReason>().Length).And.Be(11);
+        Reasons.Count.Should().Be(Enum.GetValues<RunFailureReason>().Length).And.Be(12);
     }
 }

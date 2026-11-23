@@ -44,4 +44,10 @@ public enum RunFailureReason
     /// the exit code and the output's tail, the full output is attached.
     /// </summary>
     CommandFailed,
+
+    /// <summary>
+    /// A job's <c>model</c> did not run (<c>model_unavailable</c>, spec 50), never replaced by another: <c>rejected</c> when the node's
+    /// <c>claude.models</c> does not list it (the model never started); <c>failed</c> when Claude Code started another model or refused it.
+    /// </summary>
+    ModelUnavailable,
 }

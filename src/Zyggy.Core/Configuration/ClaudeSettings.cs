@@ -17,4 +17,10 @@ public sealed record ClaudeSettings(
 
     /// <summary>Gets <see cref="DefaultAllowedTools"/>, or the code default <c>Read, Grep, Glob</c> when absent.</summary>
     public IReadOnlyList<string> EffectiveAllowedTools => DefaultAllowedTools ?? CodeDefaultAllowedTools;
+
+    /// <summary>
+    /// Gets the models a job may name on this machine (<c>claude.models</c>, spec 50): full Claude Code ids, never aliases;
+    /// <see langword="null"/> when absent (any id that passed the job field's shape rule).
+    /// </summary>
+    public IReadOnlyList<string>? Models { get; init; }
 }

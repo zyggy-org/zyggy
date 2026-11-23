@@ -41,6 +41,8 @@ All `schema: 1`, `tenant: acme`, LF line endings unless stated.
 | `job-mandate` | canonical style | `acme/1` | deliverable 18: a job carrying `mandate` (the `mandate` case's id), `step` and `base`, `worktree: true`, no `deliver` (the default `run` is never written); produced like the `item-*` cases |
 | `report-mandate` | canonical style | `acme/1` | deliverable 18: a `done` report on the `job-mandate` case carrying its `mandate` and `step`, so the job still counts under its mandate once its file is gone; produced like the `item-*` cases |
 | `report-usage` | canonical style | `acme/1` | spec 60: a `done` report with `num_turns: 57`, `max_turns: 60` and the four token counts (`input_tokens`, `output_tokens`, `cache_write_tokens`, `cache_read_tokens`); the factory output for the same fields equals this file (AC-4). Produced like the `item-*` cases, the `sed` and `openssl` steps done by a throwaway .NET file-based script (first line and `sig:` line dropped, `HMACSHA256` under `acme/1`), never by `Zyggy.Core` |
+| `job-model` | canonical style | `acme/1` | spec 50: a job with `model: claude-opus-5-5` and `job_type: implementation`, `worktree: true`, project `shop`; the factory output for the same fields equals this file (AC-1). Produced like `report-usage` (the script first reproduced `job-branch` and `report-usage` byte for byte) |
+| `report-model` | canonical style | `acme/1` | spec 50: a `done` report on the `job-model` case with the `model` that ran and the copied `job_type`; the factory output equals this file (AC-6). Produced like `job-model` |
 
 ## How the oracle files are produced — never by the code under test
 

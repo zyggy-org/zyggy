@@ -92,12 +92,14 @@ internal sealed partial class SupervisorWake : IDisposable
     private readonly CancellationTokenSource _stop = new();
     private readonly Dictionary<string, int> _attempts = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _blocked = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string?> _models = new(StringComparer.Ordinal);
     private Task _run = Task.CompletedTask;
     private bool _running;
     private bool _announced;
     private bool _capLogged;
     private readonly SettingsInUse? _settings;
     private string? _unknownLogged;
+    private string? _tableLogged;
     private string? _lastFailure;
     private readonly OwnerNotifier? _owner;
     private readonly string? _decidedFile;
@@ -294,6 +296,23 @@ internal sealed partial class SupervisorWake : IDisposable
             return;
         }
 
+        // Spec 50 (AC-11, Q7): the run's model from the table in Central's own project; an invalid table starts no run, logged once.
+        // A retry reuses exactly the first attempt's model: the table is read once per event, so an edit between attempts changes nothing.
+        SupervisorModel model = _models.TryGetValue(next.Id.Value, out string? first)
+            ? new SupervisorModel(first, null)
+            : SupervisorModel.For(directory, ModelTable.ReadFileOrNull);
+        if (model.Error is { } tableError)
+        {
+            if (!string.Equals(_tableLogged, tableError, StringComparison.Ordinal))
+            {
+                _tableLogged = tableError;
+                LogTableInvalid(tableError);
+            }
+
+            return;
+        }
+
+        _tableLogged = null;
         if (!_budget.TryStart(now))
         {
             if (!_capLogged)
@@ -308,9 +327,10 @@ internal sealed partial class SupervisorWake : IDisposable
         _capLogged = false;
         int attempt = Attempts(next) + 1;
         _attempts[next.Id.Value] = attempt;
+        _models[next.Id.Value] = model.Model;
         _running = true;
         CancellationToken stop = _stop.Token;
-        _run = Task.Run(() => StepAsync(next, directory, attempt, keys, stop), CancellationToken.None);
+        _run = Task.Run(() => StepAsync(next, directory, attempt, keys, model.Model, stop), CancellationToken.None);
     }
 
     // Deliverable 18 ("Stop"): while the owner's marker is in the node folder no run starts; the node-written decisions and the mail go on.
@@ -494,14 +514,14 @@ internal sealed partial class SupervisorWake : IDisposable
     }
 
     // One bounded run on one event; whatever happens it ends in the run line and the next pass.
-    private async Task StepAsync(SupervisorEvent supervisorEvent, string directory, int attempt, SupervisorKeys keys, CancellationToken ct)
+    private async Task StepAsync(SupervisorEvent supervisorEvent, string directory, int attempt, SupervisorKeys keys, string? model, CancellationToken ct)
     {
         string id = supervisorEvent.Id.Value;
         var blocked = 0;
         string outcome;
         try
         {
-            outcome = await RunModelAsync(supervisorEvent, directory, attempt, keys, count => blocked = count, ct).ConfigureAwait(false);
+            outcome = await RunModelAsync(supervisorEvent, directory, attempt, keys, model, count => blocked = count, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -532,7 +552,7 @@ internal sealed partial class SupervisorWake : IDisposable
         }
     }
 
-    private async Task<string> RunModelAsync(SupervisorEvent supervisorEvent, string directory, int attempt, SupervisorKeys keys, Action<int> blocked, CancellationToken ct)
+    private async Task<string> RunModelAsync(SupervisorEvent supervisorEvent, string directory, int attempt, SupervisorKeys keys, string? model, Action<int> blocked, CancellationToken ct)
     {
         string hook = _options.HookExecutable;
         if (!File.Exists(hook) || !await JobRunner.HookRefusesAnEmptyCallAsync(_processes, hook, ct).ConfigureAwait(false))
@@ -573,6 +593,10 @@ internal sealed partial class SupervisorWake : IDisposable
             // Unattended, like a job run: the session hooks do nothing, and `zyggy submit` without --mandate is refused.
             Environment = new Dictionary<string, string>(_options.ModelEnvironment, StringComparer.Ordinal) { ["ZYGGY_HOOKS"] = "off" },
             TranscriptPath = TranscriptPaths.For(_options.NodeDir, _me.Tenant, supervisorEvent.Id),
+
+            // Spec 50 (AC-11): the table's supervisor model, held to it as a job's (a mismatch or a refusal fails the run); null: today's run.
+            Model = model,
+            RequireModel = model is not null,
         };
         LogStarted(supervisorEvent.Id.Value, supervisorEvent.Kind == SupervisorEventKind.Report ? "report" : "question", attempt);
         ModelRunResult result = await _model.RunAsync(request, ct).ConfigureAwait(false);
@@ -595,6 +619,9 @@ internal sealed partial class SupervisorWake : IDisposable
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "supervisor: no run starts, supervision.project {Project} is not a project of this machine")]
     private partial void LogUnknownProject(string project);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "supervisor: no run starts, {Error}")]
+    private partial void LogTableInvalid(string error);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "supervisor: stopped by the owner; no run starts until zyggy supervise start")]
     private partial void LogOwnerStopped();

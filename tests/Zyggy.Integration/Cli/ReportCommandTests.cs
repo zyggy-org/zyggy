@@ -45,6 +45,8 @@ public sealed class ReportCommandTests : IAsyncLifetime
             + "cost_usd: 0.25\n"
             + "turns: 57 of 60\n"
             + "tokens: in 66 out 626 cache write 25000 cache read 49279\n"
+            + "model: claude-opus-5-5\n"
+            + "job type: implementation\n"
             + "from: home-laptop\n"
             + "finished: 2026-11-14T09:30:05Z\n"
             + "body:\n"
@@ -65,7 +67,7 @@ public sealed class ReportCommandTests : IAsyncLifetime
 
         // Assert
         exit.Should().Be(0, console.Stderr);
-        console.Stdout.Should().Be("status: done\nfiles_changed: -\ndiff_ref: -\ncost_usd: -\nturns: -\ntokens: -\nfrom: home-laptop\nfinished: -\nbody:\nREPORT\nsummary: all good\n");
+        console.Stdout.Should().Be("status: done\nfiles_changed: -\ndiff_ref: -\ncost_usd: -\nturns: -\ntokens: -\nmodel: -\njob type: -\nfrom: home-laptop\nfinished: -\nbody:\nREPORT\nsummary: all good\n");
     }
 
     // Spec 60 AC-6: a report with turns but no limit, and only some token counts (an older node's report), prints what it has.
@@ -83,7 +85,7 @@ public sealed class ReportCommandTests : IAsyncLifetime
 
         // Assert
         exit.Should().Be(0, console.Stderr);
-        console.Stdout.Should().Contain("cost_usd: -\nturns: 12\ntokens: in 1200 out 300 cache write - cache read -\nfrom: ");
+        console.Stdout.Should().Contain("cost_usd: -\nturns: 12\ntokens: in 1200 out 300 cache write - cache read -\nmodel: -\njob type: -\nfrom: ");
     }
 
     [Fact]
@@ -210,6 +212,8 @@ public sealed class ReportCommandTests : IAsyncLifetime
         MaxTurns: 60,
         CacheWriteTokens: 25000,
         CacheReadTokens: 49279,
+        Model: "claude-opus-5-5",
+        JobType: "implementation",
         FilesChanged: ["src/a.cs", "src/b.cs"],
         DiffRef: "0123456789abcdef0123456789abcdef01234567");
 
