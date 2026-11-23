@@ -389,6 +389,36 @@ public sealed class NodeConfigurationReaderTests : IDisposable
         result.Field.Should().Be(field);
     }
 
+    // Spec 50 AC-3 (Q3): the optional node-side allow-list of job models; absent means any id that passed the shape rule.
+    [Theory]
+    [InlineData("\"claude\": { \"models\": [\"claude-opus-5-5\", \"claude-fable-5-2[1m]\"] },", "claude-opus-5-5 claude-fable-5-2[1m]")]
+    [InlineData("\"claude\": { \"models\": null },", null)]
+    [InlineData("\"claude\": { \"maxTurns\": 40 },", null)]
+    public void Read_ClaudeModels_TypedOrNullWhenAbsent(string insert, string? expected)
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel(insert));
+
+        // Assert
+        new { result.IsOk, result.Configuration?.Claude.Models }.Should().BeEquivalentTo(new { IsOk = true, Models = expected?.Split(' ') });
+    }
+
+    // Spec 50: an entry an envelope could never carry (alias, wrong shape), or an empty list, is refused naming the key — never ignored.
+    [Theory]
+    [InlineData("\"claude\": { \"models\": \"claude-opus-5-5\" },")]
+    [InlineData("\"claude\": { \"models\": [] },")]
+    [InlineData("\"claude\": { \"models\": [\"opus\"] },")]
+    [InlineData("\"claude\": { \"models\": [\"Claude-Opus-5-5\"] },")]
+    [InlineData("\"claude\": { \"models\": [5] },")]
+    public void Read_ClaudeModelsInvalid_InvalidFieldClaudeModels(string insert)
+    {
+        // Act
+        NodeConfigurationResult result = Read(WithTopLevel(insert));
+
+        // Assert
+        new { result.Error, result.Field }.Should().BeEquivalentTo(new { Error = (NodeConfigurationError?)NodeConfigurationError.InvalidField, Field = "claude.models" });
+    }
+
     [Fact]
     public void Read_MaxBudgetUsdNull_Null()
     {

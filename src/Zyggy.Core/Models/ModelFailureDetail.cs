@@ -50,6 +50,12 @@ public static class ModelFailureDetail
     /// <summary>The session was cancelled from inside the runner, not by the caller.</summary>
     public const string Canceled = "canceled";
 
+    /// <summary>The run had to run on its model, and the stream's <c>system</c> event named another one (spec 50); the run was stopped there.</summary>
+    public const string ModelMismatch = "model_mismatch";
+
+    /// <summary>The run had to run on its model, and Claude Code refused it as unknown or not available to the account (spec 50).</summary>
+    public const string ModelRefused = "model_refused";
+
     /// <summary>Returns the token for a non-zero exit, for example <c>exit_1</c>.</summary>
     /// <param name="code">The exit code.</param>
     /// <returns><c>exit_</c> followed by the code.</returns>

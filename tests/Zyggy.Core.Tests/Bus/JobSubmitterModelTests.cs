@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+
 using Microsoft.Extensions.Time.Testing;
 
 using NSubstitute;
@@ -10,6 +12,8 @@ using Zyggy.Core.Secrets;
 using Zyggy.Core.Tenancy;
 using Zyggy.Core.Tests.Infrastructure;
 using Zyggy.Core.Tests.Registry;
+
+using Model = Zyggy.Core.Envelope.Envelope;
 
 namespace Zyggy.Core.Tests.Bus;
 
@@ -188,6 +192,34 @@ public sealed class JobSubmitterModelTests : IAsyncLifetime
     public void IsSameModel_AskedAndRan_MatchRule(string asked, string? ran, bool expected) =>
         JobModelRules.IsSameModel(asked, ran).Should().Be(expected);
 
+    // Slice 2 verify correction: the post-submit read-back compares model and job_type. The serializer here alters one of them and
+    // re-signs, so the signature still verifies and only the field comparison can refuse it; without that comparison the build passes.
+    [Theory]
+    [InlineData("model")]
+    [InlineData("job_type")]
+    public async Task BuildAsync_ReadBackFindsOtherModelOrJobType_BuildRefusedNamingTheField(string field)
+    {
+        // Arrange
+        JobRequest request = WithModel(Opus) with { JobType = "spec" };
+        JobSubmitter submitter = Submitter(serializer: e => ResignedWith(e, field == "model"
+            ? e.Job! with { Model = "claude-fable-5-1" }
+            : e.Job! with { JobType = "implementation" }));
+
+        // Act
+        BuildResult result = await submitter.BuildAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert
+        result.Should().BeOfType<BuildRefused>().Which.Field.Should().Be(field);
+    }
+
+    private static byte[] ResignedWith(Model signed, JobFields fields)
+    {
+        Model altered = Model.CreateJob(signed.Header, fields, signed.Body).WithSignature(TestKeys.Acme1, signature: null);
+        string sig = EnvelopeParser.SignaturePrefix + Convert.ToHexStringLower(
+            HMACSHA256.HashData(TestKeys.Secret1, EnvelopeSigner.Canonicalize(altered)));
+        return EnvelopeWriter.Serialize(altered.WithSignature(TestKeys.Acme1, sig));
+    }
+
     private void WriteRegistry(IReadOnlyList<string> capabilities)
     {
         var document = RegistryDocumentTests.Central() with { Tenant = Acme, Machine = HomeLaptop, Capabilities = capabilities };
@@ -196,12 +228,14 @@ public sealed class JobSubmitterModelTests : IAsyncLifetime
         File.WriteAllBytes(path, document.Serialize());
     }
 
-    private JobSubmitter Submitter()
+    private JobSubmitter Submitter(Func<Model, byte[]>? serializer = null)
     {
         var git = new GitClient(_processes, new GitClientOptions { Identity = new GitIdentity("zyggy (central)", "central@zyggy.org") }, _clock);
         var signer = new EnvelopeSigner(_store);
         var bus = new BusRepository(git, _provider, new BusIdentity(Acme, Central), _checkout.Root, signer, _clock, () => 0, new RecordingLogger<BusRepository>());
-        return new JobSubmitter(bus, signer, TestKeys.Acme1, _clock, new RecordingLogger<JobSubmitter>());
+        return serializer is null
+            ? new JobSubmitter(bus, signer, TestKeys.Acme1, _clock, new RecordingLogger<JobSubmitter>())
+            : new JobSubmitter(bus, signer, TestKeys.Acme1, _clock, new RecordingLogger<JobSubmitter>()) { Serializer = serializer };
     }
 
     private static JobRequest ModelJob()

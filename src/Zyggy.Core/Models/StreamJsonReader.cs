@@ -55,6 +55,12 @@ internal sealed class StreamJsonReader(int maxBytes)
     /// <summary>Gets the concatenated <c>text</c> blocks of the last assistant message that had any, at most 2,000 characters.</summary>
     public string? LastAssistantText { get; private set; }
 
+    /// <summary>
+    /// Gets the <c>error</c> code of the last assistant event that carried one: Claude Code's own API-error message, for example
+    /// <c>model_not_found</c> when it refuses a model (spec 50 Q5, captured in <c>tools/fake-claude/scenarios/model-refused.jsonl</c>).
+    /// </summary>
+    public string? AssistantError { get; private set; }
+
     public void Accept(string line)
     {
         ArgumentNullException.ThrowIfNull(line);
@@ -106,6 +112,11 @@ internal sealed class StreamJsonReader(int maxBytes)
 
     private void ReadAssistant(JsonElement root)
     {
+        if (root.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.String)
+        {
+            AssistantError = error.GetString();
+        }
+
         if (!root.TryGetProperty("message", out var message) || message.ValueKind != JsonValueKind.Object
             || !message.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array)
         {

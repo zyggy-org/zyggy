@@ -29,6 +29,9 @@ internal sealed partial class ClaudeCodeCliRunner(
     private static readonly string[] AuthMarkers = ["invalid api key", "/login", "not logged in", "authentication", "oauth token", "401"];
     private static readonly string[] RateMarkers = ["usage limit", "rate limit", "rate_limit", "429", "overloaded"];
 
+    // Claude Code's error code for a refused model, as captured on 2026-11-23 (spec 50 Q5).
+    private const string ModelNotFound = "model_not_found";
+
     private static readonly HashSet<string> KnownErrorSubtypes =
     [
         ModelFailureDetail.ErrorMaxTurns,
@@ -104,6 +107,9 @@ internal sealed partial class ClaudeCodeCliRunner(
         TranscriptWriter? transcript,
         CancellationToken cancellationToken)
     {
+        // Spec 50 (AC-4): a run held to its model is stopped at the first system event that names another one — before any turn.
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var mismatch = false;
         var spec = new ProcessSpec(path, ClaudeArguments.Build(request), request.WorkingDirectory)
         {
             Environment = environment,
@@ -113,6 +119,12 @@ internal sealed partial class ClaudeCodeCliRunner(
             {
                 transcript?.Write(line);
                 reader.Accept(line);
+                if (!mismatch && request.RequireModel && request.Model is { } asked && reader.Model is { } ran && !Envelope.JobModelRules.IsSameModel(asked, ran))
+                {
+                    mismatch = true;
+                    // The flag is set at once; the process runner's kill runs off this output thread.
+                    _ = stop.CancelAsync();
+                }
             },
             MaxStdoutBytes = request.MaxCaptureBytes,
         };
@@ -121,11 +133,15 @@ internal sealed partial class ClaudeCodeCliRunner(
         ProcessResult process;
         try
         {
-            process = await processes.RunAsync(spec, cancellationToken).ConfigureAwait(false);
+            process = await processes.RunAsync(spec, stop.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (OperationCanceledException) when (mismatch)
+        {
+            return Failed(RunFailureReason.ModelUnavailable, ModelFailureDetail.ModelMismatch, reader, clock.GetElapsedTime(started), null);
         }
         catch (OperationCanceledException)
         {
@@ -138,7 +154,10 @@ internal sealed partial class ClaudeCodeCliRunner(
             return Failed(RunFailureReason.ClaudeError, ModelFailureDetail.StartFailed, reader, clock.GetElapsedTime(started), null);
         }
 
-        return Classify(request, path, process, reader);
+        // The process may have ended on its own before the kill landed: the mismatch still decides.
+        return mismatch
+            ? Failed(RunFailureReason.ModelUnavailable, ModelFailureDetail.ModelMismatch, reader, process.Duration, process.ExitCode)
+            : Classify(request, path, process, reader);
     }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "transcript not written: {Detail}")]
@@ -158,6 +177,13 @@ internal sealed partial class ClaudeCodeCliRunner(
         if (process.TimedOut)
         {
             return Failed(RunFailureReason.Timeout, ModelFailureDetail.Timeout, reader, process.Duration, process.ExitCode);
+        }
+
+        // Spec 50 (AC-5, Q5): Claude Code refuses a model it does not know or the account cannot use with an assistant API-error event
+        // `error: model_not_found` (404) and an `is_error` result, exit 1. For a run held to its model that is model_unavailable.
+        if (request.RequireModel && string.Equals(reader.AssistantError, ModelNotFound, StringComparison.Ordinal))
+        {
+            return Failed(RunFailureReason.ModelUnavailable, ModelFailureDetail.ModelRefused, reader, process.Duration, process.ExitCode);
         }
 
         // Over the capture cap is not a failure (spec 06 ex-Q4): the reader parsed the whole stream; the cap bounds retention only.

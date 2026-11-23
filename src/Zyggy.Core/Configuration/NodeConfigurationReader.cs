@@ -911,7 +911,21 @@ public static partial class NodeConfigurationReader
             budget = parsed;
         }
 
-        claude = new ClaudeSettings(path, maxTurns, timeout, tools, budget);
+        // Spec 50 (Q3): the node-side allow-list of job models; every entry must be an id a job could carry.
+        IReadOnlyList<string>? models = null;
+        if (section.TryGetProperty("models", out JsonElement modelsElement) && modelsElement.ValueKind != JsonValueKind.Null)
+        {
+            if (modelsElement.ValueKind != JsonValueKind.Array || modelsElement.GetArrayLength() == 0
+                || modelsElement.EnumerateArray().Any(m => m.ValueKind != JsonValueKind.String || !Envelope.JobModelRules.IsValidModel(m.GetString()!)))
+            {
+                failure = Invalid("claude.models", "must be a non-empty array of full Claude Code model ids (never an alias)");
+                return false;
+            }
+
+            models = [.. modelsElement.EnumerateArray().Select(m => m.GetString()!)];
+        }
+
+        claude = new ClaudeSettings(path, maxTurns, timeout, tools, budget) { Models = models };
         return true;
     }
 

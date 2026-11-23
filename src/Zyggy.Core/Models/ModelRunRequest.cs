@@ -38,6 +38,12 @@ public sealed record ModelRunRequest(string Prompt, string WorkingDirectory, Tim
     /// <summary>The model alias or name (<c>--model</c>); <see langword="null"/> keeps the default.</summary>
     public string? Model { get; init; }
 
+    /// <summary>
+    /// Whether the session must run on <see cref="Model"/> and nothing else (spec 50, a job that names its model): a session that starts
+    /// another model is stopped at once, and a refused model is <see cref="Runs.RunFailureReason.ModelUnavailable"/>, never a fallback.
+    /// </summary>
+    public bool RequireModel { get; init; }
+
     /// <summary>What the session is cut off from (MCP servers, hooks, auto memory, slash commands).</summary>
     public ModelSessionIsolation Isolation { get; init; } = ModelSessionIsolation.None;
 
