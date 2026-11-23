@@ -90,13 +90,6 @@ public enum MandateLimit
     /// Central 2026-11-21): a mandate job continues only a branch of its own mandate's step.
     /// </summary>
     Continue,
-
-    /// <summary>
-    /// The target is a work machine and the mandate's <c>allowed_tools</c> explicitly grant the outlook verbs beside a rule beyond the
-    /// read verbs and file reads (spec 58 Q23, Central 2026-11-22, narrowed by the owner 2026-11-23): the wire string is the runner's
-    /// reason <c>work_mail_code_mix</c>.
-    /// </summary>
-    WorkMailCodeMix,
 }
 
 /// <summary>A job under a mandate that sits in a machine's <c>jobs/</c> or <c>jobs/claimed/</c>, or was reported.</summary>
@@ -251,7 +244,6 @@ public static class MandateRules
         MandateLimit.Capability => "capability",
         MandateLimit.Worktree => "worktree",
         MandateLimit.Continue => "continue",
-        MandateLimit.WorkMailCodeMix => "work_mail_code_mix",
         _ => throw new ArgumentOutOfRangeException(nameof(limit)),
     };
 
@@ -300,13 +292,6 @@ public static class MandateRules
         if (ledger.Reports.Count > 0 && ledger.Reports[^1] is { UsageLimit: true } last && now - last.Created < UsageLimitBackOff)
         {
             return Refused(MandateLimit.UsageLimit, "the newest report is a usage limit of less than 60 minutes ago");
-        }
-
-        // Spec 58 Q23 (Central, 2026-11-22; owner 2026-11-23): a work machine's mandate whose ceiling grants the outlook verbs beside
-        // code is refused, session tasks too; a code-only ceiling is not.
-        if (submit.TargetIsWorkMachine && Outlook.WorkMailToolMix.Refusal(fields.AllowedTools) is { } mix)
-        {
-            return Refused(MandateLimit.WorkMailCodeMix, mix);
         }
 
         if (submit.TargetIsWorkMachine && !submit.Session)

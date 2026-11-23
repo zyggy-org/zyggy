@@ -208,10 +208,10 @@ public sealed class WorkMailBriefJobTests : IAsyncLifetime
             .Should().Be((ReportStatus.Done, (string?)null, 5, string.Empty, "business:False register:False term:False"));
     }
 
-    // Decision B (2026-11-22), narrowed 2026-11-23: on the work laptop a mail job (its tools name zyggy outlook) that can also run code
-    // is refused at intake; the model never starts and nothing of the mailbox is read.
+    // AC-17 (owner correction 2026-11-23): on the work laptop a mail job (its tools name zyggy outlook) that also holds a code rule is not
+    // refused; it runs with its read verbs only (the code rule dropped from its tools) and its brief is done.
     [Fact]
-    public async Task MixedJob_OnTheWorkLaptop_RejectedWorkMailCodeMixModelNeverStarted()
+    public async Task MixedJob_OnTheWorkLaptop_RunsWithItsReadVerbsOnly()
     {
         // Arrange
         var ct = TestContext.Current.CancellationToken;
@@ -221,8 +221,7 @@ public sealed class WorkMailBriefJobTests : IAsyncLifetime
         Model report = await RunJobAsync(model, ct, ["Bash(zyggy outlook *)", "Bash(python *)"]);
 
         // Assert
-        (report.Report!.Status, report.Report.Reason, report.BodyText, model.Started)
-            .Should().Be((ReportStatus.Rejected, "work_mail_code_mix", "work_mail_code_mix: allowed_tools can read work mail (Bash(zyggy outlook *)) and run code (Bash(python *)) on a work machine\n", false));
+        (report.Report!.Status, report.Report.Reason, model.Started).Should().Be((ReportStatus.Done, (string?)null, true));
     }
 
     private Task<Model> RunJobAsync(BriefModel model, CancellationToken ct, string[]? allowedTools = null) => RunJobAsync(model.Register, ct, allowedTools);

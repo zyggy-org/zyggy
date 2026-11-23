@@ -44,12 +44,4 @@ public enum RunFailureReason
     /// the exit code and the output's tail, the full output is attached.
     /// </summary>
     CommandFailed,
-
-    /// <summary>
-    /// A work machine's <b>mail job</b> — its <c>allowed_tools</c> explicitly name <c>zyggy outlook</c> — that also holds a rule beyond
-    /// the outlook read verbs and <c>Read</c>/<c>Grep</c>/<c>Glob</c> (<c>work_mail_code_mix</c>, spec 58 decision B as corrected by the
-    /// owner 2026-11-23). Sent with <c>status: rejected</c> at intake; the model never ran. Generic rules alone (<c>Bash(src/*)</c>,
-    /// <c>Bash(dotnet *)</c>, bare <c>Bash</c>, <c>Edit</c>) never produce it.
-    /// </summary>
-    WorkMailCodeMix,
 }

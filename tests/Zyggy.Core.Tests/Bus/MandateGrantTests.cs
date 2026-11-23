@@ -23,7 +23,6 @@ public sealed class MandateGrantTests : IAsyncLifetime
 
     private static readonly MachineName HomeLaptop = MachineName.Parse("home-laptop");
 
-    private static readonly MachineName WorkLaptop = MachineName.Parse("work-laptop");
 
     private static readonly DateTimeOffset T = new(2026, 11, 16, 10, 0, 0, TimeSpan.Zero);
 
@@ -274,36 +273,19 @@ public sealed class MandateGrantTests : IAsyncLifetime
         new { Published = result is AskDecidePublished, Asked = _processes.CallsOf("ls-remote").Count() }.Should().BeEquivalentTo(new { Published = true, Asked = 0 });
     }
 
-    // Q23 (Central, 2026-11-22), narrowed by the owner 2026-11-23: a mandate for a work machine whose allowed_tools explicitly grant the
-    // outlook verbs beside a code-running tool is refused at grant, with the runner's reason, before anything is signed or written.
-    [Theory]
-    [InlineData("Bash(zyggy outlook *)", "Bash(python *)")]
-    [InlineData("Bash(zyggy outlook list *)", "Edit")]
-    public async Task GrantAsync_WorkMachineCeilingMixes_RefusedWorkMailCodeMix_NothingWritten(string mail, string code)
-    {
-        // Act
-        AskDecideResult result = await Granter(Central, workMachines: [WorkLaptop])
-            .GrantAsync(WorkLaptop, Fields() with { AllowedTools = ["Read", mail, code] }, TestContext.Current.CancellationToken);
-
-        // Assert
-        new { Result = result, Calls = _processes.Calls.Count, Files = _checkout.FilesUnder(BusPaths.Mandates(Acme)).Count }.Should().BeEquivalentTo(new
-        {
-            Result = new AskDecideRefused("work_mail_code_mix", "allowed_tools can read work mail (" + mail + ") and run code (" + code + ") on a work machine"),
-            Calls = 0,
-            Files = 0,
-        });
-    }
-
-    // Q23: the same ceiling for a machine that is not a work machine, and a work machine's mandate that reads no mail, are granted.
+    // AC-18 (owner correction 2026-11-23): no mandate is refused for mixing work mail and code, on a work machine or elsewhere; the
+    // work machine's node runs a mail job with its read rules only.
     [Theory]
     [InlineData("home-laptop", "Bash(zyggy outlook *)")]
+    [InlineData("work-laptop", "Bash(zyggy outlook *)")]
+    [InlineData("work-laptop", "Bash(zyggy outlook list *)")]
     [InlineData("work-laptop", "Edit")]
     [InlineData("work-laptop", "Bash")]
     [InlineData("work-laptop", "mcp__github")]
-    public async Task GrantAsync_NoWorkMailMixOnAWorkMachine_Granted(string to, string tool)
+    public async Task GrantAsync_MailAndCodeRules_Granted(string to, string tool)
     {
         // Act
-        AskDecideResult result = await Granter(Central, workMachines: [WorkLaptop])
+        AskDecideResult result = await Granter(Central)
             .GrantAsync(MachineName.Parse(to), Fields() with { AllowedTools = ["Read", tool, "Bash(python *)"] }, TestContext.Current.CancellationToken);
 
         // Assert
@@ -312,7 +294,7 @@ public sealed class MandateGrantTests : IAsyncLifetime
 
     private string? LocalCalizr(string project) => project == "calizr" ? Path.Combine(_checkout.Root, "calizr") : null;
 
-    private MandateGranter Granter(MachineName me, Func<string, string?>? localProject = null, IReadOnlyList<MachineName>? workMachines = null)
+    private MandateGranter Granter(MachineName me, Func<string, string?>? localProject = null)
     {
         BusRepository bus = Repository(me);
         var signer = new EnvelopeSigner(_store);
@@ -324,7 +306,6 @@ public sealed class MandateGrantTests : IAsyncLifetime
             TestKeys.Acme1,
             _clock,
             new RecordingLogger<MandateGranter>(),
-            localProject is null ? null : new OriginBranchCheck(git, (name, _) => localProject(name)),
-            workMachines ?? []);
+            localProject is null ? null : new OriginBranchCheck(git, (name, _) => localProject(name)));
     }
 }

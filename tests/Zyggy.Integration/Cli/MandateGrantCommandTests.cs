@@ -106,13 +106,12 @@ public sealed class MandateGrantCommandTests : IAsyncLifetime
         (await _harness.CommitCountOnMainAsync(ct)).Should().Be(commits);
     }
 
-    // Spec 58 Q23 (Central, 2026-11-22): Central's node.json lists home-laptop in supervision.workMachines; a mandate for it whose
-    // allowed_tools explicitly grant the outlook verbs beside a code-running tool (owner correction 2026-11-23: only an explicit
-    // zyggy outlook rule makes a mail job) is refused at grant with the runner's reason, nothing written.
+    // AC-18 (owner correction 2026-11-23): Central's node.json lists home-laptop in supervision.workMachines; a mandate for it whose
+    // allowed_tools grant the outlook verbs beside a code-running tool is granted (the node runs such a mail job with its read rules only).
     [Theory]
     [InlineData("Read,Bash(zyggy outlook *),Bash(python *)")]
     [InlineData("Read,Bash(zyggy outlook list *),Edit")]
-    public async Task Grant_WorkMachineCeilingMixes_ExitThreeWorkMailCodeMix_NothingWritten(string tools)
+    public async Task Grant_WorkMachineMailAndCodeRules_Granted(string tools)
     {
         // Arrange
         var ct = TestContext.Current.CancellationToken;
@@ -134,12 +133,7 @@ public sealed class MandateGrantCommandTests : IAsyncLifetime
         var (exit, console) = await GrantRunAsync(["--allowed-tools", tools], nodeJson: nodeJson, ct: ct);
 
         // Assert
-        new { Exit = exit, console.Stderr, Commits = await _harness.CommitCountOnMainAsync(ct) }.Should().BeEquivalentTo(new
-        {
-            Exit = 3,
-            Stderr = "zyggy: refused: work_mail_code_mix: allowed_tools can read work mail (" + tools.Split(',')[1] + ") and run code (" + tools.Split(',')[2] + ") on a work machine\n",
-            Commits = commits,
-        });
+        new { Exit = exit, Committed = await _harness.CommitCountOnMainAsync(ct) > commits }.Should().BeEquivalentTo(new { Exit = 0, Committed = true }, console.Stderr);
     }
 
     [Fact]

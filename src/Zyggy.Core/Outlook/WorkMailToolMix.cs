@@ -4,9 +4,9 @@ namespace Zyggy.Core.Outlook;
 
 /// <summary>
 /// Spec 58 decision B as corrected by the owner (2026-11-23): enabling Outlook on a work machine (<c>outlook.enabled</c>) must not affect
-/// any other work there. Only a <b>mail job</b> is judged at intake: it may hold the outlook read verbs and file reads, nothing else.
-/// Every other job keeps its tools; the separation for it is kept at run time (the job hook refuses any <c>zyggy outlook</c> call, and
-/// the runner gives it no work mail marker, so the read tools refuse it).
+/// any other work there, and no job is refused for its rules. A <b>mail job</b> runs with the outlook read verbs and file reads only
+/// (<see cref="MailRules"/>); every other job keeps its tools, and the job hook refuses its <c>zyggy outlook</c> calls (it gets no work
+/// mail marker either, so the read tools refuse it).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -22,7 +22,7 @@ namespace Zyggy.Core.Outlook;
 /// <c>zyggy</c> or <c>zyggy.exe</c> by name. A wildcard may stand for the verb (<c>zyggy outlook *</c>, Central's brief job) only where it
 /// can still start a read verb: <c>zyggy</c> refuses every send and move from a job (slice 7), so <c>zyggy outlook *</c> reads only.
 /// Anything else beside it (a code runner, bare <c>Bash</c>, <c>Write</c>/<c>Edit</c>, an MCP server, <c>Task</c>, <c>WebFetch</c>, a
-/// <c>PowerShell</c> rule) is refused (<c>work_mail_code_mix</c>). That a code job could drive Outlook over COM from code it wrote is the
+/// <c>PowerShell</c> rule) is dropped from the run. That a code job could drive Outlook over COM from code it wrote is the
 /// accepted risk; the mail side flags mails that ask for code to be run (<see cref="WorkMailActionRequests"/>).
 /// </para>
 /// </remarks>
@@ -35,29 +35,16 @@ internal static partial class WorkMailToolMix
 
     private static readonly string[] Programs = ["zyggy", "zyggy.exe"];
 
-    /// <summary>Returns why a work machine refuses the job's rules, or <see langword="null"/> when they may run there.</summary>
-    /// <param name="rules">The job's effective <c>allowed_tools</c>.</param>
-    /// <returns>
-    /// <see langword="null"/> for every job that is not a mail job; for a mail job, the refusal detail naming its outlook rule and the
-    /// first rule that does not belong beside it, or <see langword="null"/> when it holds only read verbs and file reads.
-    /// </returns>
-    public static string? Refusal(IReadOnlyList<string> rules)
+    /// <summary>
+    /// The rules a mail job keeps on a work machine: its <c>Read</c>, <c>Grep</c>, <c>Glob</c> rules and its <c>Bash</c> rules for the
+    /// outlook read verbs, in their order. Every other rule is dropped, so the job's tools and its hook never grant it; nothing is refused.
+    /// </summary>
+    /// <param name="rules">The mail job's effective <c>allowed_tools</c>.</param>
+    /// <returns>The rules it keeps; empty when none is a read rule.</returns>
+    public static IReadOnlyList<string> MailRules(IReadOnlyList<string> rules)
     {
         ArgumentNullException.ThrowIfNull(rules);
-        string? reads = rules.FirstOrDefault(NamesOutlook);
-        if (reads is null)
-        {
-            return null;
-        }
-
-        string[] others = [.. rules.Where(r => !MailOnly(r))];
-        if (others.Length == 0)
-        {
-            return null;
-        }
-
-        string code = others.FirstOrDefault(r => !string.Equals(r, reads, StringComparison.Ordinal)) ?? others[0];
-        return $"allowed_tools can read work mail ({reads}) and run code ({code}) on a work machine";
+        return [.. rules.Where(MailOnly)];
     }
 
     /// <summary>Whether the rules make the job a mail job: one of them explicitly grants the <c>zyggy outlook</c> verbs.</summary>
