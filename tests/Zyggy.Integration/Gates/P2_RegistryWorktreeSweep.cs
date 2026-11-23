@@ -331,6 +331,7 @@ public sealed partial class P2_RegistryWorktreeSweep : IAsyncLifetime
         SecretSweep.AssertAbsent(_harness.Hooks.Calls.SelectMany(SecretSweep.TextsOf));
     }
 
-    [GeneratedRegex(@"^submitted (?<id>[0-9A-HJKMNP-TV-Z]{26}) to home-laptop \(tenants/acme/nodes/home-laptop/jobs/\k<id>\.md\)\n\z")]
+    // Spec 50 slice 6 (AC-9): a submit without --type or --model is followed by the line `model: node default`.
+    [GeneratedRegex(@"^submitted (?<id>[0-9A-HJKMNP-TV-Z]{26}) to home-laptop \(tenants/acme/nodes/home-laptop/jobs/\k<id>\.md\)\nmodel: node default\n\z")]
     private static partial Regex SubmittedLine();
 }

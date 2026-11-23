@@ -275,6 +275,61 @@ public sealed class MandateGrantCommandTests : IAsyncLifetime
         (await _harness.Bus.LastCommitSubjectAsync(ct)).Should().StartWith("acme job ").And.EndWith(" central→home-laptop");
     }
 
+    // Spec 50 slice 6, AC-10: zyggy submit --mandate reads Central's table; the kind's row is the job's model, job_type the kind.
+    [Fact]
+    public async Task Submit_TableHasARowForTheKind_JobCarriesItsModel()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await SeedRegistryAsync([RegistryDocument.SupervisionCapability, RegistryDocument.ModelCapability], ct);
+        string id = await GrantAsync(ct);
+
+        // Act
+        var (exit, console) = await SubmitRunAsync(id, "slice 1", env: Table("""{ "models": ["claude-opus-5-5"], "jobTypes": { "build": "claude-opus-5-5" } }"""), ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        Model job = await _harness.ParseOnMainAsync((await FilesOnMainAsync(LaptopJobs, ct)).Should().ContainSingle().Subject, ct);
+        new { job.Job!.Model, job.Job.JobType, Line = console.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Last() }
+            .Should().BeEquivalentTo(new { Model = "claude-opus-5-5", JobType = "build", Line = "model: claude-opus-5-5 (job type build)" });
+    }
+
+    // Spec 50 slice 6, AC-10 with AC-7: the kind's model to a node without the capability model is refused (exit 3), nothing written.
+    [Fact]
+    public async Task Submit_TableRowToANodeWithoutCapabilityModel_ExitThreeNothingWritten()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        string id = await GrantAsync(ct);
+        int commits = await _harness.CommitCountOnMainAsync(ct);
+
+        // Act
+        var (exit, console) = await SubmitRunAsync(id, "slice 1", env: Table("""{ "models": ["claude-opus-5-5"], "jobTypes": { "build": "claude-opus-5-5" } }"""), ct: ct);
+
+        // Assert
+        new { Exit = exit, Named = console.Stderr.Contains("no capability model", StringComparison.Ordinal), Commits = await _harness.CommitCountOnMainAsync(ct) }
+            .Should().BeEquivalentTo(new { Exit = 3, Named = true, Commits = commits }, console.Stderr);
+    }
+
+    // Spec 50 slice 6, AC-10: --type or --model with --mandate, or an invalid table, is a usage error (exit 2), nothing written.
+    [Theory]
+    [InlineData(new[] { "--type", "build" }, null)]
+    [InlineData(new[] { "--model", "claude-opus-5-5" }, null)]
+    [InlineData(new string[0], """{ "models": ["claude-opus-5-5"], "jobTypes": { "build": "opus" } }""")]
+    public async Task Submit_TypeOrModelWithMandateOrInvalidTable_ExitTwoNothingWritten(string[] extra, string? table)
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        string id = await GrantAsync(ct);
+        int commits = await _harness.CommitCountOnMainAsync(ct);
+
+        // Act
+        var (exit, console) = await SubmitRunAsync(id, "slice 1", extra, env: table is null ? null : Table(table), ct: ct);
+
+        // Assert
+        new { Exit = exit, Commits = await _harness.CommitCountOnMainAsync(ct) }.Should().BeEquivalentTo(new { Exit = 2, Commits = commits }, console.Stderr);
+    }
+
     [Fact]
     public async Task Submit_FourthJobWithMaxJobsThree_RefusedMaxJobs_ThirdPassed()
     {
@@ -352,6 +407,21 @@ public sealed class MandateGrantCommandTests : IAsyncLifetime
     }
 
     private static string IdFrom(string stdout) => stdout.Split(' ', 3)[1];
+
+    // Central's model table in a scratch instance folder, given to the verb as ZYGGY_INSTANCE_DIR.
+    private Dictionary<string, string?> Table(string json)
+    {
+        string folder = _harness.Scratch.File("instance");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "models.json"), json);
+        return new() { ["ZYGGY_INSTANCE_DIR"] = folder };
+    }
+
+    private Task SeedRegistryAsync(IReadOnlyList<string> capabilities, CancellationToken ct)
+    {
+        var registry = new RegistryDocument(CliHarness.Acme, CliHarness.HomeLaptop, RegistryOs.Windows, T.AddMinutes(-1), null, null, []) { Capabilities = capabilities };
+        return _harness.Bus.SeedRawFileAsync(BusPaths.Registry(CliHarness.Acme, CliHarness.HomeLaptop), registry.Serialize(), "seed: home-laptop registry with model", ct);
+    }
 
     private void Clock(IServiceCollection services) => services.AddSingleton<TimeProvider>(_clock);
 

@@ -29,6 +29,8 @@ public sealed class JobModelWireTests : IAsyncLifetime
 
     private const string Opus = "claude-opus-5-5";
 
+    private static readonly string[] NodeDefaultLine = ["model: node default"];
+
     private CliHarness _harness = null!;
 
     private ScratchProject _project = null!;
@@ -59,7 +61,7 @@ public sealed class JobModelWireTests : IAsyncLifetime
         await PullSenderAsync(ct);
 
         // Act
-        var (exit, console) = await _harness.RunAsync(["submit", "--to", "home-laptop", "--project", "shop", "--model", Opus, "Write the spec.\n"], _harness.CentralNodeJson, ct: ct);
+        var (exit, console) = await _harness.RunAsync(["submit", "--to", "home-laptop", "--project", "shop", "--model", Opus, "Write the spec.\n"], _harness.CentralNodeJson, extraEnvironment: Table(), ct: ct);
 
         // Assert
         exit.Should().Be(0, console.Stderr);
@@ -80,7 +82,7 @@ public sealed class JobModelWireTests : IAsyncLifetime
         int before = await _harness.CommitCountOnMainAsync(ct);
 
         // Act
-        var (exit, console) = await _harness.RunAsync(["submit", "--to", "work-laptop", "--project", "shop", "--model", Opus, "Write the spec.\n"], _harness.CentralNodeJson, ct: ct);
+        var (exit, console) = await _harness.RunAsync(["submit", "--to", "work-laptop", "--project", "shop", "--model", Opus, "Write the spec.\n"], _harness.CentralNodeJson, extraEnvironment: Table(), ct: ct);
 
         // Assert
         new { Exit = exit, Commits = await _harness.CommitCountOnMainAsync(ct), console.Stderr, console.Stdout }.Should().BeEquivalentTo(new
@@ -92,7 +94,7 @@ public sealed class JobModelWireTests : IAsyncLifetime
         });
     }
 
-    // AC-7: without --model the same older target gets the job as today: one confirmation line, no model field.
+    // AC-7: without --model the same older target gets the job as today, no model field; slice 6 (AC-9) adds the line `model: node default`.
     [Fact]
     public async Task SubmitWithoutModel_TargetRegistryWithoutModelCapability_SubmittedAsToday()
     {
@@ -107,8 +109,8 @@ public sealed class JobModelWireTests : IAsyncLifetime
         exit.Should().Be(0, console.Stderr);
         string[] lines = console.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries);
         Model job = await _harness.ParseOnMainAsync(lines[0].Split('(', ')')[1], ct);
-        new { Lines = lines.Length, job.Job!.Model, job.Job.JobType, ModelKey = job.FrontMatter.Entries.ContainsKey("model") }
-            .Should().BeEquivalentTo(new { Lines = 1, Model = (string?)null, JobType = (string?)null, ModelKey = false });
+        new { Lines = lines.Skip(1).ToArray(), job.Job!.Model, job.Job.JobType, ModelKey = job.FrontMatter.Entries.ContainsKey("model") }
+            .Should().BeEquivalentTo(new { Lines = NodeDefaultLine, Model = (string?)null, JobType = (string?)null, ModelKey = false });
     }
 
     // AC-1 / AC-9 edge cases on the verb: an alias, a fetch or command job, or a mandate with --model is a usage error; nothing written.
@@ -149,7 +151,7 @@ public sealed class JobModelWireTests : IAsyncLifetime
         await using ServiceProvider services = Node();
         BusListener listener = services.GetRequiredService<BusListener>();
         (await listener.StartAsync(ct)).Should().Be(BusStartupResult.Clean);
-        var (submitExit, submit) = await _harness.RunAsync(["submit", "--to", "home-laptop", "--project", _project.Path, "--model", Fable, "Read README.md and finish with a REPORT section.\n"], _harness.CentralNodeJson, ct: ct);
+        var (submitExit, submit) = await _harness.RunAsync(["submit", "--to", "home-laptop", "--project", _project.Path, "--model", Fable, "Read README.md and finish with a REPORT section.\n"], _harness.CentralNodeJson, extraEnvironment: Table(), ct: ct);
         submitExit.Should().Be(0, submit.Stderr);
         string id = submit.Stdout.Split(' ')[1];
 
@@ -274,6 +276,15 @@ public sealed class JobModelWireTests : IAsyncLifetime
     {
         var document = new RegistryDocument(CliHarness.Acme, machine, RegistryOsExtensions.Current(), null, null, null, []) { Capabilities = capabilities };
         return _harness.Bus.SeedRawFileAsync(BusPaths.Registry(CliHarness.Acme, machine), document.Serialize(), "acme registry " + machine.Value, ct);
+    }
+
+    // Slice 6: --model needs an allow-list; Central's table lists the two ids these tests submit.
+    private Dictionary<string, string?> Table()
+    {
+        string folder = _harness.Scratch.File("instance");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "models.json"), $$"""{ "models": ["{{Opus}}", "{{Fable}}"] }""");
+        return new() { ["ZYGGY_INSTANCE_DIR"] = folder };
     }
 
     private Task<string> PullSenderAsync(CancellationToken ct) => _harness.Bus.RunGitAsync(_harness.Bus.SenderDir, ["pull", "--rebase", "origin", "main"], ct);
