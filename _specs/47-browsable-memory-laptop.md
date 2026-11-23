@@ -2,6 +2,7 @@
 
 ## Status
 
+- 2026-11-23: **superseded by `_specs/47-browsable-memory.md`** (rewritten in job 01M84KQAHZ88XGY20HQQQBRKBY with the owner's brief of 2026-11-23); this draft is kept as history until 47 ships.
 - 2026-11-17: spec written in an unattended job from the owner's brief (no interview held; every gap is under Open questions). Not approved. The `spec-critic` pass has not run yet (the job could not start agents); it runs before the owner reads this.
 - 2026-11-17: the 14 open questions decided (list under "Decided 2026-11-17": all 14 by Zyggy on the owner's standing delegation, each as recommended) and written into Behavior, Configuration, Decisions and the acceptance criteria; AC-21..AC-24 added; build plan `_plans/47-browsable-memory-laptop.md` written. Not approved; `spec-critic` still to run.
 - 2026-11-17: owner decision, no plan file: the slice order, what each slice proves, its gate and the build assumptions moved from `_plans/47-browsable-memory-laptop.md` into Slices; the plan file deleted.
