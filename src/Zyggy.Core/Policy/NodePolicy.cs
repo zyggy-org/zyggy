@@ -37,7 +37,8 @@ public sealed record NodePolicy(
 
     /// <summary>
     /// Gets whether this node is a work machine that reads work mail (<c>node.json</c> <c>outlook.enabled</c>, spec 58 decision B): its
-    /// jobs may not both read work mail and run code, and its job hook refuses every outlook action. False when absent.
+    /// mail jobs run with the outlook read verbs and file reads only, other jobs may not call <c>zyggy outlook</c>, and its job hook
+    /// refuses every outlook action (as corrected by the owner 2026-11-23: no job is refused for its tools). False when absent.
     /// </summary>
     public bool WorkMail { get; init; }
 }

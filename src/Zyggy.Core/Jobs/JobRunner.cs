@@ -134,19 +134,28 @@ public sealed partial class JobRunner
             return await CommandAsync(job, fields, ((PreFlightResult.Ok)preFlight).ProjectPath, policy, started, ct).ConfigureAwait(false);
         }
 
-        // Spec 58 decision B as corrected by the owner (2026-11-23): Outlook on a work machine changes nothing for other work. Only a mail
-        // job (its rules name zyggy outlook) that holds more than the read verbs and file reads is refused, before the hook, the lock and
-        // the model, on the rules the hook would get (the job's, else the node's default, else the code default). Every other job runs
-        // as before; the hook refuses its zyggy outlook calls and it gets no work mail marker.
+        // Spec 58 decision B as corrected by the owner (2026-11-23): Outlook on a work machine changes nothing for other work and refuses
+        // no job for its rules. A mail job (its rules name zyggy outlook) runs there with its file reads and outlook read verbs only: every
+        // other rule is dropped from its tools and its hook. Every other job runs as before; the hook refuses its zyggy outlook calls and
+        // it gets no work mail marker.
         var allowedTools = fields.AllowedTools is { Count: > 0 } tools ? tools : policy.DefaultAllowedTools;
         IReadOnlyList<string> hookRules = allowedTools.Count > 0 ? allowedTools : CodeDefaultAllowedTools;
-        var mailJob = Outlook.WorkMailToolMix.IsMailJob(hookRules);
-        if (policy.WorkMail && Outlook.WorkMailToolMix.Refusal(hookRules) is { } mix)
+        if (policy.WorkMail && Outlook.WorkMailToolMix.IsMailJob(hookRules))
         {
-            var workMailCodeMix = RunFailureReasonWire.ToWire(RunFailureReason.WorkMailCodeMix);
-            LogWorkMailCodeMix(id);
-            return Reply(ReportStatus.Rejected, workMailCodeMix, $"{workMailCodeMix}: {mix}\n", started);
+            // None kept (e.g. only a send rule): the file reads, never an empty list that would fall back to wider tools.
+            var mailRules = Outlook.WorkMailToolMix.MailRules(hookRules);
+            if (mailRules.Count < hookRules.Count)
+            {
+                LogMailJobNarrowed(id, hookRules.Count - mailRules.Count);
+            }
+
+            IReadOnlyList<string> kept = mailRules.Count > 0 ? mailRules : CodeDefaultAllowedTools;
+
+            hookRules = kept;
+            allowedTools = kept;
         }
+
+        var mailJob = Outlook.WorkMailToolMix.IsMailJob(hookRules);
 
         // Spec 15: a hook that cannot start lets every tool call through (Claude Code treats it as a non-blocking error), so a job
         // whose hook binary is missing, or does not refuse an empty call, never starts — checked before the lock and the worktree, so
@@ -680,8 +689,8 @@ public sealed partial class JobRunner
     [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: rejected: branch_refused ({Rule})")]
     private partial void LogBranchRefused(string id, string rule);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: rejected: work_mail_code_mix (a mail job's allowed_tools hold more than the outlook read verbs and file reads on this work machine)")]
-    private partial void LogWorkMailCodeMix(string id);
+    [LoggerMessage(Level = LogLevel.Information, Message = "job {Id}: mail job on a work machine: {Dropped} rule(s) beyond the outlook read verbs and file reads dropped")]
+    private partial void LogMailJobNarrowed(string id, int dropped);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: worktree git step failed: {Step}")]
     private partial void LogWorktreeFailed(string id, string step);

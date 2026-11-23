@@ -364,8 +364,7 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<KeyId>(),
                 sp.GetRequiredService<TimeProvider>(),
                 log,
-                OriginBranchCheckOf(sp),
-                sp.GetRequiredService<NodeConfiguration>().Supervision.WorkMachines);
+                OriginBranchCheckOf(sp));
         });
         services.TryAddSingleton(sp =>
         {

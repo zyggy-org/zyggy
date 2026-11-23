@@ -63,7 +63,9 @@ laptop), add:
   rules (a test filter or commit message may name them); `zyggy` itself refuses every send and move from any job everywhere.
 - Decision B (owner, 2026-11-22): on a work machine the node refuses at intake (`rejected` / `work_mail_code_mix`) every job whose
   `allowed_tools` can both read work mail and run code. A mail-reading job holds only `Read`, `Grep`, `Glob` and
-  `Bash(zyggy outlook <read verb> …)` rules (or `Bash(zyggy outlook *)`).
+  `Bash(zyggy outlook <read verb> …)` rules (or `Bash(zyggy outlook *)`). **Superseded 2026-11-23 (owner correction):** no job is
+  refused any more; a mail job (an explicit `zyggy outlook` rule) runs with those rules only, any other job keeps its tools and its
+  `zyggy outlook` calls are refused by the hook (spec 58 D-B).
 - **Known limit:** the hook reads the command text only, so a script file or a name built wholly from data is not seen by it.
   Since decision B no job that reads work mail can write or run such a script on the work laptop, so nothing a job read can be
   sent or moved by code it wrote. A code-running job that reads no mail could in theory drive Outlook over COM directly, or run

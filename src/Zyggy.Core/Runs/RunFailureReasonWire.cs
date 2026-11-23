@@ -20,7 +20,6 @@ public static class RunFailureReasonWire
         RunFailureReason.BudgetExceeded => "budget_exceeded",
         RunFailureReason.BranchRefused => "branch_refused",
         RunFailureReason.CommandFailed => "command_failed",
-        RunFailureReason.WorkMailCodeMix => "work_mail_code_mix",
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 
