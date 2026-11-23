@@ -76,6 +76,15 @@ public sealed partial record JobRequest(
     /// <summary>Gets the earlier job whose branch <c>zyggy/&lt;id&gt;</c> the run starts from (spec 59 slice 6, job field <c>continue</c>); only with <see cref="Worktree"/>.</summary>
     public EnvelopeId? Continue { get; init; }
 
+    /// <summary>
+    /// Gets the model the job must run on (spec 50, job field <c>model</c>): a full Claude Code model id, never an alias; <see langword="null"/>
+    /// runs on the node's default. Set by <see cref="TryWithModel"/>.
+    /// </summary>
+    public string? Model { get; init; }
+
+    /// <summary>Gets the informational job type (spec 50, job field <c>job_type</c>): the row of Central's model table the model came from.</summary>
+    public string? JobType { get; init; }
+
     /// <summary>The body cap in UTF-8 bytes (a sanity check against a pasted document, not a protocol rule).</summary>
     public const int MaxBodyBytes = 65_536;
 
@@ -327,6 +336,37 @@ public sealed partial record JobRequest(
         }
 
         command = this with { Kind = JobKind.Command, Command = name };
+        return null;
+    }
+
+    /// <summary>
+    /// Checks the <c>--model</c> option of <c>zyggy submit</c> (spec 50) before anything is signed: the id has the job field's shape (a
+    /// full Claude Code model id, never an alias) and the job runs a model (not <c>fetch</c> or <c>command</c>; call after
+    /// <see cref="TryWithFetch"/> and <see cref="TryWithCommand"/>). Whether the target can run it is the submitter's capability check.
+    /// </summary>
+    /// <param name="model">The <c>--model</c> value, or <see langword="null"/> for the node's default.</param>
+    /// <param name="withModel">This request with the model set, when the check passes; this request itself when <paramref name="model"/> is absent.</param>
+    /// <returns>The refusal (field <c>model</c>), or <see langword="null"/>.</returns>
+    public JobRequestError? TryWithModel(string? model, out JobRequest? withModel)
+    {
+        withModel = null;
+        if (model is null)
+        {
+            withModel = this;
+            return null;
+        }
+
+        if (!JobModelRules.IsValidModel(model))
+        {
+            return new JobRequestError("model", "model " + JobModelRules.ModelRule);
+        }
+
+        if (Kind != JobKind.Model)
+        {
+            return new JobRequestError("model", "a fetch or command job runs no model: no --model");
+        }
+
+        withModel = this with { Model = model };
         return null;
     }
 

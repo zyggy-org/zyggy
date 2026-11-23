@@ -32,6 +32,21 @@ internal static partial class JobModelRules
     /// <returns><see langword="true"/> when the label is acceptable.</returns>
     internal static bool IsValidJobType(string jobType) => JobTypeShape().IsMatch(jobType);
 
+    /// <summary>
+    /// Whether <paramref name="ran"/> (the model Claude Code reported) is the model <paramref name="asked"/> for (spec 50 Behavior 3):
+    /// equal, or equal followed by one <c>[label]</c> suffix.
+    /// </summary>
+    /// <param name="asked">The job's <c>model</c>.</param>
+    /// <param name="ran">The report's <c>model</c>, or <see langword="null"/> when none was reported.</param>
+    /// <returns><see langword="true"/> on a match.</returns>
+    internal static bool IsSameModel(string asked, string? ran) =>
+        ran is not null
+        && (string.Equals(ran, asked, StringComparison.Ordinal)
+            || (!asked.Contains('[', StringComparison.Ordinal) && ran.StartsWith(asked, StringComparison.Ordinal) && Suffix().IsMatch(ran.AsSpan(asked.Length))));
+
+    [GeneratedRegex(@"^\[[a-z0-9]+\]\z")]
+    private static partial Regex Suffix();
+
     [GeneratedRegex(@"^(?<id>[a-z][a-z0-9.-]{0,63})(\[[a-z0-9]+\])?\z")]
     private static partial Regex ModelShape();
 

@@ -84,6 +84,12 @@ public sealed record EnvelopeTrace(EnvelopeId Id, TraceState State, MachineName?
     /// prints its fields); <see langword="null"/> when no answer verified.
     /// </summary>
     public Envelope.Envelope? NewestReport { get; init; }
+
+    /// <summary>
+    /// Gets the job file's envelope when it is still on the bus and verified (spec 50: <c>zyggy report</c> compares the model it asked for
+    /// with the model the report names); <see langword="null"/> otherwise.
+    /// </summary>
+    public Envelope.Envelope? JobEnvelope { get; init; }
 }
 
 /// <summary>The tenant's bus at a glance.</summary>

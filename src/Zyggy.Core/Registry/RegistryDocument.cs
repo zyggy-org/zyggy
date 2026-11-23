@@ -41,6 +41,12 @@ public sealed record RegistryDocument(
     /// <summary>The capability a node publishes once its version runs <c>kind: command</c> jobs (spec 59 slice 2); a sender sends that kind only to such a machine.</summary>
     public const string CommandCapability = "command";
 
+    /// <summary>
+    /// The capability a node publishes once its version runs a job on the <c>model</c> it names (spec 50); a sender sends a job with a
+    /// model only to such a machine, since an older node would run it on its default model.
+    /// </summary>
+    public const string ModelCapability = "model";
+
     private const string TimestampFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'";
 
     /// <summary>
@@ -128,9 +134,11 @@ public sealed record RegistryDocument(
             scan.Projects)
         {
             // Deliverable 18: this version checks mandates at intake; with supervision off it accepts none, so it does not offer them.
-            // Spec 59: every node of this version runs fetch and command jobs. Ordinal order, the order the file is written and parsed
-            // back in, so an unchanged scan compares equal to the published file.
-            Capabilities = configuration.Supervision.Enabled ? [CommandCapability, FetchCapability, SupervisionCapability] : [CommandCapability, FetchCapability],
+            // Spec 59: every node of this version runs fetch and command jobs; spec 50: and a job on the model it names. Ordinal order,
+            // the order the file is written and parsed back in, so an unchanged scan compares equal to the published file.
+            Capabilities = configuration.Supervision.Enabled
+                ? [CommandCapability, FetchCapability, ModelCapability, SupervisionCapability]
+                : [CommandCapability, FetchCapability, ModelCapability],
             Version = version,
         };
     }

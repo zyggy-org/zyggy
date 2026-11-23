@@ -27,6 +27,9 @@ public sealed partial class JobSubmitter
 
         // Spec 59 slice 6: a model job's own turn limit and the job it continues.
         "max_turns", "continue",
+
+        // Spec 50: the model a job runs on and the job type it came from.
+        "model", "job_type",
     ];
 
     private readonly BusRepository _bus;
@@ -89,7 +92,9 @@ public sealed partial class JobSubmitter
             request.FetchRef,
             request.Command,
             request.MaxTurns,
-            request.Continue);
+            request.Continue,
+            request.Model,
+            request.JobType);
         Model job;
         try
         {
@@ -147,6 +152,14 @@ public sealed partial class JobSubmitter
         {
             LogRefusing("kind");
             return new SubmitRefused("kind", $"kind command: machine {request.To.Value} does not advertise the command capability in its registry file");
+        }
+
+        // Spec 50 (AC-7): an older node treats `model` as an unknown field and would run its default model; send a job with a model
+        // only to a machine whose registry publishes the capability model. Never a silent fallback.
+        if (request.Model is not null && !await AdvertisesAsync(request.To, Registry.RegistryDocument.ModelCapability, ct).ConfigureAwait(false))
+        {
+            LogRefusing("capability");
+            return new SubmitRefused("capability", $"{request.To.Value} does not run jobs with a model yet (no capability model); upgrade it or submit without --model");
         }
 
         BuildResult built;
@@ -328,6 +341,16 @@ public sealed partial class JobSubmitter
         if (j.Continue != request.Continue)
         {
             return "continue";
+        }
+
+        if (!string.Equals(j.Model, request.Model, StringComparison.Ordinal))
+        {
+            return "model";
+        }
+
+        if (!string.Equals(j.JobType, request.JobType, StringComparison.Ordinal))
+        {
+            return "job_type";
         }
 
         if (!parsed.Body.Span.SequenceEqual(request.Body.Span))
