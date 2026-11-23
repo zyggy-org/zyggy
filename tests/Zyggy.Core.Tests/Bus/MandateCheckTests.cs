@@ -208,11 +208,11 @@ public sealed class MandateCheckTests : IAsyncLifetime
         verdict.Should().Be(MandateVerdict.Ok);
     }
 
-    // Q23 (Central, 2026-11-22): a submit under a mandate for a work machine whose allowed_tools mix work-mail reading and code-running
-    // tools is refused work_mail_code_mix, even for a session task.
+    // Q23 (Central, 2026-11-22), narrowed by the owner 2026-11-23: a submit under a mandate for a work machine whose allowed_tools
+    // explicitly grant the outlook verbs beside a code-running tool is refused work_mail_code_mix, even for a session task.
     [Theory]
     [InlineData("Bash(zyggy outlook *)", "Bash(python *)")]
-    [InlineData("mcp__github", "Bash(dotnet *)")]
+    [InlineData("Bash(zyggy outlook list *)", "Edit")]
     public async Task CheckSubmit_WorkMachineMandateCeilingMixes_RefusedWorkMailCodeMix(string mail, string code)
     {
         // Arrange
@@ -224,6 +224,21 @@ public sealed class MandateCheckTests : IAsyncLifetime
 
         // Assert
         verdict.Should().Be(new MandateVerdict(MandateLimit.WorkMailCodeMix, "allowed_tools can read work mail (" + mail + ") and run code (" + code + ") on a work machine"));
+    }
+
+    // Owner correction 2026-11-23: a code mandate for a work machine (no zyggy outlook rule) is allowed as before Outlook was enabled.
+    [Fact]
+    public async Task CheckSubmit_WorkMachineCodeMandate_Allowed()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields with { AllowedTools = ["Read", "Edit", "Write", "Bash(src/*)", "Bash(dotnet *)"], Sessions = true }, ct);
+
+        // Act
+        MandateVerdict verdict = MandateRules.CheckSubmit(await LedgerAsync(ct), Submit with { Tools = ["Read"], Session = true, TargetIsWorkMachine = true }, Now);
+
+        // Assert
+        verdict.Should().Be(MandateVerdict.Ok);
     }
 
     // Q23: the same mandate for a machine that is not a work machine is judged as before.

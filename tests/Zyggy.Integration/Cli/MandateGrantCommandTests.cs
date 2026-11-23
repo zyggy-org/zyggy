@@ -107,10 +107,11 @@ public sealed class MandateGrantCommandTests : IAsyncLifetime
     }
 
     // Spec 58 Q23 (Central, 2026-11-22): Central's node.json lists home-laptop in supervision.workMachines; a mandate for it whose
-    // allowed_tools mix work-mail reading and code-running tools is refused at grant with the runner's reason, nothing written.
+    // allowed_tools explicitly grant the outlook verbs beside a code-running tool (owner correction 2026-11-23: only an explicit
+    // zyggy outlook rule makes a mail job) is refused at grant with the runner's reason, nothing written.
     [Theory]
     [InlineData("Read,Bash(zyggy outlook *),Bash(python *)")]
-    [InlineData("Read,mcp__github,Bash(dotnet *)")]
+    [InlineData("Read,Bash(zyggy outlook list *),Edit")]
     public async Task Grant_WorkMachineCeilingMixes_ExitThreeWorkMailCodeMix_NothingWritten(string tools)
     {
         // Arrange

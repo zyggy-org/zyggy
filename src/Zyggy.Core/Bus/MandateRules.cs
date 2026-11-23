@@ -92,8 +92,9 @@ public enum MandateLimit
     Continue,
 
     /// <summary>
-    /// The target is a work machine and the mandate's <c>allowed_tools</c> can both read work mail and run code (spec 58 Q23, Central
-    /// 2026-11-22): the wire string is the runner's reason <c>work_mail_code_mix</c>.
+    /// The target is a work machine and the mandate's <c>allowed_tools</c> explicitly grant the outlook verbs beside a rule beyond the
+    /// read verbs and file reads (spec 58 Q23, Central 2026-11-22, narrowed by the owner 2026-11-23): the wire string is the runner's
+    /// reason <c>work_mail_code_mix</c>.
     /// </summary>
     WorkMailCodeMix,
 }
@@ -301,7 +302,8 @@ public static class MandateRules
             return Refused(MandateLimit.UsageLimit, "the newest report is a usage limit of less than 60 minutes ago");
         }
 
-        // Spec 58 Q23 (Central, 2026-11-22): a work machine's mandate whose ceiling mixes work mail and code is refused, session tasks too.
+        // Spec 58 Q23 (Central, 2026-11-22; owner 2026-11-23): a work machine's mandate whose ceiling grants the outlook verbs beside
+        // code is refused, session tasks too; a code-only ceiling is not.
         if (submit.TargetIsWorkMachine && Outlook.WorkMailToolMix.Refusal(fields.AllowedTools) is { } mix)
         {
             return Refused(MandateLimit.WorkMailCodeMix, mix);

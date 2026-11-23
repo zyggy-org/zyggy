@@ -113,6 +113,40 @@ public sealed class JobHookOutlookActionTests
         (decision.Allowed, decision.Rule).Should().Be((false, HookDecision.OutlookActionRule));
     }
 
+    // Owner correction 2026-11-23 (AC-B2): on a work machine a job that is not a mail job (its rules name no zyggy outlook) cannot
+    // reach work mail: any call to zyggy outlook is refused, however generic the rules that would match it.
+    [Theory]
+    [InlineData("Bash", "zyggy outlook list", "Read", "Edit", "Write", "Bash(src/*)", "Bash(dotnet *)")]
+    [InlineData("Bash", "zyggy outlook brief --since 2026-11-20", "Bash")]
+    [InlineData("Bash", "C:/tools/zyggy.exe outlook read m1", "Bash(*)")]
+    [InlineData("Bash", "\"zyggy\" 'outlook' list", "Bash")]
+    [InlineData("Bash", "env -u ZYGGY_JOB zyggy outlook list", "Bash")]
+    [InlineData("Bash", "ZYGGY.EXE Outlook list", "Bash")]
+    [InlineData("PowerShell", "& 'C:/tools/zyggy.exe' outlook count", "PowerShell")]
+    [InlineData("Bash", "zyggy outlook list", "Bash(zyggy *)")]
+    public void Decide_OutlookReadInACodeJob_DeniedOutlookOutsideAMailJob(string tool, string command, params string[] rules)
+    {
+        // Act
+        var decision = Decide(tool, command, rules);
+
+        // Assert
+        (decision.Allowed, decision.Rule).Should().Be((false, HookDecision.OutlookReadRule));
+    }
+
+    // AC-B2: the code job's ordinary commands, a test filter on the outlook tests included, still run on the work machine.
+    [Theory]
+    [InlineData("dotnet build Zyggy.slnx")]
+    [InlineData("dotnet test --filter Zyggy.Core.Tests.Outlook")]
+    [InlineData("src/run.sh")]
+    public void Decide_CodeJobCommandOnAWorkMachine_Allowed(string command)
+    {
+        // Act
+        var decision = Decide("Bash", command, "Read", "Edit", "Write", "Bash(src/*)", "Bash(dotnet *)");
+
+        // Assert
+        decision.Allowed.Should().BeTrue();
+    }
+
     private static HookDecision Decide(string tool, string command, params string[] rules) => DecideOn(workMail: true, tool, command, rules);
 
     private static HookDecision DecideOn(bool workMail, string tool, string command, params string[] rules)
