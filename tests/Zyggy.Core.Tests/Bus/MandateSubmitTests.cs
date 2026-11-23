@@ -5,6 +5,7 @@ using NSubstitute;
 using Zyggy.Core.Bus;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Git;
+using Zyggy.Core.Models;
 using Zyggy.Core.Registry;
 using Zyggy.Core.Secrets;
 using Zyggy.Core.Tenancy;
@@ -83,7 +84,8 @@ public sealed class MandateSubmitTests : IAsyncLifetime
             AllowedTools: ["Read", "Edit", "Bash(dotnet test *)"],
             Mandate: MandateId,
             Step: "slice 2",
-            Base: Branch));
+            Base: Branch,
+            JobType: "correct"));
     }
 
     // Spec 59 AC-9 (Q6): a mandate step may continue a failed step's branch — same step name, a new job of the mandate, its own turn limit.
@@ -268,11 +270,11 @@ public sealed class MandateSubmitTests : IAsyncLifetime
         _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Mandates(Acme), MandateId), EnvelopeWriter.Serialize(signed));
     }
 
-    private void DropRegistry(MachineName machine, bool supervision)
+    private void DropRegistry(MachineName machine, bool supervision, bool model = false)
     {
         var document = new RegistryDocument(Acme, machine, RegistryOs.Windows, T.AddMinutes(-1), null, null, [])
         {
-            Capabilities = supervision ? [RegistryDocument.SupervisionCapability] : [],
+            Capabilities = [.. supervision ? [RegistryDocument.SupervisionCapability] : Array.Empty<string>(), .. model ? [RegistryDocument.ModelCapability] : Array.Empty<string>()],
         };
         _checkout.Drop(BusPaths.Registry(Acme, machine), document.Serialize());
     }
@@ -340,6 +342,62 @@ public sealed class MandateSubmitTests : IAsyncLifetime
 
         // Assert
         outcome.Result.Should().BeOfType<Submitted>();
+    }
+
+    // Spec 50 AC-10: under a mandate the model comes from the owner's table by kind; job_type is the kind.
+    [Fact]
+    public async Task SubmitAsync_ModelTableRowForTheKind_JobCarriesItsModelAndTheKindAsJobType()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields(), HomeLaptop, ct);
+        DropRegistry(HomeLaptop, supervision: true, model: true);
+        var table = new ModelTable(["claude-opus-5-5"], [new ModelTableRow("build", "claude-opus-5-5")], null);
+
+        // Act
+        MandateSubmitOutcome outcome = await Submission().SubmitAsync(new MandateJobRequest(HomeLaptop, MandateId, MandateJobKind.Build, "slice 2", Base: Branch), table, ct);
+
+        // Assert
+        var submitted = outcome.Result.Should().BeOfType<Submitted>().Subject;
+        JobFields job = (await new EnvelopeSigner(_store).ParseAndVerifyAsync(_checkout.Read(submitted.RelativePath), Acme, ct)).Envelope!.Job!;
+        new { job.Model, job.JobType }.Should().BeEquivalentTo(new { Model = "claude-opus-5-5", JobType = "build" });
+    }
+
+    // Spec 50 AC-10: a kind the table has no row for runs on the node default; job_type still names the kind.
+    [Fact]
+    public async Task SubmitAsync_ModelTableWithoutTheKind_NoModelJobTypeIsTheKind()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields(), HomeLaptop, ct);
+        DropRegistry(HomeLaptop, supervision: true);
+        var table = new ModelTable(["claude-opus-5-5"], [new ModelTableRow("build", "claude-opus-5-5")], null);
+
+        // Act
+        MandateSubmitOutcome outcome = await Submission().SubmitAsync(new MandateJobRequest(HomeLaptop, MandateId, MandateJobKind.Verify, "slice 2", Base: Branch), table, ct);
+
+        // Assert
+        var submitted = outcome.Result.Should().BeOfType<Submitted>().Subject;
+        JobFields job = (await new EnvelopeSigner(_store).ParseAndVerifyAsync(_checkout.Read(submitted.RelativePath), Acme, ct)).Envelope!.Job!;
+        new { job.Model, job.JobType }.Should().BeEquivalentTo(new { Model = (string?)null, JobType = "verify" });
+    }
+
+    // Spec 50 AC-10 with AC-7: a table model to a node without the capability model is refused, nothing written — never its default.
+    [Fact]
+    public async Task SubmitAsync_ModelTableRowToANodeWithoutCapabilityModel_RefusedNothingWritten()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropMandateAsync(Fields(), HomeLaptop, ct);
+        DropRegistry(HomeLaptop, supervision: true);
+        var table = new ModelTable(["claude-opus-5-5"], [new ModelTableRow("build", "claude-opus-5-5")], null);
+
+        // Act
+        MandateSubmitOutcome outcome = await Submission().SubmitAsync(new MandateJobRequest(HomeLaptop, MandateId, MandateJobKind.Build, "slice 2", Base: Branch), table, ct);
+
+        // Assert
+        new { Field = (outcome.Result as SubmitRefused)?.Field, Jobs = _checkout.FilesUnder(BusPaths.Jobs(Acme, HomeLaptop)).Count }
+            .Should().BeEquivalentTo(new { Field = "capability", Jobs = 0 });
     }
 
     private string? LocalCalizr(string project) => project == "calizr" ? Path.Combine(_checkout.Root, "calizr") : null;

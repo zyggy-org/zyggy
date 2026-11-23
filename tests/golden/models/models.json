@@ -1,0 +1,8 @@
+{
+  "models": ["claude-opus-5-5", "claude-fable-5-2"],
+  "jobTypes": {
+    "spec": "claude-fable-5-2",
+    "implementation": "claude-opus-5-5"
+  },
+  "supervisor": null
+}

@@ -131,6 +131,20 @@ The bus repository `zyggy-org/zyggy-bus` is created by hand (spec 04 AC-36): pri
 2. `git clone git@github.com-zyggy-bus:zyggy-org/zyggy-bus.git <bus.localPath>`.
 3. `zyggy secret set hmac/1 --generate --show` once for the tenant (the hex line is shown once: carry it to the other machines over a channel you trust, never a repository or chat log), then `zyggy secret set github-pat` (the hidden prompt: paste the token, Enter) — the token is for the API head check only (Contents read). Both land as 0600 files under `~/.local/share/zyggy/secrets/<tenant>/`; the unit reads the same files; the optional credentials drop-in is in `install-node.md`. `zyggy secret list` shows what the machine holds and the fingerprints to compare.
 4. `zyggy probe reach`, then install the unit per `zyggy-core/runbooks/install-node.md` (`deploy/systemd/zyggy-node.service` from the release); `zyggy status` → `health: green`.
+5. The model table (spec 50): commit `instance/models.json` in the instance repository (configuration, not a secret: model ids and labels only). `models` is the allow-list (1–20 full Claude Code ids, never an alias such as `opus`), `jobTypes` maps a job type to a model on it, `supervisor` is the supervisor run's model or `null` for the default. The owner's starting file (also `tests/golden/models/models.json`):
+
+   ```json
+   {
+     "models": ["claude-opus-5-5", "claude-fable-5-2"],
+     "jobTypes": {
+       "spec": "claude-fable-5-2",
+       "implementation": "claude-opus-5-5"
+     },
+     "supervisor": null
+   }
+   ```
+
+   No file means no table (jobs carry a model only through `--model`, checked against `node.json` `claude.models`). An invalid file is refused whole, naming the key (`instance/models.json: jobTypes.spec model … is not on models`); the supervisor run then does not start and the node logs one line.
 
 **Laptops (Windows)**
 

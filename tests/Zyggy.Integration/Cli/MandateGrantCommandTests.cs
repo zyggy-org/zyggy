@@ -268,7 +268,10 @@ public sealed class MandateGrantCommandTests : IAsyncLifetime
             AllowedTools: ["Read", "Edit", "Bash(dotnet test *)"],
             Mandate: EnvelopeId.Parse(id),
             Step: "slice 2",
-            Base: Branch));
+            Base: Branch,
+
+            // Spec 50 AC-10: a mandate job's job_type is its kind.
+            JobType: "correct"));
         (await _harness.Bus.LastCommitSubjectAsync(ct)).Should().StartWith("acme job ").And.EndWith(" central→home-laptop");
     }
 
