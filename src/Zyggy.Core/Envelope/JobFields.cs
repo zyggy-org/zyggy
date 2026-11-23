@@ -38,6 +38,14 @@ namespace Zyggy.Core.Envelope;
 /// The id of an earlier job whose branch <c>zyggy/&lt;id&gt;</c> on the origin is this run's start point (spec 59 slice 6); only with
 /// <c>worktree: true</c> on a model job. A branch not on the origin is <c>rejected</c> / <c>branch_refused</c>.
 /// </param>
+/// <param name="Model">
+/// The <c>model</c> the job must run on (spec 50; a model job only): a full Claude Code model id (1–64 characters of
+/// <c>[a-z0-9.-]</c> starting with a letter, optionally one <c>[label]</c> suffix), never an alias; <see langword="null"/> runs on the node's default, as before.
+/// </param>
+/// <param name="JobType">
+/// The <c>job_type</c> label (spec 50): the row of Central's model table the model came from; informational, never interpreted by the
+/// node, copied into the report.
+/// </param>
 public sealed record JobFields(
     string Project,
     string? Agent = null,
@@ -58,4 +66,6 @@ public sealed record JobFields(
     string? FetchRef = null,
     string? Command = null,
     int? MaxTurns = null,
-    EnvelopeId? Continue = null);
+    EnvelopeId? Continue = null,
+    string? Model = null,
+    string? JobType = null);

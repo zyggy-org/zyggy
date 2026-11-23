@@ -726,7 +726,8 @@ public sealed partial class BusListener : IDisposable
                 reply.Attachment is { } file ? Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(file.Bytes.Span)) : null,
                 reply.MaxTurns,
                 reply.CacheWriteTokens,
-                reply.CacheReadTokens);
+                reply.CacheReadTokens,
+                accepted.Job.Job?.JobType);
             WriteOutcome report = await _bus.ReportAsync(accepted, fields, reply.Body, reply.Attachment?.Bytes, _signWith, ct).ConfigureAwait(false);
             if (report is WriteFailed failed)
             {

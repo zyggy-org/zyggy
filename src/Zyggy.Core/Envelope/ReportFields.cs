@@ -23,6 +23,7 @@ namespace Zyggy.Core.Envelope;
 /// <param name="MaxTurns">The optional <c>max_turns</c> (spec 60): the turn limit the run had, at least 1.</param>
 /// <param name="CacheWriteTokens">The optional <c>cache_write_tokens</c> (spec 60): the result usage's <c>cache_creation_input_tokens</c>.</param>
 /// <param name="CacheReadTokens">The optional <c>cache_read_tokens</c> (spec 60): the result usage's <c>cache_read_input_tokens</c>.</param>
+/// <param name="JobType">The optional <c>job_type</c> (spec 50), copied from the job, so a report alone tells which type of job it answered.</param>
 public sealed record ReportFields(
     ReportStatus Status,
     string? Reason = null,
@@ -42,4 +43,5 @@ public sealed record ReportFields(
     string? FileSha256 = null,
     int? MaxTurns = null,
     int? CacheWriteTokens = null,
-    int? CacheReadTokens = null);
+    int? CacheReadTokens = null,
+    string? JobType = null);

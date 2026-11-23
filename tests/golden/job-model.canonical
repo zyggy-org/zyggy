@@ -1,0 +1,16 @@
+attempt: 1
+created: 2026-11-23T09:00:00Z
+from: central
+id: 01M84NJ0AKCGQ6MQJBZXKEW9Q0
+job_type: implementation
+key_id: acme/1
+model: claude-opus-5-5
+priority: normal
+project: shop
+schema: 1
+tenant: acme
+to: home-laptop
+type: job
+worktree: true
+---
+Build slice 1 of the cart feature.

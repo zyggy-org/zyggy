@@ -230,7 +230,7 @@ public sealed partial class SessionTaskHook
             int changed = await ChangedFilesAsync(open, ct).ConfigureAwait(false);
             string body = SessionTaskRules.Body(done, changed, head, why, _settings.Detail == SupervisionDetail.Fixed);
             // A failed report needs a reason (§4); the closed list's claude_error is the session's own failure, the why line says which.
-            var report = new ReportFields(done ? ReportStatus.Done : ReportStatus.Failed, done ? null : "claude_error", Mandate: fields.Mandate, Step: fields.Step);
+            var report = new ReportFields(done ? ReportStatus.Done : ReportStatus.Failed, done ? null : "claude_error", Mandate: fields.Mandate, Step: fields.Step, JobType: fields.JobType);
             WriteOutcome outcome = await _bus.ReportAsync(claimed, report, Encoding.UTF8.GetBytes(body), _signWith(), ct).ConfigureAwait(false);
             switch (outcome)
             {

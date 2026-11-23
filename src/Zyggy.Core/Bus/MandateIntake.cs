@@ -90,6 +90,7 @@ internal sealed partial class MandateIntake
         {
             Mandate = job.Job.Job!.Mandate,
             Step = job.Job.Job.Step,
+            JobType = job.Job.Job.JobType,
         };
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "mandate check of {JobId} deferred: the bus checkout is busy")]

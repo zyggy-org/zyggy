@@ -231,8 +231,9 @@ public sealed partial class JobRunner
             hookArgs.Add("--work-mail");
         }
 
-        // Spec 06 "ModelRunRequest for a job": no tool set, extra directory, schema, model or system prompt; the project's own
-        // hooks, skills, MCP servers and memory apply (Isolation.None, ex-Q7).
+        // Spec 06 "ModelRunRequest for a job": no tool set, extra directory, schema or system prompt; the project's own hooks, skills,
+        // MCP servers and memory apply (Isolation.None, ex-Q7). Spec 50: the job's own model when it names one (the parser checked its
+        // shape), else none — never a fallback model.
         var timeout = _options.TimeoutOverride ?? TimeSpan.FromMinutes(minutes);
 
         // Spec 59 slice 6 (AC-9): the job's own turn limit, never above the node's; a lowered value is said in the report body.
@@ -241,6 +242,7 @@ public sealed partial class JobRunner
         var request = new ModelRunRequest(_prompt.Render(job, runDirectory, allowedTools), runDirectory, timeout)
         {
             MaxTurns = maxTurns,
+            Model = fields.Model,
             AllowedTools = allowedTools,
             MaxBudgetUsd = policy.MaxBudgetUsd,
             Isolation = ModelSessionIsolation.None,
