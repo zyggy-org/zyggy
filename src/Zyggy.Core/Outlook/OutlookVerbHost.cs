@@ -33,7 +33,7 @@ namespace Zyggy.Core.Outlook;
 public sealed class OutlookVerbHost
 {
     private const string Prefix = "outlook: ";
-    private const string Usage = " (usage: zyggy outlook policy | count [--folder <name>]... | list [--folder <name>] [--since <date>] [--max <n>] | read <reference>"
+    private const string Usage = " (usage: zyggy outlook policy | count [--folder <name>]... | list [--folder <name>] [--since <date>] [--until <date>] [--max <n>] | read <reference>"
         + " | brief [--since <date>] [--max <n>] | brief-done --until <date> [< drafts.json] | drafts [<n>] | share [< mails.json]; each [--config <node.json>]"
         + " | send … | move … | guard | settle: attended only, see the README)";
     private const string ReadScope = "read";
@@ -326,8 +326,10 @@ public sealed class OutlookVerbHost
     private async Task<int> ListAsync(OutlookReader reader, Arguments parsed, JobScreen? screen, VerbIo io)
     {
         string folder = parsed.Folders.Count == 0 ? "Inbox" : parsed.Folders[0];
-        DateTimeOffset since = parsed.Since ?? TimeZoneInfo.ConvertTime(_clock.GetUtcNow() - DefaultSince, _zone);
-        OutlookResult<IReadOnlyList<OutlookMailSummary>> result = reader.List(folder, since, parsed.Max);
+        // With --until the window is [since, until); without --since it reaches the default span back from --until, else from now.
+        DateTimeOffset? until = parsed.Until;
+        DateTimeOffset since = parsed.Since ?? TimeZoneInfo.ConvertTime((until ?? _clock.GetUtcNow()) - DefaultSince, _zone);
+        OutlookResult<IReadOnlyList<OutlookMailSummary>> result = reader.List(folder, since, parsed.Max, until);
         if (result.Value is not { } listed)
         {
             return await RefusedAsync(result, io).ConfigureAwait(false);
@@ -351,6 +353,11 @@ public sealed class OutlookVerbHost
             writer.WriteStartObject();
             writer.WriteString("folder", folder);
             writer.WriteString("since", since.ToString(OutlookDates.Format, CultureInfo.InvariantCulture));
+            if (until is { } untilHere)
+            {
+                writer.WriteString("until", TimeZoneInfo.ConvertTime(untilHere, _zone).ToString(OutlookDates.Format, CultureInfo.InvariantCulture));
+            }
+
             if (kept is { } keptHere)
             {
                 writer.WriteNumber("kept", keptHere);
@@ -773,7 +780,7 @@ public sealed class OutlookVerbHost
     {
         private static readonly HashSet<string> Verbs = new(["policy", "count", "list", "read", "brief", "brief-done", "drafts", "share"], StringComparer.Ordinal);
 
-        /// <summary>Gets <c>--until</c> of <c>brief-done</c>.</summary>
+        /// <summary>Gets <c>--until</c> of <c>brief-done</c> (the brief's until) or of <c>list</c> (the exclusive upper bound).</summary>
         public DateTimeOffset? Until { get; init; }
 
         /// <summary>Gets the draft number of <c>drafts &lt;n&gt;</c>.</summary>
@@ -846,9 +853,9 @@ public sealed class OutlookVerbHost
 
                 if (arg == "--until")
                 {
-                    if (verb != "brief-done" || !OutlookDates.TryParseSince(value!, zone, out DateTimeOffset parsedUntil))
+                    if (verb is not ("brief-done" or "list") || !OutlookDates.TryParseSince(value!, zone, out DateTimeOffset parsedUntil))
                     {
-                        error = "--until takes the brief's until (an ISO 8601 date with offset), for brief-done";
+                        error = "--until takes YYYY-MM-DD or an ISO 8601 date with offset, for list and brief-done";
                         return null;
                     }
 
@@ -900,6 +907,12 @@ public sealed class OutlookVerbHost
             if (verb == "list" && folders.Count > 1)
             {
                 error = "list takes one --folder";
+                return null;
+            }
+
+            if (verb == "list" && since is { } from && until is { } to && to <= from)
+            {
+                error = "--until must be later than --since";
                 return null;
             }
 
