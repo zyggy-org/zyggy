@@ -32,7 +32,9 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<IProcessRunner>(),
             sp.GetRequiredService<IOptions<ClaudeCodeOptions>>(),
             sp.GetRequiredService<TimeProvider>(),
-            sp.GetService<ILoggerFactory>()?.CreateLogger<ClaudeCodeCliRunner>()));
+            sp.GetService<ILoggerFactory>()?.CreateLogger<ClaudeCodeCliRunner>(),
+            // Spec 61 slice 8: registered by the node host only, so only zyggy-node's model processes are recorded (never the CLI's).
+            sp.GetService<ModelProcessRecords>()));
         return services;
     }
 }

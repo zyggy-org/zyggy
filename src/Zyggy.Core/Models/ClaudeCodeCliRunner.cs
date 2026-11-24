@@ -17,7 +17,8 @@ internal sealed partial class ClaudeCodeCliRunner(
     IProcessRunner processes,
     IOptions<ClaudeCodeOptions> options,
     TimeProvider clock,
-    ILogger<ClaudeCodeCliRunner>? log = null) : IModelRunner
+    ILogger<ClaudeCodeCliRunner>? log = null,
+    ModelProcessRecords? records = null) : IModelRunner
 {
     private readonly ILogger<ClaudeCodeCliRunner> _log = log ?? NullLogger<ClaudeCodeCliRunner>.Instance;
 
@@ -111,58 +112,74 @@ internal sealed partial class ClaudeCodeCliRunner(
         // Spec 61 slice 3: the job runner's own limit (awake time, 24 h of age) stops the session the same way, as a timeout.
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, request.LimitReached);
         var mismatch = false;
-        var spec = new ProcessSpec(path, ClaudeArguments.Build(request), request.WorkingDirectory)
-        {
-            Environment = environment,
-            StandardInput = request.Prompt,
-            Timeout = request.Timeout,
-            OnStdoutLine = line =>
-            {
-                transcript?.Write(line);
-                reader.Accept(line);
-                if (!mismatch && request.RequireModel && request.Model is { } asked && reader.Model is { } ran && !Envelope.JobModelRules.IsSameModel(asked, ran))
-                {
-                    mismatch = true;
-                    // The flag is set at once; the process runner's kill runs off this output thread.
-                    _ = stop.CancelAsync();
-                }
-            },
-            MaxStdoutBytes = request.MaxCaptureBytes,
-        };
-
-        var started = clock.GetTimestamp();
-        ProcessResult process;
+        string? record = null;
         try
         {
-            process = await processes.RunAsync(spec, stop.Token).ConfigureAwait(false);
+            return await RunRecordedAsync().ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        finally
         {
-            throw;
-        }
-        catch (OperationCanceledException) when (mismatch)
-        {
-            return Failed(RunFailureReason.ModelUnavailable, ModelFailureDetail.ModelMismatch, reader, clock.GetElapsedTime(started), null);
-        }
-        catch (OperationCanceledException) when (request.LimitReached.IsCancellationRequested)
-        {
-            return Failed(RunFailureReason.Timeout, ModelFailureDetail.Timeout, reader, clock.GetElapsedTime(started), null);
-        }
-        catch (OperationCanceledException)
-        {
-            return Failed(RunFailureReason.ClaudeError, ModelFailureDetail.Canceled, reader, clock.GetElapsedTime(started), null);
-        }
-#pragma warning disable CA1031 // The seam contract: no failure of the model process reaches the caller as an exception.
-        catch (Exception)
-#pragma warning restore CA1031
-        {
-            return Failed(RunFailureReason.ClaudeError, ModelFailureDetail.StartFailed, reader, clock.GetElapsedTime(started), null);
+            records?.Remove(record);
         }
 
-        // The process may have ended on its own before the kill landed: the mismatch still decides.
-        return mismatch
-            ? Failed(RunFailureReason.ModelUnavailable, ModelFailureDetail.ModelMismatch, reader, process.Duration, process.ExitCode)
-            : Classify(request, path, process, reader);
+        async Task<ModelRunResult> RunRecordedAsync()
+        {
+            var spec = new ProcessSpec(path, ClaudeArguments.Build(request), request.WorkingDirectory)
+            {
+                Environment = environment,
+                StandardInput = request.Prompt,
+                Timeout = request.Timeout,
+                OnStdoutLine = line =>
+                {
+                    transcript?.Write(line);
+                    reader.Accept(line);
+                    if (!mismatch && request.RequireModel && request.Model is { } asked && reader.Model is { } ran && !Envelope.JobModelRules.IsSameModel(asked, ran))
+                    {
+                        mismatch = true;
+                        // The flag is set at once; the process runner's kill runs off this output thread.
+                        _ = stop.CancelAsync();
+                    }
+                },
+                MaxStdoutBytes = request.MaxCaptureBytes,
+
+                // Spec 61 slice 8: the node records the model process it started, so a node killed during the run ends it at its next start.
+                OnStarted = records is null ? null : facts => record = records.Add(facts),
+            };
+
+            var started = clock.GetTimestamp();
+            ProcessResult process;
+            try
+            {
+                process = await processes.RunAsync(spec, stop.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (OperationCanceledException) when (mismatch)
+            {
+                return Failed(RunFailureReason.ModelUnavailable, ModelFailureDetail.ModelMismatch, reader, clock.GetElapsedTime(started), null);
+            }
+            catch (OperationCanceledException) when (request.LimitReached.IsCancellationRequested)
+            {
+                return Failed(RunFailureReason.Timeout, ModelFailureDetail.Timeout, reader, clock.GetElapsedTime(started), null);
+            }
+            catch (OperationCanceledException)
+            {
+                return Failed(RunFailureReason.ClaudeError, ModelFailureDetail.Canceled, reader, clock.GetElapsedTime(started), null);
+            }
+#pragma warning disable CA1031 // The seam contract: no failure of the model process reaches the caller as an exception.
+            catch (Exception)
+#pragma warning restore CA1031
+            {
+                return Failed(RunFailureReason.ClaudeError, ModelFailureDetail.StartFailed, reader, clock.GetElapsedTime(started), null);
+            }
+
+            // The process may have ended on its own before the kill landed: the mismatch still decides.
+            return mismatch
+                ? Failed(RunFailureReason.ModelUnavailable, ModelFailureDetail.ModelMismatch, reader, process.Duration, process.ExitCode)
+                : Classify(request, path, process, reader);
+        }
     }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "transcript not written: {Detail}")]

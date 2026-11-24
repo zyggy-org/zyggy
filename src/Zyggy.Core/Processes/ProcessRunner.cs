@@ -35,6 +35,11 @@ internal sealed class ProcessRunner(TimeProvider clock) : IProcessRunner
             return StartFailed(clock.GetElapsedTime(started));
         }
 
+        if (spec.OnStarted is { } onStarted)
+        {
+            NotifyStarted(process, onStarted);
+        }
+
         var stdin = WriteStdinAsync(process, spec.StandardInput);
         var stdout = new BoundedCapture(spec.MaxStdoutBytes);
         // Spec 59: a fetched file goes to disk byte for byte, never decoded into lines.
@@ -110,6 +115,32 @@ internal sealed class ProcessRunner(TimeProvider clock) : IProcessRunner
         }
 
         return info;
+    }
+
+    private static void NotifyStarted(Process process, Action<ProcessFacts> onStarted)
+    {
+        DateTimeOffset? startedUtc;
+        string name;
+        try
+        {
+            startedUtc = new DateTimeOffset(process.StartTime.ToUniversalTime(), TimeSpan.Zero);
+            name = process.ProcessName;
+        }
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or NotSupportedException)
+        {
+            // exited at once: nothing is left to record
+            return;
+        }
+
+        try
+        {
+            onStarted(new ProcessFacts(process.Id, name, startedUtc, OwnedByCurrentUser: true));
+        }
+#pragma warning disable CA1031 // The contract: a recording callback never fails the run it records.
+        catch (Exception)
+#pragma warning restore CA1031
+        {
+        }
     }
 
     private static ProcessResult StartFailed(TimeSpan duration) =>

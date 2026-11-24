@@ -1,5 +1,6 @@
 using Zyggy.Core.Bus;
 using Zyggy.Core.Configuration;
+using Zyggy.Core.Processes;
 using Zyggy.Core.Registry;
 
 namespace Zyggy.Node;
@@ -23,6 +24,7 @@ public sealed partial class PollLoop : BackgroundService
     private readonly ClaudeAuthProbe _auth;
     private readonly DiscoveryLoop _discovery;
     private readonly ILogger<PollLoop> _log;
+    private readonly ModelProcessRecords? _leftovers;
     private Task? _authTask;
 
     internal PollLoop(
@@ -35,8 +37,10 @@ public sealed partial class PollLoop : BackgroundService
         HealthServer health,
         ClaudeAuthProbe auth,
         DiscoveryLoop discovery,
-        ILogger<PollLoop> log)
+        ILogger<PollLoop> log,
+        ModelProcessRecords? leftovers = null)
     {
+        _leftovers = leftovers;
         _listener = listener;
         _mode = mode;
         _status = status;
@@ -113,6 +117,9 @@ public sealed partial class PollLoop : BackgroundService
                 return;
             }
 
+            // Spec 61 slice 8: only the listener that took the lock, before any claim is resumed, ends the model processes a killed node
+            // left running — never a refused second start, which would end the live runs of the node holding the lock.
+            _leftovers?.EndLeftovers();
             _authTask = _auth.RunAsync(stoppingToken);
             try
             {
