@@ -395,6 +395,52 @@ public sealed class WithdrawalRulesTests
         verdict.Should().Be(WithdrawalVerdict.Allowed);
     }
 
+    // Slice 4 correction (clock skew): a withdrawal written on a machine whose clock is behind the job sender's, up to 5 minutes
+    // before the job's created, is accepted.
+    [Fact]
+    public async Task Accept_WithdrawalCreated4m59sBeforeTheJob_Allowed()
+    {
+        // Arrange
+        Model job = await JobAsync(from: HomeLaptop);
+        Model withdrawal = await WithdrawalAsync(from: MachineName.Central, created: JobCreated - TimeSpan.FromSeconds(299));
+
+        // Act
+        WithdrawalVerdict verdict = WithdrawalRules.Accept(new BusIdentity(Acme, WorkLaptop), withdrawal, WithdrawalPath(Acme, WorkLaptop), job);
+
+        // Assert
+        verdict.Should().Be(WithdrawalVerdict.Allowed);
+    }
+
+    // Slice 4 correction (clock skew): past the 5-minute tolerance the withdrawal is still a replay, refused.
+    [Fact]
+    public async Task Accept_WithdrawalCreated5m01sBeforeTheJob_BeforeTheJob()
+    {
+        // Arrange
+        Model job = await JobAsync(from: HomeLaptop);
+        Model withdrawal = await WithdrawalAsync(from: MachineName.Central, created: JobCreated - TimeSpan.FromSeconds(301));
+
+        // Act
+        WithdrawalVerdict verdict = WithdrawalRules.Accept(new BusIdentity(Acme, WorkLaptop), withdrawal, WithdrawalPath(Acme, WorkLaptop), job);
+
+        // Assert
+        verdict.Should().Be(WithdrawalVerdict.BeforeTheJob);
+    }
+
+    // Slice 4 correction (clock skew): a skewed withdrawal still withdraws a re-queued attempt of the same job (re-queue keeps created).
+    [Fact]
+    public async Task Accept_SkewedWithdrawalOfRequeuedAttempt_Allowed()
+    {
+        // Arrange
+        Model requeued = await SignAsync((await JobAsync(from: HomeLaptop)).WithAttempt(2));
+        Model withdrawal = await WithdrawalAsync(from: HomeLaptop, created: JobCreated - TimeSpan.FromSeconds(299));
+
+        // Act
+        WithdrawalVerdict verdict = WithdrawalRules.Accept(new BusIdentity(Acme, WorkLaptop), withdrawal, WithdrawalPath(Acme, WorkLaptop), requeued);
+
+        // Assert
+        verdict.Should().Be(WithdrawalVerdict.Allowed);
+    }
+
     // AC-17: a withdrawal addressed to another machine, or sitting in another machine's folder, is not acted on.
     [Fact]
     public async Task Accept_AddressedToAnotherMachine_WrongRecipient()

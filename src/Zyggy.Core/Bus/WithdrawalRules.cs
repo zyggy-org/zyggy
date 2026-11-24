@@ -35,7 +35,7 @@ internal enum WithdrawalVerdict
     /// <summary>No job of the id is in this node's <c>jobs/</c> or <c>jobs/claimed/</c>: nothing to stop.</summary>
     UnknownJob,
 
-    /// <summary>The withdrawal was written before the job it names: a replay against a job re-submitted under the same id.</summary>
+    /// <summary>The withdrawal was written more than the clock-skew tolerance before the job it names: a replay against a job re-submitted under the same id.</summary>
     BeforeTheJob,
 }
 
@@ -119,8 +119,8 @@ internal static class WithdrawalRules
     /// Whether the node <paramref name="me"/> acts on the verified <paramref name="withdrawal"/> read at
     /// <paramref name="withdrawalPath"/>: in its own <c>withdrawals/</c> under its own id, addressed to it, naming
     /// <paramref name="job"/> (the job of that id in its <c>jobs/</c> or <c>jobs/claimed/</c>), written by that job's sender or
-    /// Central, and not older than the job — an old withdrawal replayed against a job re-submitted under the same id is refused. A
-    /// re-queued copy keeps the job's <c>created</c>, so a withdrawal still stops it.
+    /// Central, and not older than the job by more than <see cref="ClockSkewTolerance"/> — an old withdrawal replayed against a job
+    /// re-submitted under the same id is refused. A re-queued copy keeps the job's <c>created</c>, so a withdrawal still stops it.
     /// </summary>
     /// <param name="me">This node.</param>
     /// <param name="withdrawal">The withdrawal, verified by the caller.</param>
@@ -176,8 +176,15 @@ internal static class WithdrawalRules
             return notSender;
         }
 
-        return withdrawal.Header.Created < job.Header.Created ? WithdrawalVerdict.BeforeTheJob : WithdrawalVerdict.Allowed;
+        return withdrawal.Header.Created < job.Header.Created - ClockSkewTolerance ? WithdrawalVerdict.BeforeTheJob : WithdrawalVerdict.Allowed;
     }
+
+    /// <summary>
+    /// How far a withdrawal's <c>created</c> may lie before its job's and still be accepted: the clocks of the job's sender and of
+    /// the withdrawing machine may differ by a few minutes (spec 61, slice 4 correction). Binding a withdrawal to one envelope by its
+    /// fingerprint was left out: it needs a new signed field, i.e. protocol wording the owner has not approved.
+    /// </summary>
+    internal static readonly TimeSpan ClockSkewTolerance = TimeSpan.FromMinutes(5);
 
     // The job's own file in its target's folder of this tenant: the path parses, names the job's id and target, and is in the folder.
     private static WithdrawalVerdict? JobAt(BusIdentity me, Model job, string jobPath, BusFolder folder, out MachineName? target)
