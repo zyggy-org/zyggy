@@ -198,7 +198,8 @@ public sealed partial class JobRunner
         var runDirectory = project;
         string? baseSha = null;
         string? defaultBranch = null;
-        var worktrees = new WorktreeRun(_git);
+        // Spec 61 §5: a recovered leftover is committed with the node's identity, as Finish commits.
+        var worktrees = new WorktreeRun(_git) { Recovery = new GitIdentity("zyggy (" + job.Header.To.Value + ")", job.Header.To.Value + "@zyggy.org") };
         if (fields.Worktree)
         {
             runDirectory = TranscriptPaths.WorktreeFor(nodeDir, job.Header.Tenant, job.Header.Id);
@@ -220,8 +221,11 @@ public sealed partial class JobRunner
             {
                 var gitError = RunFailureReasonWire.ToWire(RunFailureReason.GitError);
                 LogWorktreeFailed(id, failed.Step);
-                var detail = failed.Detail is null ? string.Empty : ": " + failed.Detail;
-                return Reply(ReportStatus.Failed, gitError, $"{gitError}: {failed.Step}{detail}\n", started);
+                // Spec 61 §5: worktree_add says why in parentheses (git's first line) and names a kept leftover folder.
+                var body = failed.Step == "worktree_add" && failed.Detail is { } why
+                    ? $"{gitError}: {failed.Step} ({why})\n" + (failed.KeptAt is { } kept ? $"worktree kept at {kept}\n" : string.Empty)
+                    : $"{gitError}: {failed.Step}{(failed.Detail is null ? string.Empty : ": " + failed.Detail)}\n";
+                return Reply(ReportStatus.Failed, gitError, body, started);
             }
 
             baseSha = ((PrepareResult.Prepared)prepared).BaseSha;

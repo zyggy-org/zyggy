@@ -36,6 +36,9 @@ internal sealed class WorktreeGit
     /// <summary>Gets or sets a value indicating whether the branch <c>zyggy/&lt;id&gt;</c> already exists before the run.</summary>
     public bool JobBranchExists { get; set; }
 
+    /// <summary>Gets the common git directory <c>rev-parse --git-common-dir</c> prints for the project and its worktrees (spec 61 §5).</summary>
+    public static string CommonDir => Path.Join(Path.GetTempPath(), "zyggy-unit-project", ".git");
+
     /// <summary>Gets or sets the porcelain status the worktree shows after the model ran (empty = clean).</summary>
     public string StatusAfterRun { get; set; } = "?? src/new.txt\0";
 
@@ -131,6 +134,9 @@ internal sealed class WorktreeGit
                 }
 
                 return reference == "refs/heads/main" ? RecordingProcessRunner.Ok(BaseSha + "\n") : RecordingProcessRunner.Fail(1, "");
+            case "rev-parse" when Has(spec, "--git-common-dir"):
+                // Spec 61 §5: the project and a leftover folder of the job share one common git directory (a worktree of the project).
+                return RecordingProcessRunner.Ok(CommonDir + "\n");
             case "rev-parse" when args[^1].StartsWith("refs/heads/zyggy/", StringComparison.Ordinal):
                 return RecordingProcessRunner.Ok((Ahead > 0 ? TipSha : BaseSha) + "\n");
             case "symbolic-ref" when Has(spec, "refs/remotes/origin/HEAD"):

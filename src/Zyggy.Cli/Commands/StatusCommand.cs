@@ -9,6 +9,7 @@ using Zyggy.Core.Bus;
 using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Health;
+using Zyggy.Core.Jobs;
 using Zyggy.Core.Processes;
 using Zyggy.Core.Registry;
 using Zyggy.Core.Verbs;
@@ -89,7 +90,9 @@ internal static partial class StatusCommand
             InventoryReport report = await inventory.ListAsync(RecentReports, ct);
             TimeSpan staleAfter = TimeSpan.FromHours(configuration.Discovery.LastSeenHours);
             MachineLiveness[] machines = [.. (await inventory.RegistryAsync(ct)).Select(d => MachineLiveness.Of(d, now, staleAfter))];
-            await io.Out.WriteAsync(RenderOverview(configuration, health, verdict, report, now, machines, listener));
+            // Spec 61 §5: the leftover worktrees the node's clean-up kept.
+            IReadOnlyList<KeptWorktree> kept = LeftoverWorktrees.ReadKept(configuration.EffectiveNodeDir, configuration.Tenant);
+            await io.Out.WriteAsync(RenderOverview(configuration, health, verdict, report, now, machines, listener, kept));
             return verdict.Level switch
             {
                 HealthLevel.Green => ExitCodes.Ok,
@@ -135,7 +138,7 @@ internal static partial class StatusCommand
     /// published registry file (spec 59 slice 7): <c>last_seen</c> with its age, the node's <c>version</c>, <c>health</c>, and
     /// <c>stale</c> only past <c>discovery.lastSeenHours</c>. Nothing when no machine has published.
     /// </summary>
-    internal static string RenderOverview(NodeConfiguration configuration, NodeHealth? health, HealthVerdict verdict, InventoryReport report, DateTimeOffset now, IReadOnlyList<MachineLiveness> machines, ListenerFindings? listener = null)
+    internal static string RenderOverview(NodeConfiguration configuration, NodeHealth? health, HealthVerdict verdict, InventoryReport report, DateTimeOffset now, IReadOnlyList<MachineLiveness> machines, ListenerFindings? listener = null, IReadOnlyList<KeptWorktree>? kept = null)
     {
         var sb = new StringBuilder();
         sb.Append("node    ").Append(configuration.Machine.Value).Append(" (").Append(configuration.Tenant.Value).Append(')');
@@ -165,6 +168,15 @@ internal static partial class StatusCommand
         }
 
         AppendListener(sb, listener);
+        if (kept is { Count: > 0 })
+        {
+            sb.Append("        kept worktrees: ").Append(kept.Count.ToString(CultureInfo.InvariantCulture)).Append('\n');
+            foreach (KeptWorktree k in kept)
+            {
+                sb.Append("          ").Append(k.Id).Append(' ').Append(k.Path).Append(": ").Append(k.Why).Append('\n');
+            }
+        }
+
         int tenants = report.TenantDirectories.Count;
         sb.Append("bus     head ").Append(Short(report.HeadSha)).Append(Dot)
             .Append(tenants.ToString(CultureInfo.InvariantCulture)).Append(tenants == 1 ? " tenant directory" : " tenant directories").Append('\n');

@@ -295,6 +295,15 @@ public static class ServiceCollectionExtensions
                 Done = string.IsNullOrEmpty(nodeDir) ? null : new ReportedDone(nodeDir, identity.Tenant),
                 Running = string.IsNullOrEmpty(nodeDir) ? null : new RunningJobs(nodeDir, identity.Tenant),
                 Withdrawals = sp.GetService<RunWithdrawals>(),
+                // Spec 61 §5: only the job runner's listener (the node) cleans its leftover worktrees.
+                Leftovers = string.IsNullOrEmpty(nodeDir) || sp.GetService<RunWithdrawals>() is null
+                    ? null
+                    : new LeftoverWorktrees(
+                        sp.GetRequiredService<GitClient>(),
+                        nodeDir,
+                        identity.Tenant,
+                        new GitIdentity("zyggy (" + identity.Machine.Value + ")", identity.Machine.Value + "@zyggy.org"),
+                        sp.GetService<ILoggerFactory>()?.CreateLogger<LeftoverWorktrees>() ?? NullLogger<LeftoverWorktrees>.Instance),
                 Owner = new ListenerOwner(
                     options.CheckoutRoot ?? throw Missing(nameof(GitHubBusOptions.CheckoutRoot)),
                     sp.GetRequiredService<IProcessTable>(),

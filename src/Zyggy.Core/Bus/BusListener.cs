@@ -130,6 +130,9 @@ public sealed partial class BusListener : IDisposable
     /// <summary>Gets the owner record beside the listen lock (spec 61 §4); <see langword="null"/> when the composition writes none.</summary>
     internal ListenerOwner? Owner { get; init; }
 
+    /// <summary>Gets the clean-up of leftover worktrees (spec 61 §5); <see langword="null"/> when the handler is not the job runner or there is no node folder.</summary>
+    internal Jobs.LeftoverWorktrees? Leftovers { get; init; }
+
     /// <summary>Gets Central's supervisor wake (deliverable 18), run after every pickup pass; <see langword="null"/> on every other machine.</summary>
     internal Supervision.SupervisorWake? Wake { get; init; }
 
@@ -226,6 +229,8 @@ public sealed partial class BusListener : IDisposable
     /// <returns>How many claims were resumed (admitted or deferred).</returns>
     public async Task<int> ResumeClaimedAsync(CancellationToken ct)
     {
+        // Spec 61 §5: at start-up, the leftover worktrees of jobs that have no claim and no run are cleaned, kept or listed.
+        await CleanLeftoversAsync(null, ct).ConfigureAwait(false);
         IReadOnlyList<BusFile> files = await _bus.ListClaimedAsync(ct).ConfigureAwait(false);
         HashSet<string> waiting;
         lock (_deferredClaims)
@@ -1032,6 +1037,37 @@ public sealed partial class BusListener : IDisposable
                 reply.CacheReadTokens,
                 accepted.Job.Job?.JobType);
             await SignAndWriteAsync(new UnsignedResult(accepted, fields, reply, 0) { Withdrawal = withdrawalPath }, deferredBefore, ct).ConfigureAwait(false);
+        }
+
+        // Spec 61 §5: after each run, the leftover worktrees of finished jobs (this run's own folder is Finish's, and left alone here).
+        await CleanLeftoversAsync(accepted.File.Id.Value, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Spec 61 §5: cleans the leftover worktrees whose id has no claim of this machine, no live run and no deferred claim
+    /// (<paramref name="current"/> is the run that just ended); never fails the caller.
+    /// </summary>
+    private async Task CleanLeftoversAsync(string? current, CancellationToken ct)
+    {
+        if (Leftovers is null)
+        {
+            return;
+        }
+
+        try
+        {
+            HashSet<string> claimed = [.. (await _bus.ListClaimedAsync(ct).ConfigureAwait(false)).Select(f => f.Id.Value)];
+            HashSet<string> deferred;
+            lock (_deferredClaims)
+            {
+                deferred = [.. _deferredClaims.Select(c => c.File.Id.Value)];
+            }
+
+            await Leftovers.CleanAsync(id => id == current || _runs.ContainsKey(id) || claimed.Contains(id) || deferred.Contains(id), ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // a leftover folder stays as it is; the next clean-up looks again
         }
     }
 
