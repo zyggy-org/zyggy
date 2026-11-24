@@ -1208,7 +1208,8 @@ public sealed partial class BusRepository
     /// <summary>
     /// The sweep's input (spec 17): under the checkout write lock, every top-level <c>*.md</c> in the <c>jobs/claimed/</c> folder of
     /// every machine of this tenant, Central included, machines and files in ordinal order, each with its bytes and its claim time
-    /// (the committer time of the newest commit that touched the path). Never another tenant's subtree; nothing is verified here.
+    /// (the committer time of the newest commit that added the path: the claim of the current attempt, since a re-queue removes the
+    /// claimed file; spec 61 slice 6). Never another tenant's subtree; nothing is verified here.
     /// </summary>
     /// <exception cref="BusBusyException">Another zyggy process held the checkout's write lock for the whole wait.</exception>
     internal async Task<IReadOnlyList<SweepClaim>> ListClaimsForSweepAsync(CancellationToken ct)
@@ -1231,7 +1232,8 @@ public sealed partial class BusRepository
             foreach (BusFile file in await ListFolderAsync(BusPaths.Claimed(_me.Tenant, machine), ct).ConfigureAwait(false))
             {
                 byte[] bytes = await File.ReadAllBytesAsync(BusPaths.Resolve(_checkoutRoot, file.RelativePath), ct).ConfigureAwait(false);
-                DateTimeOffset? claimTime = await _git.LastCommitTimeAsync(_checkoutRoot, file.RelativePath, ct).ConfigureAwait(false);
+                // Spec 61 slice 6: the commit that added the claim (this attempt's claim); a later commit touching the file never moves it.
+                DateTimeOffset? claimTime = await _git.AddedCommitTimeAsync(_checkoutRoot, file.RelativePath, ct).ConfigureAwait(false);
                 claims.Add(new SweepClaim(file, machine, bytes, claimTime));
             }
         }

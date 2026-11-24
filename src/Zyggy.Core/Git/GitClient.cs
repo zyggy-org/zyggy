@@ -271,22 +271,8 @@ internal sealed class GitClient(IProcessRunner processes, GitClientOptions optio
     }
 
     /// <summary>
-    /// The committer time of the newest commit on <c>HEAD</c> that touched <paramref name="path"/> (spec 17: a claim's claim time), or
-    /// <see langword="null"/> when git fails or knows no such commit.
-    /// </summary>
-    public async Task<DateTimeOffset?> LastCommitTimeAsync(string repository, string path, CancellationToken cancellationToken)
-    {
-        var result = await RunAsync(repository, ["log", "-1", "--format=%cI", "--", path], null, cancellationToken).ConfigureAwait(false);
-        return result.Succeeded
-            && DateTimeOffset.TryParse(
-                result.Stdout.Trim(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out DateTimeOffset time)
-            ? time.ToUniversalTime()
-            : null;
-    }
-
-    /// <summary>
     /// The committer time of the newest commit on <c>HEAD</c> that added <paramref name="path"/> (spec 17: the age of a bus file whose
-    /// <c>created</c> cannot be read), or <see langword="null"/> when git fails or knows no such commit.
+    /// <c>created</c> cannot be read; spec 61 slice 6: a claim's claim time, which a later commit changing the file does not move), or <see langword="null"/> when git fails or knows no such commit.
     /// </summary>
     public async Task<DateTimeOffset?> AddedCommitTimeAsync(string repository, string path, CancellationToken cancellationToken)
     {

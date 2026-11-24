@@ -9,5 +9,5 @@ namespace Zyggy.Core.Bus;
 /// <param name="File">The repository-relative path and its file-name ULID (synthetic when the name is not one).</param>
 /// <param name="Folder">The machine whose folder holds the file.</param>
 /// <param name="Bytes">The file's bytes, read under the checkout write lock.</param>
-/// <param name="ClaimTime">The committer time of the newest commit that touched the path; <see langword="null"/> when git could not say.</param>
+/// <param name="ClaimTime">The committer time of the newest commit that added the path (this attempt's claim; a later commit that only changes the file does not move it, spec 61 slice 6); <see langword="null"/> when git could not say.</param>
 internal sealed record SweepClaim(BusFile File, MachineName Folder, byte[] Bytes, DateTimeOffset? ClaimTime);

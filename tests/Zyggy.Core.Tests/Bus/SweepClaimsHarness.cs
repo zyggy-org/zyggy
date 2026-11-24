@@ -91,6 +91,7 @@ internal sealed class SweepClaimsHarness : IDisposable
         return (path, job, bytes);
     }
 
+    /// <summary>The committer time of the commit that added the claimed file at <paramref name="path"/> (spec 61 slice 6: the claim time).</summary>
     public void ClaimedAt(string path, DateTimeOffset time) =>
         _claimTimes[path] = RecordingProcessRunner.Ok(time.ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture) + "\n");
 
@@ -131,10 +132,13 @@ internal sealed class SweepClaimsHarness : IDisposable
     {
         switch (RecordingProcessRunner.SubCommand(spec))
         {
+            // Spec 61 slice 6: a claim's time is the commit that added the claimed file, the same query as an archive file's added time.
             case "log" when spec.Arguments.Contains("--diff-filter=A"):
-                return _addedTimes.TryGetValue(spec.Arguments[^1], out ProcessResult? added) ? added : RecordingProcessRunner.Ok();
+                return _addedTimes.TryGetValue(spec.Arguments[^1], out ProcessResult? added) ? added
+                    : _claimTimes.TryGetValue(spec.Arguments[^1], out ProcessResult? time) ? time
+                    : RecordingProcessRunner.Ok();
             case "log":
-                return _claimTimes.TryGetValue(spec.Arguments[^1], out ProcessResult? time) ? time : RecordingProcessRunner.Ok();
+                return RecordingProcessRunner.Ok();
             case "mv" when _failingMoves.Contains(spec.Arguments[2]):
                 return RecordingProcessRunner.Fail(1, "fatal: the move was refused\n");
             default:

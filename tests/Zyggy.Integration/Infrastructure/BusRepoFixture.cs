@@ -129,7 +129,10 @@ public class BusRepoFixture : IAsyncLifetime
 
     /// <summary>Runs git with the fixture's isolated environment and returns raw stdout bytes.</summary>
     /// <exception cref="InvalidOperationException">git exited non-zero (stderr in the message) or could not start.</exception>
-    public async Task<byte[]> RunGitBytesAsync(string workingDirectory, IReadOnlyList<string> args, CancellationToken ct)
+    public Task<byte[]> RunGitBytesAsync(string workingDirectory, IReadOnlyList<string> args, CancellationToken ct) =>
+        RunGitBytesAsync(workingDirectory, args, null, ct);
+
+    private async Task<byte[]> RunGitBytesAsync(string workingDirectory, IReadOnlyList<string> args, IReadOnlyDictionary<string, string>? environment, CancellationToken ct)
     {
         var startInfo = new ProcessStartInfo("git")
         {
@@ -146,6 +149,10 @@ public class BusRepoFixture : IAsyncLifetime
         startInfo.Environment["GIT_CONFIG_GLOBAL"] = _globalConfigPath;
         startInfo.Environment["GIT_CONFIG_NOSYSTEM"] = "1";
         startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
+        foreach ((string name, string value) in environment ?? new Dictionary<string, string>())
+        {
+            startInfo.Environment[name] = value;
+        }
 
         using var process = new Process { StartInfo = startInfo };
         try
@@ -423,6 +430,22 @@ public class BusRepoFixture : IAsyncLifetime
         await CommitAndPushFromSenderAsync(subject, ct);
     }
 
+    /// <summary>
+    /// As <see cref="SeedRawFileAsync(string, byte[], string, CancellationToken)"/>, with the commit's author and committer time set to
+    /// <paramref name="committed"/> (spec 61 slice 6: a claim committed in the past, a later commit touching it).
+    /// </summary>
+    public async Task SeedRawFileAsync(string relativePath, byte[] bytes, string subject, DateTimeOffset committed, CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(relativePath);
+        ArgumentNullException.ThrowIfNull(bytes);
+        await SyncSenderAsync(ct);
+        string full = BusPaths.Resolve(SenderDir, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+        await File.WriteAllBytesAsync(full, bytes, ct);
+        string date = committed.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+        await CommitAndPushFromSenderAsync(subject, ct, new Dictionary<string, string> { ["GIT_COMMITTER_DATE"] = date, ["GIT_AUTHOR_DATE"] = date });
+    }
+
     /// <summary>Pushes one foreign commit (a line appended to <c>PROTOCOL.md</c>) so the node's next push is rejected until it rebases.</summary>
     public async Task AdvanceMainFromSenderAsync(CancellationToken ct)
     {
@@ -459,11 +482,11 @@ public class BusRepoFixture : IAsyncLifetime
     /// every bus writer does (founding spec §5, push retry): fetch, rebase onto <c>origin/main</c>, push again. The attempts are
     /// bounded by count, not by time.
     /// </summary>
-    private async Task CommitAndPushFromSenderAsync(string subject, CancellationToken ct)
+    private async Task CommitAndPushFromSenderAsync(string subject, CancellationToken ct, IReadOnlyDictionary<string, string>? environment = null)
     {
         const int Attempts = 10;
         await RunGitAsync(SenderDir, ["add", "--all"], ct);
-        await RunGitAsync(SenderDir, ["commit", "-q", "-m", subject], ct);
+        await RunGitBytesAsync(SenderDir, ["commit", "-q", "-m", subject], environment, ct);
         for (var attempt = 1; ; attempt++)
         {
             if (BeforeSenderPush is { } beforePush)

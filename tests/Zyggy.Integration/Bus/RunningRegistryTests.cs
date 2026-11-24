@@ -210,6 +210,66 @@ public sealed class RunningRegistryTests : IAsyncLifetime
             console.Stderr);
     }
 
+    // Slice 6 verify: the bound counts from the commit that added the claim; a later commit touching the claimed file (the node
+    // re-committing it) does not move the claim time and so never holds the claim past 24 h + 15 min.
+    [Fact]
+    public async Task Sweep_LaterCommitTouchingTheClaim_DoesNotExtendTheBound()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        Model job = await NewJobAsync(ct);
+        await Bus.SeedRawFileAsync(ClaimedPath(job), EnvelopeWriter.Serialize(job), "acme claim " + job.Header.Id.Value + " home-laptop", now.AddHours(-26), ct);
+        Model touched = await NewJobAsync(ct, job.Header.Id, "Read README.md again.\n");
+        await Bus.SeedRawFileAsync(ClaimedPath(job), EnvelopeWriter.Serialize(touched), "acme claim " + job.Header.Id.Value + " home-laptop", now.AddMinutes(-10), ct);
+        await SeedRegistryAsync("0.30.1", [job.Header.Id], ct);
+
+        // Act
+        var (exit, console) = await SweepAsync(ct);
+
+        // Assert
+        new { Exit = exit, console.Stdout }.Should().BeEquivalentTo(
+            new { Exit = 0, Stdout = $"requeued {job.Header.Id.Value} home-laptop attempt 2\nsweep: 1 re-queued, 0 exhausted, 0 rejected, 0 archived\n" },
+            console.Stderr);
+    }
+
+    // Spec 61 §3 (slice 6 correction): `zyggy status --id` names a claim its machine lists under running, with the registry's last_seen.
+    [Fact]
+    public async Task StatusId_ClaimListedAsRunning_ShowsRunningLastSeen()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await SeedClaimAsync(ct);
+        await SeedRegistryAsync("0.30.1", [job.Header.Id], ct);
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["status", "--id", job.Header.Id.Value], _harness.CentralNodeJson, ct: ct);
+
+        // Assert
+        new { Exit = exit, State = console.Stdout.Split('\n')[1] }.Should().BeEquivalentTo(
+            new { Exit = 0, State = "state   claimed by home-laptop, running (last seen 2026-11-24T20:00:00Z)" },
+            console.Stderr);
+    }
+
+    // Spec 61 §3 (slice 6 correction): a 0.30.0 target (no key) or a registry that does not list the id keeps today's line.
+    [Theory]
+    [InlineData("0.30.0")]
+    [InlineData("0.30.1")]
+    public async Task StatusId_ClaimNotListed_ShowsTodaysLine(string version)
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await SeedClaimAsync(ct);
+        await SeedRegistryAsync(version, version == "0.30.1" ? [EnvelopeId.New(DateTimeOffset.UtcNow)] : [], ct);
+
+        // Act
+        var (exit, console) = await _harness.RunAsync(["status", "--id", job.Header.Id.Value], _harness.CentralNodeJson, ct: ct);
+
+        // Assert
+        exit.Should().Be(0, console.Stderr);
+        console.Stdout.Split('\n')[1].Should().MatchRegex(@"^state   claimed by home-laptop since \d+ (s|min|h|d) ago$");
+    }
+
     private static string ClaimedPath(Model job) => BusPaths.EnvelopeFile(BusPaths.Claimed(CliHarness.Acme, CliHarness.HomeLaptop), job.Header.Id);
 
     private ServiceProvider BuildNode() =>
@@ -251,14 +311,15 @@ public sealed class RunningRegistryTests : IAsyncLifetime
         return job;
     }
 
-    private Task<Model> NewJobAsync(CancellationToken ct) =>
+    private Task<Model> NewJobAsync(CancellationToken ct, EnvelopeId? id = null, string body = "Read README.md and finish with a REPORT section; change nothing.\n") =>
         TestEnvelopes.SignedJobAsync(
             CliHarness.Central,
             CliHarness.HomeLaptop,
             _harness.Store,
             TestKeys.Acme1,
-            "Read README.md and finish with a REPORT section; change nothing.\n",
+            body,
             ct,
+            id: id,
             fields: new JobFields(_project.Path, TimeoutMinutes: 2, AllowedTools: ["Read"], Attempt: 1));
 
     private async Task<string> CommitAsync(string grep, CancellationToken ct) =>

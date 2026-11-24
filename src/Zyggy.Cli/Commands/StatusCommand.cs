@@ -117,7 +117,11 @@ internal static partial class StatusCommand
             return ExitCodes.NotFound;
         }
 
-        await io.Out.WriteAsync(RenderTrace(trace, clock.GetUtcNow()));
+        // Spec 61 §3: a claim its machine lists under running is shown as running, with that registry's last_seen.
+        RegistryDocument? running = trace.State == TraceState.Claimed && trace.Machine is { } holder
+            ? (await inventory.RegistryAsync(ct)).FirstOrDefault(d => d.Machine == holder && d.Running.Contains(id))
+            : null;
+        await io.Out.WriteAsync(RenderTrace(trace, clock.GetUtcNow(), running));
         return ExitCodes.Ok;
     }
 
@@ -215,8 +219,11 @@ internal static partial class StatusCommand
         return sb.ToString();
     }
 
-    /// <summary>The spec's "Output formats" block for <c>zyggy status --id</c>: the job line, the state line, every report line, then the body verbatim as data.</summary>
-    internal static string RenderTrace(EnvelopeTrace trace, DateTimeOffset now)
+    /// <summary>
+    /// The spec's "Output formats" block for <c>zyggy status --id</c>: the job line, the state line, every report line, then the body verbatim
+    /// as data. <paramref name="running"/> is the holder's registry when it lists the claimed job under <c>running</c> (spec 61 §3).
+    /// </summary>
+    internal static string RenderTrace(EnvelopeTrace trace, DateTimeOffset now, RegistryDocument? running = null)
     {
         var sb = new StringBuilder();
         bool item = trace.Job?.Type == EnvelopeType.Item || trace.AnsweredAsItem;
@@ -259,6 +266,7 @@ internal static partial class StatusCommand
         {
             TraceState.Queued when item => "queued at " + machine + " for central",
             TraceState.Queued => "queued at " + machine + " since " + AgeOrNever(now, trace.Job?.Created),
+            TraceState.Claimed when running is not null => "claimed by " + machine + ", running (last seen " + (running.LastSeen is { } seen ? Timestamp(seen) : "never") + ")",
             TraceState.Claimed => "claimed by " + machine + " since " + AgeOrNever(now, trace.Job?.Created),
             TraceState.Rejected => "rejected by " + machine + ": " + (trace.Reports.LastOrDefault(r => r.Verified && r.Status == ReportStatus.Rejected)?.Reason ?? trace.Job?.Problem ?? "unknown"),
             TraceState.Reported when trace.Reports.LastOrDefault(r => r.Verified)?.Reason == "withdrawn" => "withdrawn, reported by " + machine,
