@@ -404,6 +404,65 @@ public sealed class WithdrawRoundTripTests : IAsyncLifetime
         }.Should().BeEquivalentTo(new { Exit = 0, State = "state   withdrawn, reported by home-laptop", Report = true, Pending = false, Claimed = false, ModelStarts = 0 }, console.Stdout);
     }
 
+    // AC-15 / AC-16, RegressionGuard (the slice 5 verify's missing case): the queued removal loses the race with the node's claim. Central read
+    // the job as queued; the node claims and pushes from its own clone; the removal then writes nothing (`rm`), a second withdrawal follows
+    // the claimed path, and the job never runs after the owner withdrew it.
+    [Fact]
+    public async Task WithdrawQueued_NodeClaimedMeanwhile_RmFailedThenRequestedNeverRun()
+    {
+        // Arrange: Central reads the job while it is queued
+        var ct = TestContext.Current.CancellationToken;
+        SeededJob job = await SeedJobAsync(claimed: false, ct);
+        await using ServiceProvider central = TestHost.Build(Bus, CliHarness.Central, _harness.Store, checkoutRoot: Bus.SenderDir, extend: s => s.AddSingleton(TestKeys.Acme1));
+        BusRepository centralBus = central.GetRequiredService<BusRepository>();
+        (await centralBus.PullAsync(ct)).Succeeded.Should().BeTrue();
+        var (path, _, claimedWhenRead, bytes) = (await centralBus.FindJobFilesAsync(job.Id, ct)).Should().ContainSingle().Subject;
+        EnvelopeSigner signer = central.GetRequiredService<EnvelopeSigner>();
+        Model read = (await signer.ParseAndVerifyAsync(bytes, CliHarness.Acme, ct)).Envelope!;
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        var header = new EnvelopeHeader(CliHarness.Acme, EnvelopeId.New(now), CliHarness.Central, CliHarness.Central, now, InReplyTo: job.Id);
+        var fields = new ReportFields(ReportStatus.Failed, "withdrawn");
+        Model report = (await signer.SignAsync(Model.CreateReport(header, fields, "withdrawn before it started\n"u8.ToArray()), TestKeys.Acme1, ct)).Envelope!;
+
+        // The node claims and pushes from its own clone meanwhile.
+        string to = ClaimedPath(job.Id);
+        await Bus.RunGitAsync(Bus.CloneDir, ["pull", "-q", "--rebase", "origin", "main"], ct);
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(Bus.CloneDir, to))!);
+        await Bus.RunGitAsync(Bus.CloneDir, ["mv", job.RelativePath, to], ct);
+        await Bus.RunGitAsync(Bus.CloneDir, ["commit", "-q", "-m", "acme claim " + job.Id.Value + " central→home-laptop"], ct);
+        await Bus.RunGitAsync(Bus.CloneDir, ["push", "-q", "origin", "main"], ct);
+
+        // Act
+        WriteOutcome removal = await centralBus.WithdrawQueuedAsync(path, read, bytes, report, ct);
+        WithdrawOutcome second = await central.GetRequiredService<JobWithdrawer>().WithdrawAsync(job.Id, null, ct);
+        await using ServiceProvider node = await StartNodeAsync(Quick(), ct);
+
+        // Assert
+        string nodeReport = (await ReportsOnMainAsync(CliHarness.HomeLaptop, ct)).Should().ContainSingle().Subject;
+        Model answered = await _harness.ParseOnMainAsync(nodeReport, ct);
+        new
+        {
+            ClaimedWhenRead = claimedWhenRead,
+            Removal = removal is WriteFailed { Stage: "rm" },
+            second.Result,
+            CentralReports = (await ReportsOnMainAsync(CliHarness.Central, ct)).Count,
+            answered.Report!.Status,
+            answered.Report.Reason,
+            Claimed = await Bus.ExistsOnMainAsync(to, ct),
+            ModelStarts = ModelStarts(),
+        }.Should().BeEquivalentTo(new
+        {
+            ClaimedWhenRead = false,
+            Removal = true,
+            Result = WithdrawResult.Requested,
+            CentralReports = 0,
+            Status = ReportStatus.Failed,
+            Reason = "withdrawn",
+            Claimed = false,
+            ModelStarts = 0,
+        });
+    }
+
     private static string ClaimedPath(EnvelopeId id) => BusPaths.EnvelopeFile(BusPaths.Claimed(CliHarness.Acme, CliHarness.HomeLaptop), id);
 
     // A model that writes a file in its working directory and then runs for two minutes, unless stopped.
