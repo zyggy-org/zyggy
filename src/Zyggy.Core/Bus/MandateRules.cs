@@ -1,4 +1,5 @@
 using Zyggy.Core.Envelope;
+using Zyggy.Core.Runs;
 using Zyggy.Core.Tenancy;
 
 namespace Zyggy.Core.Bus;
@@ -150,16 +151,20 @@ public sealed record MandateLedger(
     /// <summary>
     /// Gets a value indicating whether the three newest reports of runs where the model started, since the last resume, all have a
     /// status other than <c>done</c>. A report without <c>model</c> and <c>num_turns</c> (spec 59, Q5) is a failure before the model
-    /// started and does not count.
+    /// started and does not count, nor does a <c>withdrawn</c> report (deliverable 61, Q4 (a)): the owner stopped that job, it did
+    /// not fail.
     /// </summary>
     public bool Paused
     {
         get
         {
-            MandateReportEntry[] newest = [.. Reports.Where(r => r.ModelStarted && (Resumed is null || r.Created > Resumed)).OrderByDescending(r => r.Id.Value, StringComparer.Ordinal).Take(PauseAfter)];
+            MandateReportEntry[] newest = [.. Reports.Where(r => r.ModelStarted && !IsWithdrawn(r) && (Resumed is null || r.Created > Resumed)).OrderByDescending(r => r.Id.Value, StringComparer.Ordinal).Take(PauseAfter)];
             return newest.Length == PauseAfter && newest.All(r => r.Status != ReportStatus.Done);
         }
     }
+
+    private static bool IsWithdrawn(MandateReportEntry report) =>
+        string.Equals(report.Reason, RunFailureReasonWire.ToWire(RunFailureReason.Withdrawn), StringComparison.Ordinal);
 
     /// <summary>The mandate's state at <paramref name="now"/>.</summary>
     /// <param name="now">The instant to judge at.</param>

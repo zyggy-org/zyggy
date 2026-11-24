@@ -155,7 +155,7 @@ public static class EnvelopeParser
 
             if (!EnvelopeWire.TryFromWire(typeText, out EnvelopeType type))
             {
-                return Fail<Envelope>(FieldReader.Invalid("type", "must be job, report, context, item, status, question, decision or mandate"));
+                return Fail<Envelope>(FieldReader.Invalid("type", "must be job, report, context, item, status, question, decision, mandate or withdrawal"));
             }
 
             // 5. key_id
@@ -202,6 +202,7 @@ public static class EnvelopeParser
                 EnvelopeType.Question => ReadQuestion(out question, header, body),
                 EnvelopeType.Decision => ReadDecision(out decision, header, body),
                 EnvelopeType.Mandate => ReadMandate(out mandate, header, body),
+                EnvelopeType.Withdrawal => ReadWithdrawal(body),
                 _ => ReadContext(out context),
             };
             if (!ok)
@@ -235,7 +236,7 @@ public static class EnvelopeParser
                 return null;
             }
 
-            if (!Text("in_reply_to", type is EnvelopeType.Report or EnvelopeType.Decision, out string? inReplyToText))
+            if (!Text("in_reply_to", type is EnvelopeType.Report or EnvelopeType.Decision or EnvelopeType.Withdrawal, out string? inReplyToText))
             {
                 return null;
             }
@@ -904,6 +905,20 @@ public static class EnvelopeParser
 
             decision = new DecisionFields(kind, basis, undo!, mandate, project, step, evidence);
             return true;
+        }
+
+        // Deliverable 61: a withdrawal carries no field beyond the common ones (in_reply_to, mandatory, is the job); its body is empty
+        // or the one --why line of 1–200 characters, ended by one line break.
+        private bool ReadWithdrawal(ReadOnlyMemory<byte> body)
+        {
+            if (body.IsEmpty)
+            {
+                return true;
+            }
+
+            string text = System.Text.Encoding.UTF8.GetString(body.Span);
+            string line = text.EndsWith("\r\n", StringComparison.Ordinal) ? text[..^2] : text.EndsWith('\n') ? text[..^1] : text;
+            return IsLine(line, SupervisionLimits.LineMax) || Reject(FieldReader.Invalid("body", "must be empty or one line of 1 to 200 characters"));
         }
 
         private static bool IsRegistryName(string text) =>

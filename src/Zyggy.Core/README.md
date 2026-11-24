@@ -44,6 +44,13 @@ The shared class library. Every other project (`Zyggy.Node`, `Zyggy.Cli`, `Zyggy
 - **Tool guard**: `JobHookPolicy` takes read roots (`zyggy hook pre-tool-use --read-root`); a supervisor run that answers a machine of `supervision.workMachines` gets `supervision.outboundPaths` and the one question as its roots and no Hub tool.
 - **Configuration**: `SupervisionSettings.Project`, `RunsPerHour` and `OutboundPaths`. The remedies are the Cli README's "Troubleshooting — Mandate and supervisor".
 
+## Withdrawing a job: the contract (deliverable 61, slice 4)
+
+- **Wire**: `EnvelopeType.Withdrawal` (`withdrawal`), built by `Envelope.CreateWithdrawal`: no field beyond the common ones, `in_reply_to` (the job id) mandatory, `to` the machine that claimed the job, the body empty or one `--why` line of 1–200 characters (data, never instructions); signed and verified like a job; golden `tests/golden/withdrawal.*`. `BusPaths.Withdrawals` is `nodes/<machine>/withdrawals/`; `zyggy verify` holds that folder to withdrawals addressed to its machine. The closed reason list gains `RunFailureReason.Withdrawn` (`withdrawn`, always with `status: failed`); a 0.30.0 reader accepts it as any snake_case reason token.
+- **Write rule** (`WithdrawalRules`, internal and pure): the job's sender may remove its own queued job (in the commit that adds its `withdrawn` report) and write a withdrawal for its own claimed job into the claiming machine's `withdrawals/`; Central may do both for any job of its tenant; another machine, another tenant and a claimed session task are refused. A node acts on a withdrawal only in its own folder, addressed to it, for a job it holds, from that job's sender or Central, and never on one written before the job (a replay against a job re-submitted under the same id).
+- **Mandates**: a withdrawn job keeps its place in `max_jobs`; a `withdrawn` report never counts toward the pause.
+- The verb `zyggy withdraw`, the node's stop of a running job and the runbook rows come with slice 5.
+
 ## The five seams
 
 The library defines the interfaces behind which every external system hides. Each has exactly one implementation in v1 and nothing outside the implementation may reference the external system directly.

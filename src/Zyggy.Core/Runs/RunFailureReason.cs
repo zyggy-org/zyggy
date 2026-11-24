@@ -50,4 +50,11 @@ public enum RunFailureReason
     /// <c>claude.models</c> does not list it (the model never started); <c>failed</c> when Claude Code started another model or refused it.
     /// </summary>
     ModelUnavailable,
+
+    /// <summary>
+    /// The job was withdrawn by its sender or by Central (<c>withdrawn</c>, deliverable 61). Always sent with <c>status: failed</c>: by
+    /// the withdrawing machine for a queued job (the model never ran), by the node for a claimed one it stopped. Never counts toward a
+    /// mandate's pause. A 0.30.0 reader accepts it as any snake_case reason token.
+    /// </summary>
+    Withdrawn,
 }

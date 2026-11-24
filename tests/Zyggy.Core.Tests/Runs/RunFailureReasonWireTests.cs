@@ -24,6 +24,9 @@ public sealed class RunFailureReasonWireTests
 
         // Spec 50 AC-3/4/5: a job's model is not allowed here, another model started, or Claude Code refused it.
         { RunFailureReason.ModelUnavailable, "model_unavailable" },
+
+        // Spec 61 AC-13: a job its sender or Central withdrew (always with status: failed).
+        { RunFailureReason.Withdrawn, "withdrawn" },
     };
 
     [Theory]
@@ -67,6 +70,6 @@ public sealed class RunFailureReasonWireTests
     public void EveryMember_HasATestRow()
     {
         // Assert
-        Reasons.Count.Should().Be(Enum.GetValues<RunFailureReason>().Length).And.Be(12);
+        Reasons.Count.Should().Be(Enum.GetValues<RunFailureReason>().Length).And.Be(13);
     }
 }

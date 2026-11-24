@@ -371,6 +371,64 @@ public sealed class BusAuditorTests : IAsyncLifetime
         return EnvelopeWriter.Serialize(signed.Envelope!);
     }
 
+    // Spec 61 slice 4: a withdrawal addressed to the machine whose withdrawals/ it sits in is a §4 path of the right type.
+    [Fact]
+    public async Task Judge_WithdrawalInItsTargetsFolder_Ok()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        var id = EnvelopeId.New(T);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Withdrawals(Acme, WorkLaptop), id), await Withdrawal(id, WorkLaptop, ct));
+
+        // Act
+        AuditReport report = await Auditor().RunAsync(null, ct);
+
+        // Assert
+        report.Entries.Should().ContainSingle().Which.Outcome.Should().Be(AuditOutcome.Ok);
+    }
+
+    // Spec 61 slice 4: a withdrawal addressed to another machine than the folder's.
+    [Fact]
+    public async Task Judge_WithdrawalToAnotherMachine_WriterMismatchTo()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        var id = EnvelopeId.New(T);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Withdrawals(Acme, WorkLaptop), id), await Withdrawal(id, HomeLaptop, ct));
+
+        // Act
+        AuditReport report = await Auditor().RunAsync(null, ct);
+
+        // Assert
+        AuditEntry entry = report.Entries.Should().ContainSingle().Subject;
+        (entry.Outcome, entry.Field).Should().Be((AuditOutcome.WriterMismatch, "to"));
+    }
+
+    // Spec 61 slice 4: only withdrawals sit in withdrawals/.
+    [Fact]
+    public async Task Judge_ContextInWithdrawalsFolder_TypeFolderMismatch()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        var id = EnvelopeId.New(T);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Withdrawals(Acme, WorkLaptop), id), await Context(id, ct));
+
+        // Act
+        AuditReport report = await Auditor().RunAsync(null, ct);
+
+        // Assert
+        AuditEntry entry = report.Entries.Should().ContainSingle().Subject;
+        (entry.Outcome, entry.Field, entry.Detail).Should().Be((AuditOutcome.TypeFolderMismatch, "type", "context in withdrawals/"));
+    }
+
+    private async Task<byte[]> Withdrawal(EnvelopeId id, MachineName to, CancellationToken ct)
+    {
+        var header = new EnvelopeHeader(Acme, id, Central, to, T, InReplyTo: EnvelopeId.New(T.AddMinutes(-5)));
+        EnvelopeResult signed = await new EnvelopeSigner(_both).SignAsync(Model.CreateWithdrawal(header, why: null), TestKeys.Acme1, ct);
+        signed.IsAccepted.Should().BeTrue(signed.Rejection?.ToString());
+        return EnvelopeWriter.Serialize(signed.Envelope!);
+    }
+
     private async Task<byte[]> Item(EnvelopeId id, MachineName from, MachineName to, CancellationToken ct)
     {
         var header = new EnvelopeHeader(Acme, id, from, to, T);

@@ -182,6 +182,9 @@ public sealed partial class BusAuditor
 
             // Deliverable 18: only mandates sit in mandates/ and mandates/revoked/ (the parser already refuses one not from Central).
             BusFolder.Mandates or BusFolder.RevokedMandates => EnvelopeType.Mandate,
+
+            // Deliverable 61: only withdrawals sit in a machine's withdrawals/, each addressed to that machine.
+            BusFolder.Withdrawals => EnvelopeType.Withdrawal,
             _ => null,
         };
         if (expected is { } type && envelope.Type != type)
@@ -201,7 +204,7 @@ public sealed partial class BusAuditor
                     return new AuditEntry(path, AuditOutcome.WriterMismatch, "from", "a decision in " + machine.Value + "'s folder; decisions belong in central's");
                 case BusFolder.Items when envelope.Header.To != MachineName.Central:
                     return new AuditEntry(path, AuditOutcome.WrongRecipient, "to", "to " + envelope.Header.To.Value + ", items go to central");
-                case BusFolder.Jobs or BusFolder.Claimed or BusFolder.Rejected when envelope.Header.To != machine:
+                case BusFolder.Jobs or BusFolder.Claimed or BusFolder.Rejected or BusFolder.Withdrawals when envelope.Header.To != machine:
                     return new AuditEntry(path, AuditOutcome.WriterMismatch, "to", "to " + envelope.Header.To.Value + " in " + machine.Value + "'s folder");
                 default:
                     break;

@@ -44,4 +44,10 @@ public enum BusFolder
 
     /// <summary><c>tenants/&lt;org&gt;/mandates/revoked</c>: the mandates Central revoked (deliverable 18).</summary>
     RevokedMandates,
+
+    /// <summary>
+    /// <c>…/withdrawals</c>: withdrawals of jobs the machine claimed, written by the job's sender or Central, removed by the machine
+    /// (deliverable 61).
+    /// </summary>
+    Withdrawals,
 }
