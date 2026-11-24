@@ -1374,13 +1374,143 @@ public sealed class BusListenerTests : IAsyncLifetime
         _log.AtLevel(LogLevel.Error).Should().ContainSingle(e => e.Message == $"report of job {job.Header.Id} could not be signed after 10 tries; it is given up and the claim stays for the sweep");
     }
 
+    // AC-4 (spec 61): the job's file back in jobs/ while its run is alive is claimed again, and the model is started once in total.
+    [Fact]
+    public async Task ProcessOnceAsync_FileBackWhileRunAlive_ReclaimedWithoutSecondRun()
+    {
+        // Arrange: the first pass claims and starts the run; the recorded `git mv` leaves the file in jobs/, as a re-queue would put it back
+        var ct = TestContext.Current.CancellationToken;
+        await DropJobAsync(ct);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _handler = async (envelope, _) =>
+        {
+            _handled.Add(envelope);
+            await release.Task;
+            return new JobReply(ReportStatus.Done, null, Encoding.UTF8.GetBytes("ok\n"), T, T.AddSeconds(1));
+        };
+        BusListener listener = Listener(gate: Gate(() => new Admitted(new TrackingLease())), kept: Kept(), done: Done());
+        await listener.ProcessOnceAsync(ct);
+
+        // Act
+        await listener.ProcessOnceAsync(ct);
+        release.SetResult();
+        await listener.DrainAsync(ct);
+
+        // Assert
+        _handled.Should().ContainSingle("the live run answers the re-queued file");
+        _processes.CallsOf("mv").Should().HaveCount(2, "the file is claimed again");
+    }
+
+    // AC-5 (spec 61): a resumed claim whose result is kept is not run again.
+    [Fact]
+    public async Task ResumeClaimedAsync_KeptResult_NotRunAgain()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        _processes.On("add", RecordingProcessRunner.Fail(128, "fatal: unable to write new index file"));
+        BusListener listener = Listener(kept: Kept()); // no done ids: the kept result alone holds the run back
+        await listener.ProcessOnceAsync(ct);
+        string queued = BusPaths.EnvelopeFile(BusPaths.Jobs(Acme, HomeLaptop), job.Header.Id);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Claimed(Acme, HomeLaptop), job.Header.Id), _checkout.Read(queued));
+        File.Delete(BusPaths.Resolve(_checkout.Root, queued));
+
+        // Act
+        await listener.ResumeClaimedAsync(ct);
+
+        // Assert
+        _handled.Should().ContainSingle();
+    }
+
+    // AC-6 (spec 61): an id this node reported done is not run again within 14 days, and runs again after them.
+    [Theory]
+    [InlineData(14 * 24 * 60 - 1, 1)]
+    [InlineData((14 * 24 * 60) + 1, 2)]
+    public async Task ProcessOnceAsync_IdReportedDoneEarlier_RunsOnlyAfter14Days(int minutesLater, int runs)
+    {
+        // Arrange: the recorded `git rm` of the report leaves the file in jobs/, as a duplicate delivery would put it there
+        var ct = TestContext.Current.CancellationToken;
+        await DropJobAsync(ct);
+        BusListener listener = Listener(kept: Kept(), done: Done());
+        await listener.ProcessOnceAsync(ct);
+        _clock.Advance(TimeSpan.FromMinutes(minutesLater));
+
+        // Act
+        await listener.ProcessOnceAsync(ct);
+
+        // Assert
+        _handled.Should().HaveCount(runs);
+    }
+
+    // AC-6 (spec 61): the duplicate is removed with its own commit subject.
+    [Fact]
+    public async Task ProcessOnceAsync_IdReportedDoneEarlier_RemovedWithDuplicateCommit()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        BusListener listener = Listener(kept: Kept(), done: Done());
+        await listener.ProcessOnceAsync(ct);
+
+        // Act
+        await listener.ProcessOnceAsync(ct);
+
+        // Assert
+        _processes.CallsOf("commit").Last().StandardInput.Should().StartWith($"acme duplicate {job.Header.Id} home-laptop→central");
+    }
+
+    // AC-6 (spec 61): a job that ended failed may run again.
+    [Fact]
+    public async Task ProcessOnceAsync_IdReportedFailedEarlier_RunsAgain()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropJobAsync(ct);
+        _handler = (job, _) =>
+        {
+            _handled.Add(job);
+            return Task.FromResult(new JobReply(ReportStatus.Failed, "claude_error", Encoding.UTF8.GetBytes("no\n"), T, T.AddSeconds(1)));
+        };
+        BusListener listener = Listener(kept: Kept(), done: Done());
+        await listener.ProcessOnceAsync(ct);
+
+        // Act
+        await listener.ProcessOnceAsync(ct);
+
+        // Assert
+        _handled.Should().HaveCount(2);
+    }
+
+    // Spec 61 "Never a second run" at start-up: a resumed claim whose id this node reported done is removed as a duplicate, not run.
+    [Fact]
+    public async Task ResumeClaimedAsync_IdReportedDone_RemovedNotRun()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        BusListener listener = Listener(kept: Kept(), done: Done());
+        await listener.ProcessOnceAsync(ct);
+        string queued = BusPaths.EnvelopeFile(BusPaths.Jobs(Acme, HomeLaptop), job.Header.Id);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Claimed(Acme, HomeLaptop), job.Header.Id), _checkout.Read(queued));
+        File.Delete(BusPaths.Resolve(_checkout.Root, queued));
+
+        // Act
+        await listener.ResumeClaimedAsync(ct);
+
+        // Assert
+        _handled.Should().ContainSingle();
+        _processes.CallsOf("commit").Last().StandardInput.Should().StartWith($"acme duplicate {job.Header.Id} home-laptop→central");
+    }
+
     private KeptReports Kept() => new(Path.Join(_checkout.Root, "node"), Acme);
 
-    private BusListener Listener(KeyId? signWith = null, JobGate? gate = null, ISecretStore? store = null, KeptReports? kept = null)
+    private ReportedDone Done() => new(Path.Join(_checkout.Root, "node"), Acme);
+
+    private BusListener Listener(KeyId? signWith = null, JobGate? gate = null, ISecretStore? store = null, KeptReports? kept = null, ReportedDone? done = null)
     {
         var git = new GitClient(_processes, new GitClientOptions { Identity = new GitIdentity("zyggy (home-laptop)", "home-laptop@zyggy.org") }, _clock);
         var repository = new BusRepository(git, _provider, Me, _checkout.Root, new EnvelopeSigner(store ?? _store), _clock, () => 0, _repositoryLog);
-        return new BusListener(_provider, repository, PollOptions.Default, signWith ?? TestKeys.Acme1, _clock, new Random(1), (job, ct) => _handler(job, ct), _log, gate) { Kept = kept };
+        return new BusListener(_provider, repository, PollOptions.Default, signWith ?? TestKeys.Acme1, _clock, new Random(1), (job, ct) => _handler(job, ct), _log, gate) { Kept = kept, Done = done };
     }
 
     private static JobGate Gate(Func<AdmissionDecision> decide) => (_, _) => Task.FromResult(decide());

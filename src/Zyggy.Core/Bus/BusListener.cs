@@ -106,6 +106,9 @@ public sealed partial class BusListener : IDisposable
     /// <summary>Gets the node folder's kept results (spec 61); <see langword="null"/> when the composition has no node folder.</summary>
     internal KeptReports? Kept { get; init; }
 
+    /// <summary>Gets the node folder's ids reported <c>done</c> in the last 14 days (spec 61); <see langword="null"/> when the composition has no node folder.</summary>
+    internal ReportedDone? Done { get; init; }
+
     /// <summary>Gets Central's supervisor wake (deliverable 18), run after every pickup pass; <see langword="null"/> on every other machine.</summary>
     internal Supervision.SupervisorWake? Wake { get; init; }
 
@@ -196,7 +199,8 @@ public sealed partial class BusListener : IDisposable
             waiting = [.. _deferredClaims.Select(c => c.File.Id.Value)];
         }
 
-        files = [.. files.Where(f => !_runs.ContainsKey(f.Id.Value) && !waiting.Contains(f.Id.Value))];
+        // Spec 61: a claim whose result is kept (or waits to be signed) is answered by that report, never run again.
+        files = [.. files.Where(f => !_runs.ContainsKey(f.Id.Value) && !waiting.Contains(f.Id.Value) && !HasResult(f.Id))];
         if (files.Count == 0)
         {
             return 0;
@@ -218,6 +222,12 @@ public sealed partial class BusListener : IDisposable
                     LogClaimedNotVerifying(file.Id.Value);
                 }
 
+                continue;
+            }
+
+            if (DoneAt(accepted.File.Id) is { } doneAt)
+            {
+                await RemoveDuplicateAsync(accepted, doneAt, ct).ConfigureAwait(false);
                 continue;
             }
 
@@ -289,13 +299,19 @@ public sealed partial class BusListener : IDisposable
         int deferredBefore = await _bus.UnpushedCommitCountAsync(ct).ConfigureAwait(false);
         foreach (BusFile file in await _bus.ListNewJobsAsync(ct).ConfigureAwait(false))
         {
-            if (Kept?.Has(file.Id) == true || _unsigned.ContainsKey(file.Id.Value))
+            if (HasResult(file.Id))
             {
                 // Spec 61: a job whose result is kept (or waits to be signed) is answered by that report, never run again.
                 continue;
             }
 
             JobIntake intake = await _bus.VerifyIntakeAsync(file, ct).ConfigureAwait(false);
+            if (intake is AcceptedJob again && await AnsweredWithoutRunAsync(again, ct).ConfigureAwait(false))
+            {
+                deferredBefore = await _bus.UnpushedCommitCountAsync(ct).ConfigureAwait(false);
+                continue;
+            }
+
             if (intake is AcceptedJob verified && Mandates is not null)
             {
                 // Deliverable 18: a job under a mandate is matched against this node's checkout before the gate, the claim or the model.
@@ -579,6 +595,74 @@ public sealed partial class BusListener : IDisposable
         }
     }
 
+    /// <summary>Spec 61: true when a result of <paramref name="job"/> is kept in the node folder or waits to be signed.</summary>
+    private bool HasResult(EnvelopeId job)
+    {
+        bool kept = false;
+        KeptStore(() => kept = Kept?.Has(job) == true, job);
+        return kept || _unsigned.ContainsKey(job.Value);
+    }
+
+    /// <summary>Spec 61: when this node reported <paramref name="job"/> <c>done</c> within 14 days, that instant; a node folder that cannot be read counts as never.</summary>
+    private DateTimeOffset? DoneAt(EnvelopeId job)
+    {
+        DateTimeOffset? at = null;
+        KeptStore(() => at = Done?.DoneWithin(job, _clock.GetUtcNow()), job);
+        return at;
+    }
+
+    /// <summary>
+    /// Spec 61 "Never a second run", at intake: a file whose id has a live run on this node is claimed without starting anything (the live
+    /// run's report answers it); one whose id this node reported <c>done</c> within 14 days is removed as a duplicate. True when the file was
+    /// dealt with that way and must not go through the gate.
+    /// </summary>
+    private async Task<bool> AnsweredWithoutRunAsync(AcceptedJob accepted, CancellationToken ct)
+    {
+        string id = accepted.File.Id.Value;
+        if (_runs.ContainsKey(id))
+        {
+            using (Scope("claim"))
+            {
+                WriteOutcome claim = await _bus.ClaimAsync(accepted, ct).ConfigureAwait(false);
+                if (claim is WriteFailed failed)
+                {
+                    LogWriteFailed("claim", id, failed.Stage, failed.Detail);
+                }
+                else
+                {
+                    LogReclaimed(id, claim is Deferred ? "deferred" : "pushed");
+                }
+            }
+
+            return true;
+        }
+
+        if (DoneAt(accepted.File.Id) is { } doneAt)
+        {
+            await RemoveDuplicateAsync(accepted, doneAt, ct).ConfigureAwait(false);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>Spec 61: removes the file of a job this node reported <c>done</c> at <paramref name="doneAt"/>, with one Warning; no run, no second report.</summary>
+    private async Task RemoveDuplicateAsync(AcceptedJob accepted, DateTimeOffset doneAt, CancellationToken ct)
+    {
+        using (Scope("claim"))
+        {
+            WriteOutcome removed = await _bus.RemoveDuplicateAsync(accepted, ct).ConfigureAwait(false);
+            if (removed is WriteFailed failed)
+            {
+                LogWriteFailed("duplicate removal", accepted.File.Id.Value, failed.Stage, failed.Detail);
+            }
+            else
+            {
+                LogDuplicate(accepted.File.Id.Value, doneAt);
+            }
+        }
+    }
+
     /// <summary>Gate → claim (inline) → run and report (tracked when there is a gate, awaited when there is none). False when nothing was claimed.</summary>
     private async Task<bool> AdmitClaimAndTrackAsync(AcceptedJob accepted, CancellationToken ct)
     {
@@ -781,6 +865,11 @@ public sealed partial class BusListener : IDisposable
         }
 
         _unsigned.TryRemove(id, out _);
+        if (reply.Status == ReportStatus.Done)
+        {
+            // Spec 61: a done id is remembered for 14 days, so a later copy of the job is removed as a duplicate, never run.
+            KeptStore(() => Done?.Note(accepted.File.Id, _clock.GetUtcNow()), accepted.File.Id);
+        }
 
         // Spec 61: the result is kept in the node folder before the bus write and removed only once its commit is on the remote.
         byte[] bytes = EnvelopeWriter.Serialize(signed);
@@ -939,6 +1028,12 @@ public sealed partial class BusListener : IDisposable
 
     [LoggerMessage(Level = LogLevel.Information, Message = "report of job {Id} written from the node folder")]
     private partial void LogKeptWritten(string id);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "job {Id} is back in the inbox while its run is alive; claimed again without a second run ({Push})")]
+    private partial void LogReclaimed(string id, string push);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id} was reported done by this node at {DoneAt}; removed as a duplicate, not run")]
+    private partial void LogDuplicate(string id, DateTimeOffset doneAt);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "kept result of job {Id} does not verify ({Detail}); moved to {Path}, never written to the bus")]
     private partial void LogKeptQuarantined(string id, string detail, string path);

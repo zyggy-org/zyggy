@@ -419,6 +419,28 @@ public sealed partial class BusRepository
             ct);
     }
 
+    /// <summary>
+    /// Spec 61 "Never a second run": removes the file of a job this node already reported <c>done</c> from <c>jobs/</c> or <c>jobs/claimed/</c>
+    /// (where <paramref name="job"/> sits), in one commit <c>&lt;tenant&gt; duplicate &lt;id&gt; &lt;me&gt;→&lt;from&gt;</c>; no report is written.
+    /// </summary>
+    /// <param name="job">The verified job in this node's own <c>jobs/</c> or <c>jobs/claimed/</c>.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The write outcome; <c>WriteFailed("rm", …)</c> when the file is gone after the write's pull.</returns>
+    internal Task<WriteOutcome> RemoveDuplicateAsync(AcceptedJob job, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        string path = job.File.RelativePath;
+        bool claimed = string.Equals(path, BusPaths.EnvelopeFile(BusPaths.Claimed(_me.Tenant, _me.Machine), job.File.Id), StringComparison.Ordinal);
+        AssertMayWrite(path, claimed ? BusFolder.Claimed : BusFolder.Jobs);
+        return WriteAsync(
+            Subject("duplicate", job.File.Id, _me.Machine.Value, job.Job.Header.From.Value),
+            [path],
+            async token => File.Exists(BusPaths.Resolve(_checkoutRoot, path))
+                ? Failure("rm", await _git.RemoveAsync(_checkoutRoot, [path], token).ConfigureAwait(false))
+                : new WriteFailed("rm", "the job's file is gone"),
+            ct);
+    }
+
     /// <summary>True when <paramref name="revision"/> holds a file at <paramref name="path"/>.</summary>
     private async Task<bool> IsInRevisionAsync(string revision, string path, CancellationToken ct) =>
         (await _git.BlobSizeAsync(_checkoutRoot, revision, path, ct).ConfigureAwait(false)).Size is not null;
