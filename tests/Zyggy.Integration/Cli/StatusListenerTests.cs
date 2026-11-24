@@ -104,6 +104,20 @@ public sealed class StatusListenerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Status_RecordOfAProcessThatEndedLockStillHeld_NoStaleLine()
+    {
+        // Arrange: spec 61 §4 (slice 7 correction) — the stale line needs the process gone AND the lock free; here something holds the lock
+        using IDisposable? held = await BusCheckoutLock.AcquireAsync(_harness.Bus.CloneDir, BusCheckoutLock.ListenLockName, TimeSpan.Zero, TimeProvider.System, TestContext.Current.CancellationToken);
+        ListenerOwner.WriteOwner(_harness.Bus.CloneDir, new ListenerRecord(_self.Pid, _self.StartedUtc!.Value.AddDays(-3), Cli, _started));
+
+        // Act
+        var (exit, console) = await StatusAsync();
+
+        // Assert
+        (held is not null, exit, console.Stdout.Contains("which is not running", StringComparison.Ordinal)).Should().Be((true, 0, false), console.Stdout + console.Stderr);
+    }
+
+    [Fact]
     public async Task Status_NoRecord_NoListenerLine()
     {
         // Act: guard — a checkout no listener of 0.30.1 ever held prints no listener line

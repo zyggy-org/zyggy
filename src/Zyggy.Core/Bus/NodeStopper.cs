@@ -12,7 +12,8 @@ namespace Zyggy.Core.Bus;
 /// <param name="Refused">The refused-start record; <see langword="null"/> when there is none.</param>
 /// <param name="Stray">A start was refused after the holder started and the holder still runs.</param>
 /// <param name="VersionDiffers">The live holder runs another version than the one installed.</param>
-internal sealed record ListenerFindings(ListenerRecord? Owner, bool Alive, RefusedStart? Refused, bool Stray, bool VersionDiffers);
+/// <param name="Stale">The record is stale: its process runs no more AND the listen lock is free (spec 61 §4); only <see cref="ListenerInspection.InspectAsync"/> sets it.</param>
+internal sealed record ListenerFindings(ListenerRecord? Owner, bool Alive, RefusedStart? Refused, bool Stray, bool VersionDiffers, bool Stale = false);
 
 /// <summary>The outcome of <c>zyggy node stop</c>.</summary>
 internal enum NodeStopResult
@@ -52,6 +53,23 @@ internal static class ListenerInspection
         bool stray = alive && refused is not null && refused.RefusedUtc > owner.StartedUtc;
         bool versionDiffers = alive && !string.Equals(owner.Version, installedVersion, StringComparison.Ordinal);
         return new ListenerFindings(owner, alive, refused, stray, versionDiffers);
+    }
+
+    /// <summary>
+    /// <see cref="Inspect"/>, and for a record whose process runs no more, whether the listen lock is free: only then is the record stale
+    /// (spec 61 §4). A held lock with a dead record is a holder that predates the record — not stale, and <c>zyggy node stop</c> names it.
+    /// </summary>
+    public static async Task<ListenerFindings> InspectAsync(string checkoutRoot, IProcessTable processes, string installedVersion, TimeProvider clock, CancellationToken ct)
+    {
+        ListenerFindings findings = Inspect(checkoutRoot, processes, installedVersion);
+        if (findings.Owner is null || findings.Alive)
+        {
+            return findings;
+        }
+
+        IDisposable? probe = await BusCheckoutLock.AcquireAsync(checkoutRoot, BusCheckoutLock.ListenLockName, TimeSpan.Zero, clock, ct).ConfigureAwait(false);
+        probe?.Dispose();
+        return findings with { Stale = probe is not null };
     }
 }
 

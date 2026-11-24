@@ -17,9 +17,6 @@ namespace Zyggy.Cli.Commands;
 /// </summary>
 internal static class BusHost
 {
-    /// <summary>The test hook that points the API request at a loopback stand-in (spec 04 Assumption A3); never a credential.</summary>
-    private const string ApiBaseVariable = "ZYGGY_BUS_API_BASE";
-
     /// <summary>The loopback-only test hook for the health URL (spec 08 Configuration; shared by <c>status</c> and <c>discover</c>, plan 14 A12): never a production override.</summary>
     internal const string HealthUrlVariable = "ZYGGY_HEALTH_URL";
 
@@ -101,8 +98,8 @@ internal static class BusHost
                 .AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace)
                 .SetMinimumLevel(verbose ? LogLevel.Debug : LogLevel.Information))
             .AddNodeServices(configuration);
-        string? apiBase = environment.Get(ApiBaseVariable);
-        services.Configure<GitHubBusOptions>(o => o.ApiBaseUri = apiBase is null ? null : new Uri(apiBase));
+        // Deliverable 04's API test hook, read in Core's one place (loopback only; spec 61 slice 7 correction).
+        services.AddBusApiBaseTestHook(environment.Variables);
         extra?.Invoke(services);
         return services.BuildServiceProvider();
     }

@@ -192,6 +192,36 @@ public sealed class StrayListenerTests
         ListenerOwner.ReadOwner(harness.Bus.CloneDir).Should().NotBeNull();
     }
 
+    // AC-23, slice 7 decision (e): inside a job (ZYGGY_JOB set) the verb refuses — a job runs under the node and must never stop it
+    [Fact]
+    public async Task NodeStop_InsideAJob_ExitFiveNodeStillRunningRecordKept()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await using NodeHostHarness harness = await NodeHostHarness.CreateAsync(ct);
+        harness.WriteNodeJson(agentCorePath: harness.Scratch.File("core"));
+        Uri url = FreeLoopbackUrl();
+        using Process node = StartNode(harness, url);
+        try
+        {
+            await WaitForHealthPidAsync(url, node.Id, ct);
+
+            // Act
+            var (exit, console) = await ZyggyCliInProcess.RunAsync(
+                ["node", "stop"],
+                new Dictionary<string, string?> { ["ZYGGY_NODE_JSON"] = harness.NodeJsonPath, ["ZYGGY_HEALTH_URL"] = url.ToString(), ["ZYGGY_JOB"] = "01J00000000000000000000000" },
+                ct: ct);
+
+            // Assert
+            (exit, console.Stdout, node.HasExited, ListenerOwner.ReadOwner(harness.Bus.CloneDir)?.Pid)
+                .Should().Be((5, "a job cannot stop the node that runs it; nothing was touched\n", false, node.Id), console.Stderr);
+        }
+        finally
+        {
+            Kill(node);
+        }
+    }
+
     // AC-23: nothing holds the checkout
     [Fact]
     public async Task NodeStop_NoListener_ExitZeroNoListenerIsRunning()

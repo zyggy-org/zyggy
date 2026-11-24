@@ -501,8 +501,9 @@ public static class ServiceCollectionExtensions
         new($"GitHubBusOptions.{option} is not set: the bus has no default remote, identity or checkout (configure it from node.json).");
 
     /// <summary>
-    /// Spec 61 slice 7: the node's copy of the CLI's test hook <c>ZYGGY_BUS_API_BASE</c> — a loopback URL rings the doorbell there, so a test
-    /// can run <c>zyggy-node</c> as a process without the network; any other value is ignored. Never a production override.
+    /// Spec 61 slice 7: the one reader of the test hook <c>ZYGGY_BUS_API_BASE</c> (deliverable 04), for the CLI and the node — a loopback URL
+    /// rings the doorbell there, so a test can run <c>zyggy</c> or <c>zyggy-node</c> as a process without the network; any other value
+    /// (another host, not a URL) is ignored. Never a production override.
     /// </summary>
     internal static IServiceCollection AddBusApiBaseTestHook(this IServiceCollection services, IReadOnlyDictionary<string, string?> environment)
     {

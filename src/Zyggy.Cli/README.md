@@ -122,7 +122,7 @@ The `claude.*`, `devRoots`, `discovery.*` and `nodeDir` keys are read by the Nod
 
 ### Test hooks
 
-Two environment variables exist for the integration tests only; neither is a credential and neither is a production override: `ZYGGY_BUS_API_BASE` (deliverable 04: points the bus host's API request at a loopback stand-in) and `ZYGGY_HEALTH_URL` (deliverable 08: the health URL `status` reads; loopback only — any other host is refused with exit 3 before a request exists; the production port 4711 never changes).
+Two environment variables exist for the integration tests only; neither is a credential and neither is a production override: `ZYGGY_BUS_API_BASE` (deliverable 04: points the bus host's API request at a loopback stand-in; from 0.30.1 a value that is not a loopback URL is ignored, as in the node) and `ZYGGY_HEALTH_URL` (deliverable 08: the health URL `status` reads; loopback only — any other host is refused with exit 3 before a request exists; the production port 4711 never changes).
 
 ## Per-machine setup
 

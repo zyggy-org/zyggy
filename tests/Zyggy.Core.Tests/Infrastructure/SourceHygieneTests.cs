@@ -815,6 +815,33 @@ public sealed partial class SourceHygieneTests
         holders.Should().Equal("src/Zyggy.Cli/Commands/BusHost.cs");
     }
 
+    [Fact]
+    public void Src_NodeHealthPortOverride_TestHookOnly()
+    {
+        // Act: spec 61 slice 7 correction — ZYGGY_NODE_HEALTH_PORT is a test hook read by the node's composition root alone, never a node.json key
+        var holders = SourceFiles()
+            .Where(f => File.ReadAllText(f).Contains("ZYGGY_NODE_HEALTH_PORT", StringComparison.Ordinal))
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .ToList();
+
+        // Assert
+        holders.Should().Equal("src/Zyggy.Node/NodeHost.cs");
+    }
+
+    [Fact]
+    public void Src_BusApiBaseOverride_OneLoopbackOnlyHolder()
+    {
+        // Act: spec 61 slice 7 correction — ZYGGY_BUS_API_BASE is read in one place (Core's test-hook extension, used by the CLI and the
+        // node), which accepts a loopback URL only; never a node.json key
+        var holders = SourceFiles()
+            .Where(f => File.ReadAllText(f).Contains("ZYGGY_BUS_API_BASE", StringComparison.Ordinal))
+            .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .ToList();
+
+        // Assert
+        holders.Should().Equal("src/Zyggy.Core/Bus/ServiceCollectionExtensions.cs");
+    }
+
     private static Dictionary<string, string> CliSourceFiles() =>
         SourceFiles()
             .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))

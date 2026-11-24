@@ -77,7 +77,7 @@ internal static partial class StatusCommand
             HealthVerdict verdict = HealthRules.Evaluate(health, now, services.GetRequiredService<PollOptions>(), BusHost.InformationalVersion(), url.ToString());
 
             // Spec 61 §4: who holds the bus checkout, from the owner record beside the listen lock.
-            ListenerFindings listener = ListenerInspection.Inspect(configuration.Bus.LocalPath, services.GetRequiredService<IProcessTable>(), BusHost.InformationalVersion());
+            ListenerFindings listener = await ListenerInspection.InspectAsync(configuration.Bus.LocalPath, services.GetRequiredService<IProcessTable>(), BusHost.InformationalVersion(), clock, ct);
             verdict = WithListener(verdict, listener);
             if (services.GetService<ILoggerFactory>() is { } loggers)
             {
@@ -348,7 +348,12 @@ internal static partial class StatusCommand
         string pid = owner.Pid.ToString(CultureInfo.InvariantCulture);
         if (!listener.Alive)
         {
-            sb.Append("        listener record names pid ").Append(pid).Append(", which is not running\n");
+            // Spec 61 §4: stale only when the process is gone AND the lock is free; a held lock with a dead record prints nothing here.
+            if (listener.Stale)
+            {
+                sb.Append("        listener record names pid ").Append(pid).Append(", which is not running\n");
+            }
+
             return;
         }
 

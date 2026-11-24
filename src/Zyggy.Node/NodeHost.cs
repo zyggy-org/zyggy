@@ -153,7 +153,8 @@ public static class NodeHost
         builder.Services.AddNodeServices(configuration);
 
         // Spec 61 slice 7: two test hooks, so a test can run this binary as a process (zyggy node stop ends a real node): /health on the
-        // port in ZYGGY_NODE_HEALTH_PORT (still loopback only), the doorbell at a loopback ZYGGY_BUS_API_BASE. Never a production override.
+        // port in ZYGGY_NODE_HEALTH_PORT (a port only: the server binds loopback whatever the value), the doorbell at the bus API test hook
+        // (Core's one reader, loopback URLs only). Neither is a node.json key; never a production override.
         if (environment.TryGetValue(HealthPortVariable, out string? portText)
             && int.TryParse(portText, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int port)
             && port is > 0 and <= 65535)
