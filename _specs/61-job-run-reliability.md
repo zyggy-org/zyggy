@@ -1,0 +1,384 @@
+# Spec: 61 — Job run reliability: withdraw a job, no lost report, sleep, a stray node, leftover worktrees
+
+## Status
+
+- 2026-11-24: spec written by an unattended job run (01M86X83DFHW3AY8AH700CYBQ9) on the owner's decision of 2026-11-24 that the next deliverable is the reliability release v0.30.1. **Not approved.** No production code written. Nobody could be interviewed during the run: every gap is under Open questions with a recommendation, and the spec is written on the recommended answers.
+- 2026-11-24: code investigation done on `main` at `f24ad77` (results under Context). Two read-only exploration agents were started for it and ended without handing back a report; every finding below was read in the code by the main session.
+- 2026-11-24: `spec-critic` ran once (same job) and ended without handing back its findings, as the two exploration agents did; this job cannot message an agent. In its place the main session checked the spec against the write-spec list (every criterion has a check, one review check per slice, no slice depends on a later one, risk areas marked, diagrams present). **The critic's verdict is owed before approval or before slice 1.**
+
+## Goal
+
+**As** the owner, **I want** the five failures seen on 2026-11-23/24, while Central ran about 80 jobs on the work laptop, to stop happening, **so that** a long unattended day of jobs needs no repair by hand in a bus checkout, a process list or a project folder:
+
+1. a job that is no longer wanted can be withdrawn with one command;
+2. a finished run's report always reaches the bus, and a job is never run a second time for nothing;
+3. a laptop's sleep neither kills a healthy run at wake-up nor lets it run without a limit, and Central does not re-queue a run that is only asleep;
+4. a node process that survived its scheduled task is named by `zyggy status`, with the remedy, and stopping the task stops the node and its run;
+5. a leftover worktree never blocks a job and never costs unpushed work.
+
+## Context
+
+- **Roadmap entry**: `_plans/ROADMAP.md` #61. Released as **v0.30.1** (owner decision 2026-11-24: a patch release, although it adds a verb).
+- **Founding-spec sections**: §4 (layout, write rules, envelope types, state machine, registry file), §5 (start-up rule, write sequence), §6 (pre-flight step 4, invocation, timeout), §9 (design rules, closed reason enum), §11 (`/health`, alerts "Job stuck"), §13.
+- **Reference feature**: the Central sweep (`_specs/17-central-sweep.md`) — closer than the discovery registry: same claim, re-queue and report paths, same two-checkout integration tests. For the worktree part: `_specs/16-worktree-execution.md` and `_specs/53-job-branch-name.md`. For the laptop task: `_specs/42-laptop-setup-one-command.md`.
+- **Reference implementation elsewhere**: none.
+
+### What the code shows, per problem (read on `main` at `f24ad77`)
+
+| # | Problem | Finding | Verdict |
+| --- | --- | --- | --- |
+| 1 | No way to withdraw a job | No verb, envelope type, folder or reason exists for it (the CLI's verbs: `submit`, `status`, `report`, `work`, `ask`, `decide`, `sweep`, `mandate`, `supervise`, …; `supervise stop` and `mandate revoke` stop *future* mandate jobs only). A run is cancelled only by the host's stop token; then no report is written and the claim stays. | **Real gap. In.** |
+| 2 | Lost report after a re-queue | By design of the sweep spec (its decision D3, "late result"): the report write removes the claimed file in the same commit; when Central re-queued the claim, that removal fails, the write returns failed, the listener logs one line and **drops the result** — it is held in memory only, never kept, never retried. The same loss happens for any failed report write (sign, add, commit). Intake treats the re-queued file as a new job: it checks neither a live run of the same id (the run table is keyed by job id and is simply overwritten) nor an earlier report. | **Real, and wider than reported. In.** |
+| 3 | Timeout across sleep | The runner's limit is a timer armed once for `timeout_minutes` on the process wait; no code looks at the wall clock, a suspend or a time jump. The .NET runtime's timers do not advance while the machine is suspended (runtime behaviour, not verifiable in this repository), which matches the observation exactly: a 150-minute job that lived 11.9 h was not killed at wake-up and was still bounded in *awake* time. So "not killed at wake-up" and "bounded" already hold on the node — by accident, with no test and no trace in the report. Not handled: (a) the sweep compares the claim commit's time with Central's wall clock (`timeout_minutes` + 15 min) and never reads the registry; (b) `last_seen` is refreshed only every `discovery.lastSeenHours` / 2 (3 h by default), too coarse to tell "asleep" from "stuck"; (c) nothing bounds a run in wall-clock time; (d) the deadline handed to the job's hook environment is start + timeout by the wall clock. | **Node side: already holds, made explicit and tested. Central side: real gap. In.** |
+| 4 | A stray node | The listen lock is an exclusively held, empty file in the bus checkout's `.git` folder: a second start only learns "held" and logs `refusing to start: ListenerRunning`, without pid or start time. `/health` carries neither pid nor start time; `zyggy status` reads only `/health` and the bus. The scheduled task's action is a `powershell.exe` wrapper that starts `zyggy-node.exe`; `Stop-ScheduledTask` ends the wrapper and the node survives — already recorded in `install.ps1` ("seen 2026-10-26"), whose own stop helper waits and then ends the survivor, but only during an install. On a host stop the runner kills the model's process tree and the claim stays for the next start (20 s shutdown limit); when the node is killed from outside, its `claude` child processes are not ended by anything. | **Real gap. In.** |
+| 5 | A stale worktree on a named branch | The worktree folder and the local branch are per **job id** (`<nodeDir>/worktrees/<tenant>/<id>`, branch `zyggy/<id>`); a named branch is never checked out locally — a `done` run pushes `zyggy/<id>` to it. Two different jobs on the same named branch therefore cannot collide on a folder or a local branch. `worktree_add` can only come from the **same job id** met again (a re-queue or a resumed claim, problems 2–4): the leftover folder cannot be deleted because a process still holds it, or git refuses the add. Two defects found on the way: the leftover folder is deleted outright **with whatever uncommitted work it holds**, and the `worktree_add` report carries no git message (the `base` step has one since quick wins), so the cause of the 2026-11-24 failure cannot be proven from the report. Nothing cleans leftover worktrees at start-up or later. | **The stated cause ("another job's worktree for that branch") is not what the code does; the failure and a work-loss defect are real. In, restated.** |
+
+No problem goes out as already handled. Problem 3's node side is handled by runtime behaviour only and is kept in scope as "make it explicit, tested and visible".
+
+## Constraints
+
+- ⚠️ **§4 shared contract** — one new envelope type (`withdrawal`), one new folder (`nodes/<machine>/withdrawals/`), one new write rule (a sender removes its own queued job), three new state moves, one optional registry key (`running`). `PROTOCOL.md` in `zyggy-core` and the founding spec follow (Q5). `EnvelopeSigner.Canonicalize` is **not** changed; the new type gets a hand-derived golden file like every type.
+- ⚠️ **§6/§9 closed reason enum** — one new member, `withdrawn`.
+- ⚠️ **§11 `/health`** — two additive fields (`pid`, `startedUtc`).
+- ⚠️ **New public `Zyggy.Core` surface** — the envelope type and its fields, the reason, the health fields; no new seam interface.
+- **Patch compatibility (the release rule).** Every addition can be ignored by a 0.30.0 machine, shown per item under *Compatibility*. No machine has to upgrade first. What a 0.30.0 machine cannot do is listed there too.
+- This spec **reverses decision D3 of the sweep spec** ("a late result is dropped") and its edge-case rows that follow from it.
+- §8: a withdrawal is verified (tenant, signature, recipient, sender) before the node acts on it; its body is data, never instructions, and is never shown to a model. No secret in any new file. The owner records beside the listen lock hold a pid, two timestamps and a version, nothing else.
+- §9: no test invokes the real `claude` or GitHub; time through `TimeProvider`; processes through `IProcessRunner`; all bus paths through `BusPaths`; the job runner never throws to the loop; log once per state change.
+- Public repository: placeholders only.
+
+## Diagrams
+
+### Components touched
+
+```mermaid
+flowchart LR
+  owner([Owner or Central]) --> cli[zyggy CLI<br/>withdraw · node stop · status · work]
+  cli --> bus[(zyggy-bus tenants/&lt;org&gt;/<br/>nodes/&lt;m&gt;/jobs · claimed · reports<br/>nodes/&lt;m&gt;/withdrawals NEW<br/>registry/&lt;m&gt;.yaml + running NEW)]
+  bus --> node[Zyggy.Node on &lt;machine&gt;<br/>listener · runner · worktrees]
+  node --> kept[(node folder, local<br/>kept results · reported ids<br/>listener owner record NEW)]
+  node --> seam{{IProcessRunner<br/>git · claude}}
+  sweep[Central sweep] --> bus
+  task[Scheduled task wrapper] -. parent watched .-> node
+  cli -. reads .-> kept
+  classDef new fill:#fde68a,stroke:#b45309;
+  class kept,cli,sweep new;
+```
+
+### Round trip: withdrawing a job
+
+```mermaid
+sequenceDiagram
+  actor Owner
+  participant Sender as Sender (zyggy withdraw)
+  participant Bus as zyggy-bus
+  participant Node as Node (target)
+  Owner->>Sender: zyggy withdraw <id>
+  Sender->>Bus: pull
+  alt job still in jobs/ (queued)
+    Sender->>Bus: one commit: remove jobs/<id>.md + own report failed/withdrawn
+    Sender-->>Owner: withdrawn <id> (was queued)
+  else job in jobs/claimed/
+    Sender->>Bus: signed withdrawal in nodes/<target>/withdrawals/
+    Sender-->>Owner: withdrawal requested <id> (claimed by <target>)
+    Node->>Bus: pull (next poll, also while the run is alive)
+    Node->>Node: verify withdrawal, stop the run, keep its work on zyggy/<id>
+    Node->>Bus: one commit: report failed/withdrawn + remove claim + remove withdrawal
+  end
+```
+
+### Round trip: a run that outlives its claim (sleep, re-queue)
+
+```mermaid
+sequenceDiagram
+  participant Central as Central (sweep)
+  participant Bus as zyggy-bus
+  participant Node as Node (laptop)
+  Node->>Bus: claim <id> (registry: running [<id>])
+  Note over Node: laptop sleeps; awake run time stops counting
+  Central->>Bus: pass: claim past its limit
+  alt registry lists <id> as running (0.30.1 node)
+    Central-->>Central: waiting <id>, not re-queued
+  else no running key (0.30.0 node)
+    Central->>Bus: requeue <id>, attempt 2
+  end
+  Note over Node: wake-up: the same run goes on
+  Node->>Bus: pull: <id> back in jobs/ ?
+  Node->>Bus: re-claim without a second run
+  Node->>Node: run ends, result kept locally first
+  Node->>Bus: report (removes the file wherever it is: claimed/ or jobs/)
+```
+
+### Job states after this spec
+
+```mermaid
+stateDiagram-v2
+  [*] --> queued: submit
+  queued --> claimed: node claims
+  queued --> reported: sender withdraws (sender's report failed/withdrawn) NEW
+  claimed --> reported: node reports
+  claimed --> reported: withdrawal seen (node's report failed/withdrawn) NEW
+  claimed --> queued: sweep re-queue (not while the node lists the run) CHANGED
+  queued --> claimed: same id still running → re-claim, no second run NEW
+  queued --> reported: kept result of that id → report, no run NEW
+  queued --> [*]: id already reported done → removed as duplicate NEW
+  reported --> [*]
+```
+
+### Slice map
+
+```mermaid
+flowchart LR
+  s1[1 report always written] --> s2[2 never run twice]
+  s2 --> s3[3 awake time, visible]
+  s3 --> s6[6 sweep waits for a live run]
+  s2 --> s4[4 withdrawal contract - fake]
+  s4 --> s5[5 zyggy withdraw - wire]
+  s7[7 status names the listener, node stop] --> s8[8 task stop ends node and run]
+  s8 --> s9[9 leftover worktrees]
+  s2 --> s9
+```
+
+## Behavior
+
+### 1. Withdrawing a job
+
+`zyggy withdraw <id> [--why <line>]` — run on the machine that submitted the job (its `from`), or on Central for any job of the tenant (Q1).
+
+- Starts with a pull, then looks for `<id>` in every machine folder of the tenant.
+- **Queued** (the file is in a machine's `jobs/`): one commit removes the job file and adds a report in the withdrawing machine's own `reports/` — `from` the withdrawing machine, `to` the job's `from`, `in_reply_to` the job id, `status: failed`, `reason: withdrawn`, `mandate` and `step` copied, body `withdrawn before it started` and the `--why` line. This is the shape of the sweep's `attempts_exhausted` report. Commit subject `<tenant> withdraw <id> <me>→<target>`. Output `withdrawn <id> (was queued on <target>)`.
+- **Claimed** (the file is in `jobs/claimed/`): one commit adds a signed `withdrawal` envelope to `nodes/<target>/withdrawals/<ulid>.md`. Output `withdrawal requested <id> (claimed by <target>)`, and a second line `<target> runs <version>: the run is not stopped before 0.30.1` when the target's registry `version` is older or absent.
+- **Already reported, or unknown**: nothing is written. Output `<id>: already reported (<status>)` or `<id>: not found`; exit 1.
+- A session task (`deliver: session`) that is already claimed is not withdrawn: `<id>: a session task; finish it with zyggy work --failed`; exit 5. Queued, it is withdrawn like any job.
+- A job of another sender, on a machine that is not Central: `<id>: submitted by <from>; withdraw it there or on Central`; exit 5.
+- The queued removal can lose a race with the node's claim: the existing conflicting-commit recovery drops the verb's commit; the verb then re-reads the state once and follows the claimed path.
+- Exit codes (existing numbers): `0` withdrawn or requested, `1` not found or already reported, `2` usage, `3` configuration, `4` checkout lock busy, `5` refused, `6` a git step failed, `7` committed, push deferred.
+
+**The `withdrawal` envelope.** `type: withdrawal`; mandatory beyond the common fields: `in_reply_to` (the job id). `to` is the machine that claimed the job. Body: empty or the `--why` line (1–200 characters, one line, data). Signed with the sender's `signWith` like a job.
+
+**On the node (0.30.1).** After every pull, also while a run is alive, the node reads its own `withdrawals/` folder:
+
+| Withdrawal | Node does |
+| --- | --- |
+| verifies; `from` is the job's `from` or Central; the job is claimed and running | stops the run (process tree), finishes a worktree as for a failed run (work committed, `zyggy/<id>` pushed; never `base`, never a named branch), then one commit: report `failed` / `withdrawn` + claimed file removed + withdrawal removed |
+| the same, the job is claimed but not running (deferred by the gate, or resumed at start) | no run; the same commit |
+| the same, the job is back in `jobs/` (re-queued meanwhile) | no run; the same commit, removing the queued file |
+| verifies; no job with that id in `jobs/` or `jobs/claimed/` (reported meanwhile) | removes the withdrawal, commit `<tenant> withdrawal <id> <me>→<from> nothing to stop`; no report |
+| does not verify, or its sender is neither the job's sender nor Central | left in place, one Warning per file per process; `zyggy verify` names it |
+
+The report body starts `withdrawn by <from> at <time>`, then the `--why` line, then whatever REPORT text the run had produced. A stop that is itself interrupted (the host stops) leaves claim and withdrawal in place; the next start handles the withdrawal before resuming the claim.
+
+**Visible.**
+
+- `zyggy status --id <id>`: a line `withdrawal requested <time> by <from>, waiting for <machine>` while the withdrawal file exists; afterwards the report, shown as `withdrawn`.
+- `zyggy status` (overview): the bus block counts `withdrawals pending <n>` when n > 0.
+- `zyggy work`: the job's line reads `claimed, withdrawal requested`.
+
+**Mandates.** A withdrawn job keeps its place in the mandate's `max_jobs` count (it has a report that is not `rejected`); a `withdrawn` report never counts toward the mandate's pause (Q4).
+
+### 2. A finished run's report is always kept; a job with a result is never run again
+
+**Kept result.** When a run ends (any status), the node first writes the result — the report fields, body and attached file — into its own node folder (local, not on the bus), then writes the report to the bus. The kept result is removed only once the report's commit is on the remote. Until then the write is retried after every pull and at start-up. One Warning when a result is first kept past a failed write, one Information when it is finally written.
+
+**The report write no longer needs the claimed file.** After its pull, the write removes the job's file wherever it is and adds the report in one commit:
+
+| The job's file is | The commit |
+| --- | --- |
+| in `jobs/claimed/` | report + remove claim (today) |
+| back in `jobs/` (Central re-queued it) | report + remove the queued file |
+| nowhere (Central answered it `attempts_exhausted`, or withdrew it) | report alone |
+
+If a commit of the node that carried the report is dropped by the existing conflicting-commit recovery, the result is still kept and the next write follows the table.
+
+**Never a second run.** At intake (a file in `jobs/`) and at start-up (resumed claims):
+
+| The job id | Node does |
+| --- | --- |
+| has a live run on this node | claims the file without starting anything (`<tenant> claim …`, as today); the live run's report answers it |
+| has a kept result | writes that report (table above); no run |
+| was reported `done` by this node in the last 14 days | removes the file, commit `<tenant> duplicate <id> <me>→<from>`, one Warning; no run, no second report |
+| none of these | today's behavior |
+
+The node remembers the ids it reported `done` for 14 days (the archive age), in its node folder. A job that ended `failed` or `timeout` may be run again by a re-queue, as today.
+
+### 3. Sleep
+
+**On the node.** The run limit is counted in **awake time**, by the node itself: while a run is alive the node notes the clock at a fixed short interval; a gap of more than 5 minutes between two notes is time asleep and is not counted. The run ends `timeout` when its awake time reaches `timeout_minutes`, as today. A run whose wall-clock age reaches **24 hours** is ended `timeout` whatever its awake time (Q2). The report of a run that slept carries one body line `asleep <h>h<mm> during the run`; `duration_seconds` stays wall-clock. The deadline given to the job's hook environment moves with the awake clock (it is rewritten when a sleep is noted, or dropped if the hook cannot re-read it — decided in the slice, recorded in Status). At a noted wake-up the node pulls and refreshes its registry file at once.
+
+**On Central (Q3).** The registry file gains an optional key `running`: the ids of the jobs with a live run on that machine. The node writes it in the claim's and the report's own commit (no extra commit per run), at start-up, and at a noted wake-up, each time with a fresh `last_seen`. The sweep, for a claim past its limit:
+
+- the machine's registry lists the id under `running` → **not re-queued**. `zyggy sweep` prints `waiting <id> <machine> still running, last seen <time>`; one Information line per claim per process.
+- otherwise → today's rule (re-queue, exhausted, rejected).
+
+A node that crashed republishes at start-up without the id, so the claim is re-queued at the next pass (and the node has resumed it by then: see "Never a second run"). A machine that never comes back keeps its claim until the job is withdrawn. `zyggy status --id` shows `claimed by <machine>, running (last seen <time>)`.
+
+### 4. A stray node
+
+**Owner record.** The listener writes, beside its listen lock, who holds it: pid, process start time, version, started (UTC). A start that finds the lock held logs `refusing to start: listener already running (pid <n> since <time>, zyggy-node <version>) — stop it with: zyggy node stop` and leaves a record of the refused start (time, holder). `/health` gains `pid` and `startedUtc`.
+
+**`zyggy status`** (node block), from the owner record, `/health` and the refused-start record:
+
+- always: `listener pid <n> since <time>`;
+- `stray listener: pid <n> since <time> (zyggy-node <version>) holds the bus checkout; a start was refused at <time>. Stop it with: zyggy node stop` when a start was refused after the holder started and the holder is still alive — health amber;
+- `listener runs <version>, installed <version>: restart the node` when they differ — health amber;
+- `listener record names pid <n>, which is not running` when the record is stale (lock free): information only; the next start replaces it.
+
+**`zyggy node stop`.** Ends the listener that holds this machine's bus checkout: checks that the recorded pid is a `zyggy-node` process with the recorded start time, ends its process tree (the node and the model processes of its runs), waits until the lock is free. Output `stopped zyggy-node pid <n> (<k> run(s) interrupted; their claims resume at the next start)`, or `no listener is running`. Exit `0` in both cases, `6` when the process could not be ended, `5` when the recorded pid belongs to another program (nothing is touched).
+
+**Stopping the task stops the node.** `zyggy-node --exit-with-parent`: the node watches the process that started it and, when that process ends, stops as on a normal host stop (runs ended by the runner, claims kept, lock released). `install.ps1` passes the option in the task's action, and its own stop helper calls `zyggy node stop` before its wait-then-force fallback. Linux (systemd) is unchanged.
+
+**Model processes left by a killed node.** The node records, per run, the pid and start time of the model process it started. At start-up, before resuming claims, it ends every recorded process that is still alive with the recorded start time (tree), logs one Warning per process, and clears the records.
+
+### 5. Leftover worktrees
+
+**The same job id met again** (Prepare):
+
+- The folder exists and is a worktree of the project with uncommitted changes: the node commits them on `zyggy/<id>` (its own identity, message `zyggy job <id> (recovered)`) before anything is removed. The branch is reused as today, so the next run starts from that work.
+- The folder is then removed through git; a plain delete is used only for a folder git does not know.
+- Still not removable, or `worktree add` refused: `failed` / `git_error`, body `git_error: worktree_add (<git's first error line>)` and `worktree kept at <path>`; nothing deleted.
+
+**Leftovers of finished jobs.** At start-up and after each run, for every folder under `<nodeDir>/worktrees/<tenant>/` whose id has no claim and no live run:
+
+| State | Node does |
+| --- | --- |
+| clean, branch not ahead of what the origin has | removes the folder and the local branch |
+| uncommitted changes or commits the origin does not have | commits, pushes `zyggy/<id>`; then removes folder and branch |
+| the push fails, or the folder is held | keeps everything; one Warning per folder per process |
+
+`zyggy status` (node block) prints `kept worktrees: <n>` with one line per folder (`<id> <path>: <why>`) when n > 0. Nothing here ever pushes to a named branch, to `base` or to a default branch, and no branch with commits the origin lacks is deleted.
+
+### Compatibility with 0.30.0 machines
+
+| Addition | A 0.30.0 machine |
+| --- | --- |
+| `withdrawals/` folder, `withdrawal` type | a node never lists the folder (the folder list is closed): ignored. `zyggy verify` names each file as an unexpected path until the target acts on it. A claimed job on a 0.30.0 target is **not stopped**: it finishes and reports; the verb says so. |
+| a queued job removed by its sender | the node simply never sees it |
+| report `reason: withdrawn` | read: a report's reason is accepted as any snake_case token |
+| sender's own report in reply to its own job | same shape as the sweep's `attempts_exhausted` report; `status --id` lists it |
+| report + removal of a file in `jobs/`; `duplicate` commit | moves inside the node's own folders; Central reads reports, not commit subjects |
+| registry `running` | unknown registry keys are ignored by the reader |
+| `/health` `pid`, `startedUtc` | additive JSON |
+
+Upgrade order: none required. Each fix takes effect on the machine that runs 0.30.1: the node fixes (2, 3 node side, 4, 5, stopping a withdrawn run) on that node; the sweep rule on Central, and only for nodes that publish `running`.
+
+### Configuration
+
+No new key. The 5-minute gap, the 24-hour limit and the 14 days are fixed values.
+
+### Failure modes
+
+| Situation | Observable outcome | Runbook entry |
+| --- | --- | --- |
+| Report write fails (lock, git, push) | result kept in the node folder; one Warning; written at a later pass | "Report: kept, not yet written" |
+| Job re-queued while its run is alive | re-claimed, no second run; one Information line | "Sweep: a job ran twice" (rewritten: no longer happens) |
+| Withdrawal for a job on a 0.30.0 node | the verb's second line; the job reports normally; the withdrawal file stays until that node is upgraded | "Withdraw: the run was not stopped" |
+| Withdrawal that does not verify | left in place; one Warning; `zyggy verify` | "Withdraw: not accepted" |
+| Start refused, listener already running | the new log line; `zyggy status` amber with the remedy | "Node: refused to start" (rewritten) |
+| `zyggy node stop` cannot end the process | exit 6 with the pid and `Stop-Process -Id <n> -Force` / `kill <n>` | "Node: refused to start" |
+| Leftover worktree cannot be removed or pushed | kept; Warning; `kept worktrees` in `zyggy status` | "Jobs: stale worktree folder" (rewritten) |
+| Run reaches 24 h wall-clock | `timeout`, body `timeout after 24 h (asleep <h>h<mm>)` | "Jobs: timeout after a sleep" |
+
+### Edge cases
+
+| Case | Expected behavior |
+| --- | --- |
+| Withdraw and report cross (the node reports while the withdrawal is pushed) | the report stands; the node removes the withdrawal ("nothing to stop") |
+| Queued job withdrawn while the node holds an unpushed claim and a live run | the node's claim commit is dropped by the existing recovery; the run ends and its report is written alone; two reports (`withdrawn`, then the node's) — `status --id` lists both |
+| Two withdrawals for one job | the first is acted on; the second is removed as "nothing to stop" |
+| Job re-queued three times while asleep, by a Central without the `running` rule | Central writes `attempts_exhausted`; the node's own report is still written when the run ends |
+| Kept result whose job the sender withdrew meanwhile | the report is written alone |
+| Node folder lost (reinstall) | kept results and reported ids are gone: behavior as 0.30.0 for those jobs |
+| Clock set back or forward by hours while a run is alive | a forward jump counts as sleep; a backward jump counts as zero time; the 24 h limit uses the recorded start |
+| `--exit-with-parent` when the parent is already gone at start | the node stops at once, exit 0, one line |
+| `zyggy node stop` while no task is installed | works the same: it reads the owner record, not the task |
+| Leftover worktree whose project folder no longer exists | folder kept; listed with `project not found` |
+
+## Decisions
+
+| Item | Verdict | Why |
+| --- | --- | --- |
+| Sweep spec D3: a late result is dropped (founding spec §4 state machine, row 3) | **reshape** | The loss cost an 11.9 h run; the report is now written whatever became of the claim |
+| §4 "a job's file is deleted when its report is written" | **keep**, widened to the file's current folder | Same invariant, one more place the file can be |
+| §4 `attempt`, three attempts, 15-minute grace | **keep** | Unchanged; the sweep only gains "not while the node lists the run" |
+| §6 "kill the process tree at `timeout_minutes`" | **reshape**: awake minutes, 24 h wall-clock limit | What the runtime already did by accident, now a tested rule |
+| Withdrawal as a new envelope type in a new folder, not a `decision` of kind `stop` | **new** | A decision is Central-only; the submitter may be a laptop. A file in `jobs/` of an unknown type would be rejected, not ignored, by a 0.30.0 node; a new folder is ignored |
+| Withdrawn = `status: failed` + `reason: withdrawn`, no new status | **new reason only** | A new status value would be refused by 0.30.0 readers; a reason token is not |
+| Registry `last_seen` alone as the sleep signal | **reshape**: `running` list + `last_seen` | Refreshed every 3 h it cannot tell asleep from stuck; a faster heartbeat would add a commit every few minutes per machine |
+| §11 `/health` field list | **keep**, plus `pid`, `startedUtc` | Needed to name the listener |
+| The task's `powershell.exe` wrapper | **keep** | It sets the environment and returns the exit code; the node watches it instead |
+| Fake and Wire in one slice for slices 1–3 and 6–9 | **deviation from the slice rule, stated** | Each behavior is small and its one review check is the integration test; the withdrawal, which adds a signed contract, keeps the pair (slices 4–5) |
+
+No new NuGet package.
+
+## Acceptance criteria
+
+| # | Criterion | Check |
+| --- | --- | --- |
+| AC-1 | A run's result is written to the node folder before the bus write and removed only after its commit is on the remote; a failed write leaves it, and the next pass writes the report. | Unit test (fake bus write failing once); integration test (bare repo, remote refusing one push) |
+| AC-2 | Central's re-queue is pushed while the node's run is ending: the node's report is on the remote, the file is gone from `jobs/` and `jobs/claimed/`, and the job is not run again. | Integration test: two checkouts of one bare repo, real git, `tools/fake-claude` (replaces the sweep spec's AC-9a expectation) |
+| AC-3 | A report whose job file is nowhere (exhausted by Central) is written alone. | Integration test, two checkouts |
+| AC-4 | A file arriving in `jobs/` whose id has a live run is claimed and the model is started once in total. | Integration test: fake-claude start count = 1 |
+| AC-5 | A file in `jobs/` or a resumed claim whose id has a kept result is reported without a run. | Unit test; integration test (node restarted between run end and report) |
+| AC-6 | A file in `jobs/` whose id this node reported `done` within 14 days is removed with the `duplicate` commit and not run; after 14 days, or after a `failed` report, it runs. | Unit test with `FakeTimeProvider`, both sides |
+| AC-7 | With the clock jumping 9 h between two notes, a 150-minute run is not ended at the jump and is ended `timeout` after 150 awake minutes in total. | Unit test with `FakeTimeProvider` |
+| AC-8 | A run whose wall-clock age reaches 24 h is ended `timeout` with the 24 h body line. | Unit test with `FakeTimeProvider` |
+| AC-9 | The report of a run that slept carries `asleep <h>h<mm> during the run`; one that did not carries no such line. | Unit test; integration test (fake clock in the node host) |
+| AC-10 | The registry file lists a job id under `running` from its claim commit until its report commit, and not after a restart without that run; a file without the key parses as today. | Unit test (document round trip, existing goldens unchanged); integration test (commits on the bare repo) |
+| AC-11 | The sweep leaves a claim past its limit untouched while the machine's registry lists it, prints the `waiting` line, and re-queues it once the registry no longer lists it; for a machine without the key it acts as today. | Unit test, three cases; integration test through `zyggy sweep` |
+| AC-12 | A `withdrawal` envelope: a hand-derived golden parses to its fields, the factory signs the same fields to its exact bytes, a missing `in_reply_to` is rejected; every existing golden is unchanged. | Unit test (golden) |
+| AC-13 | `withdrawn` has its wire string and is accepted in a report. | Unit test asserting every reason member's string |
+| AC-14 | The write-rule guard lets a sender remove its own queued job and write a withdrawal for it, lets Central do so for any job of the tenant, and refuses another machine and another tenant. | Unit test on the guard |
+| AC-15 | `zyggy withdraw <id>` on a queued job: one commit, the job file gone, the sender's `failed` / `withdrawn` report verifies, the node never runs it, exit 0. | Integration test through the verb, bare repo |
+| AC-16 | `zyggy withdraw <id>` on a running job: the model process is ended, the node's `failed` / `withdrawn` report verifies, claim and withdrawal are gone in one commit, a worktree job's work is on `origin/zyggy/<id>` and its `base` or named branch is unchanged. | Integration test: real listener, fake-claude long run, bare repo |
+| AC-17 | Withdrawal for a job already reported: removed with "nothing to stop", no second report. A withdrawal that does not verify, or from a machine that is neither the sender nor Central, is left and logged once. | Integration test; unit test |
+| AC-18 | `zyggy withdraw` exits 1 for an unknown or reported id, 5 for another sender's job on a laptop and for a claimed session task, and writes nothing. | Integration test through the verb |
+| AC-19 | `zyggy status --id` shows the pending withdrawal line and then the report as `withdrawn`; `zyggy work` shows `claimed, withdrawal requested`; the overview counts pending withdrawals. | Integration test through the verbs |
+| AC-20 | A `withdrawn` report does not count toward a mandate's pause and does count in `max_jobs`. | Unit test on the mandate rules |
+| AC-21 | A second start against a held checkout logs the new refusal line with the holder's pid and start time and leaves the refused-start record; `/health` carries `pid` and `startedUtc`. | Integration test through the real node host, two hosts on one checkout |
+| AC-22 | `zyggy status` prints the listener line, the stray line with the remedy (amber) after a refused start, the version-differs line (amber), and the stale-record line. | Integration test through the verb, one case per line |
+| AC-23 | `zyggy node stop` ends the recorded process tree and frees the lock (exit 0); says `no listener is running` (exit 0); touches nothing when the pid belongs to another program (exit 5). | Unit test with a substituted process runner; integration test against a started node host process |
+| AC-24 | With `--exit-with-parent`, the node stops when its starting process ends: the run's model process is gone, the claim is still in `jobs/claimed/`, the lock is free. | Integration test (parent stand-in process ended by the test) |
+| AC-25 | `install.ps1` passes `--exit-with-parent` in the task action and calls `zyggy node stop` in its stop helper before the fallback. | Script hygiene test (the existing kind) |
+| AC-26 | At start-up a recorded model process that is still alive is ended before claims are resumed; a pid reused by another program is not touched. | Unit test (start time mismatch); integration test with a fake-claude left running |
+| AC-27 | A leftover folder of the same job id with an uncommitted file: after Prepare the file's content is in a commit on `zyggy/<id>` and the new run starts from it. | Integration test, real git |
+| AC-28 | `worktree add` refused: the report body carries git's first error line and `worktree kept at <path>`; the folder still exists. | Unit test; integration test (folder held open) |
+| AC-29 | Start-up clean-up: a clean leftover is removed with its branch; one with unpushed work is pushed to `origin/zyggy/<id>` and then removed; one whose push fails is kept and listed by `zyggy status` as `kept worktrees`. | Integration test, three cases, bare origin |
+| AC-30 | The Core, Cli and Node READMEs carry the runbook rows of the Failure modes table and the new verbs; no published string or fixture carries a real machine name, tenant or id. | Hygiene test (row titles, verb names); the existing source-hygiene test |
+| AC-31 | On the real work laptop: `Stop-ScheduledTask zyggy-node` during a run → no `zyggy-node` and no `claude` process of that run after 30 s; `Start-ScheduledTask` → the claim is resumed and reported. | Owner-run at release, evidence in Status |
+| AC-32 | On the real machines: a job with a 5-minute timeout, the laptop put to sleep for 30 minutes mid-run; `zyggy sweep` on Central prints `waiting …`; after wake-up one report arrives, `done`, with the `asleep` line, and the model ran once. | Owner-run at release, evidence in Status |
+| AC-33 | On the real machines: `zyggy withdraw` of a queued and of a running job from Central; `zyggy status --id` shows both as `withdrawn`. | Owner-run at release, evidence in Status |
+
+## Slices
+
+| # | Slice | Criteria | Review check |
+| --- | --- | --- | --- |
+| 1 | ⚠️ A finished run's report reaches the bus even when Central re-queued or answered the claim, and after a failed write (§4 state move) | AC-1, AC-2, AC-3 | `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~LateReport"` |
+| 2 | ⚠️ A job is never run a second time: live run re-claimed, kept result reported, `done` id removed as duplicate | AC-4, AC-5, AC-6 | `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~NoSecondRun"` |
+| 3 | A run's limit counts awake time, ends at 24 h, and the report says how long it slept | AC-7, AC-8, AC-9 | `dotnet test tests/Zyggy.Core.Tests --filter "FullyQualifiedName~AwakeTime"` |
+| 4 | ⚠️ Fake: the withdrawal contract — envelope and golden, reason `withdrawn`, write rule, mandate counting | AC-12, AC-13, AC-14, AC-20 | `dotnet test tests/Zyggy.Core.Tests --filter "FullyQualifiedName~Withdraw"` |
+| 5 | ⚠️ Wire: `zyggy withdraw` removes a queued job and stops a running one; `status` and `work` show it | AC-15, AC-16, AC-17, AC-18, AC-19 | `zyggy withdraw <id>` then `zyggy status --id <id>` against a local bare repo (the steps are the integration test `WithdrawRoundTrip`) |
+| 6 | ⚠️ Central's sweep waits for a run the node lists as alive (registry `running`) | AC-10, AC-11 | `zyggy sweep --dry-run` against a local bare repo prints `waiting <id> …` |
+| 7 | ⚠️ `zyggy status` names the listener and a refused start; `zyggy node stop` ends it (`/health` fields) | AC-21, AC-22, AC-23 | `zyggy status` on a machine with a second start refused, then `zyggy node stop` |
+| 8 | Stopping the task stops the node and its run; model processes of a killed node are ended at start | AC-24, AC-25, AC-26 | `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~NodeStop"` |
+| 9 | Leftover worktrees are recovered, cleaned or listed, never lost; `worktree_add` says why; READMEs and runbook rows | AC-27, AC-28, AC-29, AC-30 | `dotnet test tests/Zyggy.Integration --filter "FullyQualifiedName~LeftoverWorktree"` |
+
+Each slice carries its own README and runbook rows. AC-31..AC-33 are owner-run at the release. The test filters name areas; the tests themselves are named when built.
+
+## Out of scope
+
+- Withdrawing a claimed session task; pausing or resuming a run; withdrawing a mandate (it has `mandate revoke`).
+- A new report status `withdrawn`; a `sleep` field in the report front matter.
+- A faster registry heartbeat; a "node silent" alert; Telegram delivery of anything here.
+- Archiving of `withdrawals/` by the sweep (the folder empties itself once targets run 0.30.1).
+- A Windows service or a job object for the node; changes to the Linux unit.
+- Resuming a model run from where it stopped (a resumed claim starts the run again, as today).
+- `zyggy-core` skill text for the new verbs (a follow-up in that repository, with `PROTOCOL.md`).
+
+## Open questions
+
+- [ ] **Q1 — Who may withdraw.** Found: only the sender writes into a target's `jobs/`; Central's sweep is the one other writer there. Options: (a) the job's sender only; (b) the sender, and Central for any job of the tenant. Why it matters: the owner talks to Central, and jobs are also submitted from laptop sessions. **Recommendation: (b)** — written so.
+- [ ] **Q2 — A wall-clock limit for a run that sleeps.** Found: nothing bounds a run in wall-clock time; a laptop closed over a weekend resumes the run on Monday. Options: (a) no limit, awake time only; (b) a fixed 24 hours from the run's start; (c) a `node.json` key. **Recommendation: (b)** — written so; no new key in a patch.
+- [ ] **Q3 — Central's sleep rule.** Found: with slices 1–2 a re-queue of a sleeping run is harmless (re-claimed, one report), but each sleep past the limit still uses one of the three attempts and can end in a false `attempts_exhausted`. `last_seen` alone (3 h refresh) cannot tell asleep from stuck. Options: (a) the optional registry key `running`, written in the claim's and the report's commit (slice 6); (b) leave the sweep as it is; (c) refresh `last_seen` every few minutes while a run is alive (many commits). **Recommendation: (a)** — written so. Dropping slice 6 leaves the rest intact.
+- [ ] **Q4 — A withdrawn mandate job.** Options: (a) it keeps its place in `max_jobs` and never counts toward the pause; (b) it frees its place. **Recommendation: (a)** — no change to the counting rule, written so.
+- [ ] **Q5 — Founding-spec wording (only the owner approves it).** Proposed, to paste after approval: §4 layout line `withdrawals/  # withdrawals of jobs this machine claimed, written by the job's sender or Central; removed by <machine> (deliverable 61)`; §4 type list gains `withdrawal` (mandatory `in_reply_to`); §4 write rules: "A sender may remove its own job from a target's `jobs/` in the commit that adds its `withdrawn` report, and writes a `withdrawal` into the target's `withdrawals/`; Central may do both for any job of its tenant."; §4 state machine: the three rows of *Job states after this spec* and, on the re-queue row, "unless the machine's registry lists the job under `running`"; §4 registry file: optional `running` (list of job ids); §6: "Kill the process tree at `timeout_minutes` of awake time, or 24 hours after the start"; §9 reason enum gains `withdrawn`; §11 `/health` gains `pid`, `startedUtc`. **Recommendation: approve as listed**; `PROTOCOL.md` in `zyggy-core` follows in its own pull request.
+- [ ] **Q6 — The work of a withdrawn worktree run.** Options: (a) kept: committed and pushed on `zyggy/<id>` like a failed run; (b) discarded. **Recommendation: (a)** — written so; nothing is ever lost by a withdrawal.
