@@ -68,6 +68,23 @@ public sealed class ListenerOwnerTests : IAsyncLifetime
         ListenerOwner.ReadOwner(_checkout.Root).Should().Be(new ListenerRecord(4242, ProcessStart, "0.30.1", T));
     }
 
+    // Hardening (slice 8 verify): the owner record a killed listener left is kept as the previous listener, so the leftover model
+    // processes are matched to it; the new record replaces it on disk.
+    [Fact]
+    public async Task StartAsync_KilledListenerLeftItsRecord_PreviousIsThatRecord()
+    {
+        // Arrange
+        var killed = new ListenerRecord(1111, ProcessStart.AddHours(-2), "0.30.1", T.AddHours(-2));
+        ListenerOwner.WriteOwner(_checkout.Root, killed);
+        using BusListener listener = Listener();
+
+        // Act
+        await listener.StartAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        (listener.Owner!.Previous, ListenerOwner.ReadOwner(_checkout.Root)!.Pid).Should().Be((killed, 4242));
+    }
+
     // AC-21: the refusal names the holder and leaves its record
     [Fact]
     public async Task StartAsync_LockHeld_RefusalDetailNamesHolderAndRefusedRecordWritten()

@@ -119,7 +119,8 @@ public sealed partial class PollLoop : BackgroundService
 
             // Spec 61 slice 8: only the listener that took the lock, before any claim is resumed, ends the model processes a killed node
             // left running — never a refused second start, which would end the live runs of the node holding the lock.
-            _leftovers?.EndLeftovers();
+            // Only records of this checkout's previous listener, as that listener recorded itself, are acted on.
+            _leftovers?.EndLeftovers(_listener.Owner?.Previous);
             _authTask = _auth.RunAsync(stoppingToken);
             try
             {

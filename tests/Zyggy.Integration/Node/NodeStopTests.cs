@@ -290,7 +290,7 @@ public sealed class NodeStopTests
 
     private static async Task<ModelProcessRecord> WaitForModelRecordAsync(NodeHostHarness harness, CancellationToken ct)
     {
-        var records = new ModelProcessRecords(ModelProcessRecords.DirectoryFor(harness.NodeDir, Acme), OsProcessTable.Instance, Microsoft.Extensions.Logging.Abstractions.NullLogger<ModelProcessRecords>.Instance);
+        var records = new ModelProcessRecords(ModelProcessRecords.DirectoryFor(harness.NodeDir, Acme), FakeClaude.ExecutablePath, OsProcessTable.Instance, Microsoft.Extensions.Logging.Abstractions.NullLogger<ModelProcessRecords>.Instance);
         ModelProcessRecord? found = null;
         await NodeHostHarness.WaitUntilAsync(() => Task.FromResult((found = records.Read() is [var first, ..] ? first : null) is not null), TimeSpan.FromSeconds(30), ct);
         return found!;

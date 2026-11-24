@@ -45,9 +45,16 @@ internal sealed class ListenerOwner
     /// <summary>The record this process wrote when it took the lock; <see langword="null"/> before.</summary>
     public ListenerRecord? Current { get; private set; }
 
+    /// <summary>
+    /// The owner record found when this process took the lock: the previous listener of this checkout as it recorded itself (a killed
+    /// node leaves it; a clean stop removes it). <see langword="null"/> when there was none, or before <see cref="Record"/>.
+    /// </summary>
+    public ListenerRecord? Previous { get; private set; }
+
     /// <summary>Writes this process as the holder (called right after the lock was taken).</summary>
     public ListenerRecord Record()
     {
+        Previous = ReadOwner(_checkoutRoot);
         ProcessFacts self = _processes.Self();
         DateTimeOffset now = _clock.GetUtcNow();
         var record = new ListenerRecord(self.Pid, self.StartedUtc ?? now, _version, now);

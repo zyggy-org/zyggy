@@ -13,6 +13,7 @@ using Zyggy.Core.Git;
 using Zyggy.Core.Health;
 using Zyggy.Core.Jobs;
 using Zyggy.Core.Memory;
+using Zyggy.Core.Models;
 using Zyggy.Core.Processes;
 using Zyggy.Core.Registry;
 using Zyggy.Core.Setup;
@@ -171,6 +172,7 @@ public static class NodeHost
         // leftovers at start; with --exit-with-parent it stops when the process that started it ends.
         builder.Services.AddSingleton(sp => new ModelProcessRecords(
             ModelProcessRecords.DirectoryFor(configuration.EffectiveNodeDir, configuration.Tenant),
+            sp.GetRequiredService<IOptions<ClaudeCodeOptions>>().Value.Path,
             OsProcessTable.Instance,
             sp.GetRequiredService<ILogger<ModelProcessRecords>>()));
         if (args.Contains(ExitWithParentOption, StringComparer.Ordinal))
