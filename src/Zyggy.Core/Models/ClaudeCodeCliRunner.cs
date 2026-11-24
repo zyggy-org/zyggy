@@ -108,7 +108,8 @@ internal sealed partial class ClaudeCodeCliRunner(
         CancellationToken cancellationToken)
     {
         // Spec 50 (AC-4): a run held to its model is stopped at the first system event that names another one — before any turn.
-        using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        // Spec 61 slice 3: the job runner's own limit (awake time, 24 h of age) stops the session the same way, as a timeout.
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, request.LimitReached);
         var mismatch = false;
         var spec = new ProcessSpec(path, ClaudeArguments.Build(request), request.WorkingDirectory)
         {
@@ -142,6 +143,10 @@ internal sealed partial class ClaudeCodeCliRunner(
         catch (OperationCanceledException) when (mismatch)
         {
             return Failed(RunFailureReason.ModelUnavailable, ModelFailureDetail.ModelMismatch, reader, clock.GetElapsedTime(started), null);
+        }
+        catch (OperationCanceledException) when (request.LimitReached.IsCancellationRequested)
+        {
+            return Failed(RunFailureReason.Timeout, ModelFailureDetail.Timeout, reader, clock.GetElapsedTime(started), null);
         }
         catch (OperationCanceledException)
         {

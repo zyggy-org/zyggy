@@ -141,6 +141,32 @@ public sealed class ClaudeCodeCliRunnerTests
         ok.Should().BeFalse();
     }
 
+    // Spec 61 slice 3 (AC-7): the job runner's awake-time limit reaches the session as a signal; the session then ends as a timeout with
+    // its partial text, never as an exception.
+    [Fact]
+    public async Task RunAsync_LimitReached_TimeoutWithPartialText()
+    {
+        // Arrange
+        using var limit = new CancellationTokenSource();
+        _processes.RunAsync(Arg.Any<ProcessSpec>(), Arg.Any<CancellationToken>()).Returns(async call =>
+        {
+            var spec = call.Arg<ProcessSpec>();
+            spec.OnStdoutLine?.Invoke(StreamLines.Init());
+            spec.OnStdoutLine?.Invoke(StreamLines.Assistant("Looking at the logs"));
+            await limit.CancelAsync();
+            await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>()).WaitAsync(TimeSpan.FromSeconds(20));
+            return Exited();
+        });
+        var request = Request() with { LimitReached = limit.Token };
+
+        // Act
+        var result = await Runner().RunAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert
+        new { result.Reason, result.FailureDetail, result.LastAssistantText }
+            .Should().BeEquivalentTo(new { Reason = (RunFailureReason?)RunFailureReason.Timeout, FailureDetail = "timeout", LastAssistantText = "Looking at the logs" });
+    }
+
     [Theory]
     [InlineData("start-failed")]
     [InlineData("timed-out")]

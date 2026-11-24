@@ -30,6 +30,9 @@ public sealed partial class JobRunner
 
     private static readonly TimeSpan HookSelfTestTimeout = TimeSpan.FromSeconds(15);
 
+    // Spec 61 slice 3: the model process's own timer, past the 24-hour wall-clock limit, so it never ends a run before the awake clock does.
+    private static readonly TimeSpan ProcessBackstop = TimeSpan.FromMinutes(5);
+
     private readonly IModelRunner _model;
     private readonly IPolicySource _policy;
     private readonly GitClient _git;
@@ -243,13 +246,17 @@ public sealed partial class JobRunner
         // Spec 06 "ModelRunRequest for a job": no tool set, extra directory, schema or system prompt; the project's own hooks, skills,
         // MCP servers and memory apply (Isolation.None, ex-Q7). Spec 50: the job's own model when it names one (the parser checked its
         // shape), else none — never a fallback model.
+        // Spec 61 slice 3: the limit is counted in awake time by the runner's own clock, and a run ends at 24 h of wall-clock age; the
+        // process's own timer is only a backstop past those 24 hours.
         var timeout = _options.TimeoutOverride ?? TimeSpan.FromMinutes(minutes);
+        using var awake = new AwakeClock(_clock, timeout, started);
 
         // Spec 59 slice 6 (AC-9): the job's own turn limit, never above the node's; a lowered value is said in the report body.
         var maxTurns = Math.Min(fields.MaxTurns ?? policy.MaxTurns, policy.MaxTurns);
         var loweredLine = fields.MaxTurns > policy.MaxTurns ? string.Create(CultureInfo.InvariantCulture, $"max_turns lowered to {maxTurns}") : null;
-        var request = new ModelRunRequest(_prompt.Render(job, runDirectory, allowedTools), runDirectory, timeout)
+        var request = new ModelRunRequest(_prompt.Render(job, runDirectory, allowedTools), runDirectory, AwakeClock.WallLimit + ProcessBackstop)
         {
+            LimitReached = awake.Reached,
             MaxTurns = maxTurns,
             Model = fields.Model,
             RequireModel = fields.Model is not null,
@@ -258,16 +265,22 @@ public sealed partial class JobRunner
             Isolation = ModelSessionIsolation.None,
             PreToolUseHook = new ModelHookCommand(hookExecutable, hookArgs),
             // Founding spec §6 Invocation (amended by deliverable 12, D5): a job run is unattended — the memory and context writers do nothing.
-            // Deliverable 18: the run also learns which job it is, in which project, and when it times out, so `zyggy ask` can name it and stop waiting in time.
+            // Deliverable 18: the run also learns which job it is and in which project, so `zyggy ask` can name it. Spec 61 slice 3: its end
+            // moves with the awake clock and an environment cannot be rewritten once the process runs, so ZYGGY_JOB_ENDS is not given.
             // Spec 58 slice 5: and where its work mail marker lives (this node's directory), so the outlook tools cannot be pointed elsewhere.
             // A job that is not a mail job gets an empty marker: the outlook read tools refuse it (owner correction 2026-11-23).
-            Environment = WithHooksOff(_options.ModelEnvironment, job.Header.Id, ProjectName.Derive(WorkHookInput.LastSegment(project)), _clock.GetUtcNow() + timeout, mailJob ? Outlook.OutlookJobRun.MarkerPath(nodeDir, job.Header.Tenant, job.Header.Id) : string.Empty),
+            Environment = WithHooksOff(_options.ModelEnvironment, job.Header.Id, ProjectName.Derive(WorkHookInput.LastSegment(project)), mailJob ? Outlook.OutlookJobRun.MarkerPath(nodeDir, job.Header.Tenant, job.Header.Id) : string.Empty),
             TranscriptPath = TranscriptPaths.For(nodeDir, job.Header.Tenant, job.Header.Id),
         };
 
         LogStarted(id, runDirectory, fields.Agent ?? "none", minutes);
         var result = await _model.RunAsync(request, ct).ConfigureAwait(false);
-        var reply = Map(id, result, minutes, started, fields.Model) with { MaxTurns = maxTurns };
+        awake.Stop();
+        var timeoutLine = awake.Ended == AwakeLimit.WallClock
+            ? $"timeout after {(int)AwakeClock.WallLimit.TotalHours} h (asleep {AwakeClock.Format(awake.Asleep)})"
+            : $"timeout after {minutes} min";
+        var asleepLine = awake.Asleep > TimeSpan.Zero ? $"asleep {AwakeClock.Format(awake.Asleep)} during the run" : null;
+        var reply = Map(id, result, timeoutLine, started, fields.Model) with { MaxTurns = maxTurns };
 
         // Spec 58 slice 5: a job that read work mail has its report screened on this laptop before it is written to the bus.
         reply = Outlook.WorkMailReportScreen.Apply(reply, nodeDir, job.Header.Tenant, job.Header.Id);
@@ -288,8 +301,8 @@ public sealed partial class JobRunner
         }
 
         // Spec 53 Report body lines: after the branch lines, "description: <text>" when the job has one, then the "behind" line; spec 59
-        // slice 6 adds "max_turns lowered to <n>" last.
-        string[] trailing = [.. new[] { description is null ? null : "description: " + description, behindLine, loweredLine }.OfType<string>()];
+        // slice 6 adds "max_turns lowered to <n>"; spec 61 slice 3 adds "asleep <h>h<mm> during the run" last, for a run that slept.
+        string[] trailing = [.. new[] { description is null ? null : "description: " + description, behindLine, loweredLine, asleepLine }.OfType<string>()];
         if (trailing.Length > 0)
         {
             reply = reply with { Body = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(reply.Body.Span) + string.Join('\n', trailing) + "\n") };
@@ -562,7 +575,7 @@ public sealed partial class JobRunner
 
     // The spec's Report mapping table: done with the summary; timeout with the partial text; model_unavailable for a job's model that did
     // not run (spec 50); claude_error for every other failure.
-    private JobReply Map(string id, ModelRunResult result, int minutes, DateTimeOffset started, string? asked)
+    private JobReply Map(string id, ModelRunResult result, string timeoutLine, DateTimeOffset started, string? asked)
     {
         var summary = ReportSummary.Extract(result);
         JobReply reply;
@@ -572,7 +585,7 @@ public sealed partial class JobRunner
         }
         else if (result.Reason == RunFailureReason.Timeout)
         {
-            reply = Reply(ReportStatus.Timeout, RunFailureReasonWire.ToWire(RunFailureReason.Timeout), $"timeout after {minutes} min\n\n{summary}\n", started);
+            reply = Reply(ReportStatus.Timeout, RunFailureReasonWire.ToWire(RunFailureReason.Timeout), $"{timeoutLine}\n\n{summary}\n", started);
         }
         else if (result.Reason == RunFailureReason.ModelUnavailable && asked is not null)
         {
@@ -644,18 +657,22 @@ public sealed partial class JobRunner
     }
 
     /// <summary>
-    /// The model environment with <c>ZYGGY_HOOKS=off</c> and the job's id, project and end time set last, so no configured value can
-    /// switch the hooks back on (spec 12 A5) or name another job (deliverable 18).
+    /// The model environment with <c>ZYGGY_HOOKS=off</c> and the job's id and project set last, so no configured value can switch the
+    /// hooks back on (spec 12 A5) or name another job (deliverable 18). A configured <c>ZYGGY_JOB_ENDS</c> is removed: a run's end moves
+    /// with its awake time (spec 61), so no fixed end is ever given.
     /// </summary>
-    private static Dictionary<string, string> WithHooksOff(IReadOnlyDictionary<string, string> environment, EnvelopeId job, string project, DateTimeOffset ends, string workMailMarker) =>
-        new(environment, StringComparer.Ordinal)
+    private static Dictionary<string, string> WithHooksOff(IReadOnlyDictionary<string, string> environment, EnvelopeId job, string project, string workMailMarker)
+    {
+        var result = new Dictionary<string, string>(environment, StringComparer.Ordinal)
         {
             ["ZYGGY_HOOKS"] = "off",
             ["ZYGGY_JOB"] = job.Value,
             ["ZYGGY_JOB_PROJECT"] = project,
-            ["ZYGGY_JOB_ENDS"] = ends.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
             [Outlook.OutlookJobRun.MarkerVariable] = workMailMarker,
         };
+        result.Remove("ZYGGY_JOB_ENDS");
+        return result;
+    }
 
     private static int? Clamp(long? tokens) => tokens is { } value ? (int)Math.Clamp(value, 0, int.MaxValue) : null;
 

@@ -67,4 +67,11 @@ public sealed record ModelRunRequest(string Prompt, string WorkingDirectory, Tim
 
     /// <summary>Capture cap for the model's standard output in bytes: bounds what is retained; the stream is parsed to its end (spec 06 ex-Q4).</summary>
     public int MaxCaptureBytes { get; init; } = 2 * 1024 * 1024;
+
+    /// <summary>
+    /// Cancelled when the job runner's own limit for the run is reached (spec 61: awake time, or 24 hours of wall-clock age): the session's
+    /// process tree is killed and the session ends as a <see cref="Runs.RunFailureReason.Timeout"/> with its partial text, never as an
+    /// exception. <see cref="CancellationToken.None"/> (the default) leaves <see cref="Timeout"/> as the only limit.
+    /// </summary>
+    internal CancellationToken LimitReached { get; init; }
 }
