@@ -215,8 +215,9 @@ public sealed class BusRepositoryIntakeTests : IAsyncLifetime
         await _store.DidNotReceive().GetAsync(Globex, Arg.Any<SecretName>(), Arg.Any<CancellationToken>());
     }
 
+    // AC-4 (spec 61): a byte-identical copy of a signed job under another file name is refused, never accepted as a new job.
     [Fact]
-    public async Task VerifyIntakeAsync_IdDiffersFromFileName_AcceptedWithWarning()
+    public async Task VerifyIntakeAsync_IdDiffersFromFileName_RejectedInvalidFieldId()
     {
         // Arrange
         var ct = TestContext.Current.CancellationToken;
@@ -228,8 +229,32 @@ public sealed class BusRepositoryIntakeTests : IAsyncLifetime
         JobIntake intake = await Repository().VerifyIntakeAsync(new BusFile(path, fileId), ct);
 
         // Assert
-        intake.Should().BeOfType<AcceptedJob>();
-        _log.AtLevel(LogLevel.Warning).Should().ContainSingle().Which.Message.Should().Contain(fileId.Value);
+        var rejected = intake.Should().BeOfType<RejectedJob>().Subject;
+        (rejected.Reason, rejected.Field, rejected.From).Should().Be((EnvelopeRejectionReason.InvalidField, "id", Central));
+    }
+
+    // AC-4 (spec 61): the renamed copy is moved to jobs/rejected/ with the signed rejected report and exactly one Warning.
+    [Fact]
+    public async Task RejectAsync_IdDiffersFromFileName_MovedWithReportOneWarning()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        var fileId = EnvelopeId.New(T.AddSeconds(1));
+        string path = BusPaths.EnvelopeFile(BusPaths.Jobs(Acme, HomeLaptop), fileId);
+        _checkout.Drop(path, await JobBytesAsync(ct, id: EnvelopeId.New(T)));
+        BusRepository repository = Repository();
+        JobIntake intake = await repository.VerifyIntakeAsync(new BusFile(path, fileId), ct);
+
+        // Act
+        WriteOutcome outcome = await repository.RejectAsync((RejectedJob)intake, TestKeys.Acme1, ct);
+
+        // Assert
+        outcome.Should().Be(new Pushed(1));
+        string reportPath = _checkout.FilesUnder(BusPaths.Reports(Acme, HomeLaptop)).Should().ContainSingle().Subject;
+        Model report = (await new EnvelopeSigner(_inner).ParseAndVerifyAsync(_checkout.Read(reportPath), Acme, ct)).Envelope!;
+        (report.Header.InReplyTo, report.Report!.Status, report.Report.Reason).Should().Be((fileId, ReportStatus.Rejected, "invalid_field"));
+        _processes.CallsOf("mv").Single().Arguments.Should().EndWith([path, BusPaths.EnvelopeFile(BusPaths.Rejected(Acme, HomeLaptop), fileId)]);
+        _log.AtLevel(LogLevel.Warning).Should().ContainSingle();
     }
 
     [Fact]

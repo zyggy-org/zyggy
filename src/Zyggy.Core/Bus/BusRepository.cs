@@ -192,7 +192,8 @@ public sealed partial class BusRepository
 
     /// <summary>
     /// Verifies one inbox file before anything else (§4 "Signature"): 03's order (malformed → tenant → schema → type → key →
-    /// fields → signature), then <c>to</c> must be this machine. A refused file carries its sender read leniently from the raw
+    /// fields → signature), then <c>to</c> must be this machine, then the signed <c>id</c> must be the file name (spec 61: a renamed
+    /// copy is refused as <c>invalid_field</c> on <c>id</c>). A refused file carries its sender read leniently from the raw
     /// front matter so the rejection report can be addressed (ex-OQ10).
     /// </summary>
     /// <param name="file">An inbox file from <see cref="ListNewJobsAsync"/>.</param>
@@ -229,7 +230,14 @@ public sealed partial class BusRepository
 
         if (envelope.Header.Id != file.Id)
         {
-            LogIdDiffers(_me.Tenant.Value, _me.Machine.Value, file.Id.Value);
+            // Spec 61: every done, running and kept lookup is keyed by the file name; a signed job under another file name is a
+            // renamed copy (a replay), never a new job. Submit, claim and Central's re-queue all keep the file name = the signed id.
+            return new RejectedJob(file, EnvelopeRejectionReason.InvalidField, "id", "the signed id differs from the file name", envelope.Header.From)
+            {
+                Mandate = envelope.Job?.Mandate,
+                Step = envelope.Job?.Step,
+                JobType = envelope.Job?.JobType,
+            };
         }
 
         return new AcceptedJob(file, envelope);
@@ -1908,9 +1916,6 @@ public sealed partial class BusRepository
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "{Tenant}/{Machine}: rejected {File}: {Reason} ({Field}): {Note}")]
     private partial void LogRejectedWithNote(string tenant, string machine, string file, string reason, string field, string note);
-
-    [LoggerMessage(Level = LogLevel.Warning, Message = "{Tenant}/{Machine}: job {Id}: the front-matter id differs from the file name")]
-    private partial void LogIdDiffers(string tenant, string machine, string id);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "{Tenant}/{Machine}: '{Subject}' not pushed after {Attempts} attempt(s); the commit stays local and goes with the next write: {Detail}")]
     private partial void LogDeferred(string tenant, string machine, string subject, int attempts, string detail);
