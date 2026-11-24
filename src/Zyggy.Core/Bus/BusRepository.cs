@@ -389,8 +389,9 @@ public sealed partial class BusRepository
     /// <param name="attachment">The attached file's bytes, or <see langword="null"/>.</param>
     /// <param name="jobFingerprint">The fingerprint of the job the report answers; <see langword="null"/> removes whatever file holds its id.</param>
     /// <param name="ct">Cancellation token.</param>
+    /// <param name="withdrawal">Spec 61 slice 5: the withdrawal this report answers, in this node's <c>withdrawals/</c>; removed in the same commit when it is still there.</param>
     /// <returns>The write outcome.</returns>
-    internal Task<WriteOutcome> WriteReportAsync(Model signed, byte[] bytes, ReadOnlyMemory<byte>? attachment, string? jobFingerprint, CancellationToken ct)
+    internal Task<WriteOutcome> WriteReportAsync(Model signed, byte[] bytes, ReadOnlyMemory<byte>? attachment, string? jobFingerprint, CancellationToken ct, string? withdrawal = null)
     {
         ArgumentNullException.ThrowIfNull(signed);
         ArgumentNullException.ThrowIfNull(bytes);
@@ -402,6 +403,11 @@ public sealed partial class BusRepository
         AssertMayWrite(reportPath, BusFolder.Reports);
         AssertMayWrite(claimedPath, BusFolder.Claimed);
         AssertMayWrite(queuedPath, BusFolder.Jobs);
+        if (withdrawal is not null)
+        {
+            AssertMayWrite(withdrawal, BusFolder.Withdrawals);
+        }
+
         string? attachmentPath = attachment is null ? null : BusPaths.AttachmentFile(new BusFile(reportPath, id));
         string[] added = attachmentPath is null ? [reportPath] : [reportPath, attachmentPath];
         var paths = new List<string>(added);
@@ -417,12 +423,26 @@ public sealed partial class BusRepository
                 }
 
                 WriteFailed? addFailed = Failure("add", await _git.AddAsync(_checkoutRoot, added, token).ConfigureAwait(false));
+                if (addFailed is not null)
+                {
+                    return addFailed;
+                }
+
+                if (withdrawal is not null && File.Exists(BusPaths.Resolve(_checkoutRoot, withdrawal)))
+                {
+                    paths.Add(withdrawal);
+                    if (Failure("rm", await _git.RemoveAsync(_checkoutRoot, [withdrawal], token).ConfigureAwait(false)) is { } withdrawalFailed)
+                    {
+                        return withdrawalFailed;
+                    }
+                }
+
                 string? jobFile = File.Exists(BusPaths.Resolve(_checkoutRoot, claimedPath)) ? claimedPath
                     : File.Exists(BusPaths.Resolve(_checkoutRoot, queuedPath)) ? queuedPath
                     : null;
-                if (addFailed is not null || jobFile is null || !await IsSameJobAsync(jobFile, jobFingerprint, token).ConfigureAwait(false))
+                if (jobFile is null || !await IsSameJobAsync(jobFile, jobFingerprint, token).ConfigureAwait(false))
                 {
-                    return addFailed;
+                    return null;
                 }
 
                 paths.Add(jobFile);

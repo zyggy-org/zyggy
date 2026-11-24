@@ -294,6 +294,7 @@ public static class ServiceCollectionExtensions
                 Kept = string.IsNullOrEmpty(nodeDir) ? null : new KeptReports(nodeDir, identity.Tenant),
                 Done = string.IsNullOrEmpty(nodeDir) ? null : new ReportedDone(nodeDir, identity.Tenant),
                 Running = string.IsNullOrEmpty(nodeDir) ? null : new RunningJobs(nodeDir, identity.Tenant),
+                Withdrawals = sp.GetService<RunWithdrawals>(),
             };
         });
         // Deliverable 08: the sender side. Resolving without a registered KeyId throws (the verb checks signWith first, as probe send does).
@@ -307,6 +308,14 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<TimeProvider>(),
                 log);
         });
+        // Spec 61 slice 5: the sender side of `zyggy withdraw`. Resolving without a registered KeyId throws (the verb checks signWith first).
+        services.TryAddSingleton(sp => new JobWithdrawer(
+            sp.GetRequiredService<BusRepository>(),
+            sp.GetRequiredService<BusInventory>(),
+            sp.GetRequiredService<EnvelopeSigner>(),
+            sp.GetRequiredService<KeyId>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetService<ILoggerFactory>()?.CreateLogger<JobWithdrawer>() ?? NullLogger<JobWithdrawer>.Instance));
         // Deliverable 12: the context sender. Resolving without a KeyId or the secret patterns throws (the verb checks both first — fail closed).
         services.TryAddSingleton(sp =>
         {

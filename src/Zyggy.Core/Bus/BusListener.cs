@@ -1,9 +1,11 @@
 using System.Collections.Concurrent;
+using System.Text;
 
 using Microsoft.Extensions.Logging;
 
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Jobs;
+using Zyggy.Core.Runs;
 
 using Model = Zyggy.Core.Envelope.Envelope;
 
@@ -41,6 +43,10 @@ public sealed partial class BusListener : IDisposable
     /// <summary>Spec 61: the <see cref="JobFingerprint"/> of each live run's job, by job id.</summary>
     private readonly ConcurrentDictionary<string, string> _liveFingerprints = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, UnsignedResult> _unsigned = new(StringComparer.Ordinal);
+    /// <summary>Spec 61 slice 5: the accepted withdrawal of each live run this node was told to stop, by job id.</summary>
+    private readonly ConcurrentDictionary<string, SeenWithdrawal> _withdrawing = new(StringComparer.Ordinal);
+    /// <summary>Spec 61 slice 5: the withdrawal files already named in a Warning by this process (one line per file per process).</summary>
+    private readonly HashSet<string> _warnedWithdrawals = new(StringComparer.Ordinal);
     private readonly List<AcceptedJob> _deferredClaims = [];
     private bool _pullErrorLogged;
     private IDisposable? _listenLock;
@@ -113,6 +119,9 @@ public sealed partial class BusListener : IDisposable
 
     /// <summary>Gets the node folder's ids with a run started and not yet reported on the remote (spec 61); <see langword="null"/> when the composition has no node folder.</summary>
     internal RunningJobs? Running { get; init; }
+
+    /// <summary>Gets the signal that stops a withdrawn job's live run (spec 61 slice 5); <see langword="null"/> when the handler is not the job runner.</summary>
+    internal RunWithdrawals? Withdrawals { get; init; }
 
     /// <summary>Gets Central's supervisor wake (deliverable 18), run after every pickup pass; <see langword="null"/> on every other machine.</summary>
     internal Supervision.SupervisorWake? Wake { get; init; }
@@ -321,6 +330,7 @@ public sealed partial class BusListener : IDisposable
     {
         await SignUnsignedAsync(ct).ConfigureAwait(false);
         await WriteKeptReportsAsync(ct).ConfigureAwait(false);
+        await HandleWithdrawalsAsync(ct).ConfigureAwait(false);
         await RetryDeferredClaimsAsync(ct).ConfigureAwait(false);
         int handled = 0;
         int deferredBefore = await _bus.UnpushedCommitCountAsync(ct).ConfigureAwait(false);
@@ -897,6 +907,8 @@ public sealed partial class BusListener : IDisposable
                 _ = t.Exception; // observed: the run logged its own failure
                 _runs.TryRemove(id, out _);
                 _liveFingerprints.TryRemove(id, out _);
+                _withdrawing.TryRemove(id, out _);
+                Withdrawals?.Close(accepted.File.Id);
                 Publish();
             },
             CancellationToken.None,
@@ -937,6 +949,15 @@ public sealed partial class BusListener : IDisposable
             return;
         }
 
+        // Spec 61 slice 5: a run the runner stopped for a withdrawal reports "withdrawn by …" first, and its commit removes the withdrawal.
+        string? withdrawalPath = null;
+        if (string.Equals(reply.Reason, RunFailureReasonWire.ToWire(RunFailureReason.Withdrawn), StringComparison.Ordinal)
+            && _withdrawing.TryGetValue(accepted.File.Id.Value, out SeenWithdrawal? seen))
+        {
+            withdrawalPath = seen.Path;
+            reply = reply with { Body = Encoding.UTF8.GetBytes(WithdrawnLines(seen.Withdrawal) + Encoding.UTF8.GetString(reply.Body.Span)) };
+        }
+
         using (Scope("report"))
         {
             var fields = new ReportFields(
@@ -960,7 +981,7 @@ public sealed partial class BusListener : IDisposable
                 reply.CacheWriteTokens,
                 reply.CacheReadTokens,
                 accepted.Job.Job?.JobType);
-            await SignAndWriteAsync(new UnsignedResult(accepted, fields, reply, 0), deferredBefore, ct).ConfigureAwait(false);
+            await SignAndWriteAsync(new UnsignedResult(accepted, fields, reply, 0) { Withdrawal = withdrawalPath }, deferredBefore, ct).ConfigureAwait(false);
         }
     }
 
@@ -1009,7 +1030,7 @@ public sealed partial class BusListener : IDisposable
             KeptStore(() => LogInvalidMarks(Done, Done?.Note(accepted.File.Id, _clock.GetUtcNow(), fingerprint)), accepted.File.Id);
         }
 
-        WriteOutcome report = await _bus.WriteReportAsync(signed, bytes, reply.Attachment?.Bytes, fingerprint, ct).ConfigureAwait(false);
+        WriteOutcome report = await _bus.WriteReportAsync(signed, bytes, reply.Attachment?.Bytes, fingerprint, ct, result.Withdrawal).ConfigureAwait(false);
         if (report is WriteFailed failed)
         {
             LogWriteFailed("report", id, failed.Stage, failed.Detail);
@@ -1241,7 +1262,14 @@ public sealed partial class BusListener : IDisposable
     private partial void LogMandateRefused(string id, string mandate, string limit);
 
     /// <summary>Spec 61: a finished run's result whose report could not be signed yet, and how often signing was tried.</summary>
-    private sealed record UnsignedResult(AcceptedJob Job, ReportFields Fields, JobReply Reply, int Tries);
+    private sealed record UnsignedResult(AcceptedJob Job, ReportFields Fields, JobReply Reply, int Tries)
+    {
+        /// <summary>Gets the withdrawal the report answers (spec 61 slice 5), removed in the report's commit.</summary>
+        public string? Withdrawal { get; init; }
+    }
+
+    /// <summary>A verified withdrawal of a live run, and where it sits.</summary>
+    private sealed record SeenWithdrawal(string Path, Model Withdrawal);
 
     /// <summary>The lease of the probe path (no gate): nothing to release.</summary>
     private sealed class NoopLease : IDisposable

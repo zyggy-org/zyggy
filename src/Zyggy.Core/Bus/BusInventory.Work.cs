@@ -57,12 +57,13 @@ public sealed partial class BusInventory
             }
 
             var jobs = new List<WorkJob>();
+            HashSet<string> withdrawn = WithdrawnIdsAt(machine);
             foreach ((string folder, bool claimed) in new[] { (BusPaths.Claimed(_me.Tenant, machine), true), (BusPaths.Jobs(_me.Tenant, machine), false) })
             {
                 foreach ((string path, EnvelopeId id) in Envelopes(folder).OrderBy(e => e.Id.Value, StringComparer.Ordinal))
                 {
                     (EnvelopeSummary summary, _) = await SummariseAsync(path, id, ct).ConfigureAwait(false);
-                    jobs.Add(new WorkJob(id, summary.Verified ? summary.Project : null, claimed, id.Timestamp));
+                    jobs.Add(new WorkJob(id, summary.Verified ? summary.Project : null, claimed, id.Timestamp) { WithdrawalRequested = claimed && withdrawn.Contains(id.Value) });
                 }
             }
 

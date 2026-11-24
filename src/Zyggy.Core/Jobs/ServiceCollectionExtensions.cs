@@ -39,6 +39,9 @@ public static class ServiceCollectionExtensions
 
         options.PostConfigure<IServiceProvider>((o, sp) => o.NodeDir ??= sp.GetService<NodeConfiguration>()?.NodeDir);
         services.TryAddSingleton(TimeProvider.System);
+
+        // Spec 61 slice 5: the withdrawal signal the listener raises and the runner reads, one per node.
+        services.TryAddSingleton<RunWithdrawals>();
         services.AddSingleton(sp =>
         {
             var clock = sp.GetRequiredService<TimeProvider>();
@@ -50,7 +53,8 @@ public static class ServiceCollectionExtensions
                 sp.GetService<RegistrySnapshot>() ?? new RegistrySnapshot(),
                 sp.GetRequiredService<IOptions<JobRunnerOptions>>(),
                 clock,
-                sp.GetService<ILoggerFactory>()?.CreateLogger<JobRunner>() ?? NullLogger<JobRunner>.Instance);
+                sp.GetService<ILoggerFactory>()?.CreateLogger<JobRunner>() ?? NullLogger<JobRunner>.Instance,
+                sp.GetRequiredService<RunWithdrawals>());
         });
         services.AddSingleton<JobHandler>(sp => sp.GetRequiredService<JobRunner>().RunAsync);
         return services;

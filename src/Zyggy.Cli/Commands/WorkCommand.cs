@@ -120,7 +120,7 @@ internal static class WorkCommand
 
             foreach (WorkJob job in machine.Jobs)
             {
-                sb.Append("  job ").Append(job.Id.Value).Append("  ").Append(job.Project ?? "(does not verify)").Append("  ").Append(job.Claimed ? "claimed" : "queued")
+                sb.Append("  job ").Append(job.Id.Value).Append("  ").Append(job.Project ?? "(does not verify)").Append("  ").Append(job.WithdrawalRequested ? "claimed, withdrawal requested" : job.Claimed ? "claimed" : "queued")
                     .Append("  submitted ").Append(HealthRules.Age(board.At, job.Submitted)).Append('\n');
             }
 

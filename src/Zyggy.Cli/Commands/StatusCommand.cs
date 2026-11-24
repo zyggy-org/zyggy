@@ -170,6 +170,12 @@ internal static partial class StatusCommand
                 .Append('\n');
         }
 
+        // Spec 61 slice 5: withdrawals that still wait for their machine.
+        if (report.PendingWithdrawals > 0)
+        {
+            sb.Append("        withdrawals pending ").Append(report.PendingWithdrawals.ToString(CultureInfo.InvariantCulture)).Append('\n');
+        }
+
         foreach (MachineLiveness m in machines)
         {
             sb.Append("registry ").Append(m.Machine.Value.PadRight(14))
@@ -255,9 +261,17 @@ internal static partial class StatusCommand
             TraceState.Queued => "queued at " + machine + " since " + AgeOrNever(now, trace.Job?.Created),
             TraceState.Claimed => "claimed by " + machine + " since " + AgeOrNever(now, trace.Job?.Created),
             TraceState.Rejected => "rejected by " + machine + ": " + (trace.Reports.LastOrDefault(r => r.Verified && r.Status == ReportStatus.Rejected)?.Reason ?? trace.Job?.Problem ?? "unknown"),
+            TraceState.Reported when trace.Reports.LastOrDefault(r => r.Verified)?.Reason == "withdrawn" => "withdrawn, reported by " + machine,
             TraceState.Reported => "reported by " + machine,
             _ => "unknown",
         }).Append('\n');
+
+        // Spec 61 slice 5: a withdrawal that still waits for the machine that holds the job.
+        foreach (PendingWithdrawal w in trace.Withdrawals)
+        {
+            sb.Append("withdrawal requested ").Append(w.Created is { } at ? Timestamp(at) : "at an unknown time")
+                .Append(" by ").Append(w.From?.Value ?? "unknown").Append(", waiting for ").Append(w.Machine.Value).Append('\n');
+        }
         foreach (EnvelopeSummary r in trace.Reports)
         {
             sb.Append("report  ").Append(r.Id.Value).Append("  ");

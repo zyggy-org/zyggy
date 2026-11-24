@@ -42,6 +42,7 @@ public sealed partial class JobRunner
     private readonly TimeProvider _clock;
     private readonly ILogger<JobRunner> _log;
     private readonly JobPrompt _prompt = new();
+    private readonly RunWithdrawals? _withdrawals;
 
     internal JobRunner(
         IModelRunner model,
@@ -51,9 +52,11 @@ public sealed partial class JobRunner
         RegistrySnapshot registry,
         IOptions<JobRunnerOptions> options,
         TimeProvider clock,
-        ILogger<JobRunner> log)
+        ILogger<JobRunner> log,
+        RunWithdrawals? withdrawals = null)
     {
         ArgumentNullException.ThrowIfNull(options);
+        _withdrawals = withdrawals;
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _policy = policy ?? throw new ArgumentNullException(nameof(policy));
         _git = git ?? throw new ArgumentNullException(nameof(git));
@@ -251,12 +254,16 @@ public sealed partial class JobRunner
         var timeout = _options.TimeoutOverride ?? TimeSpan.FromMinutes(minutes);
         using var awake = new AwakeClock(_clock, timeout, started);
 
+        // Spec 61 slice 5: a withdrawal of this job stops the model the way its limit does (process tree killed, partial text kept).
+        var withdrawn = _withdrawals?.For(job.Header.Id) ?? CancellationToken.None;
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(awake.Reached, withdrawn);
+
         // Spec 59 slice 6 (AC-9): the job's own turn limit, never above the node's; a lowered value is said in the report body.
         var maxTurns = Math.Min(fields.MaxTurns ?? policy.MaxTurns, policy.MaxTurns);
         var loweredLine = fields.MaxTurns > policy.MaxTurns ? string.Create(CultureInfo.InvariantCulture, $"max_turns lowered to {maxTurns}") : null;
         var request = new ModelRunRequest(_prompt.Render(job, runDirectory, allowedTools), runDirectory, AwakeClock.WallLimit + ProcessBackstop)
         {
-            LimitReached = awake.Reached,
+            LimitReached = stop.Token,
             MaxTurns = maxTurns,
             Model = fields.Model,
             RequireModel = fields.Model is not null,
@@ -281,6 +288,18 @@ public sealed partial class JobRunner
             : $"timeout after {minutes} min";
         var asleepLine = awake.Asleep > TimeSpan.Zero ? $"asleep {AwakeClock.Format(awake.Asleep)} during the run" : null;
         var reply = Map(id, result, timeoutLine, started, fields.Model) with { MaxTurns = maxTurns };
+        if (withdrawn.IsCancellationRequested && result.Outcome != ModelRunOutcome.Succeeded)
+        {
+            // Spec 61 slice 5: failed / withdrawn with the text the model had produced; the worktree below is finished as for a failed run
+            // (work committed on zyggy/<id> and pushed, never base or a named branch). The listener puts the "withdrawn by" lines first.
+            LogWithdrawn(id);
+            reply = reply with
+            {
+                Status = ReportStatus.Failed,
+                Reason = RunFailureReasonWire.ToWire(RunFailureReason.Withdrawn),
+                Body = Encoding.UTF8.GetBytes(ReportSummary.Extract(result) + "\n"),
+            };
+        }
 
         // Spec 58 slice 5: a job that read work mail has its report screened on this laptop before it is written to the bus.
         reply = Outlook.WorkMailReportScreen.Apply(reply, nodeDir, job.Header.Tenant, job.Header.Id);
@@ -739,6 +758,9 @@ public sealed partial class JobRunner
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: model_unavailable ({Detail})")]
     private partial void LogModelUnavailable(string id, string detail);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "job {Id}: withdrawn; the model was stopped")]
+    private partial void LogWithdrawn(string id);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id}: worktree git step failed: {Step}")]
     private partial void LogWorktreeFailed(string id, string step);
