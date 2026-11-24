@@ -38,6 +38,8 @@ public sealed partial class BusListener : IDisposable
     private const int MaxSignTries = 10;
 
     private readonly ConcurrentDictionary<string, Task> _runs = new(StringComparer.Ordinal);
+    /// <summary>Spec 61: the <see cref="JobFingerprint"/> of each live run's job, by job id.</summary>
+    private readonly ConcurrentDictionary<string, string> _liveFingerprints = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, UnsignedResult> _unsigned = new(StringComparer.Ordinal);
     private readonly List<AcceptedJob> _deferredClaims = [];
     private bool _pullErrorLogged;
@@ -108,6 +110,9 @@ public sealed partial class BusListener : IDisposable
 
     /// <summary>Gets the node folder's ids reported <c>done</c> in the last 14 days (spec 61); <see langword="null"/> when the composition has no node folder.</summary>
     internal ReportedDone? Done { get; init; }
+
+    /// <summary>Gets the node folder's ids with a run started and not yet reported on the remote (spec 61); <see langword="null"/> when the composition has no node folder.</summary>
+    internal RunningJobs? Running { get; init; }
 
     /// <summary>Gets Central's supervisor wake (deliverable 18), run after every pickup pass; <see langword="null"/> on every other machine.</summary>
     internal Supervision.SupervisorWake? Wake { get; init; }
@@ -199,8 +204,24 @@ public sealed partial class BusListener : IDisposable
             waiting = [.. _deferredClaims.Select(c => c.File.Id.Value)];
         }
 
-        // Spec 61: a claim whose result is kept (or waits to be signed) is answered by that report, never run again.
-        files = [.. files.Where(f => !_runs.ContainsKey(f.Id.Value) && !waiting.Contains(f.Id.Value) && !HasResult(f.Id))];
+        files = [.. files.Where(f => !_runs.ContainsKey(f.Id.Value) && !waiting.Contains(f.Id.Value))];
+
+        // Spec 61: a claim whose result is kept (or waits to be signed) is answered by that report, never run again — unless the file is
+        // not the job that result belongs to: then it is refused.
+        var resumable = new List<BusFile>();
+        foreach (BusFile file in files)
+        {
+            if (!HasResult(file.Id))
+            {
+                resumable.Add(file);
+            }
+            else if (await _bus.VerifyClaimedAsync(file, ct).ConfigureAwait(false) is AcceptedJob withResult && OtherJobUnderId(withResult))
+            {
+                await RefuseOtherJobAsync(withResult, ct).ConfigureAwait(false);
+            }
+        }
+
+        files = resumable;
         if (files.Count == 0)
         {
             return 0;
@@ -225,9 +246,15 @@ public sealed partial class BusListener : IDisposable
                 continue;
             }
 
-            if (DoneAt(accepted.File.Id) is { } doneAt)
+            if (OtherJobUnderId(accepted))
             {
-                await RemoveDuplicateAsync(accepted, doneAt, ct).ConfigureAwait(false);
+                await RefuseOtherJobAsync(accepted, ct).ConfigureAwait(false);
+                continue;
+            }
+
+            if (DoneMark(accepted.File.Id) is { } done)
+            {
+                await RemoveDuplicateAsync(accepted, done.At, ct).ConfigureAwait(false);
                 continue;
             }
 
@@ -299,16 +326,17 @@ public sealed partial class BusListener : IDisposable
         int deferredBefore = await _bus.UnpushedCommitCountAsync(ct).ConfigureAwait(false);
         foreach (BusFile file in await _bus.ListNewJobsAsync(ct).ConfigureAwait(false))
         {
-            if (HasResult(file.Id))
+            bool hasResult = HasResult(file.Id);
+            JobIntake intake = await _bus.VerifyIntakeAsync(file, ct).ConfigureAwait(false);
+            if (intake is AcceptedJob again && await AnsweredWithoutRunAsync(again, hasResult, ct).ConfigureAwait(false))
             {
-                // Spec 61: a job whose result is kept (or waits to be signed) is answered by that report, never run again.
+                deferredBefore = await _bus.UnpushedCommitCountAsync(ct).ConfigureAwait(false);
                 continue;
             }
 
-            JobIntake intake = await _bus.VerifyIntakeAsync(file, ct).ConfigureAwait(false);
-            if (intake is AcceptedJob again && await AnsweredWithoutRunAsync(again, ct).ConfigureAwait(false))
+            if (hasResult)
             {
-                deferredBefore = await _bus.UnpushedCommitCountAsync(ct).ConfigureAwait(false);
+                // Spec 61: a job whose result is kept (or waits to be signed) is answered by that report, never run again.
                 continue;
             }
 
@@ -603,22 +631,103 @@ public sealed partial class BusListener : IDisposable
         return kept || _unsigned.ContainsKey(job.Value);
     }
 
-    /// <summary>Spec 61: when this node reported <paramref name="job"/> <c>done</c> within 14 days, that instant; a node folder that cannot be read counts as never.</summary>
-    private DateTimeOffset? DoneAt(EnvelopeId job)
+    /// <summary>
+    /// Spec 61: when this node reported <paramref name="job"/> <c>done</c> within 14 days, that record; a node folder that cannot be read
+    /// counts as never, and an invalid record (unreadable, without fingerprint, dated in the future) is removed with one Warning and never counts.
+    /// </summary>
+    private JobMark? DoneMark(EnvelopeId job)
     {
-        DateTimeOffset? at = null;
-        KeptStore(() => at = Done?.DoneWithin(job, _clock.GetUtcNow()), job);
-        return at;
+        JobMark? mark = null;
+        string? invalid = null;
+        KeptStore(() => mark = Done?.Find(job, _clock.GetUtcNow(), out invalid), job);
+        if (invalid is not null)
+        {
+            using IDisposable? scope = Scope("claim");
+            LogMarkInvalid(Done!.Name, job.Value, invalid);
+        }
+
+        return mark;
+    }
+
+    /// <summary>Spec 61: the fingerprint of the job whose run this node started under <paramref name="job"/>: the live run's, else the node folder's record.</summary>
+    private string? RunFingerprint(EnvelopeId job)
+    {
+        if (_liveFingerprints.TryGetValue(job.Value, out string? live))
+        {
+            return live;
+        }
+
+        string? recorded = null;
+        string? invalid = null;
+        KeptStore(() => recorded = Running?.Find(job, _clock.GetUtcNow(), out invalid)?.Fingerprint, job);
+        if (invalid is not null)
+        {
+            using IDisposable? scope = Scope("claim");
+            LogMarkInvalid(Running!.Name, job.Value, invalid);
+        }
+
+        return recorded;
     }
 
     /// <summary>
-    /// Spec 61 "Never a second run", at intake: a file whose id has a live run on this node is claimed without starting anything (the live
-    /// run's report answers it); one whose id this node reported <c>done</c> within 14 days is removed as a duplicate. True when the file was
-    /// dealt with that way and must not go through the gate.
+    /// Spec 61: true when <paramref name="accepted"/> carries the id of a job this node runs, ran or reported <c>done</c>, but is not that job
+    /// (its <see cref="JobFingerprint"/> differs; Central's re-queue keeps it).
     /// </summary>
-    private async Task<bool> AnsweredWithoutRunAsync(AcceptedJob accepted, CancellationToken ct)
+    private bool OtherJobUnderId(AcceptedJob accepted)
+    {
+        string fingerprint = JobFingerprint.Of(accepted.Job);
+        string? run = RunFingerprint(accepted.File.Id);
+        if (run is not null)
+        {
+            return !string.Equals(run, fingerprint, StringComparison.Ordinal);
+        }
+
+        return DoneMark(accepted.File.Id) is { } done && !string.Equals(done.Fingerprint, fingerprint, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Spec 61: refuses a different envelope under the id of a job this node runs, ran or reported <c>done</c>: moved to <c>jobs/rejected/</c>
+    /// with a signed <c>rejected</c> report, reason <c>invalid_field</c> (field <c>id</c>), one Warning (the repository's rejection line).
+    /// </summary>
+    private async Task RefuseOtherJobAsync(AcceptedJob accepted, CancellationToken ct)
     {
         string id = accepted.File.Id.Value;
+        var refused = new RejectedJob(accepted.File, EnvelopeRejectionReason.InvalidField, "id", "envelope differs from the job this id belongs to", accepted.Job.Header.From)
+        {
+            Mandate = accepted.Job.Job?.Mandate,
+            Step = accepted.Job.Job?.Step,
+            JobType = accepted.Job.Job?.JobType,
+            Note = "job " + id + ": envelope differs from the job this id belongs to",
+        };
+        using (Scope("reject"))
+        {
+            if (await _bus.RejectAsync(refused, _signWith, ct).ConfigureAwait(false) is WriteFailed failed)
+            {
+                LogWriteFailed("reject", id, failed.Stage, failed.Detail);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Spec 61 "Never a second run", at intake: a file that carries the id of a job this node runs, ran or reported <c>done</c> but is not
+    /// that job is refused; one that is the live run's job is claimed without starting anything (the live run's report answers it); one
+    /// that is the job this node reported <c>done</c> within 14 days is removed as a duplicate. True when the file was dealt with that way and
+    /// must not go through the gate. <paramref name="hasResult"/>: the id has a kept result, which answers the same job without a write here.
+    /// </summary>
+    private async Task<bool> AnsweredWithoutRunAsync(AcceptedJob accepted, bool hasResult, CancellationToken ct)
+    {
+        string id = accepted.File.Id.Value;
+        if (OtherJobUnderId(accepted))
+        {
+            await RefuseOtherJobAsync(accepted, ct).ConfigureAwait(false);
+            return true;
+        }
+
+        if (hasResult)
+        {
+            return false;
+        }
+
         if (_runs.ContainsKey(id))
         {
             using (Scope("claim"))
@@ -637,9 +746,9 @@ public sealed partial class BusListener : IDisposable
             return true;
         }
 
-        if (DoneAt(accepted.File.Id) is { } doneAt)
+        if (DoneMark(accepted.File.Id) is { } done)
         {
-            await RemoveDuplicateAsync(accepted, doneAt, ct).ConfigureAwait(false);
+            await RemoveDuplicateAsync(accepted, done.At, ct).ConfigureAwait(false);
             return true;
         }
 
@@ -658,8 +767,23 @@ public sealed partial class BusListener : IDisposable
             }
             else
             {
+                KeptStore(() => Running?.Forget(accepted.File.Id), accepted.File.Id);
                 LogDuplicate(accepted.File.Id.Value, doneAt);
             }
+        }
+    }
+
+    /// <summary>Spec 61: one Warning per invalid record a node-folder store removed while noting an id.</summary>
+    private void LogInvalidMarks(JobMarks? store, IReadOnlyList<(string Name, string Why)>? invalid)
+    {
+        if (store is null || invalid is null)
+        {
+            return;
+        }
+
+        foreach ((string name, string why) in invalid)
+        {
+            LogMarkInvalid(store.Name, name, why);
         }
     }
 
@@ -698,7 +822,7 @@ public sealed partial class BusListener : IDisposable
             deferredBefore = await NoteDeferredAsync(claim, deferredBefore, ct).ConfigureAwait(false);
         }
 
-        Task run = Track(accepted.File.Id.Value, RunAndReportAsync(accepted, lease, deferredBefore, ct));
+        Task run = Track(accepted, () => RunAndReportAsync(accepted, lease, deferredBefore, ct));
         if (_gate is null)
         {
             await run.ConfigureAwait(false);
@@ -727,7 +851,7 @@ public sealed partial class BusListener : IDisposable
         }
 
         int deferredBefore = await _bus.UnpushedCommitCountAsync(ct).ConfigureAwait(false);
-        Task run = Track(accepted.File.Id.Value, RunAndReportAsync(accepted, lease, deferredBefore, ct));
+        Task run = Track(accepted, () => RunAndReportAsync(accepted, lease, deferredBefore, ct));
         if (_gate is null)
         {
             await run.ConfigureAwait(false);
@@ -758,14 +882,21 @@ public sealed partial class BusListener : IDisposable
     }
 
     /// <summary>Registers a run so <see cref="Status"/> counts it and <see cref="DrainAsync"/> waits for it; removed when it ends.</summary>
-    private Task Track(string id, Task run)
+    /// <remarks>Spec 61: the job's fingerprint is held for the live run and recorded in the node folder before the run starts.</remarks>
+    private Task Track(AcceptedJob accepted, Func<Task> start)
     {
+        string id = accepted.File.Id.Value;
+        string fingerprint = JobFingerprint.Of(accepted.Job);
+        _liveFingerprints[id] = fingerprint;
+        KeptStore(() => LogInvalidMarks(Running, Running?.Note(accepted.File.Id, _clock.GetUtcNow(), fingerprint)), id);
+        Task run = start();
         _runs[id] = run;
         _ = run.ContinueWith(
             t =>
             {
                 _ = t.Exception; // observed: the run logged its own failure
                 _runs.TryRemove(id, out _);
+                _liveFingerprints.TryRemove(id, out _);
                 Publish();
             },
             CancellationToken.None,
@@ -850,6 +981,7 @@ public sealed partial class BusListener : IDisposable
             if (tries >= MaxSignTries)
             {
                 _unsigned.TryRemove(id, out _);
+                KeptStore(() => Running?.Forget(accepted.File.Id), id);
                 LogSignGivenUp(id, tries);
             }
             else
@@ -865,16 +997,19 @@ public sealed partial class BusListener : IDisposable
         }
 
         _unsigned.TryRemove(id, out _);
-        if (reply.Status == ReportStatus.Done)
-        {
-            // Spec 61: a done id is remembered for 14 days, so a later copy of the job is removed as a duplicate, never run.
-            KeptStore(() => Done?.Note(accepted.File.Id, _clock.GetUtcNow()), accepted.File.Id);
-        }
 
         // Spec 61: the result is kept in the node folder before the bus write and removed only once its commit is on the remote.
         byte[] bytes = EnvelopeWriter.Serialize(signed);
+        string fingerprint = JobFingerprint.Of(accepted.Job);
         bool kept = KeptStore(() => Kept?.Keep(accepted.File.Id, bytes, reply.Attachment?.Bytes), accepted.File.Id);
-        WriteOutcome report = await _bus.WriteReportAsync(signed, bytes, reply.Attachment?.Bytes, ct).ConfigureAwait(false);
+        if (kept && reply.Status == ReportStatus.Done)
+        {
+            // Spec 61: a done id is remembered for 14 days, so a later copy of the job is removed as a duplicate, never run. Noted only
+            // once the result is kept: a failed keep, or a crash before this line, never leaves a done id without a kept result or a report.
+            KeptStore(() => LogInvalidMarks(Done, Done?.Note(accepted.File.Id, _clock.GetUtcNow(), fingerprint)), accepted.File.Id);
+        }
+
+        WriteOutcome report = await _bus.WriteReportAsync(signed, bytes, reply.Attachment?.Bytes, fingerprint, ct).ConfigureAwait(false);
         if (report is WriteFailed failed)
         {
             LogWriteFailed("report", id, failed.Stage, failed.Detail);
@@ -886,9 +1021,15 @@ public sealed partial class BusListener : IDisposable
             return;
         }
 
-        if (report is Pushed && kept)
+        if (report is Pushed)
         {
-            KeptStore(() => Kept?.Remove(accepted.File.Id), accepted.File.Id);
+            KeptStore(
+                () =>
+                {
+                    Kept?.Remove(accepted.File.Id);
+                    Running?.Forget(accepted.File.Id);
+                },
+                accepted.File.Id);
         }
 
         _lastReportUtc = _clock.GetUtcNow();
@@ -937,19 +1078,32 @@ public sealed partial class BusListener : IDisposable
 
             using (Scope("report"))
             {
-                WriteOutcome outcome = await _bus.WriteKeptReportAsync(kept.Job, kept.Report, kept.Attachment is { } file ? new ReadOnlyMemory<byte>(file) : (ReadOnlyMemory<byte>?)null, ct).ConfigureAwait(false);
+                WriteOutcome outcome = await _bus.WriteKeptReportAsync(kept.Job, kept.Report, kept.Attachment is { } file ? new ReadOnlyMemory<byte>(file) : (ReadOnlyMemory<byte>?)null, RunFingerprint(kept.Job), ct).ConfigureAwait(false);
                 if (outcome is WriteFailed { Stage: "verify" } refused)
                 {
                     // Spec 61 (slice 1 correction a): a corrupt or foreign kept file is moved aside, never run, never written to the bus.
+                    // Slice 2 correction: its id no longer counts as done either, so the job is run or reported, never dropped as a duplicate.
                     string? moved = null;
-                    if (KeptStore(() => moved = Kept.Quarantine(kept.Job), kept.Job))
+                    if (KeptStore(
+                        () =>
+                        {
+                            moved = Kept.Quarantine(kept.Job);
+                            Done?.Forget(kept.Job);
+                        },
+                        kept.Job))
                     {
                         LogKeptQuarantined(kept.Job.Value, refused.Detail, moved!);
                     }
                 }
                 else if (outcome is Pushed)
                 {
-                    KeptStore(() => Kept.Remove(kept.Job), kept.Job);
+                    KeptStore(
+                        () =>
+                        {
+                            Kept.Remove(kept.Job);
+                            Running?.Forget(kept.Job);
+                        },
+                        kept.Job);
                     _lastReportUtc = _clock.GetUtcNow();
                     LogKeptWritten(kept.Job.Value);
                 }
@@ -1013,6 +1167,9 @@ public sealed partial class BusListener : IDisposable
         };
         return _log.BeginScope(scope);
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "{Store} record of job {Id} is invalid ({Why}); ignored and removed")]
+    private partial void LogMarkInvalid(string store, string id, string why);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "claimed job {Id} from {From} ({Push})")]
     private partial void LogClaimed(string id, string from, string push);

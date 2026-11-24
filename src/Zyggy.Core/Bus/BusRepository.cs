@@ -296,7 +296,7 @@ public sealed partial class BusRepository
     public async Task<WriteOutcome> ReportAsync(AcceptedJob claimed, ReportFields report, ReadOnlyMemory<byte> body, ReadOnlyMemory<byte>? attachment, KeyId signWith, CancellationToken ct)
     {
         (Model? signed, WriteFailed? failed) = await SignReportAsync(claimed, report, body, signWith, ct).ConfigureAwait(false);
-        return signed is null ? failed! : await WriteReportAsync(signed, EnvelopeWriter.Serialize(signed), attachment, ct).ConfigureAwait(false);
+        return signed is null ? failed! : await WriteReportAsync(signed, EnvelopeWriter.Serialize(signed), attachment, null, ct).ConfigureAwait(false);
     }
 
     /// <summary>Signs the report on <paramref name="claimed"/> addressed to the job's sender, with a fresh id; nothing is written.</summary>
@@ -334,9 +334,10 @@ public sealed partial class BusRepository
     /// <param name="job">The job the kept file is named after.</param>
     /// <param name="bytes">The signed report's bytes.</param>
     /// <param name="attachment">The attached file's bytes, or <see langword="null"/>.</param>
+    /// <param name="jobFingerprint">The <see cref="JobFingerprint"/> of the job the report answers, when known (see <see cref="WriteReportAsync"/>).</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The write outcome.</returns>
-    internal async Task<WriteOutcome> WriteKeptReportAsync(EnvelopeId job, byte[] bytes, ReadOnlyMemory<byte>? attachment, CancellationToken ct)
+    internal async Task<WriteOutcome> WriteKeptReportAsync(EnvelopeId job, byte[] bytes, ReadOnlyMemory<byte>? attachment, string? jobFingerprint, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(bytes);
@@ -359,7 +360,7 @@ public sealed partial class BusRepository
 
         if (!await IsInRevisionAsync("HEAD", reportPath, ct).ConfigureAwait(false))
         {
-            return await WriteReportAsync(report, bytes, attachment, ct).ConfigureAwait(false);
+            return await WriteReportAsync(report, bytes, attachment, jobFingerprint, ct).ConfigureAwait(false);
         }
 
         WriteOutcome push = await WriteAsync(Subject("push", report.Header.Id, _me.Machine.Value, report.Header.To.Value), [], null, ct).ConfigureAwait(false);
@@ -371,14 +372,17 @@ public sealed partial class BusRepository
     /// <summary>
     /// Spec 61 (reshapes spec 17 D3): adds <paramref name="signed"/> (and its attached file) to <c>reports/</c> and, after the write's pull,
     /// removes the answered job's file wherever it is — <c>jobs/claimed/</c>, or <c>jobs/</c> when Central re-queued it — in the same
-    /// commit; when the file is nowhere (answered by Central meanwhile) the report is committed alone.
+    /// commit; when the file is nowhere (answered by Central meanwhile) the report is committed alone. Slice 2 correction: with
+    /// <paramref name="jobFingerprint"/>, a file there that does not verify or is not that job (another <see cref="JobFingerprint"/>) is left in
+    /// place for intake to refuse, and the report is committed alone.
     /// </summary>
     /// <param name="signed">The signed report.</param>
     /// <param name="bytes">Its serialized bytes.</param>
     /// <param name="attachment">The attached file's bytes, or <see langword="null"/>.</param>
+    /// <param name="jobFingerprint">The fingerprint of the job the report answers; <see langword="null"/> removes whatever file holds its id.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The write outcome.</returns>
-    internal Task<WriteOutcome> WriteReportAsync(Model signed, byte[] bytes, ReadOnlyMemory<byte>? attachment, CancellationToken ct)
+    internal Task<WriteOutcome> WriteReportAsync(Model signed, byte[] bytes, ReadOnlyMemory<byte>? attachment, string? jobFingerprint, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(signed);
         ArgumentNullException.ThrowIfNull(bytes);
@@ -408,7 +412,7 @@ public sealed partial class BusRepository
                 string? jobFile = File.Exists(BusPaths.Resolve(_checkoutRoot, claimedPath)) ? claimedPath
                     : File.Exists(BusPaths.Resolve(_checkoutRoot, queuedPath)) ? queuedPath
                     : null;
-                if (addFailed is not null || jobFile is null)
+                if (addFailed is not null || jobFile is null || !await IsSameJobAsync(jobFile, jobFingerprint, token).ConfigureAwait(false))
                 {
                     return addFailed;
                 }
@@ -441,6 +445,19 @@ public sealed partial class BusRepository
             ct);
     }
 
+    /// <summary>Spec 61: true when the envelope at <paramref name="path"/> verifies and has <paramref name="fingerprint"/>, or when no fingerprint is given.</summary>
+    private async Task<bool> IsSameJobAsync(string path, string? fingerprint, CancellationToken ct)
+    {
+        if (fingerprint is null)
+        {
+            return true;
+        }
+
+        byte[] bytes = await File.ReadAllBytesAsync(BusPaths.Resolve(_checkoutRoot, path), ct).ConfigureAwait(false);
+        EnvelopeResult parsed = await _signer.ParseAndVerifyAsync(bytes, _me.Tenant, ct).ConfigureAwait(false);
+        return parsed.IsAccepted && string.Equals(JobFingerprint.Of(parsed.Envelope!), fingerprint, StringComparison.Ordinal);
+    }
+
     /// <summary>True when <paramref name="revision"/> holds a file at <paramref name="path"/>.</summary>
     private async Task<bool> IsInRevisionAsync(string revision, string path, CancellationToken ct) =>
         (await _git.BlobSizeAsync(_checkoutRoot, revision, path, ct).ConfigureAwait(false)).Size is not null;
@@ -461,10 +478,20 @@ public sealed partial class BusRepository
         ArgumentNullException.ThrowIfNull(signWith);
         string from = job.File.RelativePath;
         string to = BusPaths.EnvelopeFile(BusPaths.Rejected(_me.Tenant, _me.Machine), job.File.Id);
-        AssertMayWrite(from, BusFolder.Jobs);
+
+        // Spec 61: a different envelope under a known id is refused also from this node's own jobs/claimed/ (a resumed claim).
+        bool claimed = string.Equals(from, BusPaths.EnvelopeFile(BusPaths.Claimed(_me.Tenant, _me.Machine), job.File.Id), StringComparison.Ordinal);
+        AssertMayWrite(from, claimed ? BusFolder.Claimed : BusFolder.Jobs);
         AssertMayWrite(to, BusFolder.Rejected);
         string reason = EnvelopeWire.ToWire(job.Reason);
-        LogRejected(_me.Tenant.Value, _me.Machine.Value, Path.GetFileName(from), reason, job.Field ?? "-");
+        if (job.Note is null)
+        {
+            LogRejected(_me.Tenant.Value, _me.Machine.Value, Path.GetFileName(from), reason, job.Field ?? "-");
+        }
+        else
+        {
+            LogRejectedWithNote(_me.Tenant.Value, _me.Machine.Value, Path.GetFileName(from), reason, job.Field ?? "-", job.Note);
+        }
 
         if (job.From is null)
         {
@@ -478,7 +505,7 @@ public sealed partial class BusRepository
         DateTimeOffset now = _clock.GetUtcNow();
         var reportId = EnvelopeId.New(now);
         var header = new EnvelopeHeader(_me.Tenant, reportId, _me.Machine, job.From, now, EnvelopePriority.Normal, job.File.Id);
-        string body = "rejected: " + reason + (job.Field is null ? string.Empty : " (" + job.Field + ")") + "\n";
+        string body = "rejected: " + reason + (job.Field is null ? string.Empty : " (" + job.Field + ")") + "\n" + (job.Note is null ? string.Empty : job.Note + "\n");
         EnvelopeResult signed = await _signer.SignAsync(
             Model.CreateReport(header, new ReportFields(ReportStatus.Rejected, reason, Mandate: job.Mandate, Step: job.Step, JobType: job.JobType), Encoding.UTF8.GetBytes(body)), signWith, ct).ConfigureAwait(false);
         if (!signed.IsAccepted)
@@ -1878,6 +1905,9 @@ public sealed partial class BusRepository
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "{Tenant}/{Machine}: rejected {File}: {Reason} ({Field})")]
     private partial void LogRejected(string tenant, string machine, string file, string reason, string field);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "{Tenant}/{Machine}: rejected {File}: {Reason} ({Field}): {Note}")]
+    private partial void LogRejectedWithNote(string tenant, string machine, string file, string reason, string field, string note);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "{Tenant}/{Machine}: job {Id}: the front-matter id differs from the file name")]
     private partial void LogIdDiffers(string tenant, string machine, string id);

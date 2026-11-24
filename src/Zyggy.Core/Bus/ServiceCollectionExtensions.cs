@@ -293,6 +293,7 @@ public static class ServiceCollectionExtensions
                 Wake = sp.GetService<SupervisorWake>(),
                 Kept = string.IsNullOrEmpty(nodeDir) ? null : new KeptReports(nodeDir, identity.Tenant),
                 Done = string.IsNullOrEmpty(nodeDir) ? null : new ReportedDone(nodeDir, identity.Tenant),
+                Running = string.IsNullOrEmpty(nodeDir) ? null : new RunningJobs(nodeDir, identity.Tenant),
             };
         });
         // Deliverable 08: the sender side. Resolving without a registered KeyId throws (the verb checks signWith first, as probe send does).

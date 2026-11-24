@@ -69,4 +69,10 @@ public sealed record RejectedJob : JobIntake
 
     /// <summary>Gets the job's <c>job_type</c> when the job was read, copied into the rejection report (spec 50).</summary>
     public string? JobType { get; init; }
+
+    /// <summary>
+    /// Gets a second body line of the rejection report and the end of its one Warning line (spec 61: a different envelope under the id
+    /// of a job this node runs, ran or reported <c>done</c>); <see langword="null"/> for every other rejection.
+    /// </summary>
+    internal string? Note { get; init; }
 }
