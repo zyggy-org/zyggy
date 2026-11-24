@@ -5,6 +5,8 @@ using Microsoft.Extensions.Logging;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Jobs;
 
+using Model = Zyggy.Core.Envelope.Envelope;
+
 namespace Zyggy.Core.Bus;
 
 /// <summary>
@@ -96,6 +98,9 @@ public sealed partial class BusListener : IDisposable
 
     /// <summary>Gets the node's mandate check (deliverable 18); the production composition always sets it, a bare test listener may not.</summary>
     internal MandateIntake? Mandates { get; init; }
+
+    /// <summary>Gets the node folder's kept results (spec 61); <see langword="null"/> when the composition has no node folder.</summary>
+    internal KeptReports? Kept { get; init; }
 
     /// <summary>Gets Central's supervisor wake (deliverable 18), run after every pickup pass; <see langword="null"/> on every other machine.</summary>
     internal Supervision.SupervisorWake? Wake { get; init; }
@@ -273,11 +278,18 @@ public sealed partial class BusListener : IDisposable
     /// <returns>How many inbox files were handled (claimed or rejected).</returns>
     public async Task<int> ProcessOnceAsync(CancellationToken ct)
     {
+        await WriteKeptReportsAsync(ct).ConfigureAwait(false);
         await RetryDeferredClaimsAsync(ct).ConfigureAwait(false);
         int handled = 0;
         int deferredBefore = await _bus.UnpushedCommitCountAsync(ct).ConfigureAwait(false);
         foreach (BusFile file in await _bus.ListNewJobsAsync(ct).ConfigureAwait(false))
         {
+            if (Kept?.Has(file.Id) == true)
+            {
+                // Spec 61: a job whose result is kept is answered by that report, never run again.
+                continue;
+            }
+
             JobIntake intake = await _bus.VerifyIntakeAsync(file, ct).ConfigureAwait(false);
             if (intake is AcceptedJob verified && Mandates is not null)
             {
@@ -728,17 +740,92 @@ public sealed partial class BusListener : IDisposable
                 reply.CacheWriteTokens,
                 reply.CacheReadTokens,
                 accepted.Job.Job?.JobType);
-            WriteOutcome report = await _bus.ReportAsync(accepted, fields, reply.Body, reply.Attachment?.Bytes, _signWith, ct).ConfigureAwait(false);
+            (Model? signed, WriteFailed? signFailed) = await _bus.SignReportAsync(accepted, fields, reply.Body, _signWith, ct).ConfigureAwait(false);
+            if (signed is null)
+            {
+                LogWriteFailed("report", accepted.File.Id.Value, signFailed!.Stage, signFailed.Detail);
+                return;
+            }
+
+            // Spec 61: the result is kept in the node folder before the bus write and removed only once its commit is on the remote.
+            byte[] bytes = EnvelopeWriter.Serialize(signed);
+            bool kept = KeptStore(() => Kept?.Keep(accepted.File.Id, bytes, reply.Attachment?.Bytes), accepted.File.Id);
+            WriteOutcome report = await _bus.WriteReportAsync(signed, bytes, reply.Attachment?.Bytes, ct).ConfigureAwait(false);
             if (report is WriteFailed failed)
             {
                 LogWriteFailed("report", accepted.File.Id.Value, failed.Stage, failed.Detail);
+                if (Kept is not null && kept)
+                {
+                    LogReportKept(accepted.File.Id.Value);
+                }
+
                 return;
+            }
+
+            if (report is Pushed && kept)
+            {
+                KeptStore(() => Kept?.Remove(accepted.File.Id), accepted.File.Id);
             }
 
             _lastReportUtc = _clock.GetUtcNow();
             string status = EnvelopeWire.ToWire(reply.Status);
             LogReported(accepted.File.Id.Value, status, report is Deferred ? "deferred" : "pushed");
             await NoteDeferredAsync(report, deferredBefore, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Spec 61: writes every kept result whose run has ended (after every pull and at start-up, as the first step of a pass); a result
+    /// leaves the node folder once its report is on the remote, with one Information line. A failed write is logged by the repository
+    /// and tried again at the next pass.
+    /// </summary>
+    private async Task WriteKeptReportsAsync(CancellationToken ct)
+    {
+        if (Kept is null)
+        {
+            return;
+        }
+
+        IReadOnlyList<KeptReport> pending = [];
+        if (!KeptStore(() => pending = Kept.List(), "-"))
+        {
+            return;
+        }
+
+        foreach (KeptReport kept in pending)
+        {
+            if (_runs.ContainsKey(kept.Job.Value))
+            {
+                continue;
+            }
+
+            using (Scope("report"))
+            {
+                WriteOutcome outcome = await _bus.WriteKeptReportAsync(kept.Report, kept.Attachment is { } file ? new ReadOnlyMemory<byte>(file) : (ReadOnlyMemory<byte>?)null, ct).ConfigureAwait(false);
+                if (outcome is Pushed)
+                {
+                    KeptStore(() => Kept.Remove(kept.Job), kept.Job);
+                    _lastReportUtc = _clock.GetUtcNow();
+                    LogKeptWritten(kept.Job.Value);
+                }
+            }
+        }
+    }
+
+    /// <summary>Runs one change of the node folder's kept results; a disk failure is one Warning and never stops the report write. True when it succeeded.</summary>
+    private bool KeptStore(Action change, EnvelopeId job) => KeptStore(change, job.Value);
+
+    private bool KeptStore(Action change, string job)
+    {
+        try
+        {
+            change();
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            LogKeptFailed(job, ex.Message);
+            return false;
         }
     }
 
@@ -787,6 +874,15 @@ public sealed partial class BusListener : IDisposable
 
     [LoggerMessage(Level = LogLevel.Information, Message = "reported job {Id}: {Status} ({Push})")]
     private partial void LogReported(string id, string status, string push);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "report of job {Id} kept in the node folder; it is written at a later pass")]
+    private partial void LogReportKept(string id);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "kept result of job {Id} not stored in the node folder: {Detail}")]
+    private partial void LogKeptFailed(string id, string detail);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "report of job {Id} written from the node folder")]
+    private partial void LogKeptWritten(string id);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "pushed {Count} deferred commit(s)")]
     private partial void LogPushedDeferred(int count);

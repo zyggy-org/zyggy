@@ -15,7 +15,8 @@ namespace Zyggy.Integration.Cli;
 /// <summary>
 /// Spec 17 slice 4 (AC-9a, AC-9b, AC-9c): a node's report and Central's re-queue of the same claim, each committed before the other is
 /// pushed, on two checkouts of one bare repository with real git. The commit that loses the race is dropped, the checkout ends on the bus
-/// branch, clean, with no rebase in progress, and nothing is force-pushed.
+/// branch, clean, with no rebase in progress, and nothing is force-pushed. These are repository-level checks: since spec 61 the node's
+/// listener keeps the dropped report's result and writes it at its next pass (<c>Bus/LateReportTests</c>), so the result is no longer lost.
 /// </summary>
 public sealed class SweepConflictTests : IAsyncLifetime
 {

@@ -284,6 +284,50 @@ public sealed class BusRepositoryIntakeTests : IAsyncLifetime
         _processes.CallsOf("commit").Single().StandardInput.Should().Be($"acme report {report.Header.Id} home-laptop→central");
     }
 
+    // AC-2 (spec 61): Central re-queued the claim; the report removes the queued file in the same commit.
+    [Fact]
+    public async Task ReportAsync_JobBackInJobs_RemovesQueuedFileInReportCommit()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        AcceptedJob job = await ClaimedJobAsync(ct);
+        string claimedPath = BusPaths.EnvelopeFile(BusPaths.Claimed(Acme, HomeLaptop), job.File.Id);
+        string queuedPath = BusPaths.EnvelopeFile(BusPaths.Jobs(Acme, HomeLaptop), job.File.Id);
+        _checkout.Drop(queuedPath, _checkout.Read(claimedPath));
+        File.Delete(BusPaths.Resolve(_checkout.Root, claimedPath));
+
+        // Act
+        WriteOutcome outcome = await Repository().ReportAsync(job, new ReportFields(ReportStatus.Done), Encoding.UTF8.GetBytes("ok\n"), TestKeys.Acme1, ct);
+
+        // Assert
+        outcome.Should().Be(new Pushed(1));
+        string reportPath = _checkout.FilesUnder(BusPaths.Reports(Acme, HomeLaptop)).Should().ContainSingle().Subject;
+        _processes.Calls.Select(c => string.Join(' ', c.Arguments)).Should().Equal(
+            "add -- " + reportPath,
+            "rm -- " + queuedPath,
+            "-c user.name=zyggy (home-laptop) -c user.email=home-laptop@zyggy.org commit --only -F - -- " + reportPath + " " + queuedPath);
+    }
+
+    // AC-3 (spec 61): Central answered the claim (attempts exhausted); the report is written alone.
+    [Fact]
+    public async Task ReportAsync_JobFileNowhere_ReportAlone()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        AcceptedJob job = await ClaimedJobAsync(ct);
+        File.Delete(BusPaths.Resolve(_checkout.Root, BusPaths.EnvelopeFile(BusPaths.Claimed(Acme, HomeLaptop), job.File.Id)));
+
+        // Act
+        WriteOutcome outcome = await Repository().ReportAsync(job, new ReportFields(ReportStatus.Done), Encoding.UTF8.GetBytes("ok\n"), TestKeys.Acme1, ct);
+
+        // Assert
+        outcome.Should().Be(new Pushed(1));
+        string reportPath = _checkout.FilesUnder(BusPaths.Reports(Acme, HomeLaptop)).Should().ContainSingle().Subject;
+        _processes.Calls.Select(c => string.Join(' ', c.Arguments)).Should().Equal(
+            "add -- " + reportPath,
+            "-c user.name=zyggy (home-laptop) -c user.email=home-laptop@zyggy.org commit --only -F - -- " + reportPath);
+    }
+
     [Fact]
     public async Task ReportAsync_KeyMissing_WriteFailedSignNothingWritten()
     {

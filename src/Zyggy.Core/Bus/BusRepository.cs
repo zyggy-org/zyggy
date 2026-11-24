@@ -268,7 +268,8 @@ public sealed partial class BusRepository
 
     /// <summary>
     /// §4 state machine row 3: writes a signed report addressed to the job's sender under <c>reports/</c> and removes the
-    /// claimed job, in one commit <c>&lt;tenant&gt; report &lt;ulid&gt; &lt;me&gt;→&lt;from&gt;</c>.
+    /// job's file wherever it is after the write's pull (<c>jobs/claimed/</c>, or <c>jobs/</c> when Central re-queued it; none when Central
+    /// answered it — spec 61), in one commit <c>&lt;tenant&gt; report &lt;ulid&gt; &lt;me&gt;→&lt;from&gt;</c>.
     /// </summary>
     /// <param name="claimed">The claimed job being answered.</param>
     /// <param name="report">The report fields.</param>
@@ -294,6 +295,19 @@ public sealed partial class BusRepository
     /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
     public async Task<WriteOutcome> ReportAsync(AcceptedJob claimed, ReportFields report, ReadOnlyMemory<byte> body, ReadOnlyMemory<byte>? attachment, KeyId signWith, CancellationToken ct)
     {
+        (Model? signed, WriteFailed? failed) = await SignReportAsync(claimed, report, body, signWith, ct).ConfigureAwait(false);
+        return signed is null ? failed! : await WriteReportAsync(signed, EnvelopeWriter.Serialize(signed), attachment, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Signs the report on <paramref name="claimed"/> addressed to the job's sender, with a fresh id; nothing is written.</summary>
+    /// <param name="claimed">The job being answered.</param>
+    /// <param name="report">The report fields.</param>
+    /// <param name="body">The report body.</param>
+    /// <param name="signWith">This machine's signing key.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The signed report, or the <c>sign</c> failure.</returns>
+    internal async Task<(Model? Signed, WriteFailed? Failed)> SignReportAsync(AcceptedJob claimed, ReportFields report, ReadOnlyMemory<byte> body, KeyId signWith, CancellationToken ct)
+    {
         ArgumentNullException.ThrowIfNull(claimed);
         ArgumentNullException.ThrowIfNull(report);
         ArgumentNullException.ThrowIfNull(signWith);
@@ -304,19 +318,83 @@ public sealed partial class BusRepository
         if (!signed.IsAccepted)
         {
             LogWriteFailed(_me.Tenant.Value, _me.Machine.Value, "report " + id.Value, "sign", signed.Rejection!.Detail);
-            return new WriteFailed("sign", signed.Rejection.Detail);
+            return (null, new WriteFailed("sign", signed.Rejection.Detail));
         }
 
+        return (signed.Envelope!, null);
+    }
+
+    /// <summary>
+    /// Spec 61: writes a kept report again. When its file is already on <c>origin/&lt;branch&gt;</c> nothing is written and the outcome is
+    /// <see cref="Pushed"/>; when it is committed but not pushed, the unpushed commits are pushed (and the outcome is <see cref="Pushed"/>
+    /// only if the report then is on the remote); otherwise the report is written as by <see cref="ReportAsync(AcceptedJob, ReportFields, ReadOnlyMemory{byte}, ReadOnlyMemory{byte}?, KeyId, CancellationToken)"/>.
+    /// A kept file that does not verify as this machine's report is refused with <c>WriteFailed("verify", …)</c>.
+    /// </summary>
+    /// <param name="bytes">The signed report's bytes.</param>
+    /// <param name="attachment">The attached file's bytes, or <see langword="null"/>.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The write outcome.</returns>
+    internal async Task<WriteOutcome> WriteKeptReportAsync(byte[] bytes, ReadOnlyMemory<byte>? attachment, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(bytes);
+        EnvelopeResult parsed = await _signer.ParseAndVerifyAsync(bytes, _me.Tenant, ct).ConfigureAwait(false);
+        if (!parsed.IsAccepted
+            || parsed.Envelope!.Type != EnvelopeType.Report
+            || parsed.Envelope.Header.From != _me.Machine
+            || parsed.Envelope.Header.InReplyTo is null)
+        {
+            string detail = parsed.Rejection?.Detail ?? "not a report of this machine";
+            LogWriteFailed(_me.Tenant.Value, _me.Machine.Value, "kept report", "verify", detail);
+            return new WriteFailed("verify", detail);
+        }
+
+        Model report = parsed.Envelope;
+        string reportPath = BusPaths.EnvelopeFile(BusPaths.Reports(_me.Tenant, _me.Machine), report.Header.Id);
+        string branch = _provider.Remote.Branch;
+        if (await IsInRevisionAsync("origin/" + branch, reportPath, ct).ConfigureAwait(false))
+        {
+            return new Pushed(0);
+        }
+
+        if (!await IsInRevisionAsync("HEAD", reportPath, ct).ConfigureAwait(false))
+        {
+            return await WriteReportAsync(report, bytes, attachment, ct).ConfigureAwait(false);
+        }
+
+        WriteOutcome push = await WriteAsync(Subject("push", report.Header.Id, _me.Machine.Value, report.Header.To.Value), [], null, ct).ConfigureAwait(false);
+        return push is Pushed && !await IsInRevisionAsync("origin/" + branch, reportPath, ct).ConfigureAwait(false)
+            ? new WriteFailed("rebase", "the report commit was dropped")
+            : push;
+    }
+
+    /// <summary>
+    /// Spec 61 (reshapes spec 17 D3): adds <paramref name="signed"/> (and its attached file) to <c>reports/</c> and, after the write's pull,
+    /// removes the answered job's file wherever it is — <c>jobs/claimed/</c>, or <c>jobs/</c> when Central re-queued it — in the same
+    /// commit; when the file is nowhere (answered by Central meanwhile) the report is committed alone.
+    /// </summary>
+    /// <param name="signed">The signed report.</param>
+    /// <param name="bytes">Its serialized bytes.</param>
+    /// <param name="attachment">The attached file's bytes, or <see langword="null"/>.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The write outcome.</returns>
+    internal Task<WriteOutcome> WriteReportAsync(Model signed, byte[] bytes, ReadOnlyMemory<byte>? attachment, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(signed);
+        ArgumentNullException.ThrowIfNull(bytes);
+        EnvelopeId id = signed.Header.Id;
+        EnvelopeId job = signed.Header.InReplyTo!;
         string reportPath = BusPaths.EnvelopeFile(BusPaths.Reports(_me.Tenant, _me.Machine), id);
-        string claimedPath = BusPaths.EnvelopeFile(BusPaths.Claimed(_me.Tenant, _me.Machine), claimed.File.Id);
+        string claimedPath = BusPaths.EnvelopeFile(BusPaths.Claimed(_me.Tenant, _me.Machine), job);
+        string queuedPath = BusPaths.EnvelopeFile(BusPaths.Jobs(_me.Tenant, _me.Machine), job);
         AssertMayWrite(reportPath, BusFolder.Reports);
         AssertMayWrite(claimedPath, BusFolder.Claimed);
-        byte[] bytes = EnvelopeWriter.Serialize(signed.Envelope!);
+        AssertMayWrite(queuedPath, BusFolder.Jobs);
         string? attachmentPath = attachment is null ? null : BusPaths.AttachmentFile(new BusFile(reportPath, id));
         string[] added = attachmentPath is null ? [reportPath] : [reportPath, attachmentPath];
-        return await WriteAsync(
-            Subject("report", id, _me.Machine.Value, claimed.Job.Header.From.Value),
-            [.. added, claimedPath],
+        var paths = new List<string>(added);
+        return WriteAsync(
+            Subject("report", id, _me.Machine.Value, signed.Header.To.Value),
+            paths,
             async token =>
             {
                 await WriteFileAsync(reportPath, bytes, token).ConfigureAwait(false);
@@ -325,11 +403,24 @@ public sealed partial class BusRepository
                     await WriteFileAsync(attachmentPath, attachment!.Value.ToArray(), token).ConfigureAwait(false);
                 }
 
-                return Failure("add", await _git.AddAsync(_checkoutRoot, added, token).ConfigureAwait(false))
-                    ?? Failure("rm", await _git.RemoveAsync(_checkoutRoot, [claimedPath], token).ConfigureAwait(false));
+                WriteFailed? addFailed = Failure("add", await _git.AddAsync(_checkoutRoot, added, token).ConfigureAwait(false));
+                string? jobFile = File.Exists(BusPaths.Resolve(_checkoutRoot, claimedPath)) ? claimedPath
+                    : File.Exists(BusPaths.Resolve(_checkoutRoot, queuedPath)) ? queuedPath
+                    : null;
+                if (addFailed is not null || jobFile is null)
+                {
+                    return addFailed;
+                }
+
+                paths.Add(jobFile);
+                return Failure("rm", await _git.RemoveAsync(_checkoutRoot, [jobFile], token).ConfigureAwait(false));
             },
-            ct).ConfigureAwait(false);
+            ct);
     }
+
+    /// <summary>True when <paramref name="revision"/> holds a file at <paramref name="path"/>.</summary>
+    private async Task<bool> IsInRevisionAsync(string revision, string path, CancellationToken ct) =>
+        (await _git.BlobSizeAsync(_checkoutRoot, revision, path, ct).ConfigureAwait(false)).Size is not null;
 
     /// <summary>
     /// §4 "Signature": moves a refused file to <c>jobs/rejected/</c> and, when its sender could be read, adds a signed
@@ -1474,8 +1565,11 @@ public sealed partial class BusRepository
         return await _provider.PullAsync(ct).ConfigureAwait(false);
     }
 
-    /// <summary>Runs the §5 write sequence under the checkout lock: pull, change, one commit with the machine identity, push with the jittered retry rule.</summary>
-    private async Task<WriteOutcome> WriteAsync(string subject, IReadOnlyList<string> paths, Func<CancellationToken, Task<WriteFailed?>> change, CancellationToken ct, string? body = null)
+    /// <summary>
+    /// Runs the §5 write sequence under the checkout lock: pull, change, one commit with the machine identity, push with the jittered retry
+    /// rule. Without <paramref name="change"/> (spec 61, a kept report already committed) no commit is made and the unpushed commits are pushed.
+    /// </summary>
+    private async Task<WriteOutcome> WriteAsync(string subject, IReadOnlyList<string> paths, Func<CancellationToken, Task<WriteFailed?>>? change, CancellationToken ct, string? body = null)
     {
         using IDisposable? handle = await BusCheckoutLock.AcquireAsync(_checkoutRoot, BusCheckoutLock.WriteLockName, LockTimeout, _clock, ct).ConfigureAwait(false);
         if (handle is null)
@@ -1498,20 +1592,23 @@ public sealed partial class BusRepository
             return new WriteFailed("pull", pull.Detail);
         }
 
-        WriteFailed? failed = await change(ct).ConfigureAwait(false);
-        if (failed is not null)
+        if (change is not null)
         {
-            await RestoreAsync(paths, ct).ConfigureAwait(false);
-            LogWriteFailed(_me.Tenant.Value, _me.Machine.Value, subject, failed.Stage, failed.Detail);
-            return failed;
-        }
+            WriteFailed? failed = await change(ct).ConfigureAwait(false);
+            if (failed is not null)
+            {
+                await RestoreAsync(paths, ct).ConfigureAwait(false);
+                LogWriteFailed(_me.Tenant.Value, _me.Machine.Value, subject, failed.Stage, failed.Detail);
+                return failed;
+            }
 
-        GitResult commit = await _git.CommitOnlyAsync(_checkoutRoot, body is null ? subject : subject + "\n\n" + body, paths, ct).ConfigureAwait(false);
-        if (!commit.Succeeded)
-        {
-            await RestoreAsync(paths, ct).ConfigureAwait(false);
-            LogWriteFailed(_me.Tenant.Value, _me.Machine.Value, subject, "commit", commit.Stderr.Trim());
-            return new WriteFailed("commit", commit.Stderr.Trim());
+            GitResult commit = await _git.CommitOnlyAsync(_checkoutRoot, body is null ? subject : subject + "\n\n" + body, paths, ct).ConfigureAwait(false);
+            if (!commit.Succeeded)
+            {
+                await RestoreAsync(paths, ct).ConfigureAwait(false);
+                LogWriteFailed(_me.Tenant.Value, _me.Machine.Value, subject, "commit", commit.Stderr.Trim());
+                return new WriteFailed("commit", commit.Stderr.Trim());
+            }
         }
 
         int attempts = 1;
@@ -1523,8 +1620,20 @@ public sealed partial class BusRepository
             BusSyncResult retryPull = await PullUnlockedAsync(ct).ConfigureAwait(false);
             if (!retryPull.Succeeded && await _git.OperationInProgressAsync(_checkoutRoot, ct).ConfigureAwait(false))
             {
-                // Never push while a rebase is stopped: HEAD is detached at the remote tip and the push would report success.
-                return await DropConflictingCommitAsync(subject, retryPull.Detail, ct).ConfigureAwait(false);
+                if (change is null)
+                {
+                    // Spec 61: no commit of this write is on top; only the unpushed commits the rebase cannot apply are dropped.
+                    retryPull = await SkipConflictingCommitsAsync(retryPull, ct).ConfigureAwait(false);
+                    if (!retryPull.Succeeded)
+                    {
+                        return new WriteFailed("rebase", retryPull.Detail);
+                    }
+                }
+                else
+                {
+                    // Never push while a rebase is stopped: HEAD is detached at the remote tip and the push would report success.
+                    return await DropConflictingCommitAsync(subject, retryPull.Detail, ct).ConfigureAwait(false);
+                }
             }
 
             push = await _provider.PushAsync(ct).ConfigureAwait(false);

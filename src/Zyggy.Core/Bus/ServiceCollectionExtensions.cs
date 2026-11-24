@@ -267,6 +267,8 @@ public static class ServiceCollectionExtensions
         {
             GitHubBusOptions options = sp.GetRequiredService<IOptions<GitHubBusOptions>>().Value;
             ILogger<BusListener> log = sp.GetService<ILoggerFactory>()?.CreateLogger<BusListener>() ?? NullLogger<BusListener>.Instance;
+            BusIdentity identity = options.Identity ?? throw Missing(nameof(GitHubBusOptions.Identity));
+            string? nodeDir = sp.GetService<IOptions<JobRunnerOptions>>()?.Value.NodeDir ?? sp.GetService<NodeConfiguration>()?.EffectiveNodeDir;
             return new BusListener(
                 sp.GetRequiredService<IBusProvider>(),
                 sp.GetRequiredService<BusRepository>(),
@@ -283,12 +285,13 @@ public static class ServiceCollectionExtensions
             {
                 Mandates = new MandateIntake(
                     sp.GetRequiredService<BusInventory>(),
-                    (options.Identity ?? throw Missing(nameof(GitHubBusOptions.Identity))).Machine,
+                    identity.Machine,
                     sp.GetService<NodeConfiguration>()?.Supervision.Enabled ?? true,
                     sp.GetRequiredService<TimeProvider>(),
                     log,
-                    sp.GetService<IOptions<JobRunnerOptions>>()?.Value.NodeDir ?? sp.GetService<NodeConfiguration>()?.EffectiveNodeDir),
+                    nodeDir),
                 Wake = sp.GetService<SupervisorWake>(),
+                Kept = string.IsNullOrEmpty(nodeDir) ? null : new KeptReports(nodeDir, identity.Tenant),
             };
         });
         // Deliverable 08: the sender side. Resolving without a registered KeyId throws (the verb checks signWith first, as probe send does).

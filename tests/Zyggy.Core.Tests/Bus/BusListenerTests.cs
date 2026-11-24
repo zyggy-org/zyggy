@@ -1152,11 +1152,134 @@ public sealed class BusListenerTests : IAsyncLifetime
         listener.Status.JobsRunning.Should().Be(0);
     }
 
-    private BusListener Listener(KeyId? signWith = null, JobGate? gate = null, ISecretStore? store = null)
+    // AC-1 (spec 61): the result is in the node folder when the bus write starts, and gone once the report is pushed.
+    [Fact]
+    public async Task ProcessOnceAsync_ReportPushed_KeptBeforeBusWriteRemovedAfter()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropJobAsync(ct);
+        KeptReports kept = Kept();
+        bool keptAtAdd = false;
+        _processes.Hook = spec =>
+        {
+            if (RecordingProcessRunner.SubCommand(spec) == "add")
+            {
+                keptAtAdd = kept.List().Count == 1;
+            }
+
+            return RecordingProcessRunner.SubCommand(spec) == "rev-list" ? RecordingProcessRunner.Ok() : null;
+        };
+
+        // Act
+        await Listener(kept: kept).ProcessOnceAsync(ct);
+
+        // Assert
+        keptAtAdd.Should().BeTrue("the result is kept before the report is written to the bus");
+        kept.List().Should().BeEmpty();
+    }
+
+    // AC-1 (spec 61): a failed report write leaves the signed report in the node folder, with one Warning.
+    [Fact]
+    public async Task ProcessOnceAsync_ReportWriteFails_ResultKeptWarnedOnce()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        KeptReports kept = Kept();
+        _processes.On("add", RecordingProcessRunner.Fail(128, "fatal: unable to write new index file"));
+
+        // Act
+        await Listener(kept: kept).ProcessOnceAsync(ct);
+
+        // Assert
+        KeptReport result = kept.List().Should().ContainSingle().Subject;
+        result.Job.Should().Be(job.Header.Id);
+        EnvelopeResult parsed = await new EnvelopeSigner(_store).ParseAndVerifyAsync(result.Report, Acme, ct);
+        parsed.IsAccepted.Should().BeTrue(parsed.Rejection?.ToString());
+        parsed.Envelope!.Header.InReplyTo.Should().Be(job.Header.Id);
+        _log.AtLevel(LogLevel.Warning).Should().ContainSingle(e => e.Message.Contains("kept", StringComparison.Ordinal));
+    }
+
+    // AC-1 (spec 61): the next pass writes the kept report, clears the node folder and never runs the job again.
+    [Fact]
+    public async Task ProcessOnceAsync_KeptResult_NextPassWritesReportWithoutSecondRun()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        KeptReports kept = Kept();
+        _processes.On("add", RecordingProcessRunner.Fail(128, "fatal: unable to write new index file"));
+        BusListener listener = Listener(kept: kept);
+        await listener.ProcessOnceAsync(ct);
+        int commitsBefore = _processes.CallsOf("commit").Count();
+        string queued = BusPaths.EnvelopeFile(BusPaths.Jobs(Acme, HomeLaptop), job.Header.Id);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Claimed(Acme, HomeLaptop), job.Header.Id), _checkout.Read(queued));
+        File.Delete(BusPaths.Resolve(_checkout.Root, queued)); // what the recorded `git mv` of the claim did on a real checkout
+
+        // Act
+        await listener.ProcessOnceAsync(ct);
+
+        // Assert
+        kept.List().Should().BeEmpty();
+        _handled.Should().ContainSingle("the job ran once");
+        _processes.CallsOf("commit").Should().HaveCount(commitsBefore + 1, "one report commit, no second claim");
+        string reportPath = _checkout.FilesUnder(BusPaths.Reports(Acme, HomeLaptop)).Should().ContainSingle().Subject;
+        Model report = (await new EnvelopeSigner(_store).ParseAndVerifyAsync(_checkout.Read(reportPath), Acme, ct)).Envelope!;
+        report.Header.InReplyTo.Should().Be(job.Header.Id);
+        _log.AtLevel(LogLevel.Information).Should().Contain(e => e.Message == $"report of job {job.Header.Id} written from the node folder");
+    }
+
+    // AC-1 (spec 61): a report whose commit could not be pushed stays kept until it is on the remote.
+    [Fact]
+    public async Task ProcessOnceAsync_ReportDeferred_ResultStaysKept()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropJobAsync(ct);
+        KeptReports kept = Kept();
+        int pushes = 0;
+        _provider.PushAsync(Arg.Any<CancellationToken>()).Returns(_ => ++pushes == 1 ? new PushSucceeded() : new Rejected("fetch first"));
+
+        // Act
+        Task<int> task = Listener(kept: kept).ProcessOnceAsync(ct);
+        while (!task.IsCompleted)
+        {
+            _clock.Advance(TimeSpan.FromSeconds(1));
+            await Task.Delay(1, ct);
+        }
+
+        await task;
+
+        // Assert
+        kept.List().Should().ContainSingle();
+    }
+
+    // Spec 61: a node folder that cannot be written never stops the report write; one Warning names the job.
+    [Fact]
+    public async Task ProcessOnceAsync_NodeFolderUnwritable_ReportStillWrittenWarned()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        string nodeDir = Path.Join(_checkout.Root, "node-is-a-file");
+        await File.WriteAllTextAsync(nodeDir, "x", ct);
+
+        // Act
+        await Listener(kept: new KeptReports(nodeDir, Acme)).ProcessOnceAsync(ct);
+
+        // Assert
+        _checkout.FilesUnder(BusPaths.Reports(Acme, HomeLaptop)).Should().ContainSingle();
+        _log.AtLevel(LogLevel.Warning).Should().ContainSingle(e => e.Message.StartsWith($"kept result of job {job.Header.Id} not stored", StringComparison.Ordinal));
+    }
+
+    private KeptReports Kept() => new(Path.Join(_checkout.Root, "node"), Acme);
+
+    private BusListener Listener(KeyId? signWith = null, JobGate? gate = null, ISecretStore? store = null, KeptReports? kept = null)
     {
         var git = new GitClient(_processes, new GitClientOptions { Identity = new GitIdentity("zyggy (home-laptop)", "home-laptop@zyggy.org") }, _clock);
         var repository = new BusRepository(git, _provider, Me, _checkout.Root, new EnvelopeSigner(store ?? _store), _clock, () => 0, _repositoryLog);
-        return new BusListener(_provider, repository, PollOptions.Default, signWith ?? TestKeys.Acme1, _clock, new Random(1), (job, ct) => _handler(job, ct), _log, gate);
+        return new BusListener(_provider, repository, PollOptions.Default, signWith ?? TestKeys.Acme1, _clock, new Random(1), (job, ct) => _handler(job, ct), _log, gate) { Kept = kept };
     }
 
     private static JobGate Gate(Func<AdmissionDecision> decide) => (_, _) => Task.FromResult(decide());
