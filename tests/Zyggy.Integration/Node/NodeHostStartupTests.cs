@@ -133,8 +133,14 @@ public sealed partial class NodeHostStartupTests : IDisposable
             // Assert
             exitCode.Should().Be(6);
             string[] errors = harness.LogLines.Where(l => l.Contains("[ERR]", StringComparison.Ordinal)).ToArray();
-            // spec 09 AC-6: the missing-key row carries the owner-facing sentence instead of the enum name
-            errors.Should().ContainSingle().Which.Should().Contain(condition == "KeyMissing" ? "signing key acme/1 is not in the file" : condition).And.Contain("Node: refused to start");
+            // spec 09 AC-6: the missing-key row carries the owner-facing sentence instead of the enum name; spec 61 §4: so does a held checkout
+            string expected = condition switch
+            {
+                "KeyMissing" => "signing key acme/1 is not in the file",
+                "ListenerRunning" => "listener already running (pid ",
+                _ => condition,
+            };
+            errors.Should().ContainSingle().Which.Should().Contain(expected).And.Contain(condition == "ListenerRunning" ? "stop it with: zyggy node stop" : "Node: refused to start");
             harness.Head.Requests.Should().BeEmpty();
             (await harness.CommitSubjectsAsync(ct)).Should().NotContain(s => s.StartsWith("acme claim ", StringComparison.Ordinal));
         }

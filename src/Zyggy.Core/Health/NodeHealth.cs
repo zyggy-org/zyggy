@@ -21,6 +21,8 @@ namespace Zyggy.Core.Health;
 /// <param name="BackoffUntilUtc">Until when the poller backs off, if it does.</param>
 /// <param name="ClaudeAuthOk">The login probe's last verdict; <see langword="null"/> until the first probe (A7-4).</param>
 /// <param name="AgentCoreSha">The commit the <c>zyggy-core</c> checkout at <c>agentCore.path</c> is on (deliverable 15: reported, not pinned); <see langword="null"/> when that folder is not a git checkout.</param>
+/// <param name="Pid">The node's process id (spec 61 §4); <see langword="null"/> from a node before 0.30.1.</param>
+/// <param name="StartedUtc">When the node's listener took the bus checkout (spec 61 §4); <see langword="null"/> before it did, and from a node before 0.30.1.</param>
 public sealed record NodeHealth(
     string Version,
     string Tenant,
@@ -35,4 +37,6 @@ public sealed record NodeHealth(
     int? RateLimitRemaining,
     [property: JsonConverter(typeof(UtcSecondsConverter))] DateTimeOffset? BackoffUntilUtc,
     bool? ClaudeAuthOk,
-    string? AgentCoreSha);
+    string? AgentCoreSha,
+    int? Pid = null,
+    [property: JsonConverter(typeof(UtcSecondsConverter))] DateTimeOffset? StartedUtc = null);

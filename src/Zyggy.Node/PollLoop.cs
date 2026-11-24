@@ -100,6 +100,10 @@ public sealed partial class PollLoop : BackgroundService
                     case BusStartupResult.KeyMissing:
                         LogRefusingToStart(_listener.StartupDetail ?? result.ToString());
                         break;
+                    case BusStartupResult.ListenerRunning when _listener.StartupDetail is { } holder:
+                        // Spec 61 §4: the holder's pid, start and version, and the remedy.
+                        LogRefusingToStartHeld(holder);
+                        break;
                     default:
                         LogRefusingToStart(result.ToString());
                         break;
@@ -150,6 +154,9 @@ public sealed partial class PollLoop : BackgroundService
 
     [LoggerMessage(Level = LogLevel.Error, Message = "refusing to start: {Condition} — see README \"Node: refused to start\"")]
     private partial void LogRefusingToStart(string condition);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "refusing to start: {Detail}")]
+    private partial void LogRefusingToStartHeld(string detail);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "refusing to start: {Condition} — see README \"Secrets: store unavailable\"")]
     private partial void LogRefusingToStartSecrets(string condition);

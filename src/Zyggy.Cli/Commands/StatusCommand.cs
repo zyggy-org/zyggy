@@ -9,6 +9,7 @@ using Zyggy.Core.Bus;
 using Zyggy.Core.Configuration;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Health;
+using Zyggy.Core.Processes;
 using Zyggy.Core.Registry;
 using Zyggy.Core.Verbs;
 
@@ -74,6 +75,10 @@ internal static partial class StatusCommand
             DateTimeOffset now = clock.GetUtcNow();
             NodeHealth? health = (probe as Reachable)?.Health;
             HealthVerdict verdict = HealthRules.Evaluate(health, now, services.GetRequiredService<PollOptions>(), BusHost.InformationalVersion(), url.ToString());
+
+            // Spec 61 §4: who holds the bus checkout, from the owner record beside the listen lock.
+            ListenerFindings listener = ListenerInspection.Inspect(configuration.Bus.LocalPath, services.GetRequiredService<IProcessTable>(), BusHost.InformationalVersion());
+            verdict = WithListener(verdict, listener);
             if (services.GetService<ILoggerFactory>() is { } loggers)
             {
                 string level = verdict.Level.ToString();
@@ -84,7 +89,7 @@ internal static partial class StatusCommand
             InventoryReport report = await inventory.ListAsync(RecentReports, ct);
             TimeSpan staleAfter = TimeSpan.FromHours(configuration.Discovery.LastSeenHours);
             MachineLiveness[] machines = [.. (await inventory.RegistryAsync(ct)).Select(d => MachineLiveness.Of(d, now, staleAfter))];
-            await io.Out.WriteAsync(RenderOverview(configuration, health, verdict, report, now, machines));
+            await io.Out.WriteAsync(RenderOverview(configuration, health, verdict, report, now, machines, listener));
             return verdict.Level switch
             {
                 HealthLevel.Green => ExitCodes.Ok,
@@ -130,7 +135,7 @@ internal static partial class StatusCommand
     /// published registry file (spec 59 slice 7): <c>last_seen</c> with its age, the node's <c>version</c>, <c>health</c>, and
     /// <c>stale</c> only past <c>discovery.lastSeenHours</c>. Nothing when no machine has published.
     /// </summary>
-    internal static string RenderOverview(NodeConfiguration configuration, NodeHealth? health, HealthVerdict verdict, InventoryReport report, DateTimeOffset now, IReadOnlyList<MachineLiveness> machines)
+    internal static string RenderOverview(NodeConfiguration configuration, NodeHealth? health, HealthVerdict verdict, InventoryReport report, DateTimeOffset now, IReadOnlyList<MachineLiveness> machines, ListenerFindings? listener = null)
     {
         var sb = new StringBuilder();
         sb.Append("node    ").Append(configuration.Machine.Value).Append(" (").Append(configuration.Tenant.Value).Append(')');
@@ -159,6 +164,7 @@ internal static partial class StatusCommand
                 .Append('\n');
         }
 
+        AppendListener(sb, listener);
         int tenants = report.TenantDirectories.Count;
         sb.Append("bus     head ").Append(Short(report.HeadSha)).Append(Dot)
             .Append(tenants.ToString(CultureInfo.InvariantCulture)).Append(tenants == 1 ? " tenant directory" : " tenant directories").Append('\n');
@@ -310,6 +316,54 @@ internal static partial class StatusCommand
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>Spec 61 §4: a stray listener or one of another version than installed makes a green verdict amber, with its reason.</summary>
+    internal static HealthVerdict WithListener(HealthVerdict verdict, ListenerFindings listener)
+    {
+        var reasons = new List<string>(verdict.Reasons);
+        if (listener.Stray)
+        {
+            reasons.Add("stray listener");
+        }
+
+        if (listener.VersionDiffers && listener.Owner is { } owner)
+        {
+            reasons.Add("listener runs " + owner.Version + ", installed " + BusHost.InformationalVersion());
+        }
+
+        return reasons.Count == verdict.Reasons.Count
+            ? verdict
+            : verdict with { Level = verdict.Level > HealthLevel.Amber ? verdict.Level : HealthLevel.Amber, Reasons = reasons };
+    }
+
+    /// <summary>The listener lines of the node block (spec 61 §4), from the owner record, the refused-start record and the live processes.</summary>
+    private static void AppendListener(StringBuilder sb, ListenerFindings? listener)
+    {
+        if (listener?.Owner is not { } owner)
+        {
+            return;
+        }
+
+        string pid = owner.Pid.ToString(CultureInfo.InvariantCulture);
+        if (!listener.Alive)
+        {
+            sb.Append("        listener record names pid ").Append(pid).Append(", which is not running\n");
+            return;
+        }
+
+        sb.Append("        listener pid ").Append(pid).Append(" since ").Append(Timestamp(owner.StartedUtc)).Append('\n');
+        if (listener.Stray && listener.Refused is { } refused)
+        {
+            sb.Append("        stray listener: pid ").Append(pid).Append(" since ").Append(Timestamp(owner.StartedUtc))
+                .Append(" (zyggy-node ").Append(owner.Version).Append(") holds the bus checkout; a start was refused at ")
+                .Append(Timestamp(refused.RefusedUtc)).Append(". Stop it with: zyggy node stop\n");
+        }
+
+        if (listener.VersionDiffers)
+        {
+            sb.Append("        listener runs ").Append(owner.Version).Append(", installed ").Append(BusHost.InformationalVersion()).Append(": restart the node\n");
+        }
     }
 
     private static string Route(EnvelopeSummary e) => (e.From?.Value ?? "?") + "→" + (e.To?.Value ?? "?");

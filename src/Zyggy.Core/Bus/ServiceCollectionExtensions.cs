@@ -295,8 +295,15 @@ public static class ServiceCollectionExtensions
                 Done = string.IsNullOrEmpty(nodeDir) ? null : new ReportedDone(nodeDir, identity.Tenant),
                 Running = string.IsNullOrEmpty(nodeDir) ? null : new RunningJobs(nodeDir, identity.Tenant),
                 Withdrawals = sp.GetService<RunWithdrawals>(),
+                Owner = new ListenerOwner(
+                    options.CheckoutRoot ?? throw Missing(nameof(GitHubBusOptions.CheckoutRoot)),
+                    sp.GetRequiredService<IProcessTable>(),
+                    options.Version ?? InformationalVersion(),
+                    sp.GetRequiredService<TimeProvider>()),
             };
         });
+        // Spec 61 §4: the process table zyggy status and zyggy node stop check the listener against; tests substitute it.
+        services.TryAddSingleton<IProcessTable>(OsProcessTable.Instance);
         // Deliverable 08: the sender side. Resolving without a registered KeyId throws (the verb checks signWith first, as probe send does).
         services.TryAddSingleton(sp =>
         {
@@ -492,6 +499,20 @@ public static class ServiceCollectionExtensions
 
     private static InvalidOperationException Missing(string option) =>
         new($"GitHubBusOptions.{option} is not set: the bus has no default remote, identity or checkout (configure it from node.json).");
+
+    /// <summary>
+    /// Spec 61 slice 7: the node's copy of the CLI's test hook <c>ZYGGY_BUS_API_BASE</c> — a loopback URL rings the doorbell there, so a test
+    /// can run <c>zyggy-node</c> as a process without the network; any other value is ignored. Never a production override.
+    /// </summary>
+    internal static IServiceCollection AddBusApiBaseTestHook(this IServiceCollection services, IReadOnlyDictionary<string, string?> environment)
+    {
+        if (environment.TryGetValue("ZYGGY_BUS_API_BASE", out string? text) && Uri.TryCreate(text, UriKind.Absolute, out Uri? url) && url.IsLoopback)
+        {
+            services.Configure<GitHubBusOptions>(o => o.ApiBaseUri = url);
+        }
+
+        return services;
+    }
 
     /// <summary>The entry assembly's informational version without build metadata (the bus provider's User-Agent and <c>/health</c>'s <c>version</c>).</summary>
     internal static string InformationalVersion() =>

@@ -9,14 +9,17 @@ namespace Zyggy.Core.Tests.Health;
 public sealed class NodeHealthJsonTests
 {
     /// <summary>Recorded from deliverable 07's <c>HealthServer.Serialize</c> before the move (plan 08 Step 4); any change to order, names, null policy or timestamp form fails here.</summary>
-    private const string KnownJson = """{"version":"0.9.0","tenant":"acme","machine":"home-laptop","lastPollUtc":"2026-10-24T09:30:15Z","lastEtag":"\u0022dd0d2bc3\u0022","lastPullUtc":"2026-10-24T09:30:14Z","busHeadSha":"dd0d2bc3a82518081eb57b390626e981cbfb2f4a","jobsRunning":1,"jobsClaimedByMe":2,"lastReportUtc":"2026-10-24T09:30:13Z","rateLimitRemaining":4999,"backoffUntilUtc":"2026-10-24T09:32:15Z","claudeAuthOk":true,"agentCoreSha":null}""";
+    private const string KnownJson = """{"version":"0.9.0","tenant":"acme","machine":"home-laptop","lastPollUtc":"2026-10-24T09:30:15Z","lastEtag":"\u0022dd0d2bc3\u0022","lastPullUtc":"2026-10-24T09:30:14Z","busHeadSha":"dd0d2bc3a82518081eb57b390626e981cbfb2f4a","jobsRunning":1,"jobsClaimedByMe":2,"lastReportUtc":"2026-10-24T09:30:13Z","rateLimitRemaining":4999,"backoffUntilUtc":"2026-10-24T09:32:15Z","claudeAuthOk":true,"agentCoreSha":null,"pid":null,"startedUtc":null}""";
+
+    /// <summary>A 0.30.0 node's body (spec 61 Compatibility): no <c>pid</c>, no <c>startedUtc</c>.</summary>
+    private const string Before0301Json = """{"version":"0.30.0","tenant":"acme","machine":"home-laptop","lastPollUtc":null,"lastEtag":null,"lastPullUtc":null,"busHeadSha":null,"jobsRunning":0,"jobsClaimedByMe":0,"lastReportUtc":null,"rateLimitRemaining":null,"backoffUntilUtc":null,"claudeAuthOk":null,"agentCoreSha":null}""";
 
     private static readonly DateTimeOffset T = new(2026, 10, 24, 9, 30, 15, TimeSpan.Zero);
 
     private static readonly string[] Section11Fields =
     [
         "version", "tenant", "machine", "lastPollUtc", "lastEtag", "lastPullUtc", "busHeadSha", "jobsRunning", "jobsClaimedByMe",
-        "lastReportUtc", "rateLimitRemaining", "backoffUntilUtc", "claudeAuthOk", "agentCoreSha",
+        "lastReportUtc", "rateLimitRemaining", "backoffUntilUtc", "claudeAuthOk", "agentCoreSha", "pid", "startedUtc",
     ];
 
     public static NodeHealth Known => new("0.9.0", "acme", "home-laptop", T, "\"dd0d2bc3\"", T.AddSeconds(-1), "dd0d2bc3a82518081eb57b390626e981cbfb2f4a", 1, 2, T.AddSeconds(-2), 4999, T.AddSeconds(120), true, null);
@@ -32,7 +35,7 @@ public sealed class NodeHealthJsonTests
     }
 
     [Fact]
-    public void Serialize_AllNull_WritesFourteenCamelCaseKeysWithNulls()
+    public void Serialize_AllNull_WritesSixteenCamelCaseKeysWithNulls()
     {
         // Arrange
         var health = new NodeHealth("1.2.3", "acme", "home-laptop", null, null, null, null, 0, 0, null, null, null, null, null);
@@ -78,7 +81,7 @@ public sealed class NodeHealthJsonTests
     }
 
     [Fact]
-    public void Serialize_AgentCoreSha_WrittenAsTheLastField()
+    public void Serialize_AgentCoreSha_WrittenBeforeTheSpec61Fields()
     {
         // Arrange: spec 15 AC-12
         NodeHealth health = Known with { AgentCoreSha = "89abcdef0123456789abcdef0123456789abcdef" };
@@ -87,7 +90,30 @@ public sealed class NodeHealthJsonTests
         string json = NodeHealthJson.Serialize(health);
 
         // Assert
-        json.Should().EndWith(",\"agentCoreSha\":\"89abcdef0123456789abcdef0123456789abcdef\"}");
+        json.Should().EndWith(",\"agentCoreSha\":\"89abcdef0123456789abcdef0123456789abcdef\",\"pid\":null,\"startedUtc\":null}");
+    }
+
+    [Fact]
+    public void Serialize_PidAndStartedUtc_WrittenLastUtcSeconds()
+    {
+        // Arrange: spec 61 AC-21
+        NodeHealth health = Known with { Pid = 4242, StartedUtc = new DateTimeOffset(2026, 11, 24, 11, 0, 0, 450, TimeSpan.FromHours(1)) };
+
+        // Act
+        string json = NodeHealthJson.Serialize(health);
+
+        // Assert
+        json.Should().EndWith(",\"pid\":4242,\"startedUtc\":\"2026-11-24T10:00:00Z\"}");
+    }
+
+    [Fact]
+    public void Deserialize_BodyOfANodeBefore0301_PidAndStartedUtcNull()
+    {
+        // Act: spec 61 Compatibility — the fields are additive
+        NodeHealth? parsed = NodeHealthJson.Deserialize(Encoding.UTF8.GetBytes(Before0301Json));
+
+        // Assert
+        parsed.Should().Match<NodeHealth>(h => h.Version == "0.30.0" && h.Pid == null && h.StartedUtc == null);
     }
 
     [Fact]

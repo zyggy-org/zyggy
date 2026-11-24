@@ -32,6 +32,9 @@ public static class NodeHost
 
     private const string VersionOption = "--version";
 
+    /// <summary>Spec 61 slice 7: the test hook that moves <c>/health</c> off 4711 for a node run as a process by a test; never a <c>node.json</c> key.</summary>
+    private const string HealthPortVariable = "ZYGGY_NODE_HEALTH_PORT";
+
     /// <summary>The job runner's body prefix for a model run refused for authentication (spec 06 report mapping: <c>claude_error: auth</c>).</summary>
     private static ReadOnlySpan<byte> AuthFailurePrefix => "claude_error: auth"u8;
 
@@ -148,6 +151,17 @@ public static class NodeHost
         // (the scanner publishes names only and warns once).
         _ = builder.Services.AddSecretPatterns(environment);
         builder.Services.AddNodeServices(configuration);
+
+        // Spec 61 slice 7: two test hooks, so a test can run this binary as a process (zyggy node stop ends a real node): /health on the
+        // port in ZYGGY_NODE_HEALTH_PORT (still loopback only), the doorbell at a loopback ZYGGY_BUS_API_BASE. Never a production override.
+        if (environment.TryGetValue(HealthPortVariable, out string? portText)
+            && int.TryParse(portText, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int port)
+            && port is > 0 and <= 65535)
+        {
+            builder.Services.Configure<NodeHostOptions>(o => o.HealthPort = port);
+        }
+
+        builder.Services.AddBusApiBaseTestHook(environment);
 
         // Spec 55: the node looks at its own node.json while it runs and applies the five keys it may change without a restart.
         builder.Services.AddSettingsInUse(path);

@@ -83,7 +83,7 @@ internal sealed partial class HealthServer : IAsyncDisposable
         LogListening(BoundPort);
     }
 
-    /// <summary>The §11 body from the loop's listener, the login probe and the <c>zyggy-core</c> checkout (spec 15).</summary>
+    /// <summary>The §11 body from the loop's listener, the login probe and the <c>zyggy-core</c> checkout (spec 15), with this process's id and the listener's start (spec 61 §4).</summary>
     internal NodeHealth Snapshot()
     {
         Core.Bus.ListenerStatus? s = _status.Listener?.Status;
@@ -101,7 +101,9 @@ internal sealed partial class HealthServer : IAsyncDisposable
             s?.Poll.RateLimitRemaining,
             s?.Poll.BackoffUntilUtc,
             _status.ClaudeAuthOk,
-            _agentCore.Sha);
+            _agentCore.Sha,
+            Core.Jobs.ProjectLock.CurrentProcessId,
+            _status.Listener?.Owner?.Current?.StartedUtc);
     }
 
     /// <summary>The body as the endpoint writes it (for tests and <c>zyggy status</c>'s expectations).</summary>

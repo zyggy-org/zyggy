@@ -52,7 +52,10 @@ public sealed partial class BusListener : IDisposable
     private bool _pullErrorLogged;
     private IDisposable? _listenLock;
 
-    /// <summary>The sentence behind a <see cref="BusStartupResult.KeyMissing"/> or <see cref="BusStartupResult.StoreUnavailable"/> start-up (spec 09 AC-6); null otherwise.</summary>
+    /// <summary>
+    /// The sentence behind a <see cref="BusStartupResult.KeyMissing"/> or <see cref="BusStartupResult.StoreUnavailable"/> start-up (spec 09 AC-6),
+    /// or behind <see cref="BusStartupResult.ListenerRunning"/> when the listener has an owner record (spec 61 §4); null otherwise.
+    /// </summary>
     public string? StartupDetail { get; private set; }
     private DateTimeOffset? _lastPollUtc;
     private DateTimeOffset? _lastPullUtc;
@@ -124,6 +127,9 @@ public sealed partial class BusListener : IDisposable
     /// <summary>Gets the signal that stops a withdrawn job's live run (spec 61 slice 5); <see langword="null"/> when the handler is not the job runner.</summary>
     internal RunWithdrawals? Withdrawals { get; init; }
 
+    /// <summary>Gets the owner record beside the listen lock (spec 61 §4); <see langword="null"/> when the composition writes none.</summary>
+    internal ListenerOwner? Owner { get; init; }
+
     /// <summary>Gets Central's supervisor wake (deliverable 18), run after every pickup pass; <see langword="null"/> on every other machine.</summary>
     internal Supervision.SupervisorWake? Wake { get; init; }
 
@@ -155,10 +161,21 @@ public sealed partial class BusListener : IDisposable
             return key.State == SigningKeyState.StoreUnavailable ? BusStartupResult.StoreUnavailable : BusStartupResult.KeyMissing;
         }
 
-        _listenLock ??= await _bus.TryAcquireListenLockAsync(ct).ConfigureAwait(false);
         if (_listenLock is null)
         {
-            return BusStartupResult.ListenerRunning;
+            _listenLock = await _bus.TryAcquireListenLockAsync(ct).ConfigureAwait(false);
+            if (_listenLock is null)
+            {
+                // Spec 61 §4: name the holder, and leave a record of the refused start for zyggy status.
+                if (Owner is not null)
+                {
+                    StartupDetail = ListenerOwner.RefusalDetail(Owner.NoteRefused());
+                }
+
+                return BusStartupResult.ListenerRunning;
+            }
+
+            Owner?.Record();
         }
 
         if (_sweep is not null && !_sweepAnnounced)
@@ -321,6 +338,12 @@ public sealed partial class BusListener : IDisposable
     /// <summary>Releases the one-listener-per-checkout lock (patch 0.8.1).</summary>
     public void Dispose()
     {
+        if (_listenLock is not null)
+        {
+            // Spec 61 §4: a clean stop removes its own owner record, while it still holds the lock.
+            Owner?.Release();
+        }
+
         _listenLock?.Dispose();
         _listenLock = null;
     }
