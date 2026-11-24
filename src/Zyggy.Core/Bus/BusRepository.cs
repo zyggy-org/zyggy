@@ -260,17 +260,29 @@ public sealed partial class BusRepository
     /// <returns>The write outcome.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="job"/> is null.</exception>
     /// <exception cref="InvalidOperationException">Thrown when the job does not sit in this node's own inbox (a caller bug, §4 write rules).</exception>
-    public Task<WriteOutcome> ClaimAsync(AcceptedJob job, CancellationToken ct)
+    public Task<WriteOutcome> ClaimAsync(AcceptedJob job, CancellationToken ct) => ClaimAsync(job, null, ct);
+
+    /// <summary>
+    /// The claim, with spec 61 §3's registry key: when <paramref name="running"/> is given, this machine's registry file is rewritten in the
+    /// claim's own commit with those ids under <c>running</c> and a fresh <c>last_seen</c> (left alone when the machine has none yet).
+    /// </summary>
+    /// <param name="job">The verified job.</param>
+    /// <param name="running">The ids with a live run on this machine once the job is claimed (the job's own included), or <see langword="null"/>.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The write outcome.</returns>
+    internal Task<WriteOutcome> ClaimAsync(AcceptedJob job, IReadOnlyCollection<EnvelopeId>? running, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(job);
         string from = job.File.RelativePath;
         string to = BusPaths.EnvelopeFile(BusPaths.Claimed(_me.Tenant, _me.Machine), job.File.Id);
         AssertMayWrite(from, BusFolder.Jobs);
         AssertMayWrite(to, BusFolder.Claimed);
+        var paths = new List<string> { from, to };
         return WriteAsync(
             Subject("claim", job.File.Id, job.Job.Header.From.Value, job.Job.Header.To.Value),
-            [from, to],
-            async token => Failure("mv", await _git.MoveAsync(_checkoutRoot, from, to, token).ConfigureAwait(false)),
+            paths,
+            async token => Failure("mv", await _git.MoveAsync(_checkoutRoot, from, to, token).ConfigureAwait(false))
+                ?? await StampRunningAsync(running, paths, token).ConfigureAwait(false),
             ct);
     }
 
@@ -344,8 +356,9 @@ public sealed partial class BusRepository
     /// <param name="attachment">The attached file's bytes, or <see langword="null"/>.</param>
     /// <param name="jobFingerprint">The <see cref="JobFingerprint"/> of the job the report answers, when known (see <see cref="WriteReportAsync"/>).</param>
     /// <param name="ct">Cancellation token.</param>
+    /// <param name="running">Spec 61 slice 6: the ids with a live run on this machine, written in the report's commit (see <see cref="WriteReportAsync"/>).</param>
     /// <returns>The write outcome.</returns>
-    internal async Task<WriteOutcome> WriteKeptReportAsync(EnvelopeId job, byte[] bytes, ReadOnlyMemory<byte>? attachment, string? jobFingerprint, CancellationToken ct)
+    internal async Task<WriteOutcome> WriteKeptReportAsync(EnvelopeId job, byte[] bytes, ReadOnlyMemory<byte>? attachment, string? jobFingerprint, CancellationToken ct, IReadOnlyCollection<EnvelopeId>? running = null)
     {
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(bytes);
@@ -368,7 +381,7 @@ public sealed partial class BusRepository
 
         if (!await IsInRevisionAsync("HEAD", reportPath, ct).ConfigureAwait(false))
         {
-            return await WriteReportAsync(report, bytes, attachment, jobFingerprint, ct).ConfigureAwait(false);
+            return await WriteReportAsync(report, bytes, attachment, jobFingerprint, ct, running: running).ConfigureAwait(false);
         }
 
         WriteOutcome push = await WriteAsync(Subject("push", report.Header.Id, _me.Machine.Value, report.Header.To.Value), [], null, ct).ConfigureAwait(false);
@@ -390,8 +403,9 @@ public sealed partial class BusRepository
     /// <param name="jobFingerprint">The fingerprint of the job the report answers; <see langword="null"/> removes whatever file holds its id.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <param name="withdrawal">Spec 61 slice 5: the withdrawal this report answers, in this node's <c>withdrawals/</c>; removed in the same commit when it is still there.</param>
+    /// <param name="running">Spec 61 slice 6: the ids with a live run on this machine once the report is written (the answered job's run left out); this machine's registry file is rewritten with them in the report's own commit. <see langword="null"/> leaves the file alone.</param>
     /// <returns>The write outcome.</returns>
-    internal Task<WriteOutcome> WriteReportAsync(Model signed, byte[] bytes, ReadOnlyMemory<byte>? attachment, string? jobFingerprint, CancellationToken ct, string? withdrawal = null)
+    internal Task<WriteOutcome> WriteReportAsync(Model signed, byte[] bytes, ReadOnlyMemory<byte>? attachment, string? jobFingerprint, CancellationToken ct, string? withdrawal = null, IReadOnlyCollection<EnvelopeId>? running = null)
     {
         ArgumentNullException.ThrowIfNull(signed);
         ArgumentNullException.ThrowIfNull(bytes);
@@ -426,6 +440,11 @@ public sealed partial class BusRepository
                 if (addFailed is not null)
                 {
                     return addFailed;
+                }
+
+                if (await StampRunningAsync(running, paths, token).ConfigureAwait(false) is { } stampFailed)
+                {
+                    return stampFailed;
                 }
 
                 if (withdrawal is not null && File.Exists(BusPaths.Resolve(_checkoutRoot, withdrawal)))

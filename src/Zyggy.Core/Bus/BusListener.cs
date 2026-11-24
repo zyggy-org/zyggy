@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Jobs;
+using Zyggy.Core.Registry;
 using Zyggy.Core.Runs;
 
 using Model = Zyggy.Core.Envelope.Envelope;
@@ -181,6 +182,8 @@ public sealed partial class BusListener : IDisposable
         await ProcessOnceAsync(ct).ConfigureAwait(false);
         if (pull.Succeeded)
         {
+            // Spec 61 §3: a node that crashed republishes at start-up without the runs it lost.
+            await RefreshRunningAsync(wokeUp: false, ct).ConfigureAwait(false);
             await PickupAsync(ct).ConfigureAwait(false);
             await SweepAsync(ct).ConfigureAwait(false);
         }
@@ -277,6 +280,8 @@ public sealed partial class BusListener : IDisposable
             }
         }
 
+        // Spec 61 §3: the resumed runs are live again; Central's sweep waits for them.
+        await RefreshRunningAsync(wokeUp: false, ct).ConfigureAwait(false);
         Publish();
         return resumed;
     }
@@ -446,6 +451,11 @@ public sealed partial class BusListener : IDisposable
 
                 DateTimeOffset now = _clock.GetUtcNow();
                 bool pulledThisTick = false;
+
+                // Spec 61 §3: a tick that starts more than the sleep gap after its due instant is a noted wake-up (the clock jumped while the
+                // loop waited or worked; the node's passes are short, its runs tracked behind the gate); handled after the safety fetch and
+                // the sweep, so a pull this tick already made is not repeated.
+                bool wokeUp = now - due > AwakeClock.SleepGap;
                 if (now >= _nextSafetyFetchUtc.Value)
                 {
                     pulledThisTick = await SafetyFetchAsync(ct).ConfigureAwait(false);
@@ -467,6 +477,23 @@ public sealed partial class BusListener : IDisposable
                         await ProcessOnceAsync(ct).ConfigureAwait(false);
                         await PickupAsync(ct).ConfigureAwait(false);
                         await SweepAsync(ct).ConfigureAwait(false);
+                    }
+                }
+
+                // Spec 61 §3: at a noted wake-up the node pulls at once (unless this tick already did) and refreshes its registry's running
+                // list and last_seen, so Central sees the live runs again before its next sweep.
+                if (wokeUp)
+                {
+                    if (!pulledThisTick && await PullAndNoteAsync(ct).ConfigureAwait(false))
+                    {
+                        pulledThisTick = true;
+                        await ProcessOnceAsync(ct).ConfigureAwait(false);
+                        await PickupAsync(ct).ConfigureAwait(false);
+                    }
+
+                    if (pulledThisTick)
+                    {
+                        await RefreshRunningAsync(wokeUp: true, ct).ConfigureAwait(false);
                     }
                 }
 
@@ -742,7 +769,7 @@ public sealed partial class BusListener : IDisposable
         {
             using (Scope("claim"))
             {
-                WriteOutcome claim = await _bus.ClaimAsync(accepted, ct).ConfigureAwait(false);
+                WriteOutcome claim = await _bus.ClaimAsync(accepted, LiveRuns(), ct).ConfigureAwait(false);
                 if (claim is WriteFailed failed)
                 {
                     LogWriteFailed("claim", id, failed.Stage, failed.Detail);
@@ -820,7 +847,7 @@ public sealed partial class BusListener : IDisposable
         WriteOutcome claim;
         using (Scope("claim"))
         {
-            claim = await _bus.ClaimAsync(accepted, ct).ConfigureAwait(false);
+            claim = await _bus.ClaimAsync(accepted, LiveRuns(plus: accepted.File.Id), ct).ConfigureAwait(false);
             if (claim is WriteFailed failed)
             {
                 LogWriteFailed("claim", accepted.File.Id.Value, failed.Stage, failed.Detail);
@@ -1030,7 +1057,7 @@ public sealed partial class BusListener : IDisposable
             KeptStore(() => LogInvalidMarks(Done, Done?.Note(accepted.File.Id, _clock.GetUtcNow(), fingerprint)), accepted.File.Id);
         }
 
-        WriteOutcome report = await _bus.WriteReportAsync(signed, bytes, reply.Attachment?.Bytes, fingerprint, ct, result.Withdrawal).ConfigureAwait(false);
+        WriteOutcome report = await _bus.WriteReportAsync(signed, bytes, reply.Attachment?.Bytes, fingerprint, ct, result.Withdrawal, LiveRuns(minus: accepted.File.Id)).ConfigureAwait(false);
         if (report is WriteFailed failed)
         {
             LogWriteFailed("report", id, failed.Stage, failed.Detail);
@@ -1099,7 +1126,7 @@ public sealed partial class BusListener : IDisposable
 
             using (Scope("report"))
             {
-                WriteOutcome outcome = await _bus.WriteKeptReportAsync(kept.Job, kept.Report, kept.Attachment is { } file ? new ReadOnlyMemory<byte>(file) : (ReadOnlyMemory<byte>?)null, RunFingerprint(kept.Job), ct).ConfigureAwait(false);
+                WriteOutcome outcome = await _bus.WriteKeptReportAsync(kept.Job, kept.Report, kept.Attachment is { } file ? new ReadOnlyMemory<byte>(file) : (ReadOnlyMemory<byte>?)null, RunFingerprint(kept.Job), ct, LiveRuns()).ConfigureAwait(false);
                 if (outcome is WriteFailed { Stage: "verify" } refused)
                 {
                     // Spec 61 (slice 1 correction a): a corrupt or foreign kept file is moved aside, never run, never written to the bus.
@@ -1156,6 +1183,47 @@ public sealed partial class BusListener : IDisposable
         _busHeadSha = await _bus.HeadShaAsync(ct).ConfigureAwait(false);
         _jobsClaimedByMe = (await _bus.ListClaimedAsync(ct).ConfigureAwait(false)).Count;
         Publish();
+    }
+
+    /// <summary>Spec 61 §3: the ids with a live run on this node, for the registry key <c>running</c>; <paramref name="plus"/> added, <paramref name="minus"/> left out.</summary>
+    private List<EnvelopeId> LiveRuns(EnvelopeId? plus = null, EnvelopeId? minus = null)
+    {
+        var ids = new HashSet<string>(_runs.Keys, StringComparer.Ordinal);
+        if (plus is not null)
+        {
+            ids.Add(plus.Value);
+        }
+
+        if (minus is not null)
+        {
+            ids.Remove(minus.Value);
+        }
+
+        return [.. ids.Order(StringComparer.Ordinal).Select(EnvelopeId.Parse)];
+    }
+
+    /// <summary>
+    /// Spec 61 §3: rewrites this node's registry with its live runs and a fresh <c>last_seen</c> — at a noted wake-up always, at start-up
+    /// (and after resuming claims) only when the bus copy lists other ids, so a clean start adds no commit. A failure is logged by the
+    /// repository; the next claim, report or start-up writes the list again.
+    /// </summary>
+    private async Task RefreshRunningAsync(bool wokeUp, CancellationToken ct)
+    {
+        List<EnvelopeId> live = LiveRuns();
+        if (!wokeUp)
+        {
+            byte[]? bytes = await _bus.ReadOwnRegistryAsync(ct).ConfigureAwait(false);
+            if (bytes is null || RegistryDocument.Parse(bytes).Document is not { } copy || copy.Running.Select(r => r.Value).SequenceEqual(live.Select(r => r.Value), StringComparer.Ordinal))
+            {
+                return;
+            }
+        }
+
+        using IDisposable? scope = Scope("running");
+        if (await _bus.RefreshRunningAsync(live, ct).ConfigureAwait(false) is not (null or WriteFailed))
+        {
+            LogRunningRefreshed(live.Count, wokeUp ? "wake-up" : "start-up");
+        }
     }
 
     private void Publish() =>
@@ -1254,6 +1322,9 @@ public sealed partial class BusListener : IDisposable
 
     [LoggerMessage(Level = LogLevel.Error, Message = "{Action} of job {Id} failed at {Stage}: {Detail}")]
     private partial void LogWriteFailed(string action, string id, string stage, string detail);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "registry running list refreshed at {Moment}: {Count} live run(s)")]
+    private partial void LogRunningRefreshed(int count, string moment);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "the handler threw {Exception} for job {Id}; the job stays claimed")]
     private partial void LogHandlerFailed(string id, string exception);

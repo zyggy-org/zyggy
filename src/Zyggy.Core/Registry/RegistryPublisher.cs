@@ -53,6 +53,9 @@ public sealed partial class RegistryPublisher
         });
 
         RegistryDocument? copy = await ReadCopyAsync(ct).ConfigureAwait(false);
+
+        // Spec 61 slice 6: the running list is the node's, written in its claim and report commits; a scan keeps the bus copy's list.
+        content = content with { Running = copy?.Running ?? [] };
         DateTimeOffset now = _clock.GetUtcNow();
         // Spec 59 slice 7: refresh at half the stale threshold, so a healthy machine never crosses it between two cycles.
         bool fresh = copy?.LastSeen is { } seen && (seen > now || now - seen < TimeSpan.FromHours(_options.LastSeenHours) / 2);

@@ -198,8 +198,9 @@ public sealed partial class P2_RegistryWorktreeSweep : IAsyncLifetime
 
         _harness.FakeEnvironment.Remove("ZYGGY_FAKE_CLAUDE_DELAY_MS");
 
-        // Act (a): Central's pass, its clock an hour ahead, puts the claim back in the queue
-        var (sweepExit, sweep) = await CliAsync(["sweep"], ct, clock: new OffsetClock(TimeSpan.FromHours(1)));
+        // Act (a): Central's pass puts the claim back in the queue. Spec 61 slice 6: the stopped node's registry still lists the job under
+        // running, so the sweep waits for it up to the longest a run can live (24 h + 15 min); Central's clock runs 25 hours ahead, past it.
+        var (sweepExit, sweep) = await CliAsync(["sweep"], ct, clock: new OffsetClock(TimeSpan.FromHours(25)));
         sweepExit.Should().Be(0, sweep.Stderr);
 
         // Act (b): the restarted node claims it again, runs it and answers on main

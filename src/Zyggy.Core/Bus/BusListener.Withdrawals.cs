@@ -102,7 +102,7 @@ public sealed partial class BusListener
             return;
         }
 
-        WriteOutcome outcome = await _bus.WriteReportAsync(signed, EnvelopeWriter.Serialize(signed), null, JobFingerprint.Of(job.Job), ct, file.RelativePath).ConfigureAwait(false);
+        WriteOutcome outcome = await _bus.WriteReportAsync(signed, EnvelopeWriter.Serialize(signed), null, JobFingerprint.Of(job.Job), ct, file.RelativePath, LiveRuns(minus: job.File.Id)).ConfigureAwait(false);
         if (outcome is WriteFailed failed)
         {
             LogWriteFailed("withdrawal", job.File.Id.Value, failed.Stage, failed.Detail);

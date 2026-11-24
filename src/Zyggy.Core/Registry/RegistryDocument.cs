@@ -62,6 +62,13 @@ public sealed record RegistryDocument(
     /// </summary>
     public string? Version { get; init; }
 
+    /// <summary>
+    /// Gets the ids of the jobs with a live run on this machine (spec 61 §3, the optional key <c>running</c>), in ordinal order; the node
+    /// writes it in the claim's and the report's own commit, at start-up and at a noted wake-up. Empty omits the key, as every file written
+    /// before 0.30.1 does; Central's sweep does not re-queue a claim listed here.
+    /// </summary>
+    public IReadOnlyList<EnvelopeId> Running { get; init; } = [];
+
     /// <summary>Serialises the document in its canonical form.</summary>
     /// <returns>The UTF-8 bytes of the file.</returns>
     /// <exception cref="ArgumentException">Thrown when <see cref="Health"/> is <see cref="HealthLevel.Down"/> (a caller bug: a node that publishes is up).</exception>
@@ -89,6 +96,11 @@ public sealed record RegistryDocument(
         if (LastSeen is { } lastSeen)
         {
             root["last_seen"] = Scalar(lastSeen.ToUniversalTime().ToString(TimestampFormat, CultureInfo.InvariantCulture));
+        }
+
+        if (Running.Count > 0)
+        {
+            root["running"] = new FrontMatterSequence(Running.Select(r => r.Value).Order(StringComparer.Ordinal).Select(Scalar));
         }
 
         if (Version is { } version)
@@ -185,7 +197,8 @@ public sealed record RegistryDocument(
         && WorkHoursEqual(WorkHours, other.WorkHours)
         && Projects.SequenceEqual(other.Projects)
         && Capabilities.SequenceEqual(other.Capabilities, StringComparer.Ordinal)
-        && string.Equals(Version, other.Version, StringComparison.Ordinal);
+        && string.Equals(Version, other.Version, StringComparison.Ordinal)
+        && Running.Select(r => r.Value).Order(StringComparer.Ordinal).SequenceEqual(other.Running.Select(r => r.Value).Order(StringComparer.Ordinal), StringComparer.Ordinal);
 
     /// <summary>Returns a structural hash code.</summary>
     /// <returns>The hash code.</returns>
@@ -375,7 +388,32 @@ public sealed record RegistryDocument(
                 return RegistryParse.Refused("version", "not a scalar");
             }
 
-            return RegistryParse.Ok(new RegistryDocument(tenant, machine, os, lastSeen, health, workHours, projects) { Capabilities = capabilities, Version = version });
+            // Spec 61 slice 6: the optional running list; absent (every file before 0.30.1) is nothing running.
+            var running = new List<EnvelopeId>();
+            if (root.Entries.TryGetValue("running", out FrontMatterNode? runningNode))
+            {
+                if (runningNode is not FrontMatterSequence runningSequence)
+                {
+                    return RegistryParse.Refused("running", "not a list of job ids");
+                }
+
+                foreach (FrontMatterNode item in runningSequence.Items)
+                {
+                    if (item is not FrontMatterScalar { Value: var text } || !EnvelopeId.TryParse(text, out EnvelopeId? id))
+                    {
+                        return RegistryParse.Refused("running", "not a list of job ids");
+                    }
+
+                    running.Add(id);
+                }
+            }
+
+            return RegistryParse.Ok(new RegistryDocument(tenant, machine, os, lastSeen, health, workHours, projects)
+            {
+                Capabilities = capabilities,
+                Version = version,
+                Running = [.. running.OrderBy(r => r.Value, StringComparer.Ordinal)],
+            });
         }
 
         private static RegistryParse? ReadProject(FrontMatterNode node, string field, out RegistryProject? project)

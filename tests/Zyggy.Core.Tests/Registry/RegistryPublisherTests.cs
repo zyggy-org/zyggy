@@ -141,6 +141,22 @@ public sealed class RegistryPublisherTests : IDisposable
         new { result.Outcome, OnBus().Version }.Should().BeEquivalentTo(new { Outcome = PublishOutcome.Published, Version = "0.26.0" });
     }
 
+    // Spec 61 slice 6: the registry key running belongs to the node's claim and report commits; a scan's publish keeps the bus copy's list.
+    [Fact]
+    public async Task PublishAsync_BusCopyListsRunning_ScanPublishKeepsIt()
+    {
+        // Arrange
+        var running = EnvelopeId.Parse("01M87GK2G7EARZCD9D1ZB75GY8");
+        _checkout.Drop(RegistryPath, (Content() with { LastSeen = T, Running = [running] }).Serialize());
+        _now.Now = T.AddHours(7);
+
+        // Act
+        RegistryPublishResult result = await PublishAsync(Content() with { Version = "0.30.1" }, HealthLevel.Green);
+
+        // Assert
+        new { result.Outcome, OnBus().Running }.Should().BeEquivalentTo(new { Outcome = PublishOutcome.Published, Running = new[] { running } });
+    }
+
     [Fact]
     public async Task PublishAsync_HealthNull_KeepsBusCopyValue()
     {
