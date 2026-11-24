@@ -328,24 +328,25 @@ public sealed partial class BusRepository
     /// Spec 61: writes a kept report again. When its file is already on <c>origin/&lt;branch&gt;</c> nothing is written and the outcome is
     /// <see cref="Pushed"/>; when it is committed but not pushed, the unpushed commits are pushed (and the outcome is <see cref="Pushed"/>
     /// only if the report then is on the remote); otherwise the report is written as by <see cref="ReportAsync(AcceptedJob, ReportFields, ReadOnlyMemory{byte}, ReadOnlyMemory{byte}?, KeyId, CancellationToken)"/>.
-    /// A kept file that does not verify as this machine's report is refused with <c>WriteFailed("verify", …)</c>.
+    /// A kept file that does not verify as this machine's report on <paramref name="job"/> is refused with <c>WriteFailed("verify", …)</c>
+    /// and nothing logged (the caller quarantines it with one line).
     /// </summary>
+    /// <param name="job">The job the kept file is named after.</param>
     /// <param name="bytes">The signed report's bytes.</param>
     /// <param name="attachment">The attached file's bytes, or <see langword="null"/>.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The write outcome.</returns>
-    internal async Task<WriteOutcome> WriteKeptReportAsync(byte[] bytes, ReadOnlyMemory<byte>? attachment, CancellationToken ct)
+    internal async Task<WriteOutcome> WriteKeptReportAsync(EnvelopeId job, byte[] bytes, ReadOnlyMemory<byte>? attachment, CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(bytes);
         EnvelopeResult parsed = await _signer.ParseAndVerifyAsync(bytes, _me.Tenant, ct).ConfigureAwait(false);
         if (!parsed.IsAccepted
             || parsed.Envelope!.Type != EnvelopeType.Report
             || parsed.Envelope.Header.From != _me.Machine
-            || parsed.Envelope.Header.InReplyTo is null)
+            || parsed.Envelope.Header.InReplyTo != job)
         {
-            string detail = parsed.Rejection?.Detail ?? "not a report of this machine";
-            LogWriteFailed(_me.Tenant.Value, _me.Machine.Value, "kept report", "verify", detail);
-            return new WriteFailed("verify", detail);
+            return new WriteFailed("verify", parsed.Rejection?.Detail ?? "not this machine's report on job " + job.Value);
         }
 
         Model report = parsed.Envelope;

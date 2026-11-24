@@ -87,6 +87,28 @@ internal sealed class KeptReports
         File.Delete(PathOf(job, AttachmentExtension));
     }
 
+    /// <summary>
+    /// Moves the kept result of <paramref name="job"/> aside into the store's <c>quarantined/</c> folder (spec 61, a kept file that does not
+    /// verify): it is never written to the bus and no longer counts as a kept report for its id. An earlier quarantined copy is replaced.
+    /// </summary>
+    /// <param name="job">The job id.</param>
+    /// <returns>The quarantined report file's path.</returns>
+    public string Quarantine(EnvelopeId job)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        string folder = Path.Join(_directory, "quarantined");
+        Directory.CreateDirectory(folder);
+        string target = Path.Join(folder, job.Value + ReportExtension);
+        string attachment = PathOf(job, AttachmentExtension);
+        if (File.Exists(attachment))
+        {
+            File.Move(attachment, Path.Join(folder, job.Value + AttachmentExtension), overwrite: true);
+        }
+
+        File.Move(PathOf(job, ReportExtension), target, overwrite: true);
+        return target;
+    }
+
     /// <summary>The kept results, oldest job first; files whose name is not a job id are ignored.</summary>
     /// <returns>The kept results.</returns>
     public IReadOnlyList<KeptReport> List()

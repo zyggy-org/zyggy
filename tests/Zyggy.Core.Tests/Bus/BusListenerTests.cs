@@ -1273,6 +1273,107 @@ public sealed class BusListenerTests : IAsyncLifetime
         _log.AtLevel(LogLevel.Warning).Should().ContainSingle(e => e.Message.StartsWith($"kept result of job {job.Header.Id} not stored", StringComparison.Ordinal));
     }
 
+    // Spec 61 (slice 1 correction a): a corrupt kept file is moved aside and no longer holds back its job.
+    [Fact]
+    public async Task ProcessOnceAsync_KeptFileCorrupt_QuarantinedAndJobRuns()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        KeptReports kept = Kept();
+        kept.Keep(job.Header.Id, Encoding.UTF8.GetBytes("not an envelope\n"), null);
+
+        // Act
+        await Listener(kept: kept).ProcessOnceAsync(ct);
+
+        // Assert
+        _handled.Should().ContainSingle("a kept file that does not verify no longer counts as a kept report");
+    }
+
+    // Spec 61 (slice 1 correction a): a foreign kept file (here: a job, not this machine's report) is quarantined, never written to the bus.
+    [Fact]
+    public async Task ProcessOnceAsync_KeptFileForeign_MovedToQuarantineNotWritten()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        KeptReports kept = Kept();
+        kept.Keep(job.Header.Id, EnvelopeWriter.Serialize(job), null);
+        string quarantined = Path.Join(KeptReports.DirectoryFor(Path.Join(_checkout.Root, "node"), Acme), "quarantined", job.Header.Id.Value + ".md");
+
+        // Act
+        await Listener(kept: kept).ProcessOnceAsync(ct);
+
+        // Assert
+        File.Exists(quarantined).Should().BeTrue();
+    }
+
+    // Spec 61 (slice 1 correction a): quarantining a kept file is one Warning line naming the job.
+    [Fact]
+    public async Task ProcessOnceAsync_KeptFileCorrupt_OneWarningLine()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        EnvelopeId id = EnvelopeId.New(T);
+        KeptReports kept = Kept();
+        kept.Keep(id, Encoding.UTF8.GetBytes("not an envelope\n"), null);
+
+        // Act
+        await Listener(kept: kept).ProcessOnceAsync(ct);
+
+        // Assert
+        _log.Entries.Where(e => e.Level >= LogLevel.Warning).Should().ContainSingle(e => e.Message.StartsWith($"kept result of job {id} does not verify", StringComparison.Ordinal));
+    }
+
+    // Spec 61 (slice 1 correction b): a report whose signing fails is signed again at the next pass; the job is not run again.
+    [Fact]
+    public async Task ProcessOnceAsync_SigningFailsOnce_NextPassWritesReportWithoutSecondRun()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        InMemorySecretStore store = await TestKeys.StoreWithAsync(TestKeys.Acme1, ct);
+        BusListener listener = Listener(signWith: TestKeys.Acme2, store: store, kept: Kept());
+        await listener.ProcessOnceAsync(ct);
+        string queued = BusPaths.EnvelopeFile(BusPaths.Jobs(Acme, HomeLaptop), job.Header.Id);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Claimed(Acme, HomeLaptop), job.Header.Id), _checkout.Read(queued));
+        File.Delete(BusPaths.Resolve(_checkout.Root, queued)); // what the recorded `git mv` of the claim did on a real checkout
+        await store.SetAsync(Acme, TestKeys.Acme2.SecretName, TestKeys.Secret2, ct);
+
+        // Act
+        await listener.ProcessOnceAsync(ct);
+
+        // Assert
+        _handled.Should().ContainSingle("the job ran once");
+        string reportPath = _checkout.FilesUnder(BusPaths.Reports(Acme, HomeLaptop)).Should().ContainSingle().Subject;
+        Model report = (await new EnvelopeSigner(store).ParseAndVerifyAsync(_checkout.Read(reportPath), Acme, ct)).Envelope!;
+        report.Header.InReplyTo.Should().Be(job.Header.Id);
+    }
+
+    // Spec 61 (slice 1 correction b): signing is tried at most 10 times; then one Error line, and the result is given up.
+    [Fact]
+    public async Task ProcessOnceAsync_SigningNeverPossible_GivenUpAfterTenTriesWithOneError()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        InMemorySecretStore store = await TestKeys.StoreWithAsync(TestKeys.Acme1, ct);
+        BusListener listener = Listener(signWith: TestKeys.Acme2, store: store, kept: Kept());
+        await listener.ProcessOnceAsync(ct);
+        string queued = BusPaths.EnvelopeFile(BusPaths.Jobs(Acme, HomeLaptop), job.Header.Id);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Claimed(Acme, HomeLaptop), job.Header.Id), _checkout.Read(queued));
+        File.Delete(BusPaths.Resolve(_checkout.Root, queued));
+
+        // Act
+        for (int pass = 0; pass < 12; pass++)
+        {
+            await listener.ProcessOnceAsync(ct);
+        }
+
+        // Assert
+        _log.AtLevel(LogLevel.Error).Should().ContainSingle(e => e.Message == $"report of job {job.Header.Id} could not be signed after 10 tries; it is given up and the claim stays for the sweep");
+    }
+
     private KeptReports Kept() => new(Path.Join(_checkout.Root, "node"), Acme);
 
     private BusListener Listener(KeyId? signWith = null, JobGate? gate = null, ISecretStore? store = null, KeptReports? kept = null)

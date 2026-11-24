@@ -34,7 +34,11 @@ public sealed partial class BusListener : IDisposable
     private readonly TimeSpan _sweepInterval;
     private DateTimeOffset? _nextSweepUtc;
     private bool _sweepAnnounced;
+    /// <summary>Spec 61: how often a finished run's report is signed in all before it is given up.</summary>
+    private const int MaxSignTries = 10;
+
     private readonly ConcurrentDictionary<string, Task> _runs = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, UnsignedResult> _unsigned = new(StringComparer.Ordinal);
     private readonly List<AcceptedJob> _deferredClaims = [];
     private bool _pullErrorLogged;
     private IDisposable? _listenLock;
@@ -278,15 +282,16 @@ public sealed partial class BusListener : IDisposable
     /// <returns>How many inbox files were handled (claimed or rejected).</returns>
     public async Task<int> ProcessOnceAsync(CancellationToken ct)
     {
+        await SignUnsignedAsync(ct).ConfigureAwait(false);
         await WriteKeptReportsAsync(ct).ConfigureAwait(false);
         await RetryDeferredClaimsAsync(ct).ConfigureAwait(false);
         int handled = 0;
         int deferredBefore = await _bus.UnpushedCommitCountAsync(ct).ConfigureAwait(false);
         foreach (BusFile file in await _bus.ListNewJobsAsync(ct).ConfigureAwait(false))
         {
-            if (Kept?.Has(file.Id) == true)
+            if (Kept?.Has(file.Id) == true || _unsigned.ContainsKey(file.Id.Value))
             {
-                // Spec 61: a job whose result is kept is answered by that report, never run again.
+                // Spec 61: a job whose result is kept (or waits to be signed) is answered by that report, never run again.
                 continue;
             }
 
@@ -740,37 +745,79 @@ public sealed partial class BusListener : IDisposable
                 reply.CacheWriteTokens,
                 reply.CacheReadTokens,
                 accepted.Job.Job?.JobType);
-            (Model? signed, WriteFailed? signFailed) = await _bus.SignReportAsync(accepted, fields, reply.Body, _signWith, ct).ConfigureAwait(false);
-            if (signed is null)
-            {
-                LogWriteFailed("report", accepted.File.Id.Value, signFailed!.Stage, signFailed.Detail);
-                return;
-            }
+            await SignAndWriteAsync(new UnsignedResult(accepted, fields, reply, 0), deferredBefore, ct).ConfigureAwait(false);
+        }
+    }
 
-            // Spec 61: the result is kept in the node folder before the bus write and removed only once its commit is on the remote.
-            byte[] bytes = EnvelopeWriter.Serialize(signed);
-            bool kept = KeptStore(() => Kept?.Keep(accepted.File.Id, bytes, reply.Attachment?.Bytes), accepted.File.Id);
-            WriteOutcome report = await _bus.WriteReportAsync(signed, bytes, reply.Attachment?.Bytes, ct).ConfigureAwait(false);
-            if (report is WriteFailed failed)
+    /// <summary>
+    /// Spec 61: signs a finished run's report, keeps it in the node folder and writes it to the bus. A signing failure holds the result in
+    /// memory and signs it again at each later pass, at most <see cref="MaxSignTries"/> times in total (one Warning at the first failure,
+    /// one Error when it is given up; the claim then stays for the sweep).
+    /// </summary>
+    private async Task SignAndWriteAsync(UnsignedResult result, int deferredBefore, CancellationToken ct)
+    {
+        AcceptedJob accepted = result.Job;
+        JobReply reply = result.Reply;
+        string id = accepted.File.Id.Value;
+        (Model? signed, WriteFailed? signFailed) = await _bus.SignReportAsync(accepted, result.Fields, reply.Body, _signWith, ct).ConfigureAwait(false);
+        if (signed is null)
+        {
+            int tries = result.Tries + 1;
+            if (tries >= MaxSignTries)
             {
-                LogWriteFailed("report", accepted.File.Id.Value, failed.Stage, failed.Detail);
-                if (Kept is not null && kept)
+                _unsigned.TryRemove(id, out _);
+                LogSignGivenUp(id, tries);
+            }
+            else
+            {
+                _unsigned[id] = result with { Tries = tries };
+                if (tries == 1)
                 {
-                    LogReportKept(accepted.File.Id.Value);
+                    LogSignDeferred(id, signFailed!.Detail, MaxSignTries);
                 }
-
-                return;
             }
 
-            if (report is Pushed && kept)
+            return;
+        }
+
+        _unsigned.TryRemove(id, out _);
+
+        // Spec 61: the result is kept in the node folder before the bus write and removed only once its commit is on the remote.
+        byte[] bytes = EnvelopeWriter.Serialize(signed);
+        bool kept = KeptStore(() => Kept?.Keep(accepted.File.Id, bytes, reply.Attachment?.Bytes), accepted.File.Id);
+        WriteOutcome report = await _bus.WriteReportAsync(signed, bytes, reply.Attachment?.Bytes, ct).ConfigureAwait(false);
+        if (report is WriteFailed failed)
+        {
+            LogWriteFailed("report", id, failed.Stage, failed.Detail);
+            if (Kept is not null && kept)
             {
-                KeptStore(() => Kept?.Remove(accepted.File.Id), accepted.File.Id);
+                LogReportKept(id);
             }
 
-            _lastReportUtc = _clock.GetUtcNow();
-            string status = EnvelopeWire.ToWire(reply.Status);
-            LogReported(accepted.File.Id.Value, status, report is Deferred ? "deferred" : "pushed");
-            await NoteDeferredAsync(report, deferredBefore, ct).ConfigureAwait(false);
+            return;
+        }
+
+        if (report is Pushed && kept)
+        {
+            KeptStore(() => Kept?.Remove(accepted.File.Id), accepted.File.Id);
+        }
+
+        _lastReportUtc = _clock.GetUtcNow();
+        string status = EnvelopeWire.ToWire(reply.Status);
+        LogReported(id, status, report is Deferred ? "deferred" : "pushed");
+        await NoteDeferredAsync(report, deferredBefore, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Spec 61: signs again, once per pass, the results whose signing failed (see <see cref="SignAndWriteAsync"/>).</summary>
+    private async Task SignUnsignedAsync(CancellationToken ct)
+    {
+        foreach (UnsignedResult result in _unsigned.Values.ToArray())
+        {
+            using (Scope("report"))
+            {
+                int deferredBefore = await _bus.UnpushedCommitCountAsync(ct).ConfigureAwait(false);
+                await SignAndWriteAsync(result, deferredBefore, ct).ConfigureAwait(false);
+            }
         }
     }
 
@@ -801,8 +848,17 @@ public sealed partial class BusListener : IDisposable
 
             using (Scope("report"))
             {
-                WriteOutcome outcome = await _bus.WriteKeptReportAsync(kept.Report, kept.Attachment is { } file ? new ReadOnlyMemory<byte>(file) : (ReadOnlyMemory<byte>?)null, ct).ConfigureAwait(false);
-                if (outcome is Pushed)
+                WriteOutcome outcome = await _bus.WriteKeptReportAsync(kept.Job, kept.Report, kept.Attachment is { } file ? new ReadOnlyMemory<byte>(file) : (ReadOnlyMemory<byte>?)null, ct).ConfigureAwait(false);
+                if (outcome is WriteFailed { Stage: "verify" } refused)
+                {
+                    // Spec 61 (slice 1 correction a): a corrupt or foreign kept file is moved aside, never run, never written to the bus.
+                    string? moved = null;
+                    if (KeptStore(() => moved = Kept.Quarantine(kept.Job), kept.Job))
+                    {
+                        LogKeptQuarantined(kept.Job.Value, refused.Detail, moved!);
+                    }
+                }
+                else if (outcome is Pushed)
                 {
                     KeptStore(() => Kept.Remove(kept.Job), kept.Job);
                     _lastReportUtc = _clock.GetUtcNow();
@@ -884,6 +940,15 @@ public sealed partial class BusListener : IDisposable
     [LoggerMessage(Level = LogLevel.Information, Message = "report of job {Id} written from the node folder")]
     private partial void LogKeptWritten(string id);
 
+    [LoggerMessage(Level = LogLevel.Warning, Message = "kept result of job {Id} does not verify ({Detail}); moved to {Path}, never written to the bus")]
+    private partial void LogKeptQuarantined(string id, string detail, string path);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "report of job {Id} could not be signed ({Detail}); signing is tried again at each pass, {Max} tries in all")]
+    private partial void LogSignDeferred(string id, string detail, int max);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "report of job {Id} could not be signed after {Tries} tries; it is given up and the claim stays for the sweep")]
+    private partial void LogSignGivenUp(string id, int tries);
+
     [LoggerMessage(Level = LogLevel.Information, Message = "pushed {Count} deferred commit(s)")]
     private partial void LogPushedDeferred(int count);
 
@@ -922,6 +987,9 @@ public sealed partial class BusListener : IDisposable
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id} refused under mandate {Mandate}: {Limit}")]
     private partial void LogMandateRefused(string id, string mandate, string limit);
+
+    /// <summary>Spec 61: a finished run's result whose report could not be signed yet, and how often signing was tried.</summary>
+    private sealed record UnsignedResult(AcceptedJob Job, ReportFields Fields, JobReply Reply, int Tries);
 
     /// <summary>The lease of the probe path (no gate): nothing to release.</summary>
     private sealed class NoopLease : IDisposable
