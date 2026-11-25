@@ -139,6 +139,9 @@ internal sealed class WorktreeGit
                 return RecordingProcessRunner.Ok(CommonDir + "\n");
             case "rev-parse" when args[^1].StartsWith("refs/heads/zyggy/", StringComparison.Ordinal):
                 return RecordingProcessRunner.Ok((Ahead > 0 ? TipSha : BaseSha) + "\n");
+            case "symbolic-ref" when args[^1] == "HEAD":
+                // Spec 61 §5: a leftover folder <...>/<id> has its own zyggy/<id> checked out.
+                return RecordingProcessRunner.Ok("refs/heads/zyggy/" + Path.GetFileName(spec.WorkingDirectory) + "\n");
             case "symbolic-ref" when Has(spec, "refs/remotes/origin/HEAD"):
                 return OriginUrl is null ? RecordingProcessRunner.Fail(1, "") : RecordingProcessRunner.Ok("origin/" + OriginHeadBranch + "\n");
             case "push" when FeaturePushRefused && args[^1].EndsWith(":refs/heads/feature/shop", StringComparison.Ordinal):

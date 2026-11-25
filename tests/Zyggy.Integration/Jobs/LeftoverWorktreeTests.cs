@@ -149,6 +149,66 @@ public sealed class LeftoverWorktreeTests : IAsyncLifetime
         }.Should().BeEquivalentTo(new { SaysWhy = true, KeptLine = true, Folder = true, Work = "held work", ModelRan = false }, body);
     }
 
+    // AC-27/AC-28 (slice 9 correction): a leftover whose checkout is not zyggy/<id> is never committed or removed — its uncommitted work
+    // stays where it is, the folder is kept and listed, and the job fails git_error naming the kept path; the model never starts.
+    [Theory]
+    [InlineData("checkout -q --detach", "checked out a detached HEAD, not zyggy/")]
+    [InlineData("checkout -q -b other-work", "checked out refs/heads/other-work, not zyggy/")]
+    public async Task SameJobIdMetAgain_LeftoverNotOnItsBranchWithUncommittedWork_KeptListedWorkUntouched(string checkout, string why)
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await using var services = Build("+src/second.txt\tsecond");
+        var job = await SeedAndPullAsync(services, ct);
+        await LeftoverAsync(job.Id, ct);
+        await _bus.RunGitAsync(WorktreeFor(job.Id), checkout.Split(' '), ct);
+        await File.WriteAllTextAsync(Path.Combine(WorktreeFor(job.Id), "left.txt"), "unsaved work\n", ct);
+
+        // Act
+        await ProcessAsync(services, ct);
+
+        // Assert
+        var report = await SingleReportAsync(ct);
+        new
+        {
+            report.Report!.Reason,
+            SaysWhy = report.BodyText.StartsWith("git_error: worktree_add (" + why + job.Id.Value + ")\nworktree kept at " + WorktreeFor(job.Id) + "\n", StringComparison.Ordinal),
+            Status = await _bus.RunGitAsync(WorktreeFor(job.Id), ["status", "--porcelain"], ct),
+            Kept = LeftoverWorktrees.ReadKept(_project.NodeDir, Acme).Select(k => (k.Id, k.Path)).ToList(),
+            ModelRan = File.Exists(CapturePath),
+        }.Should().BeEquivalentTo(
+            new { Reason = "git_error", SaysWhy = true, Status = "?? left.txt", Kept = new[] { (job.Id.Value, WorktreeFor(job.Id)) }, ModelRan = false },
+            report.BodyText);
+    }
+
+    // AC-28 (slice 9 correction): a folder at the job's path that is not a worktree of the project is never deleted — kept and listed
+    [Fact]
+    public async Task SameJobIdMetAgain_FolderNotAWorktreeOfTheProject_KeptListedNothingDeleted()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await using var services = Build("+src/second.txt\tsecond");
+        var job = await SeedAndPullAsync(services, ct);
+        Directory.CreateDirectory(WorktreeFor(job.Id));
+        await File.WriteAllTextAsync(Path.Combine(WorktreeFor(job.Id), "foreign.txt"), "not ours\n", ct);
+
+        // Act
+        await ProcessAsync(services, ct);
+
+        // Assert
+        var report = await SingleReportAsync(ct);
+        new
+        {
+            report.Report!.Reason,
+            SaysWhy = report.BodyText.StartsWith("git_error: worktree_add (not a git worktree)\nworktree kept at " + WorktreeFor(job.Id) + "\n", StringComparison.Ordinal),
+            Foreign = await File.ReadAllTextAsync(Path.Combine(WorktreeFor(job.Id), "foreign.txt"), ct),
+            Kept = LeftoverWorktrees.ReadKept(_project.NodeDir, Acme).Select(k => (k.Id, k.Path)).ToList(),
+            ModelRan = File.Exists(CapturePath),
+        }.Should().BeEquivalentTo(
+            new { Reason = "git_error", SaysWhy = true, Foreign = "not ours\n", Kept = new[] { (job.Id.Value, WorktreeFor(job.Id)) }, ModelRan = false },
+            report.BodyText);
+    }
+
     // AC-29: a clean leftover (branch not ahead of what the origin has) is removed with its local branch
     [Fact]
     public async Task StartUp_CleanLeftover_FolderAndBranchRemoved()

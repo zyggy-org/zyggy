@@ -113,9 +113,9 @@ internal sealed class WorktreeRun(GitClient git)
 
     private async Task<PrepareResult> AddAsync(string project, string worktree, string jobId, string baseSha, bool fetchFailed, string? defaultBranch, CancellationToken ct)
     {
-        // Spec 61 §5: an earlier run of the same job id left its folder. Its uncommitted work is committed on zyggy/<id> first, then the
-        // folder goes through git (a plain delete only for a folder git does not know); the branch stays, so this run starts from it.
-        // Anything that fails keeps the folder and says why.
+        // Spec 61 §5: an earlier run of the same job id left its folder. When it is this project's worktree on zyggy/<id>, its uncommitted
+        // work is committed there first, then the folder goes through git; the branch stays, so this run starts from it. Any other folder
+        // (no worktree, another repository's, another checkout) and anything that fails keeps the folder and says why; nothing is deleted.
         if (Directory.Exists(worktree) && await RecoverAsync(project, worktree, jobId, ct).ConfigureAwait(false) is { } why)
         {
             return new PrepareResult.Failed("worktree_add", fetchFailed, why) { KeptAt = worktree };
@@ -186,19 +186,35 @@ internal sealed class WorktreeRun(GitClient git)
     /// <summary>The identity of a recovery commit (the node's, as Finish's); without one, uncommitted leftover work is kept, never committed.</summary>
     public GitIdentity? Recovery { get; init; }
 
+    /// <summary>
+    /// Why <paramref name="folder"/> must be kept rather than committed or removed (spec 61 §5: only a worktree of
+    /// <paramref name="project"/> on its own <c>zyggy/&lt;id&gt;</c> is ever committed, pushed or deleted); <see langword="null"/> when it is one.
+    /// </summary>
+    public async Task<string?> NotOursAsync(string project, string folder, string jobId, CancellationToken ct)
+    {
+        if (!File.Exists(Path.Join(folder, ".git")))
+        {
+            return "not a git worktree";
+        }
+
+        if (!await IsWorktreeOfAsync(project, folder, ct).ConfigureAwait(false))
+        {
+            return "not a worktree of " + project;
+        }
+
+        string branch = BranchFor(jobId);
+        var head = await git.RunAsync(folder, ["symbolic-ref", "-q", "HEAD"], null, ct).ConfigureAwait(false);
+        return head.Succeeded && head.Stdout.Trim() == "refs/heads/" + branch
+            ? null
+            : "checked out " + (head.Succeeded ? head.Stdout.Trim() : "a detached HEAD") + ", not " + branch;
+    }
+
     private async Task<string?> RecoverAsync(string project, string worktree, string jobId, CancellationToken ct)
     {
-        if (!await IsWorktreeOfAsync(project, worktree, ct).ConfigureAwait(false))
+        // A folder we cannot prove is this job's own worktree is never committed in or deleted: it is kept and listed.
+        if (await NotOursAsync(project, worktree, jobId, ct).ConfigureAwait(false) is { } notOurs)
         {
-            try
-            {
-                Directory.Delete(worktree, recursive: true);
-                return null;
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                return ex.Message;
-            }
+            return notOurs;
         }
 
         if (await CommitLeftoverAsync(worktree, jobId, ct).ConfigureAwait(false) is { } notCommitted)

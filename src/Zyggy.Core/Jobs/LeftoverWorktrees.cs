@@ -45,12 +45,20 @@ internal sealed partial class LeftoverWorktrees(GitClient git, string nodeDir, T
 
         try
         {
+            var previous = ReadKept(nodeDir, tenant);
             var kept = new List<KeptWorktree>();
             foreach (string folder in Folders())
             {
                 string id = Path.GetFileName(folder);
-                if (!EnvelopeId.TryParse(id, out _) || busy(id))
+                if (!EnvelopeId.TryParse(id, out _))
                 {
+                    continue;
+                }
+
+                if (busy(id))
+                {
+                    // A busy id's folder is left alone; a listing Prepare recorded for it (spec 61 §5) stays.
+                    kept.AddRange(previous.Where(k => k.Id == id));
                     continue;
                 }
 
@@ -91,6 +99,13 @@ internal sealed partial class LeftoverWorktrees(GitClient git, string nodeDir, T
         {
             return [];
         }
+    }
+
+    /// <summary>Adds (or replaces, by id) one kept folder in the list <c>zyggy status</c> reads: the leftover a job's Prepare kept (spec 61 §5).</summary>
+    public static void RecordKept(string nodeDir, TenantId tenant, KeptWorktree kept)
+    {
+        ArgumentNullException.ThrowIfNull(kept);
+        WriteKept(nodeDir, tenant, [.. ReadKept(nodeDir, tenant).Where(k => k.Id != kept.Id), kept]);
     }
 
     /// <summary>Records <paramref name="kept"/> (removes the list when empty); a list that cannot be written is left as it was.</summary>
@@ -141,18 +156,13 @@ internal sealed partial class LeftoverWorktrees(GitClient git, string nodeDir, T
             return File.Exists(Path.Join(folder, ".git")) ? "project not found" : "not a git worktree";
         }
 
-        if (!await worktrees.IsWorktreeOfAsync(project, folder, ct).ConfigureAwait(false))
+        // Only the job's own branch in a worktree of its project is ever committed, pushed or deleted here.
+        if (await worktrees.NotOursAsync(project, folder, id, ct).ConfigureAwait(false) is { } notOurs)
         {
-            return "not a worktree of " + project;
+            return notOurs;
         }
 
         string branch = WorktreeRun.BranchFor(id);
-        var head = await git.RunAsync(folder, ["symbolic-ref", "-q", "HEAD"], null, ct).ConfigureAwait(false);
-        if (!head.Succeeded || head.Stdout.Trim() != "refs/heads/" + branch)
-        {
-            // Only the job's own branch is ever committed, pushed or deleted here.
-            return "checked out " + (head.Succeeded ? head.Stdout.Trim() : "a detached HEAD") + ", not " + branch;
-        }
 
         if (await worktrees.CommitLeftoverAsync(folder, id, ct).ConfigureAwait(false) is { } notCommitted)
         {

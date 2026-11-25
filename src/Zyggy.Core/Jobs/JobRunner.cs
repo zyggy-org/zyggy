@@ -221,6 +221,12 @@ public sealed partial class JobRunner
             {
                 var gitError = RunFailureReasonWire.ToWire(RunFailureReason.GitError);
                 LogWorktreeFailed(id, failed.Step);
+                if (failed.KeptAt is { } keptAt)
+                {
+                    // Spec 61 §5: a leftover Prepare kept is listed for zyggy status, as the clean-up lists the ones it keeps.
+                    LeftoverWorktrees.RecordKept(nodeDir, job.Header.Tenant, new KeptWorktree(id, keptAt, failed.Detail ?? failed.Step));
+                }
+
                 // Spec 61 §5: worktree_add says why in parentheses (git's first line) and names a kept leftover folder.
                 var body = failed.Step == "worktree_add" && failed.Detail is { } why
                     ? $"{gitError}: {failed.Step} ({why})\n" + (failed.KeptAt is { } kept ? $"worktree kept at {kept}\n" : string.Empty)
