@@ -4,6 +4,8 @@ using System.Text;
 using Microsoft.Extensions.Logging;
 
 using Zyggy.Core.Envelope;
+using Zyggy.Core.Jobs;
+using Zyggy.Core.Registry;
 using Zyggy.Core.Tenancy;
 
 using Model = Zyggy.Core.Envelope.Envelope;
@@ -40,6 +42,8 @@ public sealed partial class BusSweep
     private readonly SweepOptions _options;
     private readonly ILogger<BusSweep> _log;
     private readonly HashSet<string> _warnedUnreadable = new(StringComparer.Ordinal);
+    /// <summary>Spec 61 §3: the waiting claims already named in an Information line by this process (one line per claim per process).</summary>
+    private readonly HashSet<string> _waitingLogged = new(StringComparer.Ordinal);
     private bool _failureLogged;
     private bool _signFailureLogged;
 
@@ -115,6 +119,8 @@ public sealed partial class BusSweep
         WriteFailed? failure = null;
         bool deferred = false;
         bool? canSign = null;
+        var registries = new Dictionary<MachineName, RegistryDocument?>();
+        var waiting = new List<SweepWaiting>();
         foreach (SweepClaim claim in claims)
         {
             if (claim.ClaimTime is not { } claimed)
@@ -131,6 +137,21 @@ public sealed partial class BusSweep
             int timeout = (parsed.IsAccepted ? parsed.Envelope.Job?.TimeoutMinutes : null) ?? _options.DefaultTimeoutMinutes;
             if (now - claimed <= TimeSpan.FromMinutes(timeout) + Grace)
             {
+                continue;
+            }
+
+            // Spec 61 §3: a claim its machine lists under running is waited for — up to the longest a run can live (24 h of wall-clock age,
+            // ended by the node itself) + the grace, so a node that died with the id listed never holds the claim forever.
+            if (now - claimed <= AwakeClock.WallLimit + Grace
+                && await RegistryOfAsync(registries, claim.Folder, ct).ConfigureAwait(false) is { } registry
+                && registry.Running.Contains(claim.File.Id))
+            {
+                waiting.Add(new SweepWaiting(claim.File.Id, claim.Folder, registry.LastSeen));
+                if (!dryRun && _waitingLogged.Add(claim.File.Id.Value))
+                {
+                    LogWaiting(claim.File.Id.Value, claim.Folder.Value, registry.LastSeen is { } seen ? Utc(seen) : "never");
+                }
+
                 continue;
             }
 
@@ -208,7 +229,20 @@ public sealed partial class BusSweep
             _failureLogged = false;
         }
 
-        return new SweepResult(actions, failure, deferred) { Archived = count, OldestArchived = oldest };
+        return new SweepResult(actions, failure, deferred) { Archived = count, OldestArchived = oldest, Waiting = waiting };
+    }
+
+    // Spec 61 §3: each machine's registry file is read once per pass; an absent or unreadable file lists nothing (today's rule).
+    private async Task<RegistryDocument?> RegistryOfAsync(Dictionary<MachineName, RegistryDocument?> registries, MachineName machine, CancellationToken ct)
+    {
+        if (!registries.TryGetValue(machine, out RegistryDocument? registry))
+        {
+            byte[]? bytes = await _bus.ReadRegistryOfAsync(machine, ct).ConfigureAwait(false);
+            registry = bytes is null ? null : RegistryDocument.Parse(bytes).Document;
+            registries[machine] = registry;
+        }
+
+        return registry;
     }
 
     // Step 2 of the pass: every reports/ and context/ file older than 14 days, except what the pickup still takes, in one commit.
@@ -442,6 +476,9 @@ public sealed partial class BusSweep
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "job {Id} on {Machine} stuck since {ClaimTime}: re-queued, attempt {Attempt}")]
     private partial void LogRequeued(string id, string machine, string claimTime, int attempt);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "waiting {Id} {Machine} still running, last seen {LastSeen}")]
+    private partial void LogWaiting(string id, string machine, string lastSeen);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "job {Id} on {Machine} failed after {Attempts} attempts")]
     private partial void LogExhausted(string id, string machine, int attempts);

@@ -47,6 +47,16 @@
       <_ZyggyCliFiles Include="$(_ZyggyCliOutputDir)/**/*" />
     </ItemGroup>
     <Copy SourceFiles="@(_ZyggyCliFiles)" DestinationFiles="@(_ZyggyCliFiles->'$(OutDir)cli/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <!--
+      Spec 61 slices 7-9: an out-of-process zyggy-node takes the `zyggy` beside itself (this folder) as its job hook, as the release
+      folder ships them. The CLI's assemblies this folder lacks (Linux: the shared framework dropped them) are added here, never one
+      that is already present, so that `zyggy` starts and every out-of-process job reaches its model. Windows output lacks none.
+    -->
+    <ItemGroup>
+      <_ZyggyCliMissingAssemblies Include="$(_ZyggyCliOutputDir)/*.dll" />
+      <_ZyggyCliMissingAssemblies Remove="@(_ZyggyCliMissingAssemblies)" Condition="Exists('$(OutDir)%(_ZyggyCliMissingAssemblies.Filename)%(_ZyggyCliMissingAssemblies.Extension)')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_ZyggyCliMissingAssemblies)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
   </Target>
 
 </Project>

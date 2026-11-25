@@ -123,6 +123,16 @@ public static class BusPaths
     /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
     public static string Decisions(TenantId tenant, MachineName machine) => Node(tenant, machine) + "/decisions";
 
+    /// <summary>
+    /// Returns a machine's withdrawals: <c>tenants/&lt;org&gt;/nodes/&lt;machine&gt;/withdrawals</c> (deliverable 61), written by a job's
+    /// sender or Central, removed by the machine.
+    /// </summary>
+    /// <param name="tenant">The tenant.</param>
+    /// <param name="machine">The machine that claimed the jobs.</param>
+    /// <returns>The repository-relative path.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when an argument is null.</exception>
+    public static string Withdrawals(TenantId tenant, MachineName machine) => Node(tenant, machine) + "/withdrawals";
+
     /// <summary>Returns the folder of the mandates in force: <c>tenants/&lt;org&gt;/mandates</c> (deliverable 18), written by Central only.</summary>
     /// <param name="tenant">The tenant.</param>
     /// <returns>The repository-relative path.</returns>
@@ -316,6 +326,9 @@ public static class BusPaths
                 break;
             case "decisions":
                 folder = BusFolder.Decisions;
+                break;
+            case "withdrawals":
+                folder = BusFolder.Withdrawals;
                 break;
             case "jobs":
                 folder = BusFolder.Jobs;

@@ -14,6 +14,9 @@ public sealed class EnvelopeWireTests
         { EnvelopeType.Question, "question" },
         { EnvelopeType.Decision, "decision" },
         { EnvelopeType.Mandate, "mandate" },
+
+        // Spec 61 AC-12: the withdrawal of a claimed job.
+        { EnvelopeType.Withdrawal, "withdrawal" },
     };
 
     public static TheoryData<EnvelopePriority, string> Priorities => new()

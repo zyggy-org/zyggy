@@ -7,7 +7,7 @@ public static class EnvelopeWire
 {
     /// <summary>Returns the wire string of an envelope type.</summary>
     /// <param name="value">The member.</param>
-    /// <returns><c>job</c>, <c>report</c>, <c>context</c>, <c>item</c>, <c>status</c>, <c>question</c>, <c>decision</c> or <c>mandate</c>.</returns>
+    /// <returns><c>job</c>, <c>report</c>, <c>context</c>, <c>item</c>, <c>status</c>, <c>question</c>, <c>decision</c>, <c>mandate</c> or <c>withdrawal</c>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown for an undefined member.</exception>
     public static string ToWire(EnvelopeType value) => value switch
     {
@@ -19,6 +19,7 @@ public static class EnvelopeWire
         EnvelopeType.Question => "question",
         EnvelopeType.Decision => "decision",
         EnvelopeType.Mandate => "mandate",
+        EnvelopeType.Withdrawal => "withdrawal",
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 

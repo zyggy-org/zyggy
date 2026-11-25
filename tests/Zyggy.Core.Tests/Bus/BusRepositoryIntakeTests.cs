@@ -215,8 +215,9 @@ public sealed class BusRepositoryIntakeTests : IAsyncLifetime
         await _store.DidNotReceive().GetAsync(Globex, Arg.Any<SecretName>(), Arg.Any<CancellationToken>());
     }
 
+    // AC-4 (spec 61): a byte-identical copy of a signed job under another file name is refused, never accepted as a new job.
     [Fact]
-    public async Task VerifyIntakeAsync_IdDiffersFromFileName_AcceptedWithWarning()
+    public async Task VerifyIntakeAsync_IdDiffersFromFileName_RejectedInvalidFieldId()
     {
         // Arrange
         var ct = TestContext.Current.CancellationToken;
@@ -228,8 +229,32 @@ public sealed class BusRepositoryIntakeTests : IAsyncLifetime
         JobIntake intake = await Repository().VerifyIntakeAsync(new BusFile(path, fileId), ct);
 
         // Assert
-        intake.Should().BeOfType<AcceptedJob>();
-        _log.AtLevel(LogLevel.Warning).Should().ContainSingle().Which.Message.Should().Contain(fileId.Value);
+        var rejected = intake.Should().BeOfType<RejectedJob>().Subject;
+        (rejected.Reason, rejected.Field, rejected.From).Should().Be((EnvelopeRejectionReason.InvalidField, "id", Central));
+    }
+
+    // AC-4 (spec 61): the renamed copy is moved to jobs/rejected/ with the signed rejected report and exactly one Warning.
+    [Fact]
+    public async Task RejectAsync_IdDiffersFromFileName_MovedWithReportOneWarning()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        var fileId = EnvelopeId.New(T.AddSeconds(1));
+        string path = BusPaths.EnvelopeFile(BusPaths.Jobs(Acme, HomeLaptop), fileId);
+        _checkout.Drop(path, await JobBytesAsync(ct, id: EnvelopeId.New(T)));
+        BusRepository repository = Repository();
+        JobIntake intake = await repository.VerifyIntakeAsync(new BusFile(path, fileId), ct);
+
+        // Act
+        WriteOutcome outcome = await repository.RejectAsync((RejectedJob)intake, TestKeys.Acme1, ct);
+
+        // Assert
+        outcome.Should().Be(new Pushed(1));
+        string reportPath = _checkout.FilesUnder(BusPaths.Reports(Acme, HomeLaptop)).Should().ContainSingle().Subject;
+        Model report = (await new EnvelopeSigner(_inner).ParseAndVerifyAsync(_checkout.Read(reportPath), Acme, ct)).Envelope!;
+        (report.Header.InReplyTo, report.Report!.Status, report.Report.Reason).Should().Be((fileId, ReportStatus.Rejected, "invalid_field"));
+        _processes.CallsOf("mv").Single().Arguments.Should().EndWith([path, BusPaths.EnvelopeFile(BusPaths.Rejected(Acme, HomeLaptop), fileId)]);
+        _log.AtLevel(LogLevel.Warning).Should().ContainSingle();
     }
 
     [Fact]
@@ -282,6 +307,50 @@ public sealed class BusRepositoryIntakeTests : IAsyncLifetime
             "rm -- " + claimedPath,
             "-c user.name=zyggy (home-laptop) -c user.email=home-laptop@zyggy.org commit --only -F - -- " + reportPath + " " + claimedPath);
         _processes.CallsOf("commit").Single().StandardInput.Should().Be($"acme report {report.Header.Id} home-laptop→central");
+    }
+
+    // AC-2 (spec 61): Central re-queued the claim; the report removes the queued file in the same commit.
+    [Fact]
+    public async Task ReportAsync_JobBackInJobs_RemovesQueuedFileInReportCommit()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        AcceptedJob job = await ClaimedJobAsync(ct);
+        string claimedPath = BusPaths.EnvelopeFile(BusPaths.Claimed(Acme, HomeLaptop), job.File.Id);
+        string queuedPath = BusPaths.EnvelopeFile(BusPaths.Jobs(Acme, HomeLaptop), job.File.Id);
+        _checkout.Drop(queuedPath, _checkout.Read(claimedPath));
+        File.Delete(BusPaths.Resolve(_checkout.Root, claimedPath));
+
+        // Act
+        WriteOutcome outcome = await Repository().ReportAsync(job, new ReportFields(ReportStatus.Done), Encoding.UTF8.GetBytes("ok\n"), TestKeys.Acme1, ct);
+
+        // Assert
+        outcome.Should().Be(new Pushed(1));
+        string reportPath = _checkout.FilesUnder(BusPaths.Reports(Acme, HomeLaptop)).Should().ContainSingle().Subject;
+        _processes.Calls.Select(c => string.Join(' ', c.Arguments)).Should().Equal(
+            "add -- " + reportPath,
+            "rm -- " + queuedPath,
+            "-c user.name=zyggy (home-laptop) -c user.email=home-laptop@zyggy.org commit --only -F - -- " + reportPath + " " + queuedPath);
+    }
+
+    // AC-3 (spec 61): Central answered the claim (attempts exhausted); the report is written alone.
+    [Fact]
+    public async Task ReportAsync_JobFileNowhere_ReportAlone()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        AcceptedJob job = await ClaimedJobAsync(ct);
+        File.Delete(BusPaths.Resolve(_checkout.Root, BusPaths.EnvelopeFile(BusPaths.Claimed(Acme, HomeLaptop), job.File.Id)));
+
+        // Act
+        WriteOutcome outcome = await Repository().ReportAsync(job, new ReportFields(ReportStatus.Done), Encoding.UTF8.GetBytes("ok\n"), TestKeys.Acme1, ct);
+
+        // Assert
+        outcome.Should().Be(new Pushed(1));
+        string reportPath = _checkout.FilesUnder(BusPaths.Reports(Acme, HomeLaptop)).Should().ContainSingle().Subject;
+        _processes.Calls.Select(c => string.Join(' ', c.Arguments)).Should().Equal(
+            "add -- " + reportPath,
+            "-c user.name=zyggy (home-laptop) -c user.email=home-laptop@zyggy.org commit --only -F - -- " + reportPath);
     }
 
     [Fact]

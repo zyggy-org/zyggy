@@ -59,7 +59,8 @@ public sealed class JobRunnerInvocationTests : IDisposable
             "--no-session-persistence", "--max-turns", "60", "--allowedTools", "Read,Bash(dotnet *)", "--settings"]);
         spec.WorkingDirectory.Should().Be(_project.Root);
         spec.StandardInput.Should().Be(new JobPrompt().Render(job, _project.Root, ["Read", "Bash(dotnet *)"]));
-        spec.Timeout.Should().Be(TimeSpan.FromMinutes(10));
+        // Spec 61 slice 3: the process limit is only a backstop past the 24-hour run limit; the 10 minutes are counted by the awake clock.
+        spec.Timeout.Should().BeGreaterThan(TimeSpan.FromHours(24));
         spec.Environment.Should().ContainKey("CREDENTIALS_DIRECTORY").WhoseValue.Should().BeNull();
     }
 
@@ -184,24 +185,22 @@ public sealed class JobRunnerInvocationTests : IDisposable
         ClaudeSpec().Environment.Should().Contain("ZYGGY_HOOKS", "off");
     }
 
-    // Spec 18 slice 4: `zyggy ask` in a job run names the job and never waits beyond its timeout
+    // Spec 18 slice 4: `zyggy ask` in a job run names the job. Spec 61 slice 3: the run's end moves with the awake clock, and an
+    // environment cannot be rewritten once the model process runs, so ZYGGY_JOB_ENDS is dropped — also a configured value of it.
     [Fact]
-    public async Task RunAsync_AnyJob_ModelEnvironmentNamesTheJobItsProjectAndItsEnd()
+    public async Task RunAsync_AnyJob_ModelEnvironmentNamesTheJobAndItsProjectButNoEnd()
     {
         // Arrange: a configured value may not name another job
-        _h.Options.ModelEnvironment = new Dictionary<string, string> { ["ZYGGY_JOB"] = "other", ["ZYGGY_JOB_PROJECT"] = "other", ["ZYGGY_JOB_ENDS"] = "never" };
+        _h.Options.ModelEnvironment = new Dictionary<string, string> { ["ZYGGY_JOB"] = "other", ["ZYGGY_JOB_PROJECT"] = "other", ["ZYGGY_JOB_ENDS"] = "2026-01-01T00:00:00Z" };
         var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root));
-        DateTimeOffset started = _h.Clock.GetUtcNow();
 
         // Act
         await _h.Build().RunAsync(job, CancellationToken.None);
 
         // Assert
         var environment = ClaudeSpec().Environment;
-        environment.Should().Contain("ZYGGY_JOB", job.Header.Id.Value);
-        environment.Should().Contain("ZYGGY_JOB_PROJECT", Zyggy.Core.Registry.ProjectName.Derive(Path.GetFileName(_project.Root.TrimEnd('\\', '/'))));
-        DateTimeOffset ends = DateTimeOffset.ParseExact(environment["ZYGGY_JOB_ENDS"]!, "yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal);
-        ends.Should().BeAfter(started).And.BeOnOrBefore(started.AddHours(24));
+        new { Job = environment["ZYGGY_JOB"], Project = environment["ZYGGY_JOB_PROJECT"], Ends = environment.ContainsKey("ZYGGY_JOB_ENDS") }
+            .Should().BeEquivalentTo(new { Job = job.Header.Id.Value, Project = Zyggy.Core.Registry.ProjectName.Derive(Path.GetFileName(_project.Root.TrimEnd('\\', '/'))), Ends = false });
     }
 
     // Spec 58 slice 5: a mail job's work mail marker is named by the runner, in its own node directory; a configured value cannot move

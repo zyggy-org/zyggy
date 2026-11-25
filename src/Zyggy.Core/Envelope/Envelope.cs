@@ -377,6 +377,25 @@ public sealed class Envelope
         return Create(entries, header, ReadOnlyMemory<byte>.Empty);
     }
 
+    /// <summary>Creates an unsigned withdrawal envelope in canonical scalar text (deliverable 61, "Withdrawing a job").</summary>
+    /// <remarks>
+    /// Same text rules as <see cref="CreateJob"/>. <see cref="EnvelopeHeader.InReplyTo"/> is the job id and mandatory;
+    /// <see cref="EnvelopeHeader.To"/> is the machine that claimed the job. The body is empty, or <paramref name="why"/> followed by a
+    /// line break: one line of 1–200 characters, data only. Sign the result like a job before writing it.
+    /// </remarks>
+    /// <param name="header">The common fields, with <c>InReplyTo</c> set to the job id.</param>
+    /// <param name="why">The <c>--why</c> line; <see langword="null"/> for an empty body.</param>
+    /// <returns>The unsigned envelope.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="header"/> is null.</exception>
+    /// <exception cref="ArgumentException">Thrown when <c>in_reply_to</c> is missing or the line breaks its rule.</exception>
+    public static Envelope CreateWithdrawal(EnvelopeHeader header, string? why)
+    {
+        ArgumentNullException.ThrowIfNull(header);
+        Dictionary<string, FrontMatterNode> entries = Common(header, EnvelopeType.Withdrawal);
+        byte[] body = why is null ? [] : Encoding.UTF8.GetBytes(why + "\n");
+        return Create(entries, header, body);
+    }
+
     /// <summary>Returns a copy with <c>key_id</c> set to <paramref name="keyId"/> and <c>sig</c> set, or removed when null.</summary>
     internal Envelope WithSignature(KeyId keyId, string? signature)
     {

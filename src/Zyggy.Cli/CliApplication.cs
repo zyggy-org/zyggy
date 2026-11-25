@@ -66,7 +66,7 @@ internal static class CliApplication
             memory, DreamCommand.Create(environment), m365, brief, linkedin, hub, ProbeCommand.Create(environment, configure), SecretCommand.Create(environment, io, configure),
             SubmitCommand.Create(environment, io, configure), ContextCommand.Create(environment, io, configure), ArchiveCommand.Create(environment, io, configure), StatusCommand.Create(environment, io, configure),
             ReportCommand.Create(environment, io, configure), WorkCommand.Create(environment, io, configure), AskCommand.Create(environment, io, configure), DecideCommand.Create(environment, io, configure), DecideCommand.CreateList(environment, io, configure), RegistryCommand.Create(environment, io, configure), VerifyCommand.Create(environment, io, configure), SetupCommand.Create(environment, io, configure), DiscoverCommand.Create(environment, io, configure),
-            SweepCommand.Create(environment, io, configure), MandateCommand.Create(environment, io, configure), SuperviseCommand.Create(environment, io, configure), SettingsCommand.Create(), OutlookCommand.Create(), ModelsCommand.Create(environment, io),
+            SweepCommand.Create(environment, io, configure), WithdrawCommand.Create(environment, io, configure), NodeCommand.Create(environment, io, configure), MandateCommand.Create(environment, io, configure), SuperviseCommand.Create(environment, io, configure), SettingsCommand.Create(), OutlookCommand.Create(), ModelsCommand.Create(environment, io),
         };
         var parseResult = root.Parse(args);
         if (parseResult.Errors.Count > 0)

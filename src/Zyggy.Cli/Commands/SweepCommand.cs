@@ -39,6 +39,11 @@ internal static class SweepCommand
         _ => $"rejected {action.Id.Value} {action.Machine.Value} {action.Reason}",
     };
 
+    /// <summary>Spec 61 §3: one stdout line per claim past its limit that the sweep waits for, its machine listing it as running.</summary>
+    internal static string WaitingLine(SweepWaiting waiting) =>
+        $"waiting {waiting.Id.Value} {waiting.Machine.Value} still running, last seen "
+        + (waiting.LastSeen is { } seen ? seen.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture) : "never");
+
     private static async Task<int> RunAsync(CliEnvironment environment, VerbIo io, Action<IServiceCollection>? configure, ParseResult parseResult, CancellationToken ct)
     {
         (NodeConfiguration? configuration, int exitCode) = BusHost.LoadConfiguration(parseResult, environment, io);
@@ -88,6 +93,11 @@ internal static class SweepCommand
         foreach (SweepAction action in result.Actions)
         {
             await io.Out.WriteLineAsync(ActionLine(action));
+        }
+
+        foreach (SweepWaiting waiting in result.Waiting)
+        {
+            await io.Out.WriteLineAsync(WaitingLine(waiting));
         }
 
         if (result.OldestArchived is { } oldest)

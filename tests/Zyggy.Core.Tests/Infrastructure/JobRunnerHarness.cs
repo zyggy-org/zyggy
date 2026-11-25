@@ -70,8 +70,11 @@ internal sealed class JobRunnerHarness
     /// <summary>Gets or sets a clock that replaces <see cref="Clock"/> for the runner (fault injection).</summary>
     public TimeProvider? ClockOverride { get; set; }
 
+    /// <summary>Gets the withdrawal signal the runner shares with the listener (spec 61 slice 5).</summary>
+    public RunWithdrawals Withdrawals { get; } = new();
+
     public JobRunner Build() =>
-        new(Model, Policy, new GitClient(Processes, new GitClientOptions(), Clock), Processes, Registry, Microsoft.Extensions.Options.Options.Create(Options), ClockOverride ?? Clock, Log);
+        new(Model, Policy, new GitClient(Processes, new GitClientOptions(), Clock), Processes, Registry, Microsoft.Extensions.Options.Options.Create(Options), ClockOverride ?? Clock, Log, Withdrawals);
 
     /// <summary>A signed job from central to the home laptop with <paramref name="fields"/>.</summary>
     public static async Task<Model> JobAsync(JobFields fields, string body = "Investigate 502.\n", EnvelopeId? id = null)

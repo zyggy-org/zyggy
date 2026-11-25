@@ -37,7 +37,11 @@ public sealed record WorkSession(SessionActivity Activity, StatusFields Status);
 /// <param name="Project">The job's project when the file verifies; otherwise <see langword="null"/>.</param>
 /// <param name="Claimed"><see langword="true"/> in <c>jobs/claimed/</c>, <see langword="false"/> in <c>jobs/</c>.</param>
 /// <param name="Submitted">When the job was created (the time in its id).</param>
-public sealed record WorkJob(EnvelopeId Id, string? Project, bool Claimed, DateTimeOffset Submitted);
+public sealed record WorkJob(EnvelopeId Id, string? Project, bool Claimed, DateTimeOffset Submitted)
+{
+    /// <summary>Gets a value indicating whether a withdrawal of this claimed job waits in its machine's <c>withdrawals/</c> (spec 61 slice 5).</summary>
+    internal bool WithdrawalRequested { get; init; }
+}
 
 /// <summary>What one machine is doing: its live sessions, its open jobs and its newest report.</summary>
 /// <param name="Machine">The machine.</param>

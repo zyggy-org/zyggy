@@ -31,6 +31,20 @@ public static class ZyggyNode
         string workingDirectory,
         CancellationToken cancellationToken)
     {
+        using var process = Start(args, env, workingDirectory);
+        var stdout = process.StandardOutput.ReadToEndAsync(cancellationToken);
+        var stderr = process.StandardError.ReadToEndAsync(cancellationToken);
+        process.StandardInput.Close();
+        await process.WaitForExitAsync(cancellationToken);
+        return new ZyggyRun(process.ExitCode, await stdout, await stderr);
+    }
+
+    /// <summary>
+    /// Starts <c>zyggy-node</c> with <paramref name="args"/> and returns the running process (spec 61 slice 7: a real node for
+    /// <c>zyggy node stop</c> to end); the caller reads or drains its streams and kills it when the test is over.
+    /// </summary>
+    public static Process Start(IReadOnlyList<string> args, IReadOnlyDictionary<string, string?> env, string workingDirectory)
+    {
         var info = new ProcessStartInfo(ExecutablePath)
         {
             UseShellExecute = false,
@@ -63,11 +77,6 @@ public static class ZyggyNode
             }
         }
 
-        using var process = Process.Start(info) ?? throw new InvalidOperationException("zyggy-node did not start.");
-        var stdout = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderr = process.StandardError.ReadToEndAsync(cancellationToken);
-        process.StandardInput.Close();
-        await process.WaitForExitAsync(cancellationToken);
-        return new ZyggyRun(process.ExitCode, await stdout, await stderr);
+        return Process.Start(info) ?? throw new InvalidOperationException("zyggy-node did not start.");
     }
 }

@@ -185,21 +185,42 @@ public sealed class JobRunnerTests : IDisposable
         await act.Should().ThrowAsync<ArgumentException>();
     }
 
+    // Spec 61 slice 3: the limit is the runner's awake clock (AwakeTimeTests); it comes from the job, else the policy, else the test
+    // override, and it ends the model through the request's limit signal once that much awake time has passed.
     [Theory]
     [InlineData(10, null, 600)]
     [InlineData(null, null, 1800)]
     [InlineData(10, 2, 2)]
-    public async Task RunAsync_TimeoutFromJobElsePolicy_SetsRequestTimeout(int? jobMinutes, int? overrideSeconds, int expectedSeconds)
+    public async Task RunAsync_TimeoutFromJobElsePolicy_LimitSignalledAfterThatAwakeTime(int? jobMinutes, int? overrideSeconds, int expectedSeconds)
     {
         // Arrange
         _h.Options.TimeoutOverride = overrideSeconds is { } s ? TimeSpan.FromSeconds(s) : null;
         var job = await JobRunnerHarness.JobAsync(new JobFields(_project.Root, TimeoutMinutes: jobMinutes));
+        var signalled = new List<bool>();
+        _h.Model.RunAsync(Arg.Any<ModelRunRequest>(), Arg.Any<CancellationToken>()).Returns(call =>
+        {
+            var token = call.Arg<ModelRunRequest>().LimitReached;
+            AwakeSeconds(expectedSeconds - 1);
+            signalled.Add(token.IsCancellationRequested);
+            AwakeSeconds(1);
+            signalled.Add(token.IsCancellationRequested);
+            return JobRunnerHarness.Succeeded("done\n");
+        });
 
         // Act
         await _h.Build().RunAsync(job, CancellationToken.None);
 
         // Assert
-        _h.Request().Timeout.Should().Be(TimeSpan.FromSeconds(expectedSeconds));
+        signalled.Should().Equal(false, true);
+    }
+
+    // The machine awake: one-second steps, so no gap between two of the runner's notes looks like sleep.
+    private void AwakeSeconds(int seconds)
+    {
+        for (var i = 0; i < seconds; i++)
+        {
+            _h.Clock.Advance(TimeSpan.FromSeconds(1));
+        }
     }
 
     [Fact]

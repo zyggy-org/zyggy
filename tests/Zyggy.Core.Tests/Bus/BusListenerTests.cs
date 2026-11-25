@@ -1152,11 +1152,643 @@ public sealed class BusListenerTests : IAsyncLifetime
         listener.Status.JobsRunning.Should().Be(0);
     }
 
-    private BusListener Listener(KeyId? signWith = null, JobGate? gate = null, ISecretStore? store = null)
+    // AC-1 (spec 61): the result is in the node folder when the bus write starts, and gone once the report is pushed.
+    [Fact]
+    public async Task ProcessOnceAsync_ReportPushed_KeptBeforeBusWriteRemovedAfter()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropJobAsync(ct);
+        KeptReports kept = Kept();
+        bool keptAtAdd = false;
+        _processes.Hook = spec =>
+        {
+            if (RecordingProcessRunner.SubCommand(spec) == "add")
+            {
+                keptAtAdd = kept.List().Count == 1;
+            }
+
+            return RecordingProcessRunner.SubCommand(spec) == "rev-list" ? RecordingProcessRunner.Ok() : null;
+        };
+
+        // Act
+        await Listener(kept: kept).ProcessOnceAsync(ct);
+
+        // Assert
+        keptAtAdd.Should().BeTrue("the result is kept before the report is written to the bus");
+        kept.List().Should().BeEmpty();
+    }
+
+    // AC-1 (spec 61): a failed report write leaves the signed report in the node folder, with one Warning.
+    [Fact]
+    public async Task ProcessOnceAsync_ReportWriteFails_ResultKeptWarnedOnce()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        KeptReports kept = Kept();
+        _processes.On("add", RecordingProcessRunner.Fail(128, "fatal: unable to write new index file"));
+
+        // Act
+        await Listener(kept: kept).ProcessOnceAsync(ct);
+
+        // Assert
+        KeptReport result = kept.List().Should().ContainSingle().Subject;
+        result.Job.Should().Be(job.Header.Id);
+        EnvelopeResult parsed = await new EnvelopeSigner(_store).ParseAndVerifyAsync(result.Report, Acme, ct);
+        parsed.IsAccepted.Should().BeTrue(parsed.Rejection?.ToString());
+        parsed.Envelope!.Header.InReplyTo.Should().Be(job.Header.Id);
+        _log.AtLevel(LogLevel.Warning).Should().ContainSingle(e => e.Message.Contains("kept", StringComparison.Ordinal));
+    }
+
+    // AC-1 (spec 61): the next pass writes the kept report, clears the node folder and never runs the job again.
+    [Fact]
+    public async Task ProcessOnceAsync_KeptResult_NextPassWritesReportWithoutSecondRun()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        KeptReports kept = Kept();
+        _processes.On("add", RecordingProcessRunner.Fail(128, "fatal: unable to write new index file"));
+        BusListener listener = Listener(kept: kept);
+        await listener.ProcessOnceAsync(ct);
+        int commitsBefore = _processes.CallsOf("commit").Count();
+        string queued = BusPaths.EnvelopeFile(BusPaths.Jobs(Acme, HomeLaptop), job.Header.Id);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Claimed(Acme, HomeLaptop), job.Header.Id), _checkout.Read(queued));
+        File.Delete(BusPaths.Resolve(_checkout.Root, queued)); // what the recorded `git mv` of the claim did on a real checkout
+
+        // Act
+        await listener.ProcessOnceAsync(ct);
+
+        // Assert
+        kept.List().Should().BeEmpty();
+        _handled.Should().ContainSingle("the job ran once");
+        _processes.CallsOf("commit").Should().HaveCount(commitsBefore + 1, "one report commit, no second claim");
+        string reportPath = _checkout.FilesUnder(BusPaths.Reports(Acme, HomeLaptop)).Should().ContainSingle().Subject;
+        Model report = (await new EnvelopeSigner(_store).ParseAndVerifyAsync(_checkout.Read(reportPath), Acme, ct)).Envelope!;
+        report.Header.InReplyTo.Should().Be(job.Header.Id);
+        _log.AtLevel(LogLevel.Information).Should().Contain(e => e.Message == $"report of job {job.Header.Id} written from the node folder");
+    }
+
+    // AC-1 (spec 61): a report whose commit could not be pushed stays kept until it is on the remote.
+    [Fact]
+    public async Task ProcessOnceAsync_ReportDeferred_ResultStaysKept()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropJobAsync(ct);
+        KeptReports kept = Kept();
+        int pushes = 0;
+        _provider.PushAsync(Arg.Any<CancellationToken>()).Returns(_ => ++pushes == 1 ? new PushSucceeded() : new Rejected("fetch first"));
+
+        // Act
+        Task<int> task = Listener(kept: kept).ProcessOnceAsync(ct);
+        while (!task.IsCompleted)
+        {
+            _clock.Advance(TimeSpan.FromSeconds(1));
+            await Task.Delay(1, ct);
+        }
+
+        await task;
+
+        // Assert
+        kept.List().Should().ContainSingle();
+    }
+
+    // Spec 61: a node folder that cannot be written never stops the report write; one Warning names the job.
+    [Fact]
+    public async Task ProcessOnceAsync_NodeFolderUnwritable_ReportStillWrittenWarned()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        string nodeDir = Path.Join(_checkout.Root, "node-is-a-file");
+        await File.WriteAllTextAsync(nodeDir, "x", ct);
+
+        // Act
+        await Listener(kept: new KeptReports(nodeDir, Acme)).ProcessOnceAsync(ct);
+
+        // Assert
+        _checkout.FilesUnder(BusPaths.Reports(Acme, HomeLaptop)).Should().ContainSingle();
+        _log.AtLevel(LogLevel.Warning).Should().ContainSingle(e => e.Message.StartsWith($"kept result of job {job.Header.Id} not stored", StringComparison.Ordinal));
+    }
+
+    // Spec 61 (slice 1 correction a): a corrupt kept file is moved aside and no longer holds back its job.
+    [Fact]
+    public async Task ProcessOnceAsync_KeptFileCorrupt_QuarantinedAndJobRuns()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        KeptReports kept = Kept();
+        kept.Keep(job.Header.Id, Encoding.UTF8.GetBytes("not an envelope\n"), null);
+
+        // Act
+        await Listener(kept: kept).ProcessOnceAsync(ct);
+
+        // Assert
+        _handled.Should().ContainSingle("a kept file that does not verify no longer counts as a kept report");
+    }
+
+    // Spec 61 (slice 1 correction a): a foreign kept file (here: a job, not this machine's report) is quarantined, never written to the bus.
+    [Fact]
+    public async Task ProcessOnceAsync_KeptFileForeign_MovedToQuarantineNotWritten()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        KeptReports kept = Kept();
+        kept.Keep(job.Header.Id, EnvelopeWriter.Serialize(job), null);
+        string quarantined = Path.Join(KeptReports.DirectoryFor(Path.Join(_checkout.Root, "node"), Acme), "quarantined", job.Header.Id.Value + ".md");
+
+        // Act
+        await Listener(kept: kept).ProcessOnceAsync(ct);
+
+        // Assert
+        File.Exists(quarantined).Should().BeTrue();
+    }
+
+    // Spec 61 (slice 1 correction a): quarantining a kept file is one Warning line naming the job.
+    [Fact]
+    public async Task ProcessOnceAsync_KeptFileCorrupt_OneWarningLine()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        EnvelopeId id = EnvelopeId.New(T);
+        KeptReports kept = Kept();
+        kept.Keep(id, Encoding.UTF8.GetBytes("not an envelope\n"), null);
+
+        // Act
+        await Listener(kept: kept).ProcessOnceAsync(ct);
+
+        // Assert
+        _log.Entries.Where(e => e.Level >= LogLevel.Warning).Should().ContainSingle(e => e.Message.StartsWith($"kept result of job {id} does not verify", StringComparison.Ordinal));
+    }
+
+    // Spec 61 (slice 1 correction b): a report whose signing fails is signed again at the next pass; the job is not run again.
+    [Fact]
+    public async Task ProcessOnceAsync_SigningFailsOnce_NextPassWritesReportWithoutSecondRun()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        InMemorySecretStore store = await TestKeys.StoreWithAsync(TestKeys.Acme1, ct);
+        BusListener listener = Listener(signWith: TestKeys.Acme2, store: store, kept: Kept());
+        await listener.ProcessOnceAsync(ct);
+        string queued = BusPaths.EnvelopeFile(BusPaths.Jobs(Acme, HomeLaptop), job.Header.Id);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Claimed(Acme, HomeLaptop), job.Header.Id), _checkout.Read(queued));
+        File.Delete(BusPaths.Resolve(_checkout.Root, queued)); // what the recorded `git mv` of the claim did on a real checkout
+        await store.SetAsync(Acme, TestKeys.Acme2.SecretName, TestKeys.Secret2, ct);
+
+        // Act
+        await listener.ProcessOnceAsync(ct);
+
+        // Assert
+        _handled.Should().ContainSingle("the job ran once");
+        string reportPath = _checkout.FilesUnder(BusPaths.Reports(Acme, HomeLaptop)).Should().ContainSingle().Subject;
+        Model report = (await new EnvelopeSigner(store).ParseAndVerifyAsync(_checkout.Read(reportPath), Acme, ct)).Envelope!;
+        report.Header.InReplyTo.Should().Be(job.Header.Id);
+    }
+
+    // Spec 61 (slice 1 correction b): signing is tried at most 10 times; then one Error line, and the result is given up.
+    [Fact]
+    public async Task ProcessOnceAsync_SigningNeverPossible_GivenUpAfterTenTriesWithOneError()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        InMemorySecretStore store = await TestKeys.StoreWithAsync(TestKeys.Acme1, ct);
+        BusListener listener = Listener(signWith: TestKeys.Acme2, store: store, kept: Kept());
+        await listener.ProcessOnceAsync(ct);
+        string queued = BusPaths.EnvelopeFile(BusPaths.Jobs(Acme, HomeLaptop), job.Header.Id);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Claimed(Acme, HomeLaptop), job.Header.Id), _checkout.Read(queued));
+        File.Delete(BusPaths.Resolve(_checkout.Root, queued));
+
+        // Act
+        for (int pass = 0; pass < 12; pass++)
+        {
+            await listener.ProcessOnceAsync(ct);
+        }
+
+        // Assert
+        _log.AtLevel(LogLevel.Error).Should().ContainSingle(e => e.Message == $"report of job {job.Header.Id} could not be signed after 10 tries; it is given up and the claim stays for the sweep");
+    }
+
+    // AC-4 (spec 61): the job's file back in jobs/ while its run is alive is claimed again, and the model is started once in total.
+    [Fact]
+    public async Task ProcessOnceAsync_FileBackWhileRunAlive_ReclaimedWithoutSecondRun()
+    {
+        // Arrange: the first pass claims and starts the run; the recorded `git mv` leaves the file in jobs/, as a re-queue would put it back
+        var ct = TestContext.Current.CancellationToken;
+        await DropJobAsync(ct);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _handler = async (envelope, _) =>
+        {
+            _handled.Add(envelope);
+            await release.Task;
+            return new JobReply(ReportStatus.Done, null, Encoding.UTF8.GetBytes("ok\n"), T, T.AddSeconds(1));
+        };
+        BusListener listener = Listener(gate: Gate(() => new Admitted(new TrackingLease())), kept: Kept(), done: Done());
+        await listener.ProcessOnceAsync(ct);
+
+        // Act
+        await listener.ProcessOnceAsync(ct);
+        release.SetResult();
+        await listener.DrainAsync(ct);
+
+        // Assert
+        _handled.Should().ContainSingle("the live run answers the re-queued file");
+        _processes.CallsOf("mv").Should().HaveCount(2, "the file is claimed again");
+    }
+
+    // AC-5 (spec 61): a resumed claim whose result is kept is not run again.
+    [Fact]
+    public async Task ResumeClaimedAsync_KeptResult_NotRunAgain()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        _processes.On("add", RecordingProcessRunner.Fail(128, "fatal: unable to write new index file"));
+        BusListener listener = Listener(kept: Kept()); // no done ids: the kept result alone holds the run back
+        await listener.ProcessOnceAsync(ct);
+        string queued = BusPaths.EnvelopeFile(BusPaths.Jobs(Acme, HomeLaptop), job.Header.Id);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Claimed(Acme, HomeLaptop), job.Header.Id), _checkout.Read(queued));
+        File.Delete(BusPaths.Resolve(_checkout.Root, queued));
+
+        // Act
+        await listener.ResumeClaimedAsync(ct);
+
+        // Assert
+        _handled.Should().ContainSingle();
+    }
+
+    // AC-6 (spec 61): an id this node reported done is not run again within 14 days, and runs again after them.
+    [Theory]
+    [InlineData(14 * 24 * 60 - 1, 1)]
+    [InlineData((14 * 24 * 60) + 1, 2)]
+    public async Task ProcessOnceAsync_IdReportedDoneEarlier_RunsOnlyAfter14Days(int minutesLater, int runs)
+    {
+        // Arrange: the recorded `git rm` of the report leaves the file in jobs/, as a duplicate delivery would put it there
+        var ct = TestContext.Current.CancellationToken;
+        await DropJobAsync(ct);
+        BusListener listener = Listener(kept: Kept(), done: Done());
+        await listener.ProcessOnceAsync(ct);
+        _clock.Advance(TimeSpan.FromMinutes(minutesLater));
+
+        // Act
+        await listener.ProcessOnceAsync(ct);
+
+        // Assert
+        _handled.Should().HaveCount(runs);
+    }
+
+    // AC-6 (spec 61): the duplicate is removed with its own commit subject.
+    [Fact]
+    public async Task ProcessOnceAsync_IdReportedDoneEarlier_RemovedWithDuplicateCommit()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        BusListener listener = Listener(kept: Kept(), done: Done());
+        await listener.ProcessOnceAsync(ct);
+
+        // Act
+        await listener.ProcessOnceAsync(ct);
+
+        // Assert
+        _processes.CallsOf("commit").Last().StandardInput.Should().StartWith($"acme duplicate {job.Header.Id} home-laptop→central");
+    }
+
+    // AC-6 (spec 61): a job that ended failed may run again.
+    [Fact]
+    public async Task ProcessOnceAsync_IdReportedFailedEarlier_RunsAgain()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        await DropJobAsync(ct);
+        _handler = (job, _) =>
+        {
+            _handled.Add(job);
+            return Task.FromResult(new JobReply(ReportStatus.Failed, "claude_error", Encoding.UTF8.GetBytes("no\n"), T, T.AddSeconds(1)));
+        };
+        BusListener listener = Listener(kept: Kept(), done: Done());
+        await listener.ProcessOnceAsync(ct);
+
+        // Act
+        await listener.ProcessOnceAsync(ct);
+
+        // Assert
+        _handled.Should().HaveCount(2);
+    }
+
+    // Spec 61 "Never a second run" at start-up: a resumed claim whose id this node reported done is removed as a duplicate, not run.
+    [Fact]
+    public async Task ResumeClaimedAsync_IdReportedDone_RemovedNotRun()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        BusListener listener = Listener(kept: Kept(), done: Done());
+        await listener.ProcessOnceAsync(ct);
+        string queued = BusPaths.EnvelopeFile(BusPaths.Jobs(Acme, HomeLaptop), job.Header.Id);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Claimed(Acme, HomeLaptop), job.Header.Id), _checkout.Read(queued));
+        File.Delete(BusPaths.Resolve(_checkout.Root, queued));
+
+        // Act
+        await listener.ResumeClaimedAsync(ct);
+
+        // Assert
+        _handled.Should().ContainSingle();
+        _processes.CallsOf("commit").Last().StandardInput.Should().StartWith($"acme duplicate {job.Header.Id} home-laptop→central");
+    }
+
+    // Spec 61 slice 2 correction 1 (AC-4): a different signed envelope under the id of a live run is refused, never claimed in its place.
+    [Fact]
+    public async Task ProcessOnceAsync_DifferentBodyWhileRunAlive_RefusedNotReclaimed()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        TaskCompletionSource release = BlockRuns();
+        BusListener listener = Listener(gate: Gate(() => new Admitted(new TrackingLease())), kept: Kept(), done: Done(), running: Running());
+        await listener.ProcessOnceAsync(ct);
+        await DropJobAsync(ct, job.Header.Id, body: "something else\n");
+
+        // Act
+        await listener.ProcessOnceAsync(ct);
+        release.SetResult();
+        await listener.DrainAsync(ct);
+
+        // Assert
+        _processes.CallsOf("commit").Select(c => c.StandardInput!.Split(' ')[1]).Should().Equal(["claim", "reject", "report"], "claimed once, the other envelope refused, the run reported");
+    }
+
+    // Spec 61 slice 2 correction 1: the refusal is a signed rejected report, reason invalid_field, naming the id and why.
+    [Fact]
+    public async Task ProcessOnceAsync_DifferentBodyWhileRunAlive_RejectionReportNamesIdAndWhy()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        TaskCompletionSource release = BlockRuns();
+        BusListener listener = Listener(gate: Gate(() => new Admitted(new TrackingLease())), kept: Kept(), done: Done(), running: Running());
+        await listener.ProcessOnceAsync(ct);
+        await DropJobAsync(ct, job.Header.Id, body: "something else\n");
+
+        // Act
+        await listener.ProcessOnceAsync(ct);
+
+        // Assert
+        string path = _checkout.FilesUnder(BusPaths.Reports(Acme, HomeLaptop)).Should().ContainSingle().Subject;
+        Model report = (await new EnvelopeSigner(_store).ParseAndVerifyAsync(_checkout.Read(path), Acme, ct)).Envelope!;
+        (report.Report!.Status, report.Report.Reason, report.Header.InReplyTo, Encoding.UTF8.GetString(report.Body.Span))
+            .Should().Be((ReportStatus.Rejected, "invalid_field", job.Header.Id, $"rejected: invalid_field (id)\njob {job.Header.Id}: envelope differs from the job this id belongs to\n"));
+        release.SetResult();
+        await listener.DrainAsync(ct);
+    }
+
+    // Spec 61 slice 2 correction 1: the refusal is one Warning line, in the repository's log, naming the id and why.
+    [Fact]
+    public async Task ProcessOnceAsync_DifferentBodyWhileRunAlive_OneWarningLine()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        TaskCompletionSource release = BlockRuns();
+        BusListener listener = Listener(gate: Gate(() => new Admitted(new TrackingLease())), kept: Kept(), done: Done(), running: Running());
+        await listener.ProcessOnceAsync(ct);
+        await DropJobAsync(ct, job.Header.Id, body: "something else\n");
+
+        // Act
+        await listener.ProcessOnceAsync(ct);
+        release.SetResult();
+        await listener.DrainAsync(ct);
+
+        // Assert
+        _log.Entries.Concat(_repositoryLog.Entries).Where(e => e.Level >= LogLevel.Warning)
+            .Should().ContainSingle().Which.Message.Should().EndWith($"job {job.Header.Id}: envelope differs from the job this id belongs to");
+    }
+
+    // Spec 61 slice 2 correction 1: Central's re-queue (attempt raised, re-signed) is the same job: re-claimed, not refused.
+    [Fact]
+    public async Task ProcessOnceAsync_RequeuedByCentralWhileRunAlive_ReclaimedNotRefused()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        TaskCompletionSource release = BlockRuns();
+        BusListener listener = Listener(gate: Gate(() => new Admitted(new TrackingLease())), kept: Kept(), done: Done(), running: Running());
+        await listener.ProcessOnceAsync(ct);
+        Model requeued = (await new EnvelopeSigner(_store).SignAsync(job.WithAttempt(2), TestKeys.Acme1, ct)).Envelope!;
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Jobs(Acme, HomeLaptop), job.Header.Id), EnvelopeWriter.Serialize(requeued));
+
+        // Act
+        await listener.ProcessOnceAsync(ct);
+        release.SetResult();
+        await listener.DrainAsync(ct);
+
+        // Assert
+        _processes.CallsOf("commit").Select(c => c.StandardInput!).Count(s => s.StartsWith($"acme claim {job.Header.Id}", StringComparison.Ordinal)).Should().Be(2);
+    }
+
+    // Spec 61 slice 2 correction 1: the live run's report never removes a different envelope that took the job's place in jobs/.
+    [Fact]
+    public async Task ProcessOnceAsync_DifferentFileQueuedWhenRunReports_NotRemovedByReport()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        TaskCompletionSource release = BlockRuns();
+        BusListener listener = Listener(gate: Gate(() => new Admitted(new TrackingLease())), kept: Kept(), done: Done(), running: Running());
+        await listener.ProcessOnceAsync(ct);
+        await DropJobAsync(ct, job.Header.Id, body: "something else\n");
+
+        // Act
+        release.SetResult();
+        await listener.DrainAsync(ct);
+
+        // Assert
+        _processes.CallsOf("rm").Should().BeEmpty("the file in jobs/ is not the job the report answers");
+    }
+
+    // Spec 61 slice 2 correction 1 (AC-6): a different envelope (other allowed_tools) under a done id is refused, not removed as a duplicate.
+    [Fact]
+    public async Task ProcessOnceAsync_DifferentToolsUnderDoneId_RefusedNotRemovedAsDuplicate()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        BusListener listener = Listener(kept: Kept(), done: Done(), running: Running());
+        await listener.ProcessOnceAsync(ct);
+        await DropJobAsync(ct, job.Header.Id, fields: new JobFields("probe", TimeoutMinutes: 2, AllowedTools: ["Bash"]));
+
+        // Act
+        await listener.ProcessOnceAsync(ct);
+
+        // Assert
+        _processes.CallsOf("commit").Last().StandardInput.Should().StartWith($"acme reject {job.Header.Id} home-laptop→central");
+    }
+
+    // Spec 61 slice 2 correction 1: after a restart (no live run in memory) a different envelope under the id of the interrupted run is refused.
+    [Fact]
+    public async Task ProcessOnceAsync_DifferentBodyUnderRunningIdAfterRestart_Refused()
+    {
+        // Arrange: the first listener's run is alive when the node "restarts" with a second listener on the same node folder
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        TaskCompletionSource release = BlockRuns();
+        BusListener first = Listener(gate: Gate(() => new Admitted(new TrackingLease())), kept: Kept(), done: Done(), running: Running());
+        await first.ProcessOnceAsync(ct);
+        await DropJobAsync(ct, job.Header.Id, body: "something else\n");
+        BusListener restarted = Listener(gate: Gate(() => new Admitted(new TrackingLease())), kept: Kept(), done: Done(), running: Running());
+
+        // Act
+        await restarted.ProcessOnceAsync(ct);
+        release.SetResult();
+        await first.DrainAsync(ct);
+        await restarted.DrainAsync(ct);
+
+        // Assert
+        _processes.CallsOf("commit").Select(c => c.StandardInput!.Split(' ')[1]).Should().StartWith(["claim", "reject"], "the other envelope is refused, never claimed");
+    }
+
+    // Spec 61 slice 2 correction 1: a claimed file under a done id that is not the job this node ran is refused at start-up, never resumed.
+    [Fact]
+    public async Task ResumeClaimedAsync_DifferentEnvelopeUnderDoneId_RefusedNotResumed()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        BusListener listener = Listener(kept: Kept(), done: Done(), running: Running());
+        await listener.ProcessOnceAsync(ct);
+        File.Delete(BusPaths.Resolve(_checkout.Root, BusPaths.EnvelopeFile(BusPaths.Jobs(Acme, HomeLaptop), job.Header.Id)));
+        Model other = await TestEnvelopes.SignedJobAsync(Central, HomeLaptop, _store, TestKeys.Acme1, "something else\n", ct, job.Header.Id);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Claimed(Acme, HomeLaptop), job.Header.Id), EnvelopeWriter.Serialize(other));
+
+        // Act
+        await listener.ResumeClaimedAsync(ct);
+
+        // Assert
+        _processes.CallsOf("commit").Last().StandardInput.Should().StartWith($"acme reject {job.Header.Id} home-laptop→central");
+    }
+
+    // Spec 61 slice 2 correction 2: a result that could not be kept never leaves its id noted as done (the job is run or reported, never dropped).
+    [Fact]
+    public async Task ProcessOnceAsync_KeepFails_DoneNotNoted()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        string unwritable = Path.Join(_checkout.Root, "node-is-a-file");
+        await File.WriteAllTextAsync(unwritable, "x", ct);
+        ReportedDone done = Done();
+
+        // Act
+        await Listener(kept: new KeptReports(unwritable, Acme), done: done).ProcessOnceAsync(ct);
+
+        // Assert
+        done.Find(job.Header.Id, _clock.GetUtcNow(), out _).Should().BeNull();
+    }
+
+    // Spec 61 slice 2 correction 2: a crash after the result was kept and before its id was noted done: the restart reports it from the
+    // node folder, without a run.
+    [Fact]
+    public async Task ResumeClaimedAsync_KeptButDoneNotNoted_ReportedFromKeptWithoutRun()
+    {
+        // Arrange: the first listener keeps the result (its report commit fails) and never notes the id (no done store: the crash)
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        _processes.On("add", RecordingProcessRunner.Fail(128, "fatal: unable to write new index file"));
+        await Listener(kept: Kept()).ProcessOnceAsync(ct);
+        string queued = BusPaths.EnvelopeFile(BusPaths.Jobs(Acme, HomeLaptop), job.Header.Id);
+        _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Claimed(Acme, HomeLaptop), job.Header.Id), _checkout.Read(queued));
+        File.Delete(BusPaths.Resolve(_checkout.Root, queued));
+        BusListener restarted = Listener(kept: Kept(), done: Done(), running: Running());
+
+        // Act
+        await restarted.ResumeClaimedAsync(ct);
+
+        // Assert
+        _handled.Should().ContainSingle("the kept result answers the resumed claim");
+    }
+
+    // Spec 61 slice 2 correction 2: a quarantined kept file forgets its done id, so the job is run again rather than dropped as a duplicate.
+    [Fact]
+    public async Task ProcessOnceAsync_KeptFileQuarantined_DoneIdForgottenJobRuns()
+    {
+        // Arrange: the run ends done, its report commit fails (kept + noted), then the kept file is damaged
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        _processes.On("add", RecordingProcessRunner.Fail(128, "fatal: unable to write new index file"));
+        KeptReports kept = Kept();
+        BusListener listener = Listener(kept: kept, done: Done(), running: Running());
+        await listener.ProcessOnceAsync(ct);
+        kept.Keep(job.Header.Id, Encoding.UTF8.GetBytes("not an envelope\n"), null);
+
+        // Act
+        await listener.ProcessOnceAsync(ct);
+
+        // Assert
+        _handled.Should().HaveCount(2, "the job is run again, never dropped");
+    }
+
+    // Spec 61 slice 2 correction 3: a future-dated reported-done record never suppresses its id.
+    [Fact]
+    public async Task ProcessOnceAsync_FutureDatedDoneRecord_IgnoredAndJobRuns()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        Done().Note(job.Header.Id, _clock.GetUtcNow().AddDays(1), JobFingerprint.Of(job));
+
+        // Act
+        await Listener(kept: Kept(), done: Done(), running: Running()).ProcessOnceAsync(ct);
+
+        // Assert
+        _handled.Should().ContainSingle();
+    }
+
+    // Spec 61 slice 2 correction 3: an invalid reported-done record is removed with one Warning line.
+    [Fact]
+    public async Task ProcessOnceAsync_InvalidDoneRecord_PrunedWithOneWarning()
+    {
+        // Arrange
+        var ct = TestContext.Current.CancellationToken;
+        Model job = await DropJobAsync(ct);
+        string record = Path.Join(_checkout.Root, "node", "work", Acme.Value, "reported-done", job.Header.Id.Value);
+        Directory.CreateDirectory(Path.GetDirectoryName(record)!);
+        await File.WriteAllTextAsync(record, "garbage\n", ct);
+
+        // Act
+        await Listener(kept: Kept(), done: Done(), running: Running()).ProcessOnceAsync(ct);
+
+        // Assert
+        _log.AtLevel(LogLevel.Warning).Should().ContainSingle(e => e.Message.StartsWith($"reported-done record of job {job.Header.Id} is invalid", StringComparison.Ordinal));
+    }
+
+    private TaskCompletionSource BlockRuns()
+    {
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _handler = async (envelope, _) =>
+        {
+            _handled.Add(envelope);
+            await release.Task;
+            return new JobReply(ReportStatus.Done, null, Encoding.UTF8.GetBytes("ok\n"), T, T.AddSeconds(1));
+        };
+        return release;
+    }
+
+    private KeptReports Kept() => new(Path.Join(_checkout.Root, "node"), Acme);
+
+    private ReportedDone Done() => new(Path.Join(_checkout.Root, "node"), Acme);
+
+    private RunningJobs Running() => new(Path.Join(_checkout.Root, "node"), Acme);
+
+    private BusListener Listener(KeyId? signWith = null, JobGate? gate = null, ISecretStore? store = null, KeptReports? kept = null, ReportedDone? done = null, RunningJobs? running = null)
     {
         var git = new GitClient(_processes, new GitClientOptions { Identity = new GitIdentity("zyggy (home-laptop)", "home-laptop@zyggy.org") }, _clock);
         var repository = new BusRepository(git, _provider, Me, _checkout.Root, new EnvelopeSigner(store ?? _store), _clock, () => 0, _repositoryLog);
-        return new BusListener(_provider, repository, PollOptions.Default, signWith ?? TestKeys.Acme1, _clock, new Random(1), (job, ct) => _handler(job, ct), _log, gate);
+        return new BusListener(_provider, repository, PollOptions.Default, signWith ?? TestKeys.Acme1, _clock, new Random(1), (job, ct) => _handler(job, ct), _log, gate) { Kept = kept, Done = done, Running = running };
     }
 
     private static JobGate Gate(Func<AdmissionDecision> decide) => (_, _) => Task.FromResult(decide());
@@ -1216,9 +1848,9 @@ public sealed class BusListenerTests : IAsyncLifetime
         throw new TimeoutException("the listener did not probe in time");
     }
 
-    private async Task<Model> DropJobAsync(CancellationToken ct, EnvelopeId? id = null)
+    private async Task<Model> DropJobAsync(CancellationToken ct, EnvelopeId? id = null, string body = "probe\n", JobFields? fields = null)
     {
-        Model job = await TestEnvelopes.SignedJobAsync(Central, HomeLaptop, _store, TestKeys.Acme1, "probe\n", ct, id);
+        Model job = await TestEnvelopes.SignedJobAsync(Central, HomeLaptop, _store, TestKeys.Acme1, body, ct, id, fields);
         _checkout.Drop(BusPaths.EnvelopeFile(BusPaths.Jobs(Acme, HomeLaptop), job.Header.Id), EnvelopeWriter.Serialize(job));
         return job;
     }

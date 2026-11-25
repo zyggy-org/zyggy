@@ -55,8 +55,10 @@ public sealed partial class BusInventory
         IReadOnlyList<MachineName> machines = Machines();
         var counts = new List<MachineCounts>(machines.Count);
         var reportFiles = new List<(string Path, EnvelopeId Id)>();
+        int withdrawals = 0;
         foreach (MachineName machine in machines)
         {
+            withdrawals += Count(BusPaths.Withdrawals(_me.Tenant, machine));
             counts.Add(new MachineCounts(
                 machine,
                 Count(BusPaths.Jobs(_me.Tenant, machine)),
@@ -80,7 +82,7 @@ public sealed partial class BusInventory
         }
 
         string? head = await _bus.HeadShaAsync(ct).ConfigureAwait(false);
-        return new InventoryReport(head, counts, summaries, TenantDirectories()) { ReportsTotal = reportFiles.Count };
+        return new InventoryReport(head, counts, summaries, TenantDirectories()) { ReportsTotal = reportFiles.Count, PendingWithdrawals = withdrawals };
     }
 
     /// <summary>Where <paramref name="id"/> stands, with its job file (if any) and every report answering it.</summary>
@@ -153,7 +155,42 @@ public sealed partial class BusInventory
             AnsweredAsItem = job is null && newest is not null && PickupItemReport.IsItemReport(newest, body),
             NewestReport = newestReport,
             JobEnvelope = jobEnvelope?.Type == EnvelopeType.Job ? jobEnvelope : null,
+            Withdrawals = PendingWithdrawalsOf(id),
         };
+    }
+
+    /// <summary>Spec 61 slice 5: every withdrawal in any machine's <c>withdrawals/</c> whose <c>in_reply_to</c> is <paramref name="id"/>, oldest first.</summary>
+    private List<PendingWithdrawal> PendingWithdrawalsOf(EnvelopeId id)
+    {
+        var pending = new List<(EnvelopeId File, PendingWithdrawal Withdrawal)>();
+        foreach (MachineName machine in Machines())
+        {
+            foreach ((string path, EnvelopeId file) in Envelopes(BusPaths.Withdrawals(_me.Tenant, machine)))
+            {
+                PeekedHeader? peeked = EnvelopeParser.PeekHeader(File.ReadAllBytes(BusPaths.Resolve(_root, path)));
+                if (peeked?.InReplyTo == id)
+                {
+                    pending.Add((file, new PendingWithdrawal(machine, peeked.From, peeked.Created)));
+                }
+            }
+        }
+
+        return [.. pending.OrderBy(p => p.File.Value, StringComparer.Ordinal).Select(p => p.Withdrawal)];
+    }
+
+    /// <summary>Spec 61 slice 5: the job ids named by a withdrawal in <paramref name="machine"/>'s <c>withdrawals/</c>.</summary>
+    private HashSet<string> WithdrawnIdsAt(MachineName machine)
+    {
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach ((string path, _) in Envelopes(BusPaths.Withdrawals(_me.Tenant, machine)))
+        {
+            if (EnvelopeParser.PeekHeader(File.ReadAllBytes(BusPaths.Resolve(_root, path)))?.InReplyTo is { } job)
+            {
+                ids.Add(job.Value);
+            }
+        }
+
+        return ids;
     }
 
     private async Task<IDisposable> LockAsync(CancellationToken ct) =>

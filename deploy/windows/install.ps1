@@ -94,8 +94,13 @@ function Get-TaskOrNull {
 
 # Stops the task and waits for the node itself: Task Scheduler ends the task's powershell.exe wrapper, and zyggy-node.exe can
 # survive it (seen 2026-10-26: an orphan kept port 4711 and blocked the upgrade's copy). Only this user's own node is touched.
+# From 0.30.1 the node watches its wrapper (--exit-with-parent) and `zyggy node stop` ends the recorded listener and its runs
+# (spec 61); an older zyggy.exe without that verb just prints an error here, and the wait-then-force fallback below still runs.
 function Stop-Node([string] $why) {
     Stop-ScheduledTask -TaskName $taskName
+    if (Test-Path -LiteralPath $zyggyExe) {
+        $null = Invoke-Native $zyggyExe @('node', 'stop', '--config', $NodeJson)
+    }
     $node = @(Get-Process -Name zyggy-node -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $nodeExe })
     if ($node.Count -gt 0) {
         Stop-NodeProcesses $node
@@ -300,7 +305,7 @@ if ([string]::IsNullOrWhiteSpace($claudePath) -or -not (Test-Path $claudePath)) 
 Step "claude: $claudePath"
 
 # 8. the per-user logon task (the contract table of spec 10)
-$command = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command `"`$env:GCM_INTERACTIVE='never'; & '$programs\zyggy-node.exe' --config '$NodeJson'; exit `$LASTEXITCODE`""
+$command = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command `"`$env:GCM_INTERACTIVE='never'; & '$programs\zyggy-node.exe' --exit-with-parent --config '$NodeJson'; exit `$LASTEXITCODE`""
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $command
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
 $trigger.Delay = 'PT30S'

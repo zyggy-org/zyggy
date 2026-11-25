@@ -73,8 +73,9 @@ public sealed class WorktreeFailureTests : IDisposable
         });
     }
 
+    // AC-28 (spec 61): worktree_add carries git's first error line
     [Fact]
-    public async Task RunAsync_WorktreeAddFails_FailedGitErrorModelNeverStarted()
+    public async Task RunAsync_WorktreeAddFails_FailedGitErrorWithGitsLineModelNeverStarted()
     {
         // Arrange
         _git.Failing.Add("worktree add");
@@ -88,8 +89,31 @@ public sealed class WorktreeFailureTests : IDisposable
         {
             Status = ReportStatus.Failed,
             Reason = "git_error",
-            Body = "git_error: worktree_add\n",
+            Body = "git_error: worktree_add (fatal: worktree add failed)\n",
             FilesChanged = Array.Empty<string>(),
+            Model = 0,
+        });
+    }
+
+    // AC-28 (spec 61): a leftover folder of the same id that git cannot remove — its work is committed first, the folder is kept and named
+    [Fact]
+    public async Task RunAsync_LeftoverFolderNotRemovable_WorkCommittedFolderKeptAndNamed()
+    {
+        // Arrange
+        _git.Failing.Add("worktree remove");
+        var job = await WorktreeJobAsync();
+        Directory.CreateDirectory(WorktreePath(job));
+        await File.WriteAllTextAsync(Path.Join(WorktreePath(job), ".git"), "gitdir: elsewhere\n", TestContext.Current.CancellationToken);
+
+        // Act
+        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+
+        // Assert
+        new { Body = Body(reply), Committed = Ran("commit"), Folder = Directory.Exists(WorktreePath(job)), Model = ModelCalls() }.Should().BeEquivalentTo(new
+        {
+            Body = "git_error: worktree_add (fatal: worktree remove failed)\nworktree kept at " + WorktreePath(job) + "\n",
+            Committed = true,
+            Folder = true,
             Model = 0,
         });
     }
@@ -257,7 +281,7 @@ public sealed class WorktreeFailureTests : IDisposable
 
     // Row 8: a git command that hangs is abandoned by the process runner after 2 minutes and counts as that step failing (AC-14).
     [Theory]
-    [InlineData("worktree add", "git_error: worktree_add\n")]
+    [InlineData("worktree add", "git_error: worktree_add (git worktree add failed)\n")]
     [InlineData("commit", "kept at")]
     [InlineData("push", "not pushed: push")]
     public async Task RunAsync_GitStepTimesOut_TreatedAsThatStepFailing(string step, string bodyPart)

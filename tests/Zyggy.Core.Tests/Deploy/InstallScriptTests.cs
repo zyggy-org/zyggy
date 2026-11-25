@@ -256,6 +256,24 @@ public sealed partial class InstallScriptTests
         DeployAssets.Lines(Code).Count(l => l.TrimStart().StartsWith("Stop-Node ", StringComparison.Ordinal)).Should().Be(2, "the uninstall branch and the upgrade both stop through it");
     }
 
+    // AC-25 (spec 61 slice 8): the task's node watches its wrapper and stops with it; the stop helper reaches the node itself through
+    // `zyggy node stop` before the wait-then-force fallback (2026-11-24: a node survived Stop-ScheduledTask and kept the checkout).
+    [Fact]
+    public void Script_TaskActionPassesExitWithParentAndTheStopHelperCallsNodeStopBeforeTheFallback()
+    {
+        // Act
+        string arguments = string.Join("\n", DeployAssets.Lines(Code).Where(l => l.Contains("-NoProfile", StringComparison.Ordinal)));
+        string helper = Regex.Match(Code, @"function Stop-Node\b.*?\n\}", RegexOptions.Singleline).Value;
+        int task = helper.IndexOf("Stop-ScheduledTask", StringComparison.Ordinal);
+        int nodeStop = helper.IndexOf("@('node', 'stop', '--config', $NodeJson)", StringComparison.Ordinal);
+        int fallback = helper.IndexOf("Stop-NodeProcesses", StringComparison.Ordinal);
+
+        // Assert
+        arguments.Should().Contain("zyggy-node.exe' --exit-with-parent --config");
+        (task >= 0, nodeStop > task, fallback > nodeStop).Should().Be((true, true, true), helper);
+        helper.Should().Contain("Invoke-Native $zyggyExe");
+    }
+
     [Fact]
     public void Script_NativeOutputIsReadThroughOneHelperThatNeverTurnsStderrIntoATerminatingError()
     {
@@ -269,7 +287,7 @@ public sealed partial class InstallScriptTests
         helper.Should().NotBeEmpty("native output is read in one place");
         helper.Should().Contain("$ErrorActionPreference = 'Continue'").And.Contain("2>&1").And.Contain("Out-String");
         mergesOutsideHelper.Should().BeEmpty("no other line merges or discards a native command's stderr");
-        DeployAssets.Lines(Code).Count(l => l.Contains("Invoke-Native ", StringComparison.Ordinal) && !l.TrimStart().StartsWith("function", StringComparison.Ordinal)).Should().Be(3, "git --version, setup and status");
+        DeployAssets.Lines(Code).Count(l => l.Contains("Invoke-Native ", StringComparison.Ordinal) && !l.TrimStart().StartsWith("function", StringComparison.Ordinal)).Should().Be(4, "git --version, setup, status and node stop (spec 61 slice 8)");
     }
 
     [Fact]

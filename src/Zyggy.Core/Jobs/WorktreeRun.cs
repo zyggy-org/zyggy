@@ -106,27 +106,131 @@ internal sealed class WorktreeRun(GitClient git)
     private static string? FirstLine(string? text) =>
         text?.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0);
 
+    /// <summary>Git's first error line (<c>fatal:</c> / <c>error:</c>; git prints progress lines such as <c>Preparing worktree</c> first), else its first line.</summary>
+    internal static string? ErrorLine(string? text) =>
+        text?.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.StartsWith("fatal:", StringComparison.Ordinal) || l.StartsWith("error:", StringComparison.Ordinal))
+        ?? FirstLine(text);
+
     private async Task<PrepareResult> AddAsync(string project, string worktree, string jobId, string baseSha, bool fetchFailed, string? defaultBranch, CancellationToken ct)
     {
-        // An interrupted run of the same job: its folder goes, its branch stays (spec 16 step 3).
-        try
+        // Spec 61 §5: an earlier run of the same job id left its folder. When it is this project's worktree on zyggy/<id>, its uncommitted
+        // work is committed there first, then the folder goes through git; the branch stays, so this run starts from it. Any other folder
+        // (no worktree, another repository's, another checkout) and anything that fails keeps the folder and says why; nothing is deleted.
+        if (Directory.Exists(worktree) && await RecoverAsync(project, worktree, jobId, ct).ConfigureAwait(false) is { } why)
         {
-            if (Directory.Exists(worktree))
-            {
-                Directory.Delete(worktree, recursive: true);
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return new PrepareResult.Failed("worktree_add", fetchFailed);
+            return new PrepareResult.Failed("worktree_add", fetchFailed, why) { KeptAt = worktree };
         }
 
         await git.WorktreePruneAsync(project, ct).ConfigureAwait(false);
         var branch = BranchFor(jobId);
         var existing = await git.ResolveRefAsync(project, "refs/heads/" + branch, ct).ConfigureAwait(false);
         var added = await git.WorktreeAddAsync(project, worktree, branch, existing is null ? baseSha : null, ct).ConfigureAwait(false);
-        return added.Succeeded ? new PrepareResult.Prepared(baseSha, fetchFailed, defaultBranch) : new PrepareResult.Failed("worktree_add", fetchFailed);
+        return added.Succeeded
+            ? new PrepareResult.Prepared(baseSha, fetchFailed, defaultBranch)
+            : new PrepareResult.Failed("worktree_add", fetchFailed, ErrorLine(added.Stderr) ?? ErrorLine(added.Stdout) ?? "git worktree add failed")
+            {
+                KeptAt = Directory.Exists(worktree) ? worktree : null,
+            };
     }
+
+    /// <summary>The message a recovered leftover's commit carries (spec 61 §5).</summary>
+    public static string RecoveredMessage(string jobId) => "zyggy job " + jobId + " (recovered)\n";
+
+    /// <summary>Whether <paramref name="folder"/> is a worktree of the repository at <paramref name="project"/> (same common git directory).</summary>
+    public async Task<bool> IsWorktreeOfAsync(string project, string folder, CancellationToken ct)
+    {
+        if (!File.Exists(Path.Join(folder, ".git")))
+        {
+            return false;
+        }
+
+        string? mine = await CommonDirAsync(folder, ct).ConfigureAwait(false);
+        string? theirs = await CommonDirAsync(project, ct).ConfigureAwait(false);
+        return mine is not null && theirs is not null && SamePath(mine, theirs);
+    }
+
+    /// <summary>The absolute common git directory of the repository <paramref name="repository"/> belongs to; <see langword="null"/> when git does not say.</summary>
+    public async Task<string?> CommonDirAsync(string repository, CancellationToken ct)
+    {
+        var result = await git.RunAsync(repository, ["rev-parse", "--path-format=absolute", "--git-common-dir"], null, ct).ConfigureAwait(false);
+        return result.Succeeded && result.Stdout.Trim() is { Length: > 0 } dir ? dir : null;
+    }
+
+    /// <summary>
+    /// Commits what <paramref name="worktree"/> holds uncommitted on its branch (<see cref="RecoveredMessage"/>); <see langword="null"/> when
+    /// nothing was left uncommitted, else why not (git's first line).
+    /// </summary>
+    public async Task<string?> CommitLeftoverAsync(string worktree, string jobId, CancellationToken ct)
+    {
+        var status = await git.StatusPorcelainAsync(worktree, ct).ConfigureAwait(false);
+        if (!status.Succeeded)
+        {
+            return "status: " + (ErrorLine(status.Stderr) ?? "git status failed");
+        }
+
+        if (status.Stdout.Length == 0)
+        {
+            return null;
+        }
+
+        if (Recovery is null)
+        {
+            return "commit: no identity to commit with";
+        }
+
+        var add = await git.AddAllAsync(worktree, ct).ConfigureAwait(false);
+        var commit = add.Succeeded ? await git.CommitStagedAsync(worktree, RecoveredMessage(jobId), Recovery, ct).ConfigureAwait(false) : add;
+        return commit.Succeeded ? null : "commit: " + (ErrorLine(commit.Stderr) ?? ErrorLine(commit.Stdout) ?? "git commit failed");
+    }
+
+    /// <summary>The identity of a recovery commit (the node's, as Finish's); without one, uncommitted leftover work is kept, never committed.</summary>
+    public GitIdentity? Recovery { get; init; }
+
+    /// <summary>
+    /// Why <paramref name="folder"/> must be kept rather than committed or removed (spec 61 §5: only a worktree of
+    /// <paramref name="project"/> on its own <c>zyggy/&lt;id&gt;</c> is ever committed, pushed or deleted); <see langword="null"/> when it is one.
+    /// </summary>
+    public async Task<string?> NotOursAsync(string project, string folder, string jobId, CancellationToken ct)
+    {
+        if (!File.Exists(Path.Join(folder, ".git")))
+        {
+            return "not a git worktree";
+        }
+
+        if (!await IsWorktreeOfAsync(project, folder, ct).ConfigureAwait(false))
+        {
+            return "not a worktree of " + project;
+        }
+
+        string branch = BranchFor(jobId);
+        var head = await git.RunAsync(folder, ["symbolic-ref", "-q", "HEAD"], null, ct).ConfigureAwait(false);
+        return head.Succeeded && head.Stdout.Trim() == "refs/heads/" + branch
+            ? null
+            : "checked out " + (head.Succeeded ? head.Stdout.Trim() : "a detached HEAD") + ", not " + branch;
+    }
+
+    private async Task<string?> RecoverAsync(string project, string worktree, string jobId, CancellationToken ct)
+    {
+        // A folder we cannot prove is this job's own worktree is never committed in or deleted: it is kept and listed.
+        if (await NotOursAsync(project, worktree, jobId, ct).ConfigureAwait(false) is { } notOurs)
+        {
+            return notOurs;
+        }
+
+        if (await CommitLeftoverAsync(worktree, jobId, ct).ConfigureAwait(false) is { } notCommitted)
+        {
+            return notCommitted;
+        }
+
+        var removed = await git.WorktreeRemoveAsync(project, worktree, ct).ConfigureAwait(false);
+        return removed.Succeeded ? null : ErrorLine(removed.Stderr) ?? ErrorLine(removed.Stdout) ?? "git worktree remove failed";
+    }
+
+    private static bool SamePath(string a, string b) =>
+        string.Equals(
+            Path.GetFullPath(a).Replace('\\', '/').TrimEnd('/'),
+            Path.GetFullPath(b).Replace('\\', '/').TrimEnd('/'),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
     /// <summary>
     /// Commit, push when ahead, clean up — after every model run that started (done, failed or timeout). For a named job (spec 53) a
@@ -323,7 +427,11 @@ internal abstract record PrepareResult(bool FetchFailed)
     /// No worktree; the model must not start. <paramref name="Step"/> names the git step for the report body; <paramref name="Detail"/>,
     /// when given, follows it with git's own message (spec 59 slice 3).
     /// </summary>
-    public sealed record Failed(string Step, bool FetchFailed, string? Detail = null) : PrepareResult(FetchFailed);
+    public sealed record Failed(string Step, bool FetchFailed, string? Detail = null) : PrepareResult(FetchFailed)
+    {
+        /// <summary>Gets the leftover folder that was kept (spec 61 §5: <c>worktree kept at &lt;path&gt;</c>), or <see langword="null"/>.</summary>
+        public string? KeptAt { get; init; }
+    }
 
     /// <summary>
     /// The named branch must not be touched (spec 53), or the continued branch is not on the origin (spec 59 slice 6): <c>rejected</c> /

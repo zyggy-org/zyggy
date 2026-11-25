@@ -26,4 +26,10 @@ public enum EnvelopeType
 
     /// <summary><c>mandate</c>: what the owner pre-approved for one project on one machine (deliverable 18).</summary>
     Mandate,
+
+    /// <summary>
+    /// <c>withdrawal</c>: the job's sender, or Central, withdraws a job a machine claimed (deliverable 61). <c>in_reply_to</c> is the job
+    /// id, <c>to</c> the machine that claimed it; the body is empty or one line of 1–200 characters, data only.
+    /// </summary>
+    Withdrawal,
 }

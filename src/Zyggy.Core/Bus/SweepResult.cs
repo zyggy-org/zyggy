@@ -50,4 +50,13 @@ public sealed record SweepResult(IReadOnlyList<SweepAction> Actions, WriteFailed
 
     /// <summary>Gets the oldest <c>created</c> (or, for a file whose <c>created</c> cannot be read, adding-commit time) among the archived files; <see langword="null"/> when none was archived.</summary>
     public DateTimeOffset? OldestArchived { get; init; }
+
+    /// <summary>Spec 61 §3: the claims past their limit left in place because their machine's registry lists them under <c>running</c>.</summary>
+    internal IReadOnlyList<SweepWaiting> Waiting { get; init; } = [];
 }
+
+/// <summary>A claim past its limit the sweep waits for (spec 61 §3): its machine's registry lists the id under <c>running</c>.</summary>
+/// <param name="Id">The claimed job's id.</param>
+/// <param name="Machine">The machine that runs it.</param>
+/// <param name="LastSeen">That machine's registry <c>last_seen</c>, or <see langword="null"/> when the file has none.</param>
+internal sealed record SweepWaiting(EnvelopeId Id, MachineName Machine, DateTimeOffset? LastSeen);

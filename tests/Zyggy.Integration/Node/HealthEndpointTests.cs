@@ -42,7 +42,7 @@ public sealed class HealthEndpointTests
         document.RootElement.GetProperty("lastPollUtc").GetString().Should().MatchRegex(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$");
         document.RootElement.GetProperty("jobsRunning").GetInt32().Should().Be(0);
         document.RootElement.GetProperty("claudeAuthOk").GetBoolean().Should().BeTrue();
-        document.RootElement.EnumerateObject().Should().HaveCount(14);
+        document.RootElement.EnumerateObject().Should().HaveCount(16, "the §11 fields plus spec 61's pid and startedUtc");
         server.Addresses.Should().NotBeEmpty().And.AllSatisfy(a => new Uri(a).Host.Should().BeOneOf("127.0.0.1", "[::1]", "::1"));
         SecretSweep.AssertAbsent([body]);
     }

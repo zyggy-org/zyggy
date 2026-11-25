@@ -1,5 +1,6 @@
 using Zyggy.Core.Bus;
 using Zyggy.Core.Configuration;
+using Zyggy.Core.Processes;
 using Zyggy.Core.Registry;
 
 namespace Zyggy.Node;
@@ -23,6 +24,7 @@ public sealed partial class PollLoop : BackgroundService
     private readonly ClaudeAuthProbe _auth;
     private readonly DiscoveryLoop _discovery;
     private readonly ILogger<PollLoop> _log;
+    private readonly ModelProcessRecords? _leftovers;
     private Task? _authTask;
 
     internal PollLoop(
@@ -35,8 +37,10 @@ public sealed partial class PollLoop : BackgroundService
         HealthServer health,
         ClaudeAuthProbe auth,
         DiscoveryLoop discovery,
-        ILogger<PollLoop> log)
+        ILogger<PollLoop> log,
+        ModelProcessRecords? leftovers = null)
     {
+        _leftovers = leftovers;
         _listener = listener;
         _mode = mode;
         _status = status;
@@ -100,6 +104,10 @@ public sealed partial class PollLoop : BackgroundService
                     case BusStartupResult.KeyMissing:
                         LogRefusingToStart(_listener.StartupDetail ?? result.ToString());
                         break;
+                    case BusStartupResult.ListenerRunning when _listener.StartupDetail is { } holder:
+                        // Spec 61 §4: the holder's pid, start and version, and the remedy.
+                        LogRefusingToStartHeld(holder);
+                        break;
                     default:
                         LogRefusingToStart(result.ToString());
                         break;
@@ -109,6 +117,10 @@ public sealed partial class PollLoop : BackgroundService
                 return;
             }
 
+            // Spec 61 slice 8: only the listener that took the lock, before any claim is resumed, ends the model processes a killed node
+            // left running — never a refused second start, which would end the live runs of the node holding the lock.
+            // Only records of this checkout's previous listener, as that listener recorded itself, are acted on.
+            _leftovers?.EndLeftovers(_listener.Owner?.Previous);
             _authTask = _auth.RunAsync(stoppingToken);
             try
             {
@@ -150,6 +162,9 @@ public sealed partial class PollLoop : BackgroundService
 
     [LoggerMessage(Level = LogLevel.Error, Message = "refusing to start: {Condition} — see README \"Node: refused to start\"")]
     private partial void LogRefusingToStart(string condition);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "refusing to start: {Detail}")]
+    private partial void LogRefusingToStartHeld(string detail);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "refusing to start: {Condition} — see README \"Secrets: store unavailable\"")]
     private partial void LogRefusingToStartSecrets(string condition);

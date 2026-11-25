@@ -267,6 +267,8 @@ public static class ServiceCollectionExtensions
         {
             GitHubBusOptions options = sp.GetRequiredService<IOptions<GitHubBusOptions>>().Value;
             ILogger<BusListener> log = sp.GetService<ILoggerFactory>()?.CreateLogger<BusListener>() ?? NullLogger<BusListener>.Instance;
+            BusIdentity identity = options.Identity ?? throw Missing(nameof(GitHubBusOptions.Identity));
+            string? nodeDir = sp.GetService<IOptions<JobRunnerOptions>>()?.Value.NodeDir ?? sp.GetService<NodeConfiguration>()?.EffectiveNodeDir;
             return new BusListener(
                 sp.GetRequiredService<IBusProvider>(),
                 sp.GetRequiredService<BusRepository>(),
@@ -283,14 +285,34 @@ public static class ServiceCollectionExtensions
             {
                 Mandates = new MandateIntake(
                     sp.GetRequiredService<BusInventory>(),
-                    (options.Identity ?? throw Missing(nameof(GitHubBusOptions.Identity))).Machine,
+                    identity.Machine,
                     sp.GetService<NodeConfiguration>()?.Supervision.Enabled ?? true,
                     sp.GetRequiredService<TimeProvider>(),
                     log,
-                    sp.GetService<IOptions<JobRunnerOptions>>()?.Value.NodeDir ?? sp.GetService<NodeConfiguration>()?.EffectiveNodeDir),
+                    nodeDir),
                 Wake = sp.GetService<SupervisorWake>(),
+                Kept = string.IsNullOrEmpty(nodeDir) ? null : new KeptReports(nodeDir, identity.Tenant),
+                Done = string.IsNullOrEmpty(nodeDir) ? null : new ReportedDone(nodeDir, identity.Tenant),
+                Running = string.IsNullOrEmpty(nodeDir) ? null : new RunningJobs(nodeDir, identity.Tenant),
+                Withdrawals = sp.GetService<RunWithdrawals>(),
+                // Spec 61 §5: only the job runner's listener (the node) cleans its leftover worktrees.
+                Leftovers = string.IsNullOrEmpty(nodeDir) || sp.GetService<RunWithdrawals>() is null
+                    ? null
+                    : new LeftoverWorktrees(
+                        sp.GetRequiredService<GitClient>(),
+                        nodeDir,
+                        identity.Tenant,
+                        new GitIdentity("zyggy (" + identity.Machine.Value + ")", identity.Machine.Value + "@zyggy.org"),
+                        sp.GetService<ILoggerFactory>()?.CreateLogger<LeftoverWorktrees>() ?? NullLogger<LeftoverWorktrees>.Instance),
+                Owner = new ListenerOwner(
+                    options.CheckoutRoot ?? throw Missing(nameof(GitHubBusOptions.CheckoutRoot)),
+                    sp.GetRequiredService<IProcessTable>(),
+                    options.Version ?? InformationalVersion(),
+                    sp.GetRequiredService<TimeProvider>()),
             };
         });
+        // Spec 61 §4: the process table zyggy status and zyggy node stop check the listener against; tests substitute it.
+        services.TryAddSingleton<IProcessTable>(OsProcessTable.Instance);
         // Deliverable 08: the sender side. Resolving without a registered KeyId throws (the verb checks signWith first, as probe send does).
         services.TryAddSingleton(sp =>
         {
@@ -302,6 +324,14 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<TimeProvider>(),
                 log);
         });
+        // Spec 61 slice 5: the sender side of `zyggy withdraw`. Resolving without a registered KeyId throws (the verb checks signWith first).
+        services.TryAddSingleton(sp => new JobWithdrawer(
+            sp.GetRequiredService<BusRepository>(),
+            sp.GetRequiredService<BusInventory>(),
+            sp.GetRequiredService<EnvelopeSigner>(),
+            sp.GetRequiredService<KeyId>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetService<ILoggerFactory>()?.CreateLogger<JobWithdrawer>() ?? NullLogger<JobWithdrawer>.Instance));
         // Deliverable 12: the context sender. Resolving without a KeyId or the secret patterns throws (the verb checks both first — fail closed).
         services.TryAddSingleton(sp =>
         {
@@ -478,6 +508,21 @@ public static class ServiceCollectionExtensions
 
     private static InvalidOperationException Missing(string option) =>
         new($"GitHubBusOptions.{option} is not set: the bus has no default remote, identity or checkout (configure it from node.json).");
+
+    /// <summary>
+    /// Spec 61 slice 7: the one reader of the test hook <c>ZYGGY_BUS_API_BASE</c> (deliverable 04), for the CLI and the node — a loopback URL
+    /// rings the doorbell there, so a test can run <c>zyggy</c> or <c>zyggy-node</c> as a process without the network; any other value
+    /// (another host, not a URL) is ignored. Never a production override.
+    /// </summary>
+    internal static IServiceCollection AddBusApiBaseTestHook(this IServiceCollection services, IReadOnlyDictionary<string, string?> environment)
+    {
+        if (environment.TryGetValue("ZYGGY_BUS_API_BASE", out string? text) && Uri.TryCreate(text, UriKind.Absolute, out Uri? url) && url.IsLoopback)
+        {
+            services.Configure<GitHubBusOptions>(o => o.ApiBaseUri = url);
+        }
+
+        return services;
+    }
 
     /// <summary>The entry assembly's informational version without build metadata (the bus provider's User-Agent and <c>/health</c>'s <c>version</c>).</summary>
     internal static string InformationalVersion() =>

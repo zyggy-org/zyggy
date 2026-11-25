@@ -90,7 +90,16 @@ public sealed record EnvelopeTrace(EnvelopeId Id, TraceState State, MachineName?
     /// with the model the report names); <see langword="null"/> otherwise.
     /// </summary>
     public Envelope.Envelope? JobEnvelope { get; init; }
+
+    /// <summary>Gets the withdrawals that name the job and still wait for their machine (spec 61 slice 5), oldest first.</summary>
+    internal IReadOnlyList<PendingWithdrawal> Withdrawals { get; init; } = [];
 }
+
+/// <summary>A withdrawal waiting in a machine's <c>withdrawals/</c> (spec 61 slice 5), read leniently: the status lines name it, never act on it.</summary>
+/// <param name="Machine">The machine whose folder holds it (the one asked to stop the job).</param>
+/// <param name="From">Its writer, when readable.</param>
+/// <param name="Created">Its <c>created</c>, when readable.</param>
+internal sealed record PendingWithdrawal(MachineName Machine, MachineName? From, DateTimeOffset? Created);
 
 /// <summary>The tenant's bus at a glance.</summary>
 /// <param name="HeadSha">The checkout's <c>HEAD</c> at the time of the read.</param>
@@ -101,4 +110,7 @@ public sealed record InventoryReport(string? HeadSha, IReadOnlyList<MachineCount
 {
     /// <summary>Gets every report on the bus: the live <c>reports/</c> files plus the archived reports (spec 13 AC-25), the "of n" of <c>zyggy status</c>.</summary>
     public int ReportsTotal { get; init; }
+
+    /// <summary>Gets the withdrawals waiting in every machine's <c>withdrawals/</c> (spec 61 slice 5).</summary>
+    internal int PendingWithdrawals { get; init; }
 }

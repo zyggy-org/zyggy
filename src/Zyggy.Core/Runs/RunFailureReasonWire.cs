@@ -21,6 +21,7 @@ public static class RunFailureReasonWire
         RunFailureReason.BranchRefused => "branch_refused",
         RunFailureReason.CommandFailed => "command_failed",
         RunFailureReason.ModelUnavailable => "model_unavailable",
+        RunFailureReason.Withdrawn => "withdrawn",
         _ => throw new ArgumentOutOfRangeException(nameof(value)),
     };
 

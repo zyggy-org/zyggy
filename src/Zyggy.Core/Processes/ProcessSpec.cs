@@ -38,4 +38,10 @@ public sealed record ProcessSpec(string FileName, IReadOnlyList<string> Argument
 
     /// <summary>Capture cap for standard error in bytes.</summary>
     public int MaxStderrBytes { get; init; } = 64 * 1024;
+
+    /// <summary>
+    /// Spec 61 slice 8: called once with the started process (pid, name, start time) right after it started, before any output is read;
+    /// the node records its model processes through it. Internal: no new public surface. A callback that throws is ignored.
+    /// </summary>
+    internal Action<ProcessFacts>? OnStarted { get; init; }
 }

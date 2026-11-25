@@ -282,8 +282,9 @@ public sealed class WorktreeRoundTripTests : IAsyncLifetime
 
         // Assert
         var report = await SingleReportAsync(ct);
-        new { report.Report!.Status, report.Report.Reason, report.BodyText, report.Report.FilesChanged, ModelRan = File.Exists(CapturePath) }
-            .Should().BeEquivalentTo(new { Status = ReportStatus.Failed, Reason = "git_error", BodyText = "git_error: worktree_add\n", FilesChanged = Array.Empty<string>(), ModelRan = false });
+        // Spec 61 slice 9 (AC-28): the body carries git's first error line.
+        new { report.Report!.Status, report.Report.Reason, SaysWhy = report.BodyText.StartsWith("git_error: worktree_add (fatal: ", StringComparison.Ordinal), report.Report.FilesChanged, ModelRan = File.Exists(CapturePath) }
+            .Should().BeEquivalentTo(new { Status = ReportStatus.Failed, Reason = "git_error", SaysWhy = true, FilesChanged = Array.Empty<string>(), ModelRan = false }, report.BodyText);
     }
 
     [Fact]

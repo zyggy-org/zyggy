@@ -13,6 +13,7 @@ using Zyggy.Core.Git;
 using Zyggy.Core.Health;
 using Zyggy.Core.Jobs;
 using Zyggy.Core.Memory;
+using Zyggy.Core.Models;
 using Zyggy.Core.Processes;
 using Zyggy.Core.Registry;
 using Zyggy.Core.Setup;
@@ -31,6 +32,12 @@ public static class NodeHost
     private const string ConfigOption = "--config";
 
     private const string VersionOption = "--version";
+
+    /// <summary>Spec 61 slice 8: the node stops when the process that started it (the scheduled task's wrapper) ends.</summary>
+    private const string ExitWithParentOption = "--exit-with-parent";
+
+    /// <summary>Spec 61 slice 7: the test hook that moves <c>/health</c> off 4711 for a node run as a process by a test; never a <c>node.json</c> key.</summary>
+    private const string HealthPortVariable = "ZYGGY_NODE_HEALTH_PORT";
 
     /// <summary>The job runner's body prefix for a model run refused for authentication (spec 06 report mapping: <c>claude_error: auth</c>).</summary>
     private static ReadOnlySpan<byte> AuthFailurePrefix => "claude_error: auth"u8;
@@ -149,6 +156,32 @@ public static class NodeHost
         _ = builder.Services.AddSecretPatterns(environment);
         builder.Services.AddNodeServices(configuration);
 
+        // Spec 61 slice 7: two test hooks, so a test can run this binary as a process (zyggy node stop ends a real node): /health on the
+        // port in ZYGGY_NODE_HEALTH_PORT (a port only: the server binds loopback whatever the value), the doorbell at the bus API test hook
+        // (Core's one reader, loopback URLs only). Neither is a node.json key; never a production override.
+        if (environment.TryGetValue(HealthPortVariable, out string? portText)
+            && int.TryParse(portText, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int port)
+            && port is > 0 and <= 65535)
+        {
+            builder.Services.Configure<NodeHostOptions>(o => o.HealthPort = port);
+        }
+
+        builder.Services.AddBusApiBaseTestHook(environment);
+
+        // Spec 61 slice 8: the node records the model processes it starts (the CLI never registers this), and ends a killed node's
+        // leftovers at start; with --exit-with-parent it stops when the process that started it ends.
+        builder.Services.AddSingleton(sp => new ModelProcessRecords(
+            ModelProcessRecords.DirectoryFor(configuration.EffectiveNodeDir, configuration.Tenant),
+            sp.GetRequiredService<IOptions<ClaudeCodeOptions>>().Value.Path,
+            OsProcessTable.Instance,
+            sp.GetRequiredService<ILogger<ModelProcessRecords>>()));
+        if (args.Contains(ExitWithParentOption, StringComparer.Ordinal))
+        {
+            builder.Services.AddSingleton<IHostedService>(sp => new ParentExitService(
+                new ParentWatch(OsProcessTable.Instance, ParentProcess.Of, sp.GetRequiredService<TimeProvider>(), sp.GetRequiredService<ILogger<ParentWatch>>()),
+                sp.GetRequiredService<IHostApplicationLifetime>()));
+        }
+
         // Spec 55: the node looks at its own node.json while it runs and applies the five keys it may change without a restart.
         builder.Services.AddSettingsInUse(path);
         if (pickup is not null)
@@ -204,7 +237,8 @@ public static class NodeHost
             sp.GetRequiredService<HealthServer>(),
             sp.GetRequiredService<ClaudeAuthProbe>(),
             sp.GetRequiredService<DiscoveryLoop>(),
-            sp.GetRequiredService<ILogger<PollLoop>>()));
+            sp.GetRequiredService<ILogger<PollLoop>>(),
+            sp.GetService<ModelProcessRecords>()));
         // Spec 14: registered after the loop, which awaits its first scan before admitting any job (plan A1).
         builder.Services.AddSingleton<IHostedService>(sp => new DiscoveryTimer(
             sp.GetRequiredService<DiscoveryLoop>(),
@@ -268,6 +302,10 @@ public static class NodeHost
                 }
 
                 value = args[++i];
+            }
+            else if (string.Equals(arg, ExitWithParentOption, StringComparison.Ordinal))
+            {
+                // Spec 61 slice 8: read by Build; no value.
             }
             else if (arg.StartsWith(ConfigOption + "=", StringComparison.Ordinal))
             {
