@@ -791,15 +791,42 @@ public sealed partial class SourceHygieneTests
     [Fact]
     public void Src_NoRawCredentialPInvoke()
     {
-        // Act: spec 09 — the Credential Manager is reached through the package, never through a raw P/Invoke
-        string[] forbidden = ["CredRead", "CredWrite", "CredDelete", "CredEnumerate", "advapi32"];
+        // Act: spec 09 — the Credential Manager is reached through the package, never through a raw P/Invoke;
+        // spec 61 Decisions — the Windows API-set imports are allowed in src/**/ProcessTable.cs alone (the token-user query)
         var offenders = SourceFiles()
-            .Where(f => forbidden.Any(t => CommentLine().Replace(File.ReadAllText(f), string.Empty).Contains(t, StringComparison.Ordinal)))
             .Select(f => Path.GetRelativePath(RepoRoot(), f).Replace('\\', '/'))
+            .Where(f => IsRawCredentialPInvoke(f, File.ReadAllText(Path.Combine(RepoRoot(), f))))
             .ToList();
 
         // Assert
         offenders.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("src/Zyggy.Core/Processes/ProcessTable.cs", "[LibraryImport(\"api-ms-win-security-base-l1-1-0.dll\")]", false)]
+    [InlineData("src/Zyggy.Core/Processes/ProcessTable.cs", "[LibraryImport(\"api-ms-win-core-processthreads-l1-1-0.dll\")]", false)]
+    [InlineData("src/Zyggy.Core/Processes/ProcessTable.cs", "[LibraryImport(\"advapi32.dll\")]", true)]
+    [InlineData("src/Zyggy.Core/Processes/ProcessTable.cs", "CredRead(target)", true)]
+    [InlineData("src/Zyggy.Core/Processes/ParentProcess.cs", "[LibraryImport(\"api-ms-win-security-base-l1-1-0.dll\")]", true)]
+    [InlineData("src/Zyggy.Core/Secrets/Windows/Store.cs", "[LibraryImport(\"api-ms-win-security-credentials-l1-1-0.dll\")]", true)]
+    [InlineData("src/Zyggy.Core/Processes/MyProcessTable.cs", "[LibraryImport(\"api-ms-win-security-base-l1-1-0.dll\")]", true)]
+    [InlineData("src/Zyggy.Core/Processes/ProcessTable.cs", "// api-ms-win-security-base-l1-1-0 named in a comment only", false)]
+    public void IsRawCredentialPInvoke_ApiSetImports_AllowedInProcessTableOnly(string path, string text, bool refused)
+    {
+        // Act: spec 61 Decisions (ProcessTable) — API sets in ProcessTable.cs only; advapi32 and the Cred* calls refused everywhere
+        bool result = IsRawCredentialPInvoke(path, text);
+
+        // Assert
+        result.Should().Be(refused);
+    }
+
+    private static bool IsRawCredentialPInvoke(string relativePath, string text)
+    {
+        string code = CommentLine().Replace(text, string.Empty);
+        string[] forbidden = ["CredRead", "CredWrite", "CredDelete", "CredEnumerate", "advapi32"];
+        bool apiSetAllowed = relativePath.StartsWith("src/", StringComparison.Ordinal) && Path.GetFileName(relativePath) == "ProcessTable.cs";
+        return forbidden.Any(t => code.Contains(t, StringComparison.Ordinal))
+            || (!apiSetAllowed && code.Contains("api-ms-win-", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
