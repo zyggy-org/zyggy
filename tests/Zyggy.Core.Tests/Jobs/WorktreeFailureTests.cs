@@ -134,16 +134,17 @@ public sealed class WorktreeFailureTests : IDisposable
             .Should().BeEquivalentTo(new { Status = ReportStatus.Done, DiffRef = WorktreeGit.TipSha, Warnings = 1 });
     }
 
-    // Row 3: the node's commit fails → worktree and branch stay, no push.
+    // Row 3: the node's commit fails → worktree and branch stay; spec 62: git's line in the body, nothing committed by the model → no push.
     [Fact]
     public async Task RunAsync_CommitFails_FailedGitErrorWorktreeKeptNoPush()
     {
         // Arrange
         _git.Failing.Add("commit");
+        _git.Ahead = 0;
         var job = await WorktreeJobAsync();
 
         // Act
-        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+        var reply = await _h.RunAdvancingAsync(job);
 
         // Assert
         new
@@ -159,7 +160,7 @@ public sealed class WorktreeFailureTests : IDisposable
         {
             Status = ReportStatus.Failed,
             Reason = "git_error",
-            Body = "done\n\nworktree kept at " + WorktreePath(job) + ": commit\n",
+            Body = "done\n\ngit_error: commit (fatal: commit failed)\nworktree kept at " + WorktreePath(job) + "\n",
             DiffRef = (string?)null,
             Pushed = false,
             Removed = false,
@@ -291,7 +292,7 @@ public sealed class WorktreeFailureTests : IDisposable
         var job = await WorktreeJobAsync();
 
         // Act
-        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+        var reply = await _h.RunAdvancingAsync(job);
 
         // Assert
         new { reply.Status, reply.Reason, Part = Body(reply).Contains(bodyPart, StringComparison.Ordinal) }
@@ -329,7 +330,7 @@ public sealed class WorktreeFailureTests : IDisposable
         var job = await WorktreeJobAsync();
 
         // Act
-        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+        var reply = await _h.RunAdvancingAsync(job);
 
         // Assert
         ClosedReasons.Should().Contain(reply.Reason);

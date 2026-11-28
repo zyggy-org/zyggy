@@ -2,6 +2,7 @@ using Microsoft.Extensions.Time.Testing;
 
 using NSubstitute;
 
+using Zyggy.Core.Bus;
 using Zyggy.Core.Envelope;
 using Zyggy.Core.Git;
 using Zyggy.Core.Jobs;
@@ -75,6 +76,22 @@ internal sealed class JobRunnerHarness
 
     public JobRunner Build() =>
         new(Model, Policy, new GitClient(Processes, new GitClientOptions(), Clock), Processes, Registry, Microsoft.Extensions.Options.Options.Create(Options), ClockOverride ?? Clock, Log, Withdrawals);
+
+    /// <summary>
+    /// Runs <paramref name="job"/> while advancing <see cref="Clock"/> one second at a time until the run ends, so a wait on the runner's
+    /// clock (spec 62: Finish's 5-second retry wait) passes without real time.
+    /// </summary>
+    public async Task<JobReply> RunAdvancingAsync(Model job)
+    {
+        var run = Build().RunAsync(job, CancellationToken.None);
+        for (var tick = 0; tick < 600 && !run.IsCompleted; tick++)
+        {
+            Clock.Advance(TimeSpan.FromSeconds(1));
+            await Task.Delay(1, CancellationToken.None);
+        }
+
+        return await run;
+    }
 
     /// <summary>A signed job from central to the home laptop with <paramref name="fields"/>.</summary>
     public static async Task<Model> JobAsync(JobFields fields, string body = "Investigate 502.\n", EnvelopeId? id = null)

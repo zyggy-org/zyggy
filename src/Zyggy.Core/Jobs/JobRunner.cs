@@ -324,6 +324,12 @@ public sealed partial class JobRunner
             var named = string.IsNullOrEmpty(fields.Branch) ? null : fields.Branch;
             var outcome = await worktrees.FinishAsync(project, runDirectory, id, baseSha, identity, reply.Status, named, description, defaultBranch, fields.Base, ct)
                 .ConfigureAwait(false);
+            if (outcome.KeptWhy is { } keptWhy)
+            {
+                // Spec 62 §1.3: a folder Finish kept is listed for zyggy status, as Prepare and the clean-up list theirs.
+                LeftoverWorktrees.RecordKept(nodeDir, job.Header.Tenant, new KeptWorktree(id, runDirectory, keptWhy));
+            }
+
             reply = WithWorktree(id, reply, outcome);
             hasResultLines = outcome.ResultLines is not null;
             behindLine = outcome.BehindLine;
