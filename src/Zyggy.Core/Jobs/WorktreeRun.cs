@@ -256,29 +256,36 @@ internal sealed class WorktreeRun(GitClient git)
         CancellationToken ct)
     {
         var branch = BranchFor(jobId);
-        var status = await git.StatusPorcelainAsync(worktree, ct).ConfigureAwait(false);
+
+        // Spec 62 §1: each step that can end in "worktree kept" is tried once more after 5 s; a second failure keeps the folder.
+        var status = await TwiceAsync(() => git.StatusPorcelainAsync(worktree, ct), ct).ConfigureAwait(false);
         if (!status.Succeeded)
         {
-            return NotChanged(WorktreeOutcome.Kept(worktree, "status"), namedBranch, "worktree kept");
+            return await KeptAsync(project, worktree, branch, baseSha, "status", status, namedBranch, ct).ConfigureAwait(false);
         }
 
         if (status.Stdout.Length > 0)
         {
-            var add = await git.AddAllAsync(worktree, ct).ConfigureAwait(false);
+            var add = await TwiceAsync(() => git.AddAllAsync(worktree, ct), ct).ConfigureAwait(false);
             var commit = add.Succeeded
-                ? await git.CommitStagedAsync(worktree, CommitMessage(jobId, description), identity, ct).ConfigureAwait(false)
+                ? await TwiceAsync(() => git.CommitStagedAsync(worktree, CommitMessage(jobId, description), identity, ct), ct).ConfigureAwait(false)
                 : add;
             if (!commit.Succeeded)
             {
-                return NotChanged(WorktreeOutcome.Kept(worktree, "commit"), namedBranch, "worktree kept");
+                return await KeptAsync(project, worktree, branch, baseSha, "commit", commit, namedBranch, ct).ConfigureAwait(false);
             }
         }
 
-        var tip = await git.RevParseAsync(project, "refs/heads/" + branch, ct).ConfigureAwait(false);
-        var ahead = tip is null ? null : await git.CountAheadAsync(project, baseSha, tip, ct).ConfigureAwait(false);
-        if (tip is null || ahead is null)
+        var read = await ReadTipAsync(project, branch, baseSha, ct).ConfigureAwait(false);
+        if (read.Ahead is null)
         {
-            return NotChanged(WorktreeOutcome.Kept(worktree, "rev-parse"), namedBranch, "worktree kept");
+            await Task.Delay(RetryWait, git.Clock, ct).ConfigureAwait(false);
+            read = await ReadTipAsync(project, branch, baseSha, ct).ConfigureAwait(false);
+        }
+
+        if (read is not { Tip: { } tip, Ahead: { } ahead })
+        {
+            return await KeptAsync(project, worktree, branch, baseSha, "rev-parse", read.Result, namedBranch, ct).ConfigureAwait(false);
         }
 
         if (ahead == 0)
@@ -373,6 +380,67 @@ internal sealed class WorktreeRun(GitClient git)
         return new WorktreeOutcome(files, tip, string.Join('\n', lines), failedStep) { RemoveFailed = !removed };
     }
 
+    /// <summary>How long Finish waits before it tries a failed step once more (spec 62 §1, Q12).</summary>
+    internal static readonly TimeSpan RetryWait = TimeSpan.FromSeconds(5);
+
+    // Spec 62 §1: a failed step runs once more after RetryWait on the injected clock; no file (an index.lock or any other) is ever deleted.
+    private async Task<GitResult> TwiceAsync(Func<Task<GitResult>> step, CancellationToken ct)
+    {
+        var first = await step().ConfigureAwait(false);
+        if (first.Succeeded)
+        {
+            return first;
+        }
+
+        await Task.Delay(RetryWait, git.Clock, ct).ConfigureAwait(false);
+        return await step().ConfigureAwait(false);
+    }
+
+    // The tip of zyggy/<id> and how many commits it has past the run's start (the count Finish makes today); Result is git's last answer.
+    private async Task<TipRead> ReadTipAsync(string project, string branch, string baseSha, CancellationToken ct)
+    {
+        var tip = await git.RunAsync(project, ["rev-parse", "refs/heads/" + branch], null, ct).ConfigureAwait(false);
+        if (!tip.Succeeded || tip.Stdout.Trim() is not { Length: > 0 } sha)
+        {
+            return new TipRead(null, null, tip);
+        }
+
+        var count = await git.RunAsync(project, ["rev-list", "--count", baseSha + ".." + sha], null, ct).ConfigureAwait(false);
+        return count.Succeeded && int.TryParse(count.Stdout.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var ahead)
+            ? new TipRead(sha, ahead, count)
+            : new TipRead(sha, null, count);
+    }
+
+    private sealed record TipRead(string? Tip, int? Ahead, GitResult Result);
+
+    // Spec 62 §1.3: the step failed twice. The folder and the branch stay; what the model committed goes to zyggy/<id> when its tip is
+    // ahead of the start (never forced, never a named branch or base); the body names the step and git's first error line.
+    private async Task<WorktreeOutcome> KeptAsync(string project, string worktree, string branch, string baseSha, string step, GitResult failed, string? namedBranch, CancellationToken ct)
+    {
+        var why = ErrorLine(failed.Stderr) ?? ErrorLine(failed.Stdout) ?? "git " + step + " failed";
+        List<string> lines = ["git_error: " + step + " (" + why + ")", "worktree kept at " + worktree];
+        string? pushedTip = null;
+        if (step != "rev-parse" && await ReadTipAsync(project, branch, baseSha, ct).ConfigureAwait(false) is { Tip: { } tip, Ahead: > 0 })
+        {
+            var push = await git.ConfigGetAsync(project, "remote.origin.url", ct).ConfigureAwait(false) is null
+                ? null
+                : await git.PushBranchAsync(project, branch, ct).ConfigureAwait(false);
+            if (push is { Succeeded: true })
+            {
+                pushedTip = tip;
+                lines.Add("branch " + branch + " pushed at " + tip + " (without the uncommitted changes)");
+            }
+            else
+            {
+                var refused = push is null ? "no origin" : ErrorLine(push.Stderr) ?? ErrorLine(push.Stdout) ?? "git push failed";
+                lines.Add("branch " + branch + " kept locally, not pushed: push (" + refused + ")");
+            }
+        }
+
+        AddNotChanged(lines, namedBranch, "worktree kept");
+        return new WorktreeOutcome([], pushedTip, string.Join('\n', lines), step) { KeptWhy = step + ": " + why };
+    }
+
     // Spec 18: never a default branch (the merge kind, which may, is not built); never forced, so a moved base is refused by git itself.
     private async Task<string> PushToBaseAsync(string project, string branch, string baseBranch, string tip, CancellationToken ct)
     {
@@ -460,5 +528,6 @@ internal sealed record WorktreeOutcome(IReadOnlyList<string> FilesChanged, strin
     /// <summary>Gets the line <c>branch &lt;name&gt; is &lt;n&gt; commits behind origin/&lt;default&gt;</c> for a pushed named branch with n &gt; 0 (spec 53), else <see langword="null"/>.</summary>
     public string? BehindLine { get; init; }
 
-    public static WorktreeOutcome Kept(string worktree, string step) => new([], null, "worktree kept at " + worktree + ": " + step, step);
+    /// <summary>Gets why Finish kept the worktree folder (spec 62: <c>&lt;step&gt;: &lt;git's line&gt;</c>, for <c>kept-worktrees.txt</c>), or <see langword="null"/> when it did not.</summary>
+    public string? KeptWhy { get; init; }
 }

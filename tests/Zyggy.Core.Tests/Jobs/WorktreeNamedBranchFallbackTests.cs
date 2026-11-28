@@ -246,23 +246,25 @@ public sealed class WorktreeNamedBranchFallbackTests : IDisposable
             .Should().BeEquivalentTo(new { Status = status, Reason = reason, Start = WorktreeGit.BaseSha });
     }
 
-    // AC-11, AC-14: a failed node commit keeps the worktree and the branch, pushes nothing, and says the named branch is unchanged.
+    // AC-11, AC-14: a failed node commit keeps the worktree and the branch, pushes nothing, and says the named branch is unchanged
+    // (spec 62: with git's line; the model committed nothing here, so zyggy/<id> is not pushed either).
     [Fact]
     public async Task RunAsync_NamedRunCommitFails_WorktreeKeptNothingPushed()
     {
         // Arrange
         Arrange("commit-fails");
+        _git.Ahead = 0;
         var job = await NamedJobAsync();
 
         // Act
-        var reply = await _h.Build().RunAsync(job, CancellationToken.None);
+        var reply = await _h.RunAdvancingAsync(job);
 
         // Assert
         new { reply.Status, reply.Reason, Body = Body(reply), Pushed = Git("push").Count, Removed = Git("worktree").Count(c => c.Arguments.Contains("remove")) }.Should().BeEquivalentTo(new
         {
             Status = ReportStatus.Failed,
             Reason = "git_error",
-            Body = "done\n\nworktree kept at " + WorktreePath(job) + ": commit\nbranch " + Name + " not changed: worktree kept\n",
+            Body = "done\n\ngit_error: commit (fatal: commit failed)\nworktree kept at " + WorktreePath(job) + "\nbranch " + Name + " not changed: worktree kept\n",
             Pushed = 0,
             Removed = 0,
         });
@@ -300,7 +302,7 @@ public sealed class WorktreeNamedBranchFallbackTests : IDisposable
         var job = await NamedJobAsync();
 
         // Act
-        await _h.Build().RunAsync(job, CancellationToken.None);
+        await _h.RunAdvancingAsync(job);
 
         // Assert
         _h.Processes.Calls.Where(c => c.FileName == "git").Should().NotContain(c =>
@@ -319,7 +321,7 @@ public sealed class WorktreeNamedBranchFallbackTests : IDisposable
         var push = "refs/heads/" + Branch(job) + ":" + NamedDestination;
 
         // Act
-        await _h.Build().RunAsync(job, CancellationToken.None);
+        await _h.RunAdvancingAsync(job);
 
         // Assert
         _h.Processes.Calls.SelectMany(c => c.Arguments)
@@ -337,7 +339,7 @@ public sealed class WorktreeNamedBranchFallbackTests : IDisposable
         var job = await NamedJobAsync();
 
         // Act
-        await _h.Build().RunAsync(job, CancellationToken.None);
+        await _h.RunAdvancingAsync(job);
 
         // Assert
         PushedToNamed().Should().Be(row is "done-accepted" or "done-refused" or "fetch-fails-refused" or "fetch-fails-accepted");

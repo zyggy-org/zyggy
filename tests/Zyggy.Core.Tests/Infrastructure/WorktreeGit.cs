@@ -60,6 +60,12 @@ internal sealed class WorktreeGit
     /// <summary>Gets the worktree steps that fail: <c>fetch</c>, <c>worktree add</c>, <c>commit</c>, <c>push</c>, <c>worktree remove</c>.</summary>
     public HashSet<string> Failing { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Gets the steps that fail a given number of times before they succeed (spec 62: Finish's one retry). Beside the steps of
+    /// <see cref="Failing"/>: <c>add</c>, <c>status</c>, <c>rev-list</c> and <c>tip</c> (Finish reading <c>refs/heads/zyggy/&lt;id&gt;</c>).
+    /// </summary>
+    public Dictionary<string, int> FailTimes { get; } = new(StringComparer.Ordinal);
+
     /// <summary>Gets the steps whose git process times out (the runner's kill after <see cref="ProcessSpec.Timeout"/>).</summary>
     public HashSet<string> TimingOut { get; } = new(StringComparer.Ordinal);
 
@@ -77,6 +83,7 @@ internal sealed class WorktreeGit
     {
         "worktree" when Has(spec, "add") => "worktree add",
         "worktree" when Has(spec, "remove") => "worktree remove",
+        "rev-parse" when spec.Arguments.Count == 2 && spec.Arguments[^1].StartsWith("refs/heads/zyggy/", StringComparison.Ordinal) => "tip",
         var sub => sub,
     };
 
@@ -86,6 +93,12 @@ internal sealed class WorktreeGit
         if (TimingOut.Contains(step))
         {
             return TimedOut();
+        }
+
+        if (FailTimes.TryGetValue(step, out var left) && left > 0)
+        {
+            FailTimes[step] = left - 1;
+            return RecordingProcessRunner.Fail(128, "fatal: " + step + " failed");
         }
 
         if (Failing.Contains(step))
