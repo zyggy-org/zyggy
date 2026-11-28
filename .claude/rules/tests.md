@@ -5,6 +5,8 @@ paths:
 ---
 # Test Conventions — Zyggy
 
+The order in which tests are written, what an agent may not do to make them pass, and which tests are worth writing are in `.claude/rules/testing-for-agents.md` (T-1 to T-13, R-1 to R-7) and `build-slice`; the test levels are in `CLAUDE.md` § Project settings § Test levels. This file holds the project's own conventions: frameworks, layout, naming, structure, golden files and the integration harness.
+
 ## Frameworks & Tooling
 - **xUnit** (`[Fact]` / `[Theory]` + `[InlineData]` / `[MemberData]`) with **FluentAssertions** for assertions and **NSubstitute** for substitutes at seams — as the founding spec §9 prescribes. No MSTest, no NUnit, no Moq.
 - Test projects are plain `Microsoft.NET.Test.Sdk` projects: run with `dotnet test`, filter with `--filter "FullyQualifiedName~<Class>"` or `--filter "FullyQualifiedName~<Class>.<Method>"`.
@@ -89,7 +91,7 @@ public sealed class JobRunnerTests
 ### Key rules
 - **Substitute only at seams** (interfaces). No real process, network, file-system bus, or secret store in a unit test. A temp directory for a project lock or a registry scan is fine.
 - Prefer small builder helpers (`TestEnvelopes.Job(...)`) over big constructor setups.
-- Every bugfix starts with a **failing regression test**.
+- Every bugfix starts with a **failing regression test** (`bugfix` skill).
 - **One Act per test.** If a test needs multiple acts, split it.
 - Never assert on log text as the only evidence; assert on the returned state, report, or file.
 
@@ -105,13 +107,13 @@ tests/golden/<case>.canonical   # exact bytes Canonicalize must produce
 tests/golden/<case>.sig         # expected HMAC (64 lowercase hex, no newline) for key ids acme/1 and acme/2 and the two test secrets fixed by _specs/03-envelope-signing.md
 ```
 
-A `[Theory]` with `[MemberData]` enumerates the folder; a new case is added in RED for any canonicalisation or field change. Golden files are copied to output (`<None Include="../golden/**" CopyToOutputDirectory="PreserveNewest" />`).
+A `[Theory]` with `[MemberData]` enumerates the folder; a new case is added, and seen failing, before any canonicalisation or field change. Golden files are copied to output (`<None Include="../golden/**" CopyToOutputDirectory="PreserveNewest" />`).
 
 ---
 
 ## Integration tests — `tests/Zyggy.Integration/`
 
-Test the **real edges**: `GitClient` over `Process` against a local bare repo, `ClaudeProcess` running `tools/fake-claude`, the Node poll loop round trip, CLI verbs, Hub tools over stdio. Business-logic coverage stays in unit tests; integration tests verify that the layers work together and that the bus on disk matches §4.
+Test the **real edges**: `GitClient` over `Process` against a local bare repo, `ClaudeProcess` running `tools/fake-claude`, the Node poll loop round trip, CLI verbs, Hub tools over stdio. Every slice's outer test is an integration test here, written first (`testing-for-agents.md` § The order); unit tests cover the branching logic it cannot reach cheaply, and the bus on disk must match §4.
 
 ### Principles
 - **Keep the host as real as possible.** Build services through the production DI extension methods; swap only the `claude` path, the bus remote (bare repo) and the secret store (in-memory).
@@ -135,7 +137,7 @@ Full harness description and examples: `.claude/skills/integration-testing/SKILL
 | **Golden** | Canonical form + signature fixtures | Every build |
 | **Integration** | Real git + fake claude against a bare repo | Every build (slower; filterable) |
 | **Gate** | One scripted round trip per §12 phase | Every build once the phase ships |
-| **Manual** | Real Central VM / laptop install, real `claude` | Phase gate demo by the user |
+| **Manual** | Real Central VM / laptop install, real `claude` | Owner-run checks at release (`ship` skill) |
 
 ## Run commands
 

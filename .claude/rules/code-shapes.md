@@ -1,6 +1,11 @@
-# Build Feature — Reference Catalog of Zyggy code shapes
+---
+description: "Reference catalog of Zyggy code shapes: seam + fake + real, PollState, the closed reason enum, options binding, the Node hosted service, a CLI verb, a Hub MCP tool. Loads when editing source files; test shapes are in tests.md."
+paths:
+  - "src/**"
+---
+# Zyggy code shapes — reference catalog
 
-Not sequential steps. Pick what the current slice touches.
+Not sequential steps: look up the shape a slice's Scaffold row needs. The order of work is `build-slice`'s; the test shapes (unit, golden file, integration) are in `.claude/rules/tests.md`; the design rules are in `CLAUDE.md` § Design rules.
 
 ### Seam interface + fake + real implementation (`Zyggy.Core`)
 
@@ -38,7 +43,7 @@ public static class PollPolicy
 }
 ```
 
-Test with a `FakeTimeProvider` (`Microsoft.Extensions.TimeProvider.Testing`) and a `Theory` over status codes / rate-limit headers. The HTTP call lives in a thin `GitHubPoller` that takes `HttpClient` — test it with a mocked `HttpMessageHandler`.
+Test with a `FakeTimeProvider` (`Microsoft.Extensions.TimeProvider.Testing`) and a `Theory` over status codes / rate-limit headers. The HTTP call lives in a thin `GitHubPoller` that takes `HttpClient`: test it with a mocked `HttpMessageHandler`.
 
 ### Closed reason enum + report assembly
 
@@ -68,42 +73,8 @@ Keep the loop body in a testable method that takes the current `PollState` and r
 
 ### CLI verb (`Zyggy.Cli`, System.CommandLine)
 
-One file per verb under `src/Zyggy.Cli/Commands/<Verb>Command.cs`; the verb builds an envelope or reads the bus through `Zyggy.Core` types only. Exit code 0 on success, non-zero with a one-line error otherwise. Test the handler method directly with fakes; one integration test invokes the built CLI against the bare repo.
+One file per verb under `src/Zyggy.Cli/Commands/<Verb>Command.cs`; the verb builds an envelope or reads the bus through `Zyggy.Core` types only. Exit code 0 on success, non-zero with a one-line error otherwise. The slice's integration test invokes the verb through its real entry point against the bare repo.
 
 ### Hub MCP tool (`Zyggy.Hub`, ModelContextProtocol SDK)
 
-One tool per method, attributes from the official C# SDK; input validated; `remember` refuses secret patterns before touching disk. Verify the SDK's current attribute names and hosting API with the context7 docs before writing — do not code from memory.
-
-### xUnit unit test (`tests/Zyggy.Core.Tests`, mirrors the source folder)
-
-```csharp
-namespace Zyggy.Core.Tests.Envelope;
-
-public sealed class EnvelopeSignerTests
-{
-    [Fact]
-    public void Verify_TamperedBody_ReturnsInvalid()
-    {
-        // Arrange
-        var signer = new EnvelopeSigner(new FakeSecretStore("k1", "secret"));
-        var envelope = Golden.Load("job-minimal.md") with { Body = "changed" };
-
-        // Act
-        var result = signer.Verify(envelope);
-
-        // Assert
-        result.Should().Be(SignatureResult.Invalid);
-    }
-}
-```
-
-Naming `<Method>_<Scenario>_<Expected>`, AAA, one Act, FluentAssertions, NSubstitute at seams only.
-
-### Golden-file test (`tests/golden/`)
-
-Each golden case is an envelope `.md` plus a sidecar with the expected canonical form and signature for a known key. A `[Theory]` with `[MemberData]` enumerates the folder. Adding a case is part of RED for any canonicalisation change.
-
-### Integration test (`tests/Zyggy.Integration`)
-
-Use the harness in `.claude/skills/integration-testing/SKILL.md`: a bare repo + working clone per test, `tools/fake-claude` on the path, real `GitClient`. Assert on files and commits in the bare repo, never on log text alone.
-
+One tool per method, attributes from the official C# SDK; input validated; `remember` refuses secret patterns before touching disk. Verify the SDK's current attribute names and hosting API in its documentation before writing; do not code from memory.
