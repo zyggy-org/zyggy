@@ -1,37 +1,30 @@
 ---
 name: new-feature
-description: "Take a Zyggy roadmap deliverable from backlog to a deployed release: project-manager hand-off, the write-spec skill for _specs/<NN>-<short-name>.md, the build-feature skill slice by slice (commit on the owner's approval), then the ship skill after the final approval."
-argument-hint: "Feature name plus any initial context, e.g. 'discovery registry — nodes publish what they can run'"
+description: "Take a new feature from a request to working slices: investigate, interview, spec, then build slice by slice. Use when the user asks for a new feature or new behavior."
+argument-hint: "Feature name plus any initial context, e.g. 'Subscriptions - user views and creates subscriptions'"
 ---
 
 # New Feature
 
-A roadmap deliverable goes from a backlog entry to a spec to working slices. The workflow is defined in `CLAUDE.md` § Delivery workflow; this file only orders the hand-offs. In conversation, name the feature by what it does, not by its number.
-
-**In a Zyggy job run** (`ZYGGY_JOB` set) the job's TASK replaces the owner's confirmations below (`CLAUDE.md` § Job runs): run every step the TASK covers without asking — including the fresh-session hand-off of step 3, which the job does in the same run — and end the job, work committed and pushed on its branch, at the first gate the TASK does not cover.
+A new feature goes from a request to working slices. The workflow is defined in `.claude/rules/spec-driven.md`; this file only orders the hand-offs.
 
 ## Input
 
-A feature name and, optionally, context. Resolve where it stands:
-
-- No entry in `_plans/ROADMAP.md` → step 1.
-- Entry exists, no `_specs/<NN>-<short-name>.md` → step 2.
-- Spec exists, not approved or with Open questions → step 2 (update it).
-- Spec approved → step 3; the next slice is the first one in its Slices without a "done" line in Status.
-- Old-style spec with a `_plans/<NN>-*.md` plan from before 2026-11-12 → finish it with that plan as history, or convert the spec with `write-spec` first if work remains; ask the owner which.
+A feature name and, optionally, user stories or acceptance criteria. If `_specs/<FeatureName>/spec.md` already exists, read it and its Status first and continue from the phase it shows.
 
 ## Workflow
 
-Before step 1, say in plain words what the next feature is and confirm with the owner before starting the chain.
+1. **Investigate**: use the `investigate` skill. It first creates the spec's own branch (`.claude/rules/spec-driven.md` § One branch per spec), then writes the findings and the questions they raise into `_specs/<FeatureName>/spec.md`. No code.
+2. **Interview and specify**: use the `write-spec` skill. It interviews the user, writes the rest of the spec, checks it against the code, has the `spec-critic` agent read it only when the user asks (one pass; with no report, the spec's Status says so and the work goes on), and stops for approval. It produces `spec.md` with its Scaffold (per slice the files to create, modify or delete, and the DI registrations and wiring), presented for one approval. No code. The approved spec becomes the first commit on the branch, by the user or by Claude when asked; a draft pull request can then be opened.
+3. **Build**: once the spec is approved, each slice starts only on the user's go for it, in a fresh session (`/clear` or a new conversation) with the `build-slice` skill. It builds exactly that slice from its Scaffold rows, test-driven, ends on the slice gate green and answers with the record (each acceptance criterion with its test and the failure seen when it was red, what differs, how to try it), and stops. After the slice gate no agent reviews the slice: the slice gate and the user's check verify it; a slice review agent left in a project by an older kit runs only when the user asks for it, never by the build on its own. It does not commit unless the user asks for it.
+4. **Approve and repeat**: the user reads the record, tries the slice, reviews the diff and accepts it; committing is the user's choice, and the user sets the slice's state in the spec. Then the next slice is built on the user's go, again in a fresh session.
+5. **Review**: after the last slice, the final review, once for the whole feature:
+   - the feature gate: `node .claude/hooks/verify.mjs --feature`, every Verification Command and every integration test, green; red: the failing command and why, and stop;
+   - the code analysis the project declares in `CLAUDE.md` § Project settings (the **Analysis** line, for .NET the build with the built-in analyzers and `dotnet format --verify-no-changes`; its findings on the feature's changed code fixed with the **Fix analysis**, test first where a fix touches logic, never by weakening, disabling or suppressing a rule, then the feature gate again); findings it cannot fix go to `artifacts/<FeatureName>-analysis.md`, one line each, for the final review report; when no analysis is declared, say "no code analysis declared" and skip it; when it cannot run, say what is missing and why;
+   - the `spec-reviewer` agent, given only the spec path, the diff range and that analysis file, compares the full diff with the spec; it answers with one line and writes its report to `artifacts/<FeatureName>-reviewer-report.md`: read the file and relay the report to the user as it is; when a slice is ⚠️, `security-review` runs once with it over the whole diff, never per slice;
+   - an end-to-end browser test is optional, at most once per feature.
+   The user reviews that report, then pushes the spec's branch and completes the pull request; the spec's Status gets "<date>: shipped".
 
-1. **Backlog** — invoke the `project-manager` subagent. It reconciles `_plans/ROADMAP.md` with the repo, confirms the deliverable is schedulable, and returns a hand-off brief (founding-spec sections, design rules, definition of done, ⚠️ risk areas). Stop for the owner's roadmap approval when the roadmap changed.
-2. **Spec** — use the `write-spec` skill with the hand-off brief: interview the owner, read the reference feature and the founding-spec sections, write `_specs/<NN>-<short-name>.md`, and stop for approval. No code, no plan file.
-3. **Build** — once the spec is approved, the owner starts a fresh session (`/clear`) and the `build-feature` skill builds the next slice: test first, proven by the Verification Commands and the slice's acceptance criteria, one Status line, then it stops with the slice's review check and a proposed commit message.
-4. **Approve and repeat** — the owner tries the review check, reviews the diff and approves; Claude commits; then the next slice. Other stops are in `CLAUDE.md` § Human Review Gates: before a ⚠️ slice and when the spec proves wrong.
-5. **Review** — after the last slice, the `spec-reviewer` agent, with no context from the build session, compares the full diff with the spec and reports each acceptance criterion as met or not met. The owner reads that report and approves the release.
-6. **Release** — on that approval, the `ship` skill ships it without further questions: merge, tag, GitHub release, instance pin, Central and laptop upgraded, live checks, roadmap entry to Done. Only a red step or a step Claude cannot do comes back to the owner.
+Phases 1 and 2 run in one conversation, because the interview builds on the findings. Phase 3 does not continue in it: the spec, not the conversation, has to carry the context.
 
-## See also
-
-- `.claude/templates/spec-template.md` — format of a spec
-- `CLAUDE.md` — Project settings, Spec Gate, Workflow rules, Human Review Gates (Vertical slices: `write-spec` skill)
+When the spec has to change after approval, use the `amend-spec` skill.

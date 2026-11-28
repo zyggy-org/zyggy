@@ -1,12 +1,12 @@
 ---
 name: ship
-description: "Use right after the owner approves a finished feature (last slice + reviewer report) or a bugfix, or says 'release'. Ships it end to end without further questions: push, PR to main with CI green, merge, version tag, tag CI green, package and publish the GitHub release, instance pin, upgrade Central and this laptop, run the spec's owner-run checks, record the evidence. Stops only on a red step or a step it cannot do, and then hands the owner exact commands."
+description: "Use right after the owner approves a finished feature (the final review's report) or a bugfix, or says 'release'. Ships it end to end without further questions: push, PR to main with CI green, merge, version tag, tag CI green, package and publish the GitHub release, instance pin, upgrade Central and this laptop, run the spec's owner-run checks, record the evidence. Stops only on a red step or a step it cannot do, and then hands the owner exact commands."
 argument-hint: "What is being released, e.g. 'the discovery registry' or 'fix for context stdin'"
 ---
 
 # Ship
 
-The owner's approval is the go for the whole chain (`CLAUDE.md` § Release after approval). Do every step you can yourself, in order, without asking again. Stop at the first red step, report it with its output, and fix it through the normal workflow (`bugfix` agent, then a PATCH release). Hand the owner a step only when you cannot do it (a refused command, a missing permission, branch protection, another machine), with the exact commands prefixed by machine and user (`[central/<vm-admin>]`, `[home-laptop/user PowerShell]`), then continue after they confirm.
+The release is the step after the spec-driven workflow's final review (`.claude/rules/spec-driven.md` § The phases, phase 6). The owner's approval of that review's report, or of a bugfix, is the explicit request to push and release (`CLAUDE.md` § Project settings, Release after approval). Do every step you can yourself, in order, without asking again. Stop at the first red step, report it with its output, and fix it through the normal workflow (the `bugfix` skill, then a PATCH release). Hand the owner a step only when you cannot do it (a refused command, a missing permission, branch protection, another machine), with the exact commands prefixed by machine and user (`[central/<vm-admin>]`, `[home-laptop/user PowerShell]`), then continue after they confirm.
 
 **In a Zyggy job run** (`ZYGGY_JOB` set; `CLAUDE.md` § Job runs) the job's TASK asking for the release is the owner's approval, and every step below runs without a prompt. There is no one to confirm a hand-off: put each step you cannot do into the REPORT as exact commands and carry on with the steps after it that do not depend on it. Never stop or restart the Node running the job; upgrade this machine last, started detached after the report (step 5), and the REPORT says it is scheduled.
 
@@ -20,8 +20,8 @@ This repository is public: release notes, scripts and commits carry placeholders
 
 ## 0. Preconditions
 
-- Every slice committed on `feature/<NN>-<short-name>` (or the fix on `fix/<short-name>`), working tree clean, the Verification Commands green.
-- Feature: the after-last-slice reviewer reported every acceptance criterion met (or the owner accepted the exceptions) and the owner approved.
+- Every slice committed on the spec's branch (`feature/<NN>-<short-name>`, the fix on `fix/<short-name>`, or the job's `zyggy/<job-id>` branch), working tree clean, the feature gate green (`node .claude/hooks/verify.mjs --feature`).
+- Feature: the final review ran (`new-feature` step 5): the code analysis clean on the changed code, `spec-reviewer` reported every acceptance criterion met (or the owner accepted the exceptions), and the owner approved.
 - `git log origin/main` — another session may have moved `main`; merge it into the branch and re-run the Verification Commands if it did.
 
 ## 1. Merge
@@ -32,9 +32,11 @@ This repository is public: release notes, scripts and commits carry placeholders
 
 ## 2. Tag
 
-1. `git switch main && git pull --ff-only`.
+The guard (`.claude/hooks/guard.mjs`) refuses every `git commit` and `git push` while `main` is checked out, so the tag is made on `origin/main` without switching to it:
+
+1. `git fetch origin --tags`, still on the merged branch (or `docs/release-v<x.y.z>`, created from `origin/main`).
 2. Next version from the latest `v*` tag, SemVer pre-1.0: a deliverable → MINOR, a fix → PATCH. Say which and why in the report.
-3. `git tag -a v<x.y.z> -m "Release v<x.y.z> — <feature in words>"` and `git push origin v<x.y.z>`.
+3. `git tag -a v<x.y.z> origin/main -m "Release v<x.y.z> — <feature in words>"` and `git push origin v<x.y.z>`.
 4. Watch the tag's CI run (`gh run list --branch v<x.y.z>`, `gh run watch <id>`): both runners green, including the smoke step. Copy the `instance/zyggy.json` notice line the run prints.
 
 ## 3. Publish the GitHub release
@@ -59,6 +61,6 @@ Follow `zyggy-core/runbooks/install-node.md` "Upgrade" and the operating facts i
 ## 6. Prove it live and record
 
 1. Run the spec's owner-run checks you can run yourself (for example a `zyggy submit` round trip, `zyggy status`, a `discover --dry-run`), and quote the evidence.
-2. Ask the `project-manager` to flip the roadmap entry to Done.
-3. On a branch `docs/release-v<x.y.z>`: add a Status line to the spec (release version, tag CI run, Central and laptop versions, live-check evidence, what is left for the owner) plus the roadmap change; commit, push, PR, merge (a docs-only change runs no CI). Never push `main` directly.
-4. Report in plain words: version, what shipped, where it runs, the evidence, and anything handed to the owner — with the visual report (`CLAUDE.md` § Visual approval report): the release chain merge → tag → GitHub release → pin → Central → laptop with each step's state and evidence, and the machines now on the new version.
+2. Ask the `project-manager` agent to flip the roadmap entry to Done.
+3. On a branch `docs/release-v<x.y.z>` from `origin/main`: add "<date>: shipped" to the spec's Status with the release version, tag CI run, Central and laptop versions, live-check evidence and what is left for the owner, plus the roadmap change; commit, push, PR, merge (a docs-only change runs no CI). Never push `main` directly.
+4. Report in plain words: version, what shipped, where it runs, the evidence, and anything handed to the owner — with the approval report (`CLAUDE.md` § Project settings, Approval reports): the release chain merge → tag → GitHub release → pin → Central → laptop with each step's state and evidence, and the machines now on the new version.
