@@ -1,0 +1,14 @@
+# Zyggy backlog — open items from the retired plan files
+
+Owned by the project-manager agent, beside `_plans/ROADMAP.md`. On 2026-11-28 the `_plans/<NN>-*.md` plan files were removed: the spec-driven workflow (`.claude/rules/spec-driven.md`) has no plan files. Every unticked box in them (72 in 8 files) was checked against the code and the roadmap. Only the items below are still open; each one is owner-run or lives outside this repository, so none is a code task here. A new code task from them goes through `new-feature` or `bugfix`.
+
+| # | Item | From | Checked against | Why it is still open |
+|---|---|---|---|---|
+| B-1 | Zyggy helps about itself (40): the owner's evidence on Central — three questions (install a node, tune pickup, what is the Hub) answered with their `Sources:` line and the `zyggy --version` output (AC-19), nothing written to memory (AC-20) — then the roadmap entry to Done | plan 40, Step 5 and the final gate | `.github/workflows/ci.yml` ships the four product READMEs as `docs/` in the release (built); roadmap 40 still "In progress — only the owner's final gate remains" | owner-run on Central; never recorded |
+| B-2 | Archive offload (38): set the instance's `max_items_per_run` back to 20 if it is still lowered | roadmap 38, Status "Follow-up" | `src/Zyggy.Core/Memory/OffloadOptions.cs`: the code default is 20; the lowered value lives in the private instance repository's `instance/archive.json` | instance value, not visible from this repository |
+| B-3 | Work mail in Outlook (58): the `zyggy-core` and instance changes written down in `_plans/zyggy-core-notes/58-*.md` (the work-mail brief skill section and timer, the `security.md` send exception, the work-boundary rule line, the work-laptop hooks, the work-mail session settings) | `_plans/zyggy-core-notes/` (kept; `src/Zyggy.Core/Outlook/OutlookSessionSettings.cs` cites one of them) | the `zyggy` side is built (spec 58 slices 1–7); the notes say "not done here" | lives in `zyggy-core` and the instance; apply or confirm there, then delete the notes |
+| B-4 | Roadmap reconciliation: entry 41 (archive from any node) still reads "Spec", while `tests/Zyggy.Integration/Gates/P1_ArchiveFromNode.cs` exists and every box of its plan was ticked | plan 41 | the gate file and the `zyggy archive` verb exist | the project-manager reconciles the entry and its release |
+
+## Not carried over
+
+Closed by the owner's decision, so not open, though their evidence was never recorded: 06 (release items; `v0.9.0` was tagged with deliverable 10), 13 (AC-31, one real nightly dream reviewed), 35 (the per-run checks and the "Carried from 33" items), 36 and 36b (AC-11, the AC-28 sweep, the image post checks), 38 (AC-39 to AC-41), 39 (Step 9: indexing and offload of the Office items, 0002 §39 AC-24 to AC-26). The owner may reopen any of them as a new item here.

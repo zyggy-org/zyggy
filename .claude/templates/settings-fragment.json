@@ -1,16 +1,4 @@
 {
-  "permissions": {
-    "ask": [
-      "Bash(git commit)",
-      "Bash(git commit *)",
-      "Bash(git push)",
-      "Bash(git push *)",
-      "PowerShell(git commit)",
-      "PowerShell(git commit *)",
-      "PowerShell(git push)",
-      "PowerShell(git push *)"
-    ]
-  },
   "hooks": {
     "PreToolUse": [
       {

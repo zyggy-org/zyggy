@@ -1,73 +1,83 @@
 ---
 name: write-spec
-description: "Use when a new Zyggy deliverable, a risk-area change, or work that will span sessions needs a spec before any code (the Spec Gate in CLAUDE.md). Reads the founding-spec sections and the reference feature, challenges each founding-spec item, interviews the owner, and writes _specs/<NN>-<short-name>.md as a brief: goal, constraints, behavior, decisions, acceptance criteria with their checks, and an ordered list of Fake/Wire slices. Writes no code and no plan file."
-argument-hint: "The feature or change, e.g. 'discovery registry — nodes publish what they can run'"
+description: "Use after the investigate skill, when a new feature, a risk-area change or work that spans sessions needs a spec before any code. Interviews the user from the investigation's questions, then completes _specs/<FeatureName>/spec.md: behavior, the What happens diagram, acceptance criteria with their checks, ordered vertical slices and the Scaffold. Writes no code."
+argument-hint: "The feature, e.g. 'Subscriptions'"
 ---
 
 # Write Spec
 
-Produce `_specs/<NN>-<short-name>.md` and stop for the owner's approval. The spec is the only planning document (`CLAUDE.md` § The spec is the brief), so it must be complete enough that a fresh session can build from it without this conversation.
+Complete `_specs/<FeatureName>/spec.md`, its Scaffold included, and stop for the user's one approval of the spec. The spec is the planning document (`.claude/rules/spec-driven.md`), so it has to be complete enough that a fresh session can build from it without this conversation.
 
-This skill runs in the main conversation because it needs the owner's answers. Change no file other than the spec. Never edit the founding spec here; a conflict with it is an Open question (the main session may paste owner-approved wording afterwards, `CLAUDE.md` § Founding spec).
+This skill runs in the main conversation because it needs the user's answers. Change no file other than the spec.
 
-## Before writing
+## Before the interview
 
-1. **Look for an existing spec** with the same subject under `_specs/`. If one exists, read it and its Status, and ask whether the request updates it or is a new spec. Do not overwrite work in progress. When converting an older spec to this format, verify each statement it makes about the code before keeping it.
-2. **Read the roadmap entry** in `_plans/ROADMAP.md` (number, goal, dependencies, definition of done, risks) or the project-manager's hand-off brief.
-3. **Read the founding-spec sections** the entry names, plus always §9 design rules, §13 decisions and §14 constraints. §4 is normative: `PROTOCOL.md` in `zyggy-core` must match it, so any envelope or state-machine change is an Open question.
-4. **Read the reference feature** (`CLAUDE.md` § Project settings) across the projects the request touches: Core seam, Node service, CLI verb, integration test, gate. Use another feature when it is clearly closer, and say which and why.
-5. **Read what the request depends on**: the seams and options it extends, the bus paths (`BusPaths`), the CLI verbs, the Hub tools, the package documentation when a library capability is added.
-6. **Identify risk areas** (`CLAUDE.md` § Project settings). They become ⚠️ constraints and ⚠️ slices.
-
-## Challenge before specifying
-
-The founding spec was written before the code. For every item it assigns to this deliverable, decide **keep / reshape / library / defer** with a one-line why; that table goes under Decisions.
-
-- Does it serve this deliverable's observable round trip or a §12 gate? "The founding spec mentions it" is not value on its own.
-- Would you design it this way today? Prefer `Process` via `IProcessRunner`, `HttpClient`, `System.Text.Json`, `TimeProvider`, `IOptions<T>`, `IHostedService` over hand-rolled code; no abstraction with one implementation unless it is one of the five §9 seams.
-- A library must reduce the code Zyggy owns: check licence (MIT/Apache-2.0 preferred, copyleft is an Open question), maintenance, footprint, .NET 10 and single-file self-contained publish. Cite what you checked.
-- Never soften §8 (signature verification before any model call, no `--dangerously-skip-permissions`, work-laptop data only as metadata, no secrets in files). Never silently reopen a §13 decision; raise it as an Open question with evidence.
+The spec file must already hold Findings and Open questions from the `investigate` skill. If it does not, run `investigate` first: an interview without findings asks the user what the code could have answered.
 
 ## Interview
 
-Ask only what the request, the founding spec and the code do not already answer, in one batch. In a Zyggy job run (`ZYGGY_JOB` set; `CLAUDE.md` § Job runs) the batch goes through `zyggy ask` when the job's deadline allows waiting; otherwise write the spec with the gaps under Open questions, commit it on its feature branch, push, and end the job with the questions in the REPORT. Typical gaps:
+Ask the user until you could write the spec without a single assumption.
 
-- Which machine role (owner, Central, a Node, the work node) can do what afterwards that it cannot do now?
-- Envelope fields, bus paths, state moves, reason codes added or interpreted.
-- CLI verbs and options, exit codes, output; Hub tools and their input/output.
-- Config keys: where (`node.json`, options), default, override.
-- Failure modes and their observable outcome (report `reason`, rejection move, log line); the runbook entry each one needs.
-- Owner-run checks on the real machines.
-- Edge cases and what is explicitly out of scope. How each requirement is checked.
+- **Work in rounds.** Ask the questions whose answers decide the shape of the work first (who it is for, what they can do afterwards, which option from the Findings). Let the answers decide the next round. Stop when a new round would only confirm what you know.
+- **Ask what only the user knows.** Never ask what the code or the Findings already answer. When the code suggests an answer, propose it and ask for a yes or a correction.
+- **Offer choices** where the options are few and known, with the one you recommend first and the reason. Use the question tool for those; use plain questions for open ones.
+- **Cover, as far as the feature needs them**: the user and the goal; data (fields, types, required, constraints, relations); the API (endpoints, auth, errors); pages (what the user sees at each step and where they go next); background work and messages; edge cases; what is out of scope; how each requirement will be checked; and what the user wants to see working first.
+- **Record as you go.** After each round, move the answers into the spec and remove the questions they close.
 
-Do not fill a gap with an assumption. An unanswered question goes under Open questions, with what you found, why it matters, the options and your recommendation. The spec is not ready for approval while one remains that changes behavior.
+Do not fill a gap with an assumption. A question the user cannot answer yet stays under Open questions, and the spec is not ready for approval while one remains that changes behavior.
 
 ## Writing
 
-Use `.claude/templates/spec-template.md`. Remove the sections the feature does not need.
+Use the sections of `.claude/templates/spec-template.md`; remove the ones the feature does not need. The What happens diagram, Slices and the Scaffold always stay.
 
-- **Acceptance criteria** are numbered and each names its check: a unit or integration test (say which level), a gate scenario, a `zyggy` command against a local bare repo and its output, or an owner-run check on a real machine. "Code review" is not a check. Ask of each: would it fail if the behavior were broken? §12 definition-of-done items and §8/§14 rules that apply are ACs, not remarks.
-- **Slices** follow *Vertical slices* below: one row each, named by what the owner or system can do afterwards, Fake before its Wire, ⚠️ on slices that touch a risk area, the ACs each slice satisfies, and its one review check (a test filter, a command or a gate). A phase-closing deliverable ends with the gate slice (`tests/Zyggy.Integration/Gates/P<n>_<Name>.cs`).
-- **Vertical slices (no UI: Fake, then Wire).** Slice by behavior, not by layer. Each slice is named after what the owner or the system can do afterwards ("Reject an envelope with a bad signature", "Claim a job from a local bare bus repo"), never after a type or project ("Add GitClient"). Each slice has exactly **one review check** — for Zyggy a test filter, a `zyggy` command against a local bare repo, or a gate scenario to run. No review check → fold it into another slice; two → split it. Zyggy has no UI, so a behavior comes as a pair:
-  1. **Fake**: the behavior through the seam interfaces (`IProcessRunner`, `IBusProvider`, `IModelRunner`, `ISecretStore`, `INotifier`, `IPolicySource`, `TimeProvider`) with substitutes, proven by unit tests in `tests/Zyggy.Core.Tests`. The owner validates the contract shape.
-  2. **Wire**: the real edge (real `git` through `IProcessRunner`, `HttpClient` over a mocked handler, `tools/fake-claude`, a local bare git repo), proven by integration tests in `tests/Zyggy.Integration` — the happy path and one failure path ending in a `reason` code or a rejection move. Never the real `claude`, never GitHub, in any test.
+- **Behavior** in the detail the feature needs: rules with their messages, data, API, pages, edge cases.
+- **The What happens diagram**, in Mermaid, at component level, never at file or class level: the flow the user or the calling system goes through, with the outcome at each step. How it is built is in the Scaffold, not in a diagram. Mermaid labels (messages, notes, node and edge labels) never contain `;`, `#` or unbalanced quotes: a `;` ends a statement and the diagram does not render. Write the words instead (for example "semicolon") or Mermaid entity codes (`#59;` for `;`, `#quot;` for `"`), and keep labels short.
+- **Security rules in full.** Never weaken a security rule for readability or convenience: state the full standard rule and handle readability another way (for example a text column format, never a skipped case).
+- **Acceptance criteria** are numbered and each names its check: a test at a stated level, an API call and its response, or a page action and its result. "Code review" is not a check. Ask of each check: would it fail if the behavior were broken? The tests that prove a criterion will carry its id, so keep the ids stable once the spec is approved.
+  - The outer test of a security criterion covers every case the rule names, including a dangerous variant of each (for CSV injection: a value starting with `=`, `+`, `-`, `@`, tab and CR, and a malicious `+`/`-` value such as `-2+3+cmd|...`).
+- **Slices**: one row each, named by what the user or the system can do afterwards, ⚠️ on those that touch a risk area, with the acceptance criteria the slice satisfies, its two checks and the state "todo":
+  - the **outer test**, written as a scenario with its expected outcome. Every slice's outer test is an integration test, at least one per slice, at the Integration test level `CLAUDE.md` § Project settings defines (for a browser-only feature a Presentation integration test on the real DI container, for an endpoint an API integration test against the real backend host); for a stub slice the same test with the stub as the faked backend client. Mocked view models do not count;
+  - the **human check**, written as steps the user can carry out, or "none" with the reason. A stub slice always has one: being tried by the user is its purpose.
+- **Leave out**, outside the Scaffold, file lists, class and test method names, line numbers and code. State a contract only when the contract is the requirement.
 
-  Finish Fake and Wire of one behavior before starting the next. A deliverable that closes a §12 phase ends with a gate slice: the scenario in `tests/Zyggy.Integration/Gates/P<n>_<Name>.cs`, a working round trip, not a code review.
-- **Leave out** file lists, class and test method names, line numbers and code. State a contract only when it is the requirement: an envelope field, a reason code, a CLI verb and options, an MCP tool signature, a config key, a bus path.
-- **Diagrams.** Add Mermaid diagrams (` ```mermaid ` blocks, rendered by GitHub and VS Code) wherever a picture explains faster than prose; at least: a component diagram of the projects, seams, machines and bus paths the feature touches (new parts highlighted), and a sequence diagram of the round trip across owner, Central, the bus and the Node. Add a state diagram for any state move, a flowchart for a decision with branches (e.g. a refusal path ending in a `reason`), and the slice map (Fake → Wire per behavior). Diagrams name contracts and roles, not classes or files; keep the text authoritative — a diagram never says something the Behavior section does not.
-- **State facts you verified.** If a statement about the code, Claude Code CLI behavior or an environment matters to the build, say how you know it (file read, command run, docs checked) or put it under Open questions.
-- **Public repo**: placeholders only (`acme`, `home-laptop`, `/home/alice/src`), no employer name, no real ids.
+### The Scaffold
+
+Write the spec's Scaffold section once the slices are cut: per slice, a table of the files to create, modify or delete, one line each saying what changes and why, plus one line for DI registrations and wiring. Check each row in the code: a file to modify or delete exists, a new one is marked create, and every new service or dependency has its registration on the wiring line. No steps and no code: the build works from each slice's rows. A file that no slice's rows name, and that a slice needs, is a gap in the Scaffold.
+
+### Cutting the slices
+
+- Slice by behavior, never by layer: "create entity, add repository, build controller, create page" leaves nothing observable until the last step.
+- Cut each UI behavior into a **stub** slice (the page, form or component with its real interaction on fake data, for the user to try and judge before any backend exists) and the **wire** slice that follows it (API, logic and persistence from top to bottom; the stub is removed). Finish the stub and the wire of one behavior before the next.
+- Do not cut a UI change that leaves the user nothing to judge (a column, a label, a field on an existing form): make it one slice with an integration test, and write "single slice: nothing to judge on a stub" in its row. When in doubt, ask the user whether they want to see it first.
+- A slice is one increment the user can test: a functionality or an API call. Its size follows from that, not from a count of criteria; `build-slice` builds it from the slice's Scaffold rows.
+- A security or personal-data criterion goes in the same slice as the functionality it protects (for example the CSV formula guard in the slice that produces the file).
+- A slice that needs two scenarios with different outcomes for the user is two slices. A slice too large to prove in one session is split into smaller behaviors.
+- Work that no outer test can prove (a doc edit, a rename, a helper) is not a slice: fold it into the slice whose behavior it supports.
+- Order the slices so that the first one gives the user something to see as early as possible. No slice depends on a later one.
+- In a project with no working code yet, slice 1 is the walking skeleton: the thinnest path from the entry point to persistence, together with the test harness that proves it.
+
+## Guidelines
+
+A guideline is a file under the project's `.claude/rules/` whose first line after the frontmatter is `<!-- guideline: <role> -->`, the role being testing, architecture or coding; find them by that line, not by file name. Read the **architecture** guidelines before writing Behavior, the What happens diagram and the Scaffold: the diagram's components and the Scaffold's files sit in the guideline's layers and hosts, its DI registrations and wiring follow the guideline, and a new component outside them is an open question for the user; pages, API and messages follow the guideline's contracts (route pattern, mapping of business errors to HTTP, event and message shapes). Read the **testing** guidelines before writing Acceptance criteria and Slices: each check names its level in their terms (integration through the real entry point, UI on the stub, unit); a criterion whose check would be a mocked unit test of wiring is rewritten; each outer test is an integration test, stated at the integration level their table of test levels gives for this project type. When no file carries a role, skip what this paragraph says for it without remark.
 
 ## Before presenting
 
-Check the spec against these points and fix what fails:
+1. Check the spec yourself and fix what fails:
+   - every acceptance criterion has a check that someone can run and that would fail if the behavior were broken;
+   - every acceptance criterion belongs to a slice, and every slice has its rows in the Scaffold;
+   - every slice is one increment the user can test, a functionality or an API call; its size follows from that, not from a count of criteria;
+   - every security or personal-data criterion goes in the same slice as the functionality it protects;
+   - every slice has at least one integration test that tests its behavior: every slice's outer test is an integration test, at least one per slice; a security rule is stated in full and its outer test covers every case it names;
+   - the What happens diagram agrees with Behavior;
+   - every diagram renders (labels follow the rule above);
+   - every risk area the feature touches is marked ⚠️ in Constraints and on its slice;
+   - outside the Scaffold, no file list, test name or line number crept in;
+   - every new service or dependency has its DI registration in the Scaffold table, on the wiring line of the slice that adds it;
+   - every type, route, setting or file named in the Scaffold table exists in the code or is marked new (create); check it in the code, not from memory;
+   - culture and locale (number, date, separator, encoding) are stated wherever output is formatted, in Behavior and on the Scaffold table's row of the file that formats it.
+2. The critic is off by default. Start the `spec-critic` agent only when the user asks for it, with the path of the spec and nothing from this conversation, for one pass and never a second. It answers with one line, the verdict and the path of its report, `artifacts/<FeatureName>-critic-report.md`; read that file (it is ignored by git). Fix what it reports. Where you disagree with a finding, keep it for the summary; where a finding needs an answer only the user has, add it to Open questions. When it ends with no report, continue without it and say so in Status.
+3. Add to Status: "<date>: spec written. Not approved.", with how the critic went: "critic not run", "critic run" or "critic asked for, no report".
 
-1. Every acceptance criterion has a check someone can run, and that would fail if the behavior were broken.
-2. Every slice is vertical, has exactly one review check, and depends on no later slice. Work without its own review check (a doc edit, a runbook row, a rename) is folded into the slice whose behavior it supports.
-3. Every risk area the feature touches is marked ⚠️ in Constraints and on its slice.
-4. Every founding-spec item in scope appears under Decisions; nothing deferred appears in a slice.
-5. No file list, test name or line number crept in.
-6. The component and sequence diagrams exist, render (valid Mermaid), and agree with Behavior and Slices.
-7. Status says "spec written, not approved" with today's date.
+Then present the spec and summarise in a few lines: the goal, the slices with what the user will see after each, the files and registrations the Scaffold adds or changes, the risk areas, the open questions, and, when the critic ran, any finding you did not follow, with the reason. Tell the user to open the spec in a Markdown preview to see the diagram, and ask for one approval of the spec, Scaffold included, or for changes.
 
-Then present it as a visual approval report (`CLAUDE.md` § Visual approval report): a page with the spec's diagrams rendered, the slice map, the risk areas and the Open questions with your recommendation for each; in the chat a few plain lines, an ASCII sketch of the round trip and the link. Ask the owner to approve or change the spec. When the owner approves, add "<date>: approved by the owner" to Status, create `feature/<NN>-<short-name>` from an up-to-date `main`, and commit the spec as its first commit so the approval visibly precedes the code. The build starts in a fresh session with the `build-feature` skill.
+When the user approves, add "<date>: spec approved by the user" to Status. Then offer to commit the approved spec as the first commit on the spec's branch, so a draft pull request can be opened; commit only when the user says so. The build starts in a fresh session with the `build-slice` skill.

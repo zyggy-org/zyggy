@@ -1,15 +1,28 @@
 {
-  "kitVersion": "2.0.0",
-  "level": 2,
+  "kitVersion": "3.0.0",
+  "level": 3,
   "manualSkills": false,
+  "packs": [
+    "dotnet-shared"
+  ],
   "files": {
-    ".claude/agents/slice-verifier.md": "3f6396f15a33fcf9b0e827e876c23aa1d0ce2d037a7b22cecb21492300df5e13",
-    ".claude/agents/spec-critic.md": "c8198c763aecc23344d06a973966be58324081cd7989a4a8e58a7516911b5d27",
-    ".claude/agents/spec-reviewer.md": "635f26bcd67ba20b8fd786c3706e530ae70d7e70778010ea2dc11eff1290f0d0",
-    ".claude/hooks/guard.mjs": "78bd177e216197c501abd82793a543da1670509a1688b5d74caeaf9c4bbe92eb",
-    ".claude/hooks/verify.mjs": "5dad000d0fd667c5bdc528ce776dad226e63d9d5cb867df217f5d3f2721d6448",
-    ".claude/templates/settings-fragment.json": "fd63df4ab965415fea6a94e70e15560a2651fea90471a9c7371f79f5fc72adce",
-    ".claude/templates/spec-driven.json": "a92fe0b45798c8f230473197bb97d9fc6ca2b1d8c15232a4e7c29ebdde11ab49"
+    ".claude/agents/spec-critic.md": "4a568176c928a8c8c1fcbd09509f4765ea06d2f166610a8dd69cb23cd78ccef8",
+    ".claude/agents/spec-reviewer.md": "4d4053d0e40782daabe6e4123b3ea0f061682ba7591803cc9b99c927ea1b2c8b",
+    ".claude/hooks/guard.mjs": "719793735ebe075940f2be65ab06695510e546f7db349b6f1e7781991077cc5c",
+    ".claude/hooks/verify.mjs": "f88ea24ace8029a4efcf26c143009cc8b956ca763925f50ef9743d0da19b0bbb",
+    ".claude/templates/settings-fragment.json": "6ab2e306b807607ca66bbc8eb8c651e3317a78d6c68b46ecda12799d2a8201e6",
+    ".claude/templates/spec-driven.json": "a92fe0b45798c8f230473197bb97d9fc6ca2b1d8c15232a4e7c29ebdde11ab49",
+    ".claude/skills/amend-spec/SKILL.md": "9ac9cdbbce3d53a81101f873e5822623ae78c15242f59badcb1405636fde184a",
+    ".claude/skills/bugfix/SKILL.md": "11d50b0d217e98986c0419b427d4faeaca5313ec72d131c4a550fd1fe59e0584",
+    ".claude/skills/build-slice/SKILL.md": "e072e116e00009ea1a34ccc5e75ef760d28b344fa37db53527e3636ff875f4b8",
+    ".claude/skills/investigate/SKILL.md": "a45435ceca53f2e34fb581bc0176e163c967e8f31aaaef316d153a63b16523eb",
+    ".claude/skills/new-feature/SKILL.md": "d7933f70d1ac04b0bca26f21298223cd48fe27e6faf1db96af8dae84bba6fc85",
+    ".claude/skills/write-spec/SKILL.md": "28cc2acbf98110d191aabdcdbe8d3b8543a8fb1b93c61893e15202f31d710b89",
+    ".claude/templates/project-settings.md": "682024611c23c4cf5c8826eb666af6ae3e4d0b45a9cab0b8de4b9d2ead5fffd6",
+    ".claude/templates/spec-template.md": "b203016ce0744bf93c56b89943112e4ef07380807ba1de27cef6c77c0265731c",
+    ".claude/rules/spec-driven.md": "684320e47456deee6a199e77349b8fe94eb48e2e5c8d9b69ae2948cefd00e08c",
+    ".claude/rules/testing-for-agents.md": "0e04a728f73dadea73a367d46edaa2c9de7edbb9c38dfcfd0f56cf0671082a70",
+    "scripts/mutation-check.mjs": "f9f4f5f7b434ffe9e2487a6b789bd0cf3b8c1c64b23364172ac8076765947523"
   },
   "addedAsk": [
     "Bash(git commit)",
@@ -20,5 +33,9 @@
     "PowerShell(git commit *)",
     "PowerShell(git push)",
     "PowerShell(git push *)"
-  ]
+  ],
+  "addedTools": {
+    "dotnet-stryker": "5.1.0"
+  },
+  "toolsFileCreated": true
 }
